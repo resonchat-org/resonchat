@@ -18,6 +18,8 @@
 | [06-android-milestones.md](06-android-milestones.md) | M0–M7 里程碑、任务拆解、验收标准 | ✅ |
 | [07-licensing-compliance.md](07-licensing-compliance.md) | 许可证矩阵、GPL 合规、商标风险、发布清单 | ✅ |
 | [08-risks-open-questions.md](08-risks-open-questions.md) | 风险登记、待决问题 | ✅ |
+| [09-briar-lessons.md](09-briar-lessons.md) | 借鉴 Briar 的信任 UX / 省电设计，及必须拒绝的部分 | ✅ |
+| [../README.dev.md](../README.dev.md) | 构建、测试、本地开发、当前实现状态与待办 | ✅ |
 
 ---
 

@@ -4,6 +4,10 @@
 
 ## 1. 依赖能力（moxxmpp 已具备）
 
+> 补充（2026-10 实测）：上表 `MAM (XEP-0313)` 一项**不成立**——moxxmpp master 无 `xep_0313.dart`，未合并的实现在上游 `feat/mam` 分支。M1 必须先补齐此缺口。其余项（Carbons、PubSub/PEP、EME、0384、0045、0085、0184、0030）已核实存在。
+>
+> 另：OMEMO 相关代码已核实在 moxxmpp `lib/src/xeps/xep_0384/`，命名空间为 `urn:xmpp:omemo:2`（与 docs/02 一致）。
+
 | 功能 | XEP | 用途 |
 |---|---|---|
 | 连接/SASL | XEP-0368, SASL SCRAM-SHA-256 | 认证 |

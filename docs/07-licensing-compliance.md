@@ -4,28 +4,30 @@
 
 | 组件 | 许可证 | 与 GPLv3 兼容 | 备注 |
 |---|---|---|---|
-| moxxmpp | MPL-2.0 | ✅ | 文件级 copyleft；修改的文件需继续 MPL |
+| moxxmpp | **MIT** | ✅ | 仓库 LICENSE 为 MIT（Copyright 2022 Alexander "PapaTutuWawa"），非文档早期记录的 MPL-2.0；已按实测更正 |
 | omemo_dart | MIT | ✅ | 宽松 |
 | Telegram for Android（移植的 UI 代码） | **GPL-2.0-or-later** | ✅ | 「or later」使其可并入 GPLv3 |
+| moxlib | MIT | ✅ | moxxmpp 依赖的共享工具库 |
 | liboqs | MIT | ✅ | |
-| `cryptography` (Dart) | BSD-3-Clause | ✅ | |
-| `pqcrypto` (Dart) | MIT（需确认） | ✅ | 纯 Dart ML-KEM |
+| `cryptography` (Dart) | Apache-2.0 | ✅ | 早期文档记为 BSD-3-Clause，以包内 LICENSE 为准 |
+| `pqcrypto` (Dart) | MIT | ✅ | 纯 Dart ML-KEM / ML-DSA，当前 B 轨 KEM 实现 |
 | drift | MIT | ✅ | |
 | sqlcipher_flutter_libs / SQLCipher | BSD-style | ✅ | 使用 OpenSSL |
 | flutter_secure_storage | BSD-3-Clause | ✅ | |
-| riverpod | MIT | ✅ | |
+| riverpod / flutter_riverpod | MIT | ✅ | |
 
 **结论**：整个项目以 **GPL-3.0-or-later** 发布。
 
 ## 2. GPL 合规义务清单
 
 - [ ] 根目录 `LICENSE` = GPLv3 全文
-- [ ] 每个源文件头部含版权与许可证声明
+- [ ] 每个源文件头部含版权与许可证声明（本项目自有文件已加 `SPDX-License-Identifier: GPL-3.0-or-later`）
+- [ ] **fork 的上游文件保留原 license 头**：moxxmpp / omemo_dart / moxlib 均为 MIT，保留原版权声明并标注本地修改点
 - [ ] **移植自 Telegram Android 的文件**：
   - 保留原始版权声明
   - 显著标注「此文件修改自 Telegram for Android，GPL-2.0-or-later」及修改日期（GPLv2 §2a）
   - 不得移除原有 NOTICE
-- [ ] **MPL-2.0 文件（moxxmpp fork）**：修改过的文件以 MPL-2.0 分发，并保留许可证头
+- [ ] **MPL-2.0 文件（moxxmpp fork）**：~~不适用~~（实测为 MIT，保留 MIT 头即可）
 - [ ] 分发 APK 时**提供完整对应源码**（含构建脚本）
 - [ ] 不得对接收者施加额外限制（GPLv2 §6 / GPLv3 §10）
 - [ ] 若使用 OpenSSL，注意第三方许可声明文件

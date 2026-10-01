@@ -47,14 +47,27 @@
 - **后果**：需要处理 bundle 过期/清理（服务端 max_items 与 TTL）。
 
 ### ADR-004：Fork `moxxmpp` + `omemo_dart` 而非从零
-- **决定**：以 moxxmpp（MPL-2.0）和 omemo_dart（MIT）为基础。
-- **理由**：两者已是纯 Dart、跨平台、实现 OMEMO 0.8.3；许可证与 GPLv3 兼容。
+- **决定**：以 moxxmpp 和 omemo_dart 为基础，在 `packages/` 内本地 fork。
+- **理由**：两者已是纯 Dart、跨平台、已实现 OMEMO；许可证实测均为 MIT，与 GPLv3 兼容。
+- **实况修正**：
+  - moxxmpp 上游为 `codeberg.org/moxxy/moxxmpp`，**许可证是 MIT 而非本文档早期所记的 MPL-2.0**。
+  - 三者均**不在 pub.dev**，依赖自建 Gitea registry（`git.polynom.me`）。fork 后已删除 `publish_to`，改用 path 依赖，避免依赖不可达的上游服务。
+  - moxxmpp **缺少 MAM（XEP-0313）**，上游 `feat/mam` 分支有未合并实现，需 cherry-pick 或自写。
+  - moxlib（共享工具库）也需一并 fork。
+  - `moxxmpp_socket_tcp` 的 SDK 约束为 Dart 2.17（与主包 Dart 3 不一致），fork 时已提升。
+  - OMEMO 全部密码学由 `omemo_dart` 提供，moxxmpp 只做 stanza 编解码/传输——这正是 A 轨能保持与上游最小差异、便于跟新的原因。
 - **后果**：需跟进上游变更；fork 需保持 A 轨与上游最小差异，便于合并。
 
 ### ADR-005：UI 移植 Telegram Android（Kotlin → Dart），整体 GPLv3
 - **决定**：参考/翻译 TG Android 的 UI 代码与资源；不使用其名称与 Logo。
 - **理由**：TG Android 是 GPLv2-or-later，可合法并入 GPLv3 工程。
 - **后果**：需逐文件标注来源与修改；商标问题需人工审查。
+
+### ADR-006：PQ KEM 起步用纯 Dart `pqcrypto`，liboqs FFI 作为后续替换
+- **决定**：B 轨的 ML-KEM-768 先用 `pqcrypto`（纯 Dart，FIPS 203），通过 `MlKem768` 接口隔离；需要更高性能或更小体积时替换为 liboqs FFI（`OQS_MINIMAL_BUILD="KEM_ml_kem_768;SIG_ml_dsa_65"`，仅 arm64-v8a + x86_64）。
+- **理由**：`pqcrypto` 零依赖、无 NDK 工具链、可在 Linux/测试环境跑通协议与互操作，有 KAT 与 liboqs 互操作证据；OMEMO 建会话只需几十次 KEM 操作，纯 Dart 性能足够（放 isolate 即可）。
+- **后果**：移动端性能需实测；若需 liboqs，必须处理 Android 15 的 16KB page 对齐，且 liboqs 的 THIRD_PARTY_NOTICES 需随 APK 分发。两条实现的共享秘密一致性要有测试（docs/04 §3 要求）。
+- **待定**：Q1（ML-DSA-65 是否默认携带）仍按「先不携带」推进。
 
 ## 5. 架构总览
 

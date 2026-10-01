@@ -13,7 +13,13 @@
 
 ## 状态
 
-早期设计阶段。目前仅有设计文档，尚无可用代码。
+**M0 已完成**：mono-repo 骨架、三个上游 fork 接线（moxxmpp / omemo_dart / moxlib，MIT）、CI（analyze + test + debug APK）、drift 存储、PQXDH 与双轨编解码（含单元测试）、最小可用 UI、Android debug APK 可构建。
+
+**M1/M2 进行中**：连接与明文收发、OMEMO 集成已接线但**尚未与真实 OMEMO 客户端互通验证**（M2 关键验收未过）。详见 [`README.dev.md`](README.dev.md) 的实现状态表与待办。
+
+## 开发
+
+构建、测试与本地环境见 [`README.dev.md`](README.dev.md)。
 
 ## 文档
 
@@ -29,6 +35,7 @@
 | [里程碑](docs/06-android-milestones.md) | M0–M7 |
 | [合规](docs/07-licensing-compliance.md) | 许可证与商标 |
 | [风险](docs/08-risks-open-questions.md) | 风险与待决问题 |
+| [Briar 借鉴](docs/09-briar-lessons.md) | 信任 UX、省电设计，以及不该抄的部分 |
 
 ## 许可证
 

@@ -1,0 +1,57 @@
+name: resonchat
+description: "resonchat — Flutter XMPP client with dual-track OMEMO (standard + post-quantum)."
+publish_to: none
+version: 0.0.1+1
+
+environment:
+  sdk: ^3.13.4
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Forked XMPP / OMEMO stack (local path deps; see packages/).
+  moxxmpp:
+    path: ../packages/moxxmpp/packages/moxxmpp
+  moxxmpp_socket_tcp:
+    path: ../packages/moxxmpp/packages/moxxmpp_socket_tcp
+  omemo_dart:
+    path: ../packages/omemo_dart
+
+  # Crypto: classic leg + pure-Dart PQ leg (liboqs FFI comes at M3-native).
+  cryptography: ^2.9.0
+  pqcrypto: ^0.4.2
+  xml: ^6.5.0
+  hex: ^0.2.0
+  path: ^1.9.0
+
+  # State / storage / platform.
+  riverpod: ^2.6.1
+  flutter_riverpod: ^2.6.1
+  drift: ^2.20.0
+  sqlite3_flutter_libs: ^0.5.24
+  flutter_secure_storage: ^9.2.2
+  path_provider: ^2.1.0
+  logging: ^1.2.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  test: ^1.25.8
+  drift_dev: ^2.20.0
+  build_runner: ^2.4.12
+
+# Redirect the forks' private-registry deps to our vendored copies.
+dependency_overrides:
+  moxlib:
+    path: ../packages/moxlib
+  omemo_dart:
+    path: ../packages/omemo_dart
+  moxxmpp:
+    path: ../packages/moxxmpp/packages/moxxmpp
+  moxxmpp_socket_tcp:
+    path: ../packages/moxxmpp/packages/moxxmpp_socket_tcp
+
+flutter:
+  uses-material-design: true

@@ -1,0 +1,134 @@
+// Copyright (C) 2026 resonchat contributors.
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// Dual-track manager: A track (standard OMEMO via moxxmpp) plus B track
+// (PQ-OMEMO via our own PEP nodes). See docs/02 and docs/03.
+
+import 'package:moxxmpp/moxxmpp.dart';
+import 'package:xml/xml.dart';
+
+import 'bundle_codec.dart';
+import 'negotiation.dart';
+import 'protocol.dart';
+
+/// Owns the B track's PEP state and the outbound-track decision.
+///
+/// The A track is fully delegated to moxxmpp's [OmemoManager] (kept
+/// byte-compatible with Conversations/Moxxy/Dino); the B track uses
+/// parallel PEP nodes ([pomemoDevicesXmlns]/[pomemoBundlesXmlns]) so
+/// standard clients never see keys they cannot use.
+class DualTrackManager {
+  DualTrackManager({
+    required this.aTrack,
+    required this.pubsubOf,
+  });
+
+  final OmemoManager aTrack;
+  final PubSubManager Function() pubsubOf;
+
+  /// PQ-capable device ids of [jid]: present in the B-track device list
+  /// *and* serving a retrievable bundle with PQ keys.
+  Future<Set<int>> getPqCapableDevices(JID jid) async {
+    final pm = pubsubOf();
+    final items = await pm.getItems(jid, pomemoDevicesXmlns);
+    if (!items.isType<List<PubSubItem>>()) return {};
+    final result = <int>{};
+    for (final item in items.get<List<PubSubItem>>()) {
+      for (final dev in item.payload.children
+          .where((c) => c.tag == 'device')) {
+        final id = int.tryParse('${dev.attributes['id']}');
+        if (id == null) continue;
+        final bundle = await getPqBundle(jid, id);
+        if (bundle != null && bundle.hasPqKeys) result.add(id);
+      }
+    }
+    return result;
+  }
+
+  /// Fetches one device's B-track bundle, or null when absent/broken.
+  /// Malformed payloads never throw: they just mean "not PQ-capable".
+  Future<PqBundle?> getPqBundle(JID jid, int deviceId) async {
+    final pm = pubsubOf();
+    final res = await pm.getItem(jid, pomemoBundlesXmlns, '$deviceId');
+    if (!res.isType<PubSubItem>()) return null;
+    try {
+      final doc = XmlDocument.parse(res.get<PubSubItem>().payload.toXml());
+      return PqBundle.fromXml(doc.rootElement);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Publishes our B-track device list entry + bundle.
+  /// Returns true only when the bundle item was accepted.
+  Future<bool> publishPqBundle(JID bareJid, PqBundle bundle) async {
+    final pm = pubsubOf();
+
+    final existing = await pm.getItems(bareJid, pomemoDevicesXmlns);
+    final ids = <int>{};
+    if (existing.isType<List<PubSubItem>>()) {
+      for (final item in existing.get<List<PubSubItem>>()) {
+        for (final dev in item.payload.children
+            .where((c) => c.tag == 'device')) {
+          final id = int.tryParse('${dev.attributes['id']}');
+          if (id != null) ids.add(id);
+        }
+      }
+    }
+    ids.add(bundle.deviceId);
+    final listNode = XMLNode.xmlns(
+      tag: 'devices',
+      xmlns: pomemoDevicesXmlns,
+      children: [
+        for (final id in ids)
+          XMLNode(tag: 'device', attributes: {'id': '$id'}),
+      ],
+    );
+    final listResult = await pm.publish(
+      bareJid,
+      pomemoDevicesXmlns,
+      listNode,
+      id: 'current',
+      options: const PubSubPublishOptions(accessModel: 'open'),
+    );
+    if (!listResult.isType<bool>() || !listResult.get<bool>()) {
+      return false;
+    }
+
+    final bundleNode =
+        XMLNode.fromString(bundle.toXml().toXmlString());
+    final bundleResult = await pm.publish(
+      bareJid,
+      pomemoBundlesXmlns,
+      bundleNode,
+      id: '${bundle.deviceId}',
+      options:
+          const PubSubPublishOptions(accessModel: 'open', maxItems: 'max'),
+    );
+    return bundleResult.isType<bool>() && bundleResult.get<bool>();
+  }
+
+  /// Outbound-track decision for one chat. See [decideEncMode].
+  Future<EncMode> decideMode({
+    required Set<int> allDevices,
+    required Set<int> omemoCapable,
+    required JID Function(int deviceId) ownerOf,
+  }) async {
+    final pqCapable = <int>{};
+    final byOwner = <String, List<int>>{};
+    for (final d in allDevices) {
+      final owner = ownerOf(d).toBare().toString();
+      (byOwner[owner] ??= []).add(d);
+    }
+    for (final entry in byOwner.entries) {
+      pqCapable.addAll(
+        await getPqCapableDevices(JID.fromString(entry.key)),
+      );
+    }
+    return decideEncMode(
+      allDevices: allDevices,
+      pqCapable: pqCapable.intersection(allDevices),
+      omemoCapable: omemoCapable,
+    );
+  }
+}

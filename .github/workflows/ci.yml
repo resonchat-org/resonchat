@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  analyze-test:
+    name: Analyze + test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: stable
+          channel: stable
+          cache: true
+
+      - name: Resolve app dependencies
+        working-directory: app
+        run: flutter pub get
+
+      - name: Generate drift code
+        working-directory: app
+        run: dart run build_runner build
+
+      # `flutter analyze`'s LSP server crashes on this repo's path; `dart
+      # analyze` gives the same diagnostics reliably.
+      - name: Analyze
+        working-directory: app
+        run: dart analyze lib test
+
+      - name: Test
+        working-directory: app
+        run: flutter test --no-pub
+
+  build-apk:
+    name: Build debug APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: stable
+          channel: stable
+          cache: true
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Resolve app dependencies
+        working-directory: app
+        run: flutter pub get
+
+      - name: Generate drift code
+        working-directory: app
+        run: dart run build_runner build
+
+      - name: Build APK
+        working-directory: app
+        run: flutter build apk --debug
