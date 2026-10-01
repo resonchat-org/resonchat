@@ -24,25 +24,38 @@ class _ChatsPageState extends ConsumerState<ChatsPage> {
   @override
   void initState() {
     super.initState();
+    final xmpp = ref.read(xmppServiceProvider);
+
     // Pump inbound traffic into the store while this page lives.
-    ref.read(xmppServiceProvider).inbound.listen((msg) async {
+    xmpp.inbound.listen((msg) async {
       final db = ref.read(databaseProvider);
       final chatJid = msg.from.toBare().toString();
       await db.upsertChat(chatJid);
+
+      // A carbon duplicates a message we already have locally.
+      if (msg.isCarbonCopy) return;
+      final stanzaId = msg.stanzaId ?? '';
+      if (await db.findByStanzaId(chatJid, stanzaId) != null) return;
+
       await db.insertMessage(
         MessagesCompanion(
           chatJid: Value(chatJid),
           sender: Value(msg.from.toString()),
-          body: Value(
-            msg.encryptionError != null ? '' : msg.body,
-          ),
+          stanzaId: Value(stanzaId),
+          body: Value(msg.encryptionError != null ? '' : msg.body),
           timestamp: Value(DateTime.now()),
-          encMode: Value(
-            msg.encryptionError != null ? 'error' : 'none',
-          ),
+          encMode: Value(msg.encryptionError != null ? 'error' : 'none'),
           incoming: const Value(true),
         ),
       );
+    });
+
+    // XEP-0184: flip our outgoing messages to "delivered".
+    xmpp.deliveryReceipts.listen((receipt) async {
+      await ref.read(databaseProvider).markDelivered(
+            receipt.from.toBare().toString(),
+            receipt.stanzaId,
+          );
     });
   }
 

@@ -305,6 +305,18 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _stanzaIdMeta = const VerificationMeta(
+    'stanzaId',
+  );
+  @override
+  late final GeneratedColumn<String> stanzaId = GeneratedColumn<String>(
+    'stanza_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
   static const VerificationMeta _bodyMeta = const VerificationMeta('body');
   @override
   late final GeneratedColumn<String> body = GeneratedColumn<String>(
@@ -352,15 +364,48 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
       'CHECK ("incoming" IN (0, 1))',
     ),
   );
+  static const VerificationMeta _deliveredMeta = const VerificationMeta(
+    'delivered',
+  );
+  @override
+  late final GeneratedColumn<bool> delivered = GeneratedColumn<bool>(
+    'delivered',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("delivered" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _isCarbonMeta = const VerificationMeta(
+    'isCarbon',
+  );
+  @override
+  late final GeneratedColumn<bool> isCarbon = GeneratedColumn<bool>(
+    'is_carbon',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_carbon" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
     chatJid,
     sender,
+    stanzaId,
     body,
     timestamp,
     encMode,
     incoming,
+    delivered,
+    isCarbon,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -393,6 +438,12 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     } else if (isInserting) {
       context.missing(_senderMeta);
     }
+    if (data.containsKey('stanza_id')) {
+      context.handle(
+        _stanzaIdMeta,
+        stanzaId.isAcceptableOrUnknown(data['stanza_id']!, _stanzaIdMeta),
+      );
+    }
     if (data.containsKey('body')) {
       context.handle(
         _bodyMeta,
@@ -421,6 +472,18 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     } else if (isInserting) {
       context.missing(_incomingMeta);
     }
+    if (data.containsKey('delivered')) {
+      context.handle(
+        _deliveredMeta,
+        delivered.isAcceptableOrUnknown(data['delivered']!, _deliveredMeta),
+      );
+    }
+    if (data.containsKey('is_carbon')) {
+      context.handle(
+        _isCarbonMeta,
+        isCarbon.isAcceptableOrUnknown(data['is_carbon']!, _isCarbonMeta),
+      );
+    }
     return context;
   }
 
@@ -442,6 +505,10 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         DriftSqlType.string,
         data['${effectivePrefix}sender'],
       )!,
+      stanzaId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}stanza_id'],
+      )!,
       body: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}body'],
@@ -458,6 +525,14 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         DriftSqlType.bool,
         data['${effectivePrefix}incoming'],
       )!,
+      delivered: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}delivered'],
+      )!,
+      isCarbon: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_carbon'],
+      )!,
     );
   }
 
@@ -471,18 +546,31 @@ class Message extends DataClass implements Insertable<Message> {
   final int id;
   final String chatJid;
   final String sender;
+
+  /// Stanza id, used to match XEP-0184 delivery receipts.
+  final String stanzaId;
   final String body;
   final DateTime timestamp;
   final String encMode;
   final bool incoming;
+
+  /// False until a delivery receipt arrives (XEP-0184).
+  final bool delivered;
+
+  /// Set when this message came from another of our own devices
+  /// (XEP-0280 carbon), so the UI can avoid a duplicate bubble.
+  final bool isCarbon;
   const Message({
     required this.id,
     required this.chatJid,
     required this.sender,
+    required this.stanzaId,
     required this.body,
     required this.timestamp,
     required this.encMode,
     required this.incoming,
+    required this.delivered,
+    required this.isCarbon,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -490,10 +578,13 @@ class Message extends DataClass implements Insertable<Message> {
     map['id'] = Variable<int>(id);
     map['chat_jid'] = Variable<String>(chatJid);
     map['sender'] = Variable<String>(sender);
+    map['stanza_id'] = Variable<String>(stanzaId);
     map['body'] = Variable<String>(body);
     map['timestamp'] = Variable<DateTime>(timestamp);
     map['enc_mode'] = Variable<String>(encMode);
     map['incoming'] = Variable<bool>(incoming);
+    map['delivered'] = Variable<bool>(delivered);
+    map['is_carbon'] = Variable<bool>(isCarbon);
     return map;
   }
 
@@ -502,10 +593,13 @@ class Message extends DataClass implements Insertable<Message> {
       id: Value(id),
       chatJid: Value(chatJid),
       sender: Value(sender),
+      stanzaId: Value(stanzaId),
       body: Value(body),
       timestamp: Value(timestamp),
       encMode: Value(encMode),
       incoming: Value(incoming),
+      delivered: Value(delivered),
+      isCarbon: Value(isCarbon),
     );
   }
 
@@ -518,10 +612,13 @@ class Message extends DataClass implements Insertable<Message> {
       id: serializer.fromJson<int>(json['id']),
       chatJid: serializer.fromJson<String>(json['chatJid']),
       sender: serializer.fromJson<String>(json['sender']),
+      stanzaId: serializer.fromJson<String>(json['stanzaId']),
       body: serializer.fromJson<String>(json['body']),
       timestamp: serializer.fromJson<DateTime>(json['timestamp']),
       encMode: serializer.fromJson<String>(json['encMode']),
       incoming: serializer.fromJson<bool>(json['incoming']),
+      delivered: serializer.fromJson<bool>(json['delivered']),
+      isCarbon: serializer.fromJson<bool>(json['isCarbon']),
     );
   }
   @override
@@ -531,10 +628,13 @@ class Message extends DataClass implements Insertable<Message> {
       'id': serializer.toJson<int>(id),
       'chatJid': serializer.toJson<String>(chatJid),
       'sender': serializer.toJson<String>(sender),
+      'stanzaId': serializer.toJson<String>(stanzaId),
       'body': serializer.toJson<String>(body),
       'timestamp': serializer.toJson<DateTime>(timestamp),
       'encMode': serializer.toJson<String>(encMode),
       'incoming': serializer.toJson<bool>(incoming),
+      'delivered': serializer.toJson<bool>(delivered),
+      'isCarbon': serializer.toJson<bool>(isCarbon),
     };
   }
 
@@ -542,28 +642,37 @@ class Message extends DataClass implements Insertable<Message> {
     int? id,
     String? chatJid,
     String? sender,
+    String? stanzaId,
     String? body,
     DateTime? timestamp,
     String? encMode,
     bool? incoming,
+    bool? delivered,
+    bool? isCarbon,
   }) => Message(
     id: id ?? this.id,
     chatJid: chatJid ?? this.chatJid,
     sender: sender ?? this.sender,
+    stanzaId: stanzaId ?? this.stanzaId,
     body: body ?? this.body,
     timestamp: timestamp ?? this.timestamp,
     encMode: encMode ?? this.encMode,
     incoming: incoming ?? this.incoming,
+    delivered: delivered ?? this.delivered,
+    isCarbon: isCarbon ?? this.isCarbon,
   );
   Message copyWithCompanion(MessagesCompanion data) {
     return Message(
       id: data.id.present ? data.id.value : this.id,
       chatJid: data.chatJid.present ? data.chatJid.value : this.chatJid,
       sender: data.sender.present ? data.sender.value : this.sender,
+      stanzaId: data.stanzaId.present ? data.stanzaId.value : this.stanzaId,
       body: data.body.present ? data.body.value : this.body,
       timestamp: data.timestamp.present ? data.timestamp.value : this.timestamp,
       encMode: data.encMode.present ? data.encMode.value : this.encMode,
       incoming: data.incoming.present ? data.incoming.value : this.incoming,
+      delivered: data.delivered.present ? data.delivered.value : this.delivered,
+      isCarbon: data.isCarbon.present ? data.isCarbon.value : this.isCarbon,
     );
   }
 
@@ -573,17 +682,30 @@ class Message extends DataClass implements Insertable<Message> {
           ..write('id: $id, ')
           ..write('chatJid: $chatJid, ')
           ..write('sender: $sender, ')
+          ..write('stanzaId: $stanzaId, ')
           ..write('body: $body, ')
           ..write('timestamp: $timestamp, ')
           ..write('encMode: $encMode, ')
-          ..write('incoming: $incoming')
+          ..write('incoming: $incoming, ')
+          ..write('delivered: $delivered, ')
+          ..write('isCarbon: $isCarbon')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode =>
-      Object.hash(id, chatJid, sender, body, timestamp, encMode, incoming);
+  int get hashCode => Object.hash(
+    id,
+    chatJid,
+    sender,
+    stanzaId,
+    body,
+    timestamp,
+    encMode,
+    incoming,
+    delivered,
+    isCarbon,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -591,37 +713,49 @@ class Message extends DataClass implements Insertable<Message> {
           other.id == this.id &&
           other.chatJid == this.chatJid &&
           other.sender == this.sender &&
+          other.stanzaId == this.stanzaId &&
           other.body == this.body &&
           other.timestamp == this.timestamp &&
           other.encMode == this.encMode &&
-          other.incoming == this.incoming);
+          other.incoming == this.incoming &&
+          other.delivered == this.delivered &&
+          other.isCarbon == this.isCarbon);
 }
 
 class MessagesCompanion extends UpdateCompanion<Message> {
   final Value<int> id;
   final Value<String> chatJid;
   final Value<String> sender;
+  final Value<String> stanzaId;
   final Value<String> body;
   final Value<DateTime> timestamp;
   final Value<String> encMode;
   final Value<bool> incoming;
+  final Value<bool> delivered;
+  final Value<bool> isCarbon;
   const MessagesCompanion({
     this.id = const Value.absent(),
     this.chatJid = const Value.absent(),
     this.sender = const Value.absent(),
+    this.stanzaId = const Value.absent(),
     this.body = const Value.absent(),
     this.timestamp = const Value.absent(),
     this.encMode = const Value.absent(),
     this.incoming = const Value.absent(),
+    this.delivered = const Value.absent(),
+    this.isCarbon = const Value.absent(),
   });
   MessagesCompanion.insert({
     this.id = const Value.absent(),
     required String chatJid,
     required String sender,
+    this.stanzaId = const Value.absent(),
     required String body,
     this.timestamp = const Value.absent(),
     this.encMode = const Value.absent(),
     required bool incoming,
+    this.delivered = const Value.absent(),
+    this.isCarbon = const Value.absent(),
   }) : chatJid = Value(chatJid),
        sender = Value(sender),
        body = Value(body),
@@ -630,19 +764,25 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Expression<int>? id,
     Expression<String>? chatJid,
     Expression<String>? sender,
+    Expression<String>? stanzaId,
     Expression<String>? body,
     Expression<DateTime>? timestamp,
     Expression<String>? encMode,
     Expression<bool>? incoming,
+    Expression<bool>? delivered,
+    Expression<bool>? isCarbon,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (chatJid != null) 'chat_jid': chatJid,
       if (sender != null) 'sender': sender,
+      if (stanzaId != null) 'stanza_id': stanzaId,
       if (body != null) 'body': body,
       if (timestamp != null) 'timestamp': timestamp,
       if (encMode != null) 'enc_mode': encMode,
       if (incoming != null) 'incoming': incoming,
+      if (delivered != null) 'delivered': delivered,
+      if (isCarbon != null) 'is_carbon': isCarbon,
     });
   }
 
@@ -650,19 +790,25 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Value<int>? id,
     Value<String>? chatJid,
     Value<String>? sender,
+    Value<String>? stanzaId,
     Value<String>? body,
     Value<DateTime>? timestamp,
     Value<String>? encMode,
     Value<bool>? incoming,
+    Value<bool>? delivered,
+    Value<bool>? isCarbon,
   }) {
     return MessagesCompanion(
       id: id ?? this.id,
       chatJid: chatJid ?? this.chatJid,
       sender: sender ?? this.sender,
+      stanzaId: stanzaId ?? this.stanzaId,
       body: body ?? this.body,
       timestamp: timestamp ?? this.timestamp,
       encMode: encMode ?? this.encMode,
       incoming: incoming ?? this.incoming,
+      delivered: delivered ?? this.delivered,
+      isCarbon: isCarbon ?? this.isCarbon,
     );
   }
 
@@ -678,6 +824,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     if (sender.present) {
       map['sender'] = Variable<String>(sender.value);
     }
+    if (stanzaId.present) {
+      map['stanza_id'] = Variable<String>(stanzaId.value);
+    }
     if (body.present) {
       map['body'] = Variable<String>(body.value);
     }
@@ -690,6 +839,12 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     if (incoming.present) {
       map['incoming'] = Variable<bool>(incoming.value);
     }
+    if (delivered.present) {
+      map['delivered'] = Variable<bool>(delivered.value);
+    }
+    if (isCarbon.present) {
+      map['is_carbon'] = Variable<bool>(isCarbon.value);
+    }
     return map;
   }
 
@@ -699,10 +854,13 @@ class MessagesCompanion extends UpdateCompanion<Message> {
           ..write('id: $id, ')
           ..write('chatJid: $chatJid, ')
           ..write('sender: $sender, ')
+          ..write('stanzaId: $stanzaId, ')
           ..write('body: $body, ')
           ..write('timestamp: $timestamp, ')
           ..write('encMode: $encMode, ')
-          ..write('incoming: $incoming')
+          ..write('incoming: $incoming, ')
+          ..write('delivered: $delivered, ')
+          ..write('isCarbon: $isCarbon')
           ..write(')'))
         .toString();
   }
@@ -1541,19 +1699,25 @@ typedef $$MessagesTableCreateCompanionBuilder = MessagesCompanion Function({
   Value<int> id,
   required String chatJid,
   required String sender,
+  Value<String> stanzaId,
   required String body,
   Value<DateTime> timestamp,
   Value<String> encMode,
   required bool incoming,
+  Value<bool> delivered,
+  Value<bool> isCarbon,
 });
 typedef $$MessagesTableUpdateCompanionBuilder = MessagesCompanion Function({
   Value<int> id,
   Value<String> chatJid,
   Value<String> sender,
+  Value<String> stanzaId,
   Value<String> body,
   Value<DateTime> timestamp,
   Value<String> encMode,
   Value<bool> incoming,
+  Value<bool> delivered,
+  Value<bool> isCarbon,
 });
 
 final class $$MessagesTableReferences
@@ -1597,6 +1761,11 @@ class $$MessagesTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<String> get stanzaId => $composableBuilder(
+    column: $table.stanzaId,
+    builder: (column) => ColumnFilters(column),
+  );
+
   ColumnFilters<String> get body => $composableBuilder(
     column: $table.body,
     builder: (column) => ColumnFilters(column),
@@ -1614,6 +1783,16 @@ class $$MessagesTableFilterComposer
 
   ColumnFilters<bool> get incoming => $composableBuilder(
     column: $table.incoming,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get delivered => $composableBuilder(
+    column: $table.delivered,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isCarbon => $composableBuilder(
+    column: $table.isCarbon,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -1660,6 +1839,11 @@ class $$MessagesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get stanzaId => $composableBuilder(
+    column: $table.stanzaId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get body => $composableBuilder(
     column: $table.body,
     builder: (column) => ColumnOrderings(column),
@@ -1677,6 +1861,16 @@ class $$MessagesTableOrderingComposer
 
   ColumnOrderings<bool> get incoming => $composableBuilder(
     column: $table.incoming,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get delivered => $composableBuilder(
+    column: $table.delivered,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isCarbon => $composableBuilder(
+    column: $table.isCarbon,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -1719,6 +1913,9 @@ class $$MessagesTableAnnotationComposer
   GeneratedColumn<String> get sender =>
       $composableBuilder(column: $table.sender, builder: (column) => column);
 
+  GeneratedColumn<String> get stanzaId =>
+      $composableBuilder(column: $table.stanzaId, builder: (column) => column);
+
   GeneratedColumn<String> get body =>
       $composableBuilder(column: $table.body, builder: (column) => column);
 
@@ -1730,6 +1927,12 @@ class $$MessagesTableAnnotationComposer
 
   GeneratedColumn<bool> get incoming =>
       $composableBuilder(column: $table.incoming, builder: (column) => column);
+
+  GeneratedColumn<bool> get delivered =>
+      $composableBuilder(column: $table.delivered, builder: (column) => column);
+
+  GeneratedColumn<bool> get isCarbon =>
+      $composableBuilder(column: $table.isCarbon, builder: (column) => column);
 
   $$ChatsTableAnnotationComposer get chatJid {
     final $$ChatsTableAnnotationComposer composer = $composerBuilder(
@@ -1786,36 +1989,48 @@ class $$MessagesTableTableManager
                 Value<int> id = const Value.absent(),
                 Value<String> chatJid = const Value.absent(),
                 Value<String> sender = const Value.absent(),
+                Value<String> stanzaId = const Value.absent(),
                 Value<String> body = const Value.absent(),
                 Value<DateTime> timestamp = const Value.absent(),
                 Value<String> encMode = const Value.absent(),
                 Value<bool> incoming = const Value.absent(),
+                Value<bool> delivered = const Value.absent(),
+                Value<bool> isCarbon = const Value.absent(),
               }) => MessagesCompanion(
                 id: id,
                 chatJid: chatJid,
                 sender: sender,
+                stanzaId: stanzaId,
                 body: body,
                 timestamp: timestamp,
                 encMode: encMode,
                 incoming: incoming,
+                delivered: delivered,
+                isCarbon: isCarbon,
               ),
           createCompanionCallback:
               ({
                 Value<int> id = const Value.absent(),
                 required String chatJid,
                 required String sender,
+                Value<String> stanzaId = const Value.absent(),
                 required String body,
                 Value<DateTime> timestamp = const Value.absent(),
                 Value<String> encMode = const Value.absent(),
                 required bool incoming,
+                Value<bool> delivered = const Value.absent(),
+                Value<bool> isCarbon = const Value.absent(),
               }) => MessagesCompanion.insert(
                 id: id,
                 chatJid: chatJid,
                 sender: sender,
+                stanzaId: stanzaId,
                 body: body,
                 timestamp: timestamp,
                 encMode: encMode,
                 incoming: incoming,
+                delivered: delivered,
+                isCarbon: isCarbon,
               ),
           withReferenceMapper: (p0) => p0
               .map(

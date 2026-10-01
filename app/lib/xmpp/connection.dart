@@ -17,15 +17,48 @@ class InboundMessage {
   InboundMessage({
     required this.from,
     required this.body,
+    required this.stanzaId,
     this.encryptionError,
+    this.isCarbonCopy = false,
   });
 
   final JID from;
   final String body;
 
+  /// The stanza id, needed to acknowledge delivery (XEP-0184).
+  final String? stanzaId;
+
   /// Non-null when decryption failed; [body] is then empty and the UI
   /// must render an "unable to decrypt" placeholder (never drop it).
   final Object? encryptionError;
+
+  /// True when this is our own message mirrored from another device
+  /// (XEP-0280). Must not be shown as an inbound chat bubble.
+  final bool isCarbonCopy;
+}
+
+/// The peer's typing state (XEP-0085).
+enum TypingState { inactive, composing, paused }
+
+/// Delivery status of an outgoing message (M1/M2).
+enum DeliveryStatus { pending, delivered }
+
+/// A delivery receipt for a message we sent (XEP-0184).
+class DeliveryReceipt {
+  const DeliveryReceipt({required this.from, required this.stanzaId});
+
+  final JID from;
+
+  /// The id of the message stanza that was delivered.
+  final String stanzaId;
+}
+
+/// The peer's typing state within one chat (XEP-0085).
+class TypingNotification {
+  const TypingNotification({required this.from, required this.state});
+
+  final JID from;
+  final TypingState state;
 }
 
 /// Connection lifecycle state surfaced to the UI.
@@ -45,16 +78,34 @@ class XmppService {
   XmppConnection? _connection;
   omemo_dart.OmemoManager? _omemo;
   OmemoManager? _moxxOmemo;
+  CarbonsManager? _carbons;
   StreamSubscription<XmppEvent>? _eventsSub;
   final _inbound = StreamController<InboundMessage>.broadcast();
+  final _deliveryReceipts = StreamController<DeliveryReceipt>.broadcast();
+  final _typingStates = StreamController<TypingNotification>.broadcast();
   XmppConnectionState _state = XmppConnectionState.disconnected;
 
   set shouldEncrypt(ShouldEncrypt fn) => _shouldEncrypt = fn;
 
   XmppConnectionState get state => _state;
   Stream<InboundMessage> get inbound => _inbound.stream;
+
+  /// Receipts for messages we sent (XEP-0184).
+  Stream<DeliveryReceipt> get deliveryReceipts => _deliveryReceipts.stream;
+
+  /// Peer typing/composing notifications (XEP-0085).
+  Stream<TypingNotification> get typingStates => _typingStates.stream;
+
   OmemoManager? get moxxOmemo => _moxxOmemo;
   omemo_dart.OmemoManager? get omemo => _omemo;
+
+  /// True once the server accepted our Carbons enable request.
+  bool get carbonsEnabled => _carbonsEnabled;
+  bool _carbonsEnabled = false;
+
+  /// Whether MAM was negotiated. Always false until the MAM manager
+  /// lands (moxxmpp master ships no XEP-0313 implementation).
+  bool get mamAvailable => false;
 
   /// Connects, logs in, and attaches roster/MAM-bootstrap managers.
   /// Returns true on successful SASL + resource binding.
@@ -87,12 +138,16 @@ class XmppService {
         port: port,
       );
 
+    _carbons = CarbonsManager();
     await connection.registerManagers([
       PresenceManager(),
       RosterManager(rosterState ?? TestingRosterStateManager(null, const [])),
       DiscoManager(const []),
       PubSubManager(),
       MessageManager(),
+      MessageDeliveryReceiptManager(),
+      ChatStateManager(),
+      _carbons!,
       _moxxOmemo!,
     ]);
     await connection.registerFeatureNegotiators([
@@ -110,6 +165,10 @@ class XmppService {
     _connection = ok ? connection : null;
     _state =
         ok ? XmppConnectionState.connected : XmppConnectionState.disconnected;
+    if (ok) {
+      _carbonsEnabled = await _carbons!.enableCarbons();
+      _log.info('carbons: $_carbonsEnabled');
+    }
     _log.info('connect($jid): $ok');
     return ok;
   }
@@ -118,6 +177,8 @@ class XmppService {
   Future<int> ensureOmemoDevice({int opkAmount = 20}) async {
     // TODO(M5): persist the device in SQLCipher + Keystore instead of
     // generating fresh each install; publish rotation on prekey low-water.
+    // Until then, every app start creates a new device id, which slowly
+    // pollutes our own PEP device list.
     final device = await omemo_dart.OmemoDevice.generateNewDevice(
       _connection!.connectionSettings.jid.toBare().toString(),
       opkAmount: opkAmount,
@@ -150,15 +211,51 @@ class XmppService {
         : const [];
   }
 
-  Future<void> sendPlainText(JID to, String body) async {
-    final mm =
-        _connection?.getManagerById<MessageManager>(messageManager);
+  /// Sends a chat message, requesting a delivery receipt (XEP-0184).
+  /// Returns the stanza id used for the receipt, or null on failure.
+  Future<String?> sendPlainText(
+    JID to,
+    String body, {
+    bool requestReceipt = true,
+  }) async {
+    final mm = _connection?.getManagerById<MessageManager>(messageManager);
     if (mm == null) throw StateError('not connected');
+    final id = _nextStanzaId();
     await mm.sendMessage(
       to,
-      TypedMap<StanzaHandlerExtension>.fromList([MessageBodyData(body)]),
+      TypedMap<StanzaHandlerExtension>.fromList([
+        MessageBodyData(body),
+        MessageIdData(id),
+        if (requestReceipt)
+          const MessageDeliveryReceiptData(true),
+      ]),
       type: 'chat',
     );
+    return id;
+  }
+
+  /// Publishes our typing state to [to] (XEP-0085).
+  Future<void> sendChatState(JID to, TypingState state) async {
+    final mm = _connection?.getManagerById<MessageManager>(messageManager);
+    if (mm == null) throw StateError('not connected');
+    final xmppState = switch (state) {
+      TypingState.composing => ChatState.composing,
+      TypingState.paused => ChatState.paused,
+      TypingState.inactive => ChatState.active,
+    };
+    await mm.sendMessage(
+      to,
+      TypedMap<StanzaHandlerExtension>.fromList([xmppState]),
+      type: 'chat',
+    );
+  }
+
+  var _stanzaCounter = 0;
+
+  /// Locally-unique stanza id. XEP-0184 receipts reference this value.
+  String _nextStanzaId() {
+    _stanzaCounter++;
+    return 'resonchat-${DateTime.now().microsecondsSinceEpoch}-$_stanzaCounter';
   }
 
   Future<void> disconnect() async {
@@ -172,14 +269,37 @@ class XmppService {
   void _onEvent(XmppEvent event) {
     if (event is MessageEvent) {
       final error = event.encryptionError;
+      // A carbon is our own message from another resource: it must not be
+      // stored as an inbound bubble (docs/03 §4).
+      final isCarbon = event.get<CarbonsData>()?.isCarbon ?? false;
+      final state = event.get<ChatState>();
+      if (state != null) {
+        _typingStates.add(
+          TypingNotification(
+            from: event.from,
+            state: switch (state) {
+              ChatState.composing => TypingState.composing,
+              ChatState.paused => TypingState.paused,
+              _ => TypingState.inactive,
+            },
+          ),
+        );
+        // A chat-state-only message carries no body; nothing to store.
+        return;
+      }
       _inbound.add(
         InboundMessage(
           from: event.from,
-          body: error != null
-              ? ''
-              : (event.get<MessageBodyData>()?.body ?? ''),
+          body:
+              error != null ? '' : (event.get<MessageBodyData>()?.body ?? ''),
+          stanzaId: event.id,
           encryptionError: error,
+          isCarbonCopy: isCarbon,
         ),
+      );
+    } else if (event is DeliveryReceiptReceivedEvent) {
+      _deliveryReceipts.add(
+        DeliveryReceipt(from: event.from, stanzaId: event.id),
       );
     }
   }

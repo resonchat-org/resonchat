@@ -32,11 +32,21 @@ class Messages extends Table {
   IntColumn get id => integer().autoIncrement()();
   TextColumn get chatJid => text().references(Chats, #jid)();
   TextColumn get sender => text()();
+
+  /// Stanza id, used to match XEP-0184 delivery receipts.
+  TextColumn get stanzaId => text().withDefault(const Constant(''))();
   TextColumn get body => text()();
   DateTimeColumn get timestamp =>
       dateTime().withDefault(currentDateAndTime)();
   TextColumn get encMode => text().withDefault(const Constant('none'))();
   BoolColumn get incoming => boolean()();
+
+  /// False until a delivery receipt arrives (XEP-0184).
+  BoolColumn get delivered => boolean().withDefault(const Constant(false))();
+
+  /// Set when this message came from another of our own devices
+  /// (XEP-0280 carbon), so the UI can avoid a duplicate bubble.
+  BoolColumn get isCarbon => boolean().withDefault(const Constant(false))();
 }
 
 /// Roster cache + RFC 6121 version, persisted for roster versioning.
@@ -112,22 +122,39 @@ class AppDatabase extends _$AppDatabase {
     });
   }
 
+  /// Chat list, newest activity first. `jid` breaks ties because drift
+  /// stores DateTime at second precision.
   Stream<List<Chat>> watchChats() => (select(chats)
-        ..orderBy([(c) => OrderingTerm.desc(c.lastActivity)]))
+        ..orderBy([
+          (c) => OrderingTerm.desc(c.lastActivity),
+          (c) => OrderingTerm.asc(c.jid),
+        ]))
       .watch();
 
+  /// Messages in conversation order. `timestamp` first (so imported
+  /// history sorts correctly), then `id` as the insertion-order
+  /// tiebreaker for same-second messages.
   Stream<List<Message>> watchMessages(String chatJid) =>
       (select(messages)
             ..where((m) => m.chatJid.equals(chatJid))
-            ..orderBy([(m) => OrderingTerm.asc(m.timestamp)]))
+            ..orderBy([
+              (m) => OrderingTerm.asc(m.timestamp),
+              (m) => OrderingTerm.asc(m.id),
+            ]))
           .watch();
 
-  Future<void> upsertChat(String jid, {String? title}) async {
+  /// Creates or updates a chat row. [at] overrides the activity timestamp
+  /// (tests and MAM imports need deterministic ordering).
+  Future<void> upsertChat(
+    String jid, {
+    String? title,
+    DateTime? at,
+  }) async {
     await into(chats).insertOnConflictUpdate(
       ChatsCompanion(
         jid: Value(jid),
         title: Value(title ?? jid),
-        lastActivity: Value(DateTime.now()),
+        lastActivity: Value(at ?? DateTime.now()),
       ),
     );
   }
@@ -135,10 +162,40 @@ class AppDatabase extends _$AppDatabase {
   Future<void> insertMessage(MessagesCompanion message) async {
     await transaction(() async {
       await into(messages).insert(message);
+      // Bump the chat's activity only when the message is newer than what
+      // we already recorded (importing old history must not regress it).
+      final ts = message.timestamp.present
+          ? message.timestamp.value
+          : DateTime.now();
       await (update(chats)
-            ..where((c) => c.jid.equals(message.chatJid.value)))
-          .write(ChatsCompanion(lastActivity: Value(DateTime.now())));
+            ..where((c) =>
+                c.jid.equals(message.chatJid.value) &
+                c.lastActivity.isSmallerThanValue(ts)))
+          .write(ChatsCompanion(lastActivity: Value(ts)));
     });
+  }
+
+  /// Marks one of our outgoing messages as delivered (XEP-0184).
+  /// Returns the number of rows updated (0 when the id is unknown).
+  Future<int> markDelivered(String chatJid, String stanzaId) {
+    return (update(messages)
+          ..where((m) =>
+              m.chatJid.equals(chatJid) &
+              m.stanzaId.equals(stanzaId) &
+              m.incoming.equals(false)))
+        .write(const MessagesCompanion(delivered: Value(true)));
+  }
+
+  /// Finds an already-stored inbound message by its stanza id, so that a
+  /// second copy (e.g. carbon + direct delivery) is not duplicated.
+  Future<int?> findByStanzaId(String chatJid, String stanzaId) async {
+    if (stanzaId.isEmpty) return null;
+    final row = await (select(messages)
+          ..where((m) =>
+              m.chatJid.equals(chatJid) & m.stanzaId.equals(stanzaId))
+          ..limit(1))
+        .getSingleOrNull();
+    return row?.id;
   }
 }
 
