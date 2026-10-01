@@ -26,6 +26,15 @@
   app 侧 `dependency_overrides` 覆盖为本地路径。
 - `moxxmpp_socket_tcp/pubspec.yaml`：`environment.sdk` 由 `>=2.17.5 <3.0.0`
   提升为 `>=3.0.0 <4.0.0`，与主包及当前 Dart SDK（3.13）对齐。
+- **并入 MAM（XEP-0313）**：上游 master 无该实现，从 `feat/mam` 分支
+  （commit `67ce94d`，含 `09f331b` + `b67bd02`）取增量，涉及
+  `lib/src/xeps/xep_0313.dart`（新文件）、`awaiter.dart`、`connection.dart`、
+  `events.dart`、`managers/namespaces.dart`、`message.dart`、`namespaces.dart`、
+  `stanza.dart`、`util/incoming_queue.dart`、`lib/moxxmpp.dart`。
+  注意：该分支基于 FAST 迁移到 `xep_0484` 之前，因此 `lib/moxxmpp.dart` **不能**
+  整文件照抄（会导出已不存在的 `staging/fast.dart` 并丢掉 `xep_0484` 导出），
+  实际做法是保留 master 版并手工加一行 `xep_0313.dart` 导出。
+- 同步新增 `examples_dart/bin/mam_example.dart`（上游示例）。
 
 **omemo_dart**
 - `pubspec.yaml`：删除 `publish_to`；`moxlib` 的 `hosted:` 声明保留，由 app 侧覆盖。
@@ -40,8 +49,8 @@
 
 ## 后续工作
 
-- **MAM（XEP-0313）**：上游 master 无 `xep_0313.dart`，未合并实现位于
-  `feat/mam` 分支（commit `67ce94d`）。需 cherry-pick 或自写后再接入。
+- **MAM（XEP-0313）**：已并入（见上）。若上游日后合并 `feat/mam`，rebase 时
+  需特别留意 `lib/moxxmpp.dart` 的导出顺序差异。
 - **B 轨（PQ-OMEMO）**：按 ADR-006，PQ 代码放在 app 侧 `lib/omemo/` 与 `lib/pq/`，
   保持 omemo_dart 上游零侵入；A 轨继续完全委托 omemo_dart，以确保与
   Conversations 等客户端互通。

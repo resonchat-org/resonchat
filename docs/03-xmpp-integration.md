@@ -4,7 +4,7 @@
 
 ## 1. 依赖能力（moxxmpp 已具备）
 
-> 补充（2026-10 实测）：上表 `MAM (XEP-0313)` 一项**不成立**——moxxmpp master 无 `xep_0313.dart`，未合并的实现在上游 `feat/mam` 分支。M1 必须先补齐此缺口。其余项（Carbons、PubSub/PEP、EME、0384、0045、0085、0184、0030）已核实存在。
+> 补充（2026-10 实测）：上表 `MAM (XEP-0313)` 一项**上游 master 并不存在**——moxxmpp master 无 `xep_0313.dart`，未合并的实现位于上游 `feat/mam` 分支。本项目已从该分支取增量并入 fork（详见 `packages/README.md`），集成后按 XEP-0313 拉取历史，归档消息携带 `MAMData` 扩展（含原始发送时间），与实时消息走同一条解密与入库管线。其余项（Carbons、PubSub/PEP、EME、0384、0045、0085、0184、0030）已核实存在。
 >
 > 另：OMEMO 相关代码已核实在 moxxmpp `lib/src/xeps/xep_0384/`，命名空间为 `urn:xmpp:omemo:2`（与 docs/02 一致）。
 
@@ -14,7 +14,7 @@
 | Roster | RFC 6121 | 联系人 |
 | 消息回执 | XEP-0184 | 送达状态 |
 | 输入状态 | XEP-0085 | 「正在输入」 |
-| 消息归档 | XEP-0313 (MAM) | 历史同步 |
+| 历史归档 | XEP-0313 (MAM) | 历史同步（经 fork 并入上游 `feat/mam`） |
 | 消息副本 | XEP-0280 (Carbons) | 多设备同步 |
 | 实体能力 | XEP-0115 | 缓存能力（辅助） |
 | 服务发现 | XEP-0030 (disco) | 能力查询（辅助） |

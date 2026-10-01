@@ -69,6 +69,21 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         );
   }
 
+  Future<void> _loadHistory() async {
+    final xmpp = ref.read(xmppServiceProvider);
+    final count = await xmpp.fetchHistory(JID.fromString(widget.chatJid));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          count == null
+              ? 'Could not load history (server may not support MAM)'
+              : 'Loaded $count archived message(s)',
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final messages = ref.watch(messagesProvider(widget.chatJid));
@@ -80,6 +95,11 @@ class _ChatPageState extends ConsumerState<ChatPage> {
           EncBadge(
             label: encModeLabel(mode),
             locked: mode != EncMode.none,
+          ),
+          IconButton(
+            icon: const Icon(Icons.history),
+            tooltip: 'Load history (MAM)',
+            onPressed: _loadHistory,
           ),
           IconButton(
             icon: const Icon(Icons.verified_user),

@@ -43,7 +43,8 @@ class _ChatsPageState extends ConsumerState<ChatsPage> {
           sender: Value(msg.from.toString()),
           stanzaId: Value(stanzaId),
           body: Value(msg.encryptionError != null ? '' : msg.body),
-          timestamp: Value(DateTime.now()),
+          // Archived messages keep their original send time.
+          timestamp: Value(msg.archiveTimestamp ?? DateTime.now()),
           encMode: Value(msg.encryptionError != null ? 'error' : 'none'),
           incoming: const Value(true),
         ),

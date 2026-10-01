@@ -9,6 +9,14 @@ typedef _StanzaCompositeKey = (String?, String, String);
 /// Callback function that returns the bare JID of the connection as a String.
 typedef GetBareJidCallback = String Function();
 
+/// (The completer to be completed when the response is received, flag indicating
+///  whether the response can bypass the queue)
+// ignore: avoid_private_typedef_functions
+typedef _PendingData = (Completer<XMLNode>, bool);
+
+/// (Is the stanza awaited, can it bypass the queue)
+typedef IsAwaitedResult = (bool, bool);
+
 /// This class handles the await semantics for stanzas. Stanzas are given a "unique"
 /// key equal to the tuple (to, id, tag) with which their response is identified.
 ///
@@ -23,7 +31,7 @@ class StanzaAwaiter {
   final GetBareJidCallback _bareJidCallback;
 
   /// The pending stanzas, identified by their surrogate key.
-  final Map<_StanzaCompositeKey, Completer<XMLNode>> _pending = {};
+  final Map<_StanzaCompositeKey, _PendingData> _pending = {};
 
   /// The critical section for accessing [StanzaAwaiter._pending].
   final Lock _lock = Lock();
@@ -34,13 +42,18 @@ class StanzaAwaiter {
   /// [tag] is the stanza's tag name.
   ///
   /// Returns a future that might resolve to the response to the stanza.
-  Future<Future<XMLNode>> addPending(String? to, String id, String tag) async {
+  Future<Future<XMLNode>> addPending(
+    String? to,
+    String id,
+    String tag, {
+    bool responseCanBypassQueue = true,
+  }) async {
     // Check if we want to send a stanza to our bare JID and replace it with null.
     final processedTo = to != null && to == _bareJidCallback() ? null : to;
 
     final completer = await _lock.synchronized(() {
       final completer = Completer<XMLNode>();
-      _pending[(processedTo, id, tag)] = completer;
+      _pending[(processedTo, id, tag)] = (completer, responseCanBypassQueue);
       return completer;
     });
 
@@ -66,8 +79,9 @@ class StanzaAwaiter {
     );
 
     return _lock.synchronized(() {
-      final completer = _pending[key];
-      if (completer != null) {
+      final pending = _pending[key];
+      if (pending != null) {
+        final (completer, _) = pending;
         _pending.remove(key);
         completer.complete(stanza);
         return true;
@@ -79,9 +93,9 @@ class StanzaAwaiter {
 
   /// Checks if [stanza] represents a stanza that is awaited. Returns true, if [stanza]
   /// is awaited. False, if not.
-  Future<bool> isAwaited(XMLNode stanza) async {
+  Future<IsAwaitedResult> isAwaited(XMLNode stanza) async {
     final id = stanza.attributes['id'] as String?;
-    if (id == null) return false;
+    if (id == null) return (false, false);
 
     final key = (
       stanza.attributes['from'] as String?,
@@ -89,6 +103,12 @@ class StanzaAwaiter {
       stanza.tag,
     );
 
-    return _lock.synchronized(() => _pending.containsKey(key));
+    final result = await _lock.synchronized(() => _pending[key]);
+    if (result == null) {
+      return (false, false);
+    }
+
+    final (_, canBypass) = result;
+    return (true, canBypass);
   }
 }

@@ -31,6 +31,9 @@ const roomInfoFormType = 'http://jabber.org/protocol/muc#roominfo';
 const vCardTempXmlns = 'vcard-temp';
 const vCardTempUpdate = 'vcard-temp:x:update';
 
+// XEP-0059
+const rsmXmlns = 'http://jabber.org/protocol/rsm';
+
 // XEP-0060
 const pubsubXmlns = 'http://jabber.org/protocol/pubsub';
 const pubsubEventXmlns = 'http://jabber.org/protocol/pubsub#event';
@@ -87,6 +90,9 @@ const hashFunctionNameBaseXmlns = 'urn:xmpp:hash-function-text-names';
 
 // XEP-0308
 const lmcXmlns = 'urn:xmpp:message-correct:0';
+
+// XEP-0313
+const mamXmlns = 'urn:xmpp:mam:2';
 
 // XEP-0333
 const chatMarkersXmlns = 'urn:xmpp:chat-markers:0';
@@ -166,6 +172,7 @@ const stickersXmlns = 'urn:xmpp:stickers:0';
 
 // XEP-0461
 const replyXmlns = 'urn:xmpp:reply:0';
+const fallbackXmlns = 'urn:xmpp:feature-fallback:0';
 
 // ???
 const urlDataXmlns = 'http://jabber.org/protocol/url-data';

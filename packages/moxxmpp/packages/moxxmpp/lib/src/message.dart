@@ -13,6 +13,12 @@ import 'package:moxxmpp/src/xeps/xep_0447.dart';
 import 'package:moxxmpp/src/xeps/xep_0449.dart';
 import 'package:moxxmpp/src/xeps/xep_0461.dart';
 
+extension StringToJid on String {
+  JID toJID() {
+    return JID.fromString(this);
+  }
+}
+
 /// A callback that is called whenever a message is sent using
 /// [MessageManager.sendMessage]. The input the typed map that is passed to
 /// sendMessage.
@@ -85,8 +91,8 @@ class MessageManager extends XmppManagerBase {
 
     getAttributes().sendEvent(
       MessageEvent(
-        JID.fromString(state.stanza.attributes['from']! as String),
-        JID.fromString(state.stanza.attributes['to']! as String),
+        (state.stanza.attributes['from']! as String).toJID(),
+        (state.stanza.attributes['to'] as String?)?.toJID(),
         state.encrypted,
         state.extensions,
         id: state.stanza.attributes['id'] as String?,

@@ -14,6 +14,7 @@ class StanzaDetails {
     this.encrypted = false,
     this.forceEncryption = false,
     this.bypassQueue = false,
+    this.responseBypassesQueue = true,
     this.postSendExtensions,
   });
 
@@ -44,6 +45,9 @@ class StanzaDetails {
   /// now, where it's okay if it does not get sent.
   /// This should never have to be set to true.
   final bool bypassQueue;
+
+  /// If the response is awaited, then prevent that response from bypassing the queue.
+  final bool responseBypassesQueue;
 
   /// This makes the Stream Management implementation, when available, ignore the stanza,
   /// meaning that it gets counted but excluded from resending.

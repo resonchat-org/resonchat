@@ -92,6 +92,7 @@ class IncomingStanzaQueue {
     }
 
     object as XMPPStreamElement;
-    return _stanzaAwaiter.isAwaited(object.node);
+    final (awaited, canBypass) = await _stanzaAwaiter.isAwaited(object.node);
+    return awaited && canBypass;
   }
 }

@@ -553,6 +553,7 @@ class XmppConnection {
         data.stanza.to,
         data.stanza.id!,
         data.stanza.tag,
+        responseCanBypassQueue: details.responseBypassesQueue,
       )
           .then((result) {
         entry.completer!.complete(result);
@@ -698,10 +699,12 @@ class XmppConnection {
         );
         try {
           state = await handler.callback(state.stanza, state);
-        } catch (ex) {
-          _log.severe(
-            'Handler from $managerName for ${stanza.tag} (${stanza.attributes["id"]}) failed with "$ex"',
-          );
+        } catch (ex, st) {
+          _log
+            ..severe(
+              'Handler from $managerName for ${stanza.tag} (${stanza.attributes["id"]}) failed with "$ex"',
+            )
+            ..severe('Stacktrace:\n$st');
         }
         if (state.done || state.cancel) {
           _log.finest(

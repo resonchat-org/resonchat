@@ -82,7 +82,7 @@ class MessageEvent extends XmppEvent {
   final JID from;
 
   /// The to attribute of the message.
-  final JID to;
+  final JID? to;
 
   /// The id attribute of the message.
   final String? id;

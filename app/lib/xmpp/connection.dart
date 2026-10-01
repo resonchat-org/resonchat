@@ -20,6 +20,8 @@ class InboundMessage {
     required this.stanzaId,
     this.encryptionError,
     this.isCarbonCopy = false,
+    this.fromArchive = false,
+    this.archiveTimestamp,
   });
 
   final JID from;
@@ -35,6 +37,13 @@ class InboundMessage {
   /// True when this is our own message mirrored from another device
   /// (XEP-0280). Must not be shown as an inbound chat bubble.
   final bool isCarbonCopy;
+
+  /// True when the message came from the MAM archive (XEP-0313) rather
+  /// than live delivery.
+  final bool fromArchive;
+
+  /// Original send time for archived messages; live messages use now().
+  final DateTime? archiveTimestamp;
 }
 
 /// The peer's typing state (XEP-0085).
@@ -103,9 +112,10 @@ class XmppService {
   bool get carbonsEnabled => _carbonsEnabled;
   bool _carbonsEnabled = false;
 
-  /// Whether MAM was negotiated. Always false until the MAM manager
-  /// lands (moxxmpp master ships no XEP-0313 implementation).
-  bool get mamAvailable => false;
+  /// Whether the server advertises the MAM archive (XEP-0313). Queried
+  /// lazily; cached per connection.
+  bool get mamAvailable => _mamAvailable;
+  bool _mamAvailable = false;
 
   /// Connects, logs in, and attaches roster/MAM-bootstrap managers.
   /// Returns true on successful SASL + resource binding.
@@ -147,6 +157,7 @@ class XmppService {
       MessageManager(),
       MessageDeliveryReceiptManager(),
       ChatStateManager(),
+      MessageArchiveManagementManager(),
       _carbons!,
       _moxxOmemo!,
     ]);
@@ -167,10 +178,49 @@ class XmppService {
         ok ? XmppConnectionState.connected : XmppConnectionState.disconnected;
     if (ok) {
       _carbonsEnabled = await _carbons!.enableCarbons();
-      _log.info('carbons: $_carbonsEnabled');
+      _mamAvailable = await _isMamAvailable();
+      _log.info('carbons: $_carbonsEnabled, mam: $_mamAvailable');
     }
     _log.info('connect($jid): $ok');
     return ok;
+  }
+
+  /// Asks the server whether it keeps a message archive.
+  Future<bool> _isMamAvailable() async {
+    final dm = _connection?.getManagerById<DiscoManager>(discoManager);
+    if (dm == null) return false;
+    try {
+      return await dm.supportsFeature(
+        _connection!.connectionSettings.serverJid,
+        mamXmlns,
+      );
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Pulls archived messages for one chat (XEP-0313).
+  ///
+  /// Returned messages are replayed through the normal inbound pipeline
+  /// (with `fromArchive` set), so they are decrypted and stored exactly
+  /// like live traffic. [beforeId] pages backwards through history;
+  /// returns the number of messages the server sent, or null on error.
+  Future<int?> fetchHistory(
+    JID chatJid, {
+    String? beforeId,
+    int? pageSize = 50,
+  }) async {
+    final mm =
+        _connection?.getManagerById<MessageArchiveManagementManager>(
+              mamManager,
+            );
+    if (mm == null) return null;
+    final result = await mm.requestMessages(
+      chatJid,
+      beforeId: beforeId,
+      pageSize: pageSize,
+    );
+    return result.isType<int>() ? result.get<int>() : null;
   }
 
   /// Creates (or restores) our OMEMO device. Call after [connect].
@@ -272,6 +322,7 @@ class XmppService {
       // A carbon is our own message from another resource: it must not be
       // stored as an inbound bubble (docs/03 §4).
       final isCarbon = event.get<CarbonsData>()?.isCarbon ?? false;
+      final mam = event.get<MAMData>();
       final state = event.get<ChatState>();
       if (state != null) {
         _typingStates.add(
@@ -295,6 +346,8 @@ class XmppService {
           stanzaId: event.id,
           encryptionError: error,
           isCarbonCopy: isCarbon,
+          fromArchive: mam != null,
+          archiveTimestamp: mam?.delay.timestamp,
         ),
       );
     } else if (event is DeliveryReceiptReceivedEvent) {
