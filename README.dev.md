@@ -67,26 +67,29 @@ flutter build apk --debug
 
 ## 当前实现状态
 
-验证：`dart analyze lib test` 无告警 · `flutter test` 35 项通过 · `flutter build apk --debug` 成功。
+验证：`dart analyze lib test` 无告警 · `flutter test` 42 项通过 · `flutter build apk --debug` 成功。
 
 存储层注意：drift 的 DateTime 默认按**秒**存储，故消息排序以 `timestamp` + 自增 `id` 兜底，
 会话活跃时间仅在变新时更新（导入旧历史不会让列表回退）。
+
+OMEMO 设备密钥注意：`cryptography` 的 `SecretBox.concatenation()` 布局是
+**nonce‖ciphertext‖mac**，解密须用 `SecretBox.fromConcatenation`，不要手工按偏移切分。
 
 | 里程碑 | 状态 |
 |---|---|
 | M0 工程骨架 | ✅ 应用/包结构、fork 接线、CI、分析与测试全绿、Android debug APK 可构建 |
 | M1 通信基线 | ✅ 连接/SASL SCRAM-SHA-256、资源绑定、roster（drift 持久化 + RFC 6121 版本）、明文收发、XEP-0184 回执、XEP-0085 输入状态、XEP-0280 Carbons、**XEP-0313 MAM**（已从上游 `feat/mam` 并入）、drift 消息存储、最小 UI。剩余验证项：与真实服务端/客户端的双账号互发 |
-| M2 标准 OMEMO | 🟡 moxxmpp `OmemoManager` + `omemo_dart` 已接线，设备/bundle 发布、指纹、TOFU 委托上游；**与 Conversations 的真实互通尚未验证**（需真机 + 测试账号 + 本地 prosody） |
+| M2 标准 OMEMO | 🟡 moxxmpp `OmemoManager` + `omemo_dart` 已接线，设备/bundle 发布、指纹、TOFU 委托上游，**设备密钥已持久化**（Keystore 封存 + drift 存储）；**与 Conversations 的真实互通尚未验证**（需真机 + 测试账号 + 本地 prosody） |
 | M3 PQ 内核 | 🟡 PQXDH KDF、ML-KEM-768 抽象与纯 Dart 实现、双轨 bundle/消息编解码已有测试覆盖；**liboqs FFI 尚未接入**，B 轨会话建立（ratchet 接线）未做 |
 | M4 协商与回退 | 🟡 `decideEncMode` 状态机（纯函数，有测试）与 B 轨 PEP 能力查询已完成；UI 徽标为静态，尚未由能力驱动 |
-| M5 存储与保护 | ⬜ 仅明文 SQLite + 路径；SQLCipher、Keystore、密钥备份未做（代码中留有 TODO） |
+| M5 存储与保护 | 🟡 OMEMO 设备密钥已用 Keystore 封存后落库（M5 的骨架就位）；SQLCipher 加密数据库、密钥备份/恢复、「不保存明文」选项未做 |
 | M6 UI | ⬜ 当前为功能性最小 UI，主题 token 只是起始值，未做 Telegram 观感打磨 |
 | M7 发布 | ⬜ |
 
 ## 关键待办（下一步优先级）
 
 1. **M2 互通实测（最高优先级）**：起本地 prosody + 两个账号，与 Conversations 双向加解密；这是整个项目的关键路径，M2 不过关就不该投 M3。
-2. **OMEMO 设备持久化**：当前 `ensureOmemoDevice` 每次安装重新生成设备 id（M5 前也需先做，否则重启后自己的 PEP 设备列表会膨胀）。
-3. **B 轨会话接线**：PQXDH 已能派生 root/chain key，需接到 ratchet 与收发流程。
-4. **liboqs FFI**：替换 `pqcrypto` 纯 Dart 实现，走 `OQS_MINIMAL_BUILD="KEM_ml_kem_768;SIG_ml_dsa_65"`，注意 Android 15 的 16KB page 对齐。
-5. **OMEMO 加密开关接线**：`encModeProvider` 目前恒为 `none`，需按会话能力驱动 `ShouldEncrypt`。
+2. **B 轨会话接线**：PQXDH 已能派生 root/chain key，需接到 ratchet 与收发流程。
+3. **liboqs FFI**：替换 `pqcrypto` 纯 Dart 实现，走 `OQS_MINIMAL_BUILD="KEM_ml_kem_768;SIG_ml_dsa_65"`，注意 Android 15 的 16KB page 对齐。
+4. **OMEMO 加密开关接线**：`encModeProvider` 目前恒为 `none`，需按会话能力驱动 `ShouldEncrypt`。
+5. **一次性预密钥补充**：设备恢复后 OPK 池会随使用消耗，需实现低水位自动补充并重发 bundle。

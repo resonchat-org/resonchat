@@ -80,6 +80,22 @@ class AppDatabase extends _$AppDatabase {
   Future<List<RosterEntry>> allRosterEntries() =>
       (select(rosterEntries)).get();
 
+  Future<String?> metaValue(String key) async {
+    final row = await (select(meta)..where((m) => m.key.equals(key)))
+        .getSingleOrNull();
+    return row?.value;
+  }
+
+  Future<void> setMetaValue(String key, String value) async {
+    await into(meta).insertOnConflictUpdate(
+      MetaCompanion(key: Value(key), value: Value(value)),
+    );
+  }
+
+  Future<void> deleteMetaValue(String key) async {
+    await (delete(meta)..where((m) => m.key.equals(key))).go();
+  }
+
   Future<String?> rosterVersion() async {
     final row = await (select(meta)
           ..where((m) => m.key.equals('roster_version')))

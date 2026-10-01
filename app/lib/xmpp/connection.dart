@@ -12,6 +12,8 @@ import 'package:moxxmpp/moxxmpp.dart';
 import 'package:moxxmpp_socket_tcp/moxxmpp_socket_tcp.dart';
 import 'package:omemo_dart/omemo_dart.dart' as omemo_dart;
 
+import '../store/omemo_device_store.dart';
+
 /// Decrypted inbound chat message, either track or plaintext.
 class InboundMessage {
   InboundMessage({
@@ -78,11 +80,17 @@ enum XmppConnectionState { disconnected, connecting, connected }
 typedef ShouldEncrypt = Future<bool> Function(JID to);
 
 class XmppService {
-  XmppService({ShouldEncrypt? shouldEncrypt})
-      : _shouldEncrypt = shouldEncrypt ?? ((_) async => false);
+  XmppService({
+    ShouldEncrypt? shouldEncrypt,
+    this.deviceStore,
+  }) : _shouldEncrypt = shouldEncrypt ?? ((_) async => false);
 
   final Logger _log = Logger('XmppService');
   ShouldEncrypt _shouldEncrypt;
+
+  /// Where our OMEMO device keys are persisted. When null the device is
+  /// generated fresh each launch (development fallback only).
+  final OmemoDeviceStore? deviceStore;
 
   XmppConnection? _connection;
   omemo_dart.OmemoManager? _omemo;
@@ -224,15 +232,27 @@ class XmppService {
   }
 
   /// Creates (or restores) our OMEMO device. Call after [connect].
+  ///
+  /// Restoring matters: a fresh device id on every start would keep
+  /// appending to our own PEP device list and make peers encrypt to
+  /// devices we no longer hold keys for.
   Future<int> ensureOmemoDevice({int opkAmount = 20}) async {
-    // TODO(M5): persist the device in SQLCipher + Keystore instead of
-    // generating fresh each install; publish rotation on prekey low-water.
-    // Until then, every app start creates a new device id, which slowly
-    // pollutes our own PEP device list.
-    final device = await omemo_dart.OmemoDevice.generateNewDevice(
-      _connection!.connectionSettings.jid.toBare().toString(),
-      opkAmount: opkAmount,
-    );
+    final bareJid =
+        _connection!.connectionSettings.jid.toBare().toString();
+
+    omemo_dart.OmemoDevice device;
+    final restored = await deviceStore?.load();
+    if (restored != null && restored.jid == bareJid) {
+      device = restored;
+      _log.info('restored OMEMO device ${device.id}');
+    } else {
+      device = await omemo_dart.OmemoDevice.generateNewDevice(
+        bareJid,
+        opkAmount: opkAmount,
+      );
+      _log.info('generated new OMEMO device ${device.id}');
+    }
+
     _omemo = omemo_dart.OmemoManager(
       device,
       omemo_dart.BlindTrustBeforeVerificationTrustManager(),
@@ -247,6 +267,12 @@ class XmppService {
     final published = await _moxxOmemo!.publishBundle(bundle);
     if (!published.isType<bool>() || !published.get<bool>()) {
       _log.warning('OMEMO bundle publish reported failure');
+    }
+
+    // Persist after a successful publish so we never store keys the
+    // server does not know about.
+    if (published.isType<bool>() && published.get<bool>()) {
+      await deviceStore?.save(device);
     }
     return id;
   }
