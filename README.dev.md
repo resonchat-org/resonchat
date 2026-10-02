@@ -67,29 +67,50 @@ flutter build apk --debug
 
 ## 当前实现状态
 
-验证：`dart analyze lib test` 无告警 · `flutter test` 42 项通过 · `flutter build apk --debug` 成功。
+验证：`dart analyze lib test tool integration_test` 无告警 · `flutter test` 79 项通过 ·
+`flutter build apk --debug` 成功 · liboqs 参考程序构建 · 设备端 native 集成测试通过。
 
-存储层注意：drift 的 DateTime 默认按**秒**存储，故消息排序以 `timestamp` + 自增 `id` 兜底，
-会话活跃时间仅在变新时更新（导入旧历史不会让列表回退）。
+### 已踩过的坑（避免重蹈）
 
-OMEMO 设备密钥注意：`cryptography` 的 `SecretBox.concatenation()` 布局是
-**nonce‖ciphertext‖mac**，解密须用 `SecretBox.fromConcatenation`，不要手工按偏移切分。
+| 坑 | 现象 | 正确做法 |
+|---|---|---|
+| `cryptography` 的 `SecretBox.concatenation()` | 返回「密文 **+ 零填充**」，不是线格式 | 用 `cipherText` 再显式拼 tag；解密用 `SecretBox.fromConcatenation` |
+| moxxmpp `OmemoManager.publishBundle` | 返回的 bool 是 `isType<PubSubError>()`，**true 表示失败** | 与 `PubSubManager.publish` 语义相反，别混用 |
+| SASL 机制 | 只注册 SCRAM-SHA-256 时，对端只提供 PLAIN/SHA-1 就完全登不上 | 按强度降级注册：sha256→sha512→sha1→PLAIN |
+| `OMEMOAuthenticatedMessage` | 不能手工拼 `message`+`mac` | 必须用 `writeToBuffer()` / `fromBuffer()` |
+| Double Ratchet 关联数据 | `IK_发起方 ‖ IK_接收方` 顺序反了不会报错，只是每条消息都解密失败 | 两侧顺序必须一致 |
+| ratchet 存储 key | 同一 ratchet 挂两个 key 会状态污染 | 每个远端设备只存一份，以 (对端jid, 对端id) 为 key |
+| `calloc.asTypedList()` | 返回的视图在 `free` 后仍被使用（use-after-free，不崩只静默出错） | 先 `Uint8List.fromList` 复制再释放 |
+| C 符号导出 | `-fvisibility=hidden` 下 `.so` 能加载但符号全找不到 | 导出函数加 `__attribute__((visibility("default")))` |
+| adb 输入法 | 中文 TTS IME 会吞掉 `@` 和 `.` | 用 `--dart-define` 注入凭据做无人值守测试 |
 
 | 里程碑 | 状态 |
 |---|---|
 | M0 工程骨架 | ✅ 应用/包结构、fork 接线、CI、分析与测试全绿、Android debug APK 可构建 |
 | M1 通信基线 | ✅ 连接/SASL SCRAM-SHA-256、资源绑定、roster（drift 持久化 + RFC 6121 版本）、明文收发、XEP-0184 回执、XEP-0085 输入状态、XEP-0280 Carbons、**XEP-0313 MAM**（已从上游 `feat/mam` 并入）、drift 消息存储、最小 UI。剩余验证项：与真实服务端/客户端的双账号互发 |
 | M2 标准 OMEMO | 🟡 moxxmpp `OmemoManager` + `omemo_dart` 已接线，设备/bundle 发布、指纹、TOFU 委托上游，**设备密钥已持久化**（Keystore 封存 + drift 存储）；**与 Conversations 的真实互通尚未验证**（需真机 + 测试账号 + 本地 prosody） |
-| M3 PQ 内核 | 🟡 PQXDH KDF、ML-KEM-768 抽象与纯 Dart 实现、双轨 bundle/消息编解码已有测试覆盖；**liboqs FFI 尚未接入**，B 轨会话建立（ratchet 接线）未做 |
-| M4 协商与回退 | 🟡 `decideEncMode` 状态机（纯函数，有穷举测试）、B 轨 PEP 能力查询、`CapabilityService`（5 分钟缓存 + 并发去重 + `reliable` 标记）已完成，并已接到 moxxmpp 的 `ShouldEncrypt`：**A 轨加密现在会自动生效**；B 轨加密（PQ 消息构造与 ratchet 接线）未做 |
+| M3 PQ 内核 | ✅ PQXDH → Double Ratchet 接线完成；liboqs FFI 在设备实测（`backend: liboqs (native)`）且与纯 Dart 逐字节等价；**双账号跨服务器真实互测通过**（conversations.im ↔ jabber.fr，10/10 检查）；PQ bundle 已真实发布到服务器 |
+| M4 协商与回退 | 🟡 `decideEncMode` 状态机（穷举测试）、B 轨 PEP 能力查询、`CapabilityService`（缓存 + 并发去重 + `reliable` 标记）均已接到发送路径：A 轨自动加密，B 轨优先、失败回落。**PEP 变更订阅触发缓存失效仍未做**（目前只靠 TTL） |
 | M5 存储与保护 | 🟡 OMEMO 设备密钥已用 Keystore 封存后落库（M5 的骨架就位）；SQLCipher 加密数据库、密钥备份/恢复、「不保存明文」选项未做 |
-| M6 UI | ⬜ 当前为功能性最小 UI，主题 token 只是起始值，未做 Telegram 观感打磨 |
+| M6 UI | 🟡 已按 docs/05 重做：TG 色板（真实采样自 ThemeColors.java）、CustomPainter 气泡带尾角、日期分隔、未读线、会话列表两行布局、滚动到底 FAB、输入栏（空输入变麦克风）。动画、平板适配、资料页未做 |
 | M7 发布 | ⬜ |
 
 ## 关键待办（下一步优先级）
 
-1. **M2 互通实测（最高优先级）**：起本地 prosody + 两个账号，与 Conversations 双向加解密；这是整个项目的关键路径，M2 不过关就不该投 M3。
-2. **B 轨会话接线**：PQXDH 已能派生 root/chain key，需接到 ratchet 与收发流程（B 轨目前只有编解码与能力查询）。
-3. **liboqs FFI**：替换 `pqcrypto` 纯 Dart 实现，走 `OQS_MINIMAL_BUILD="KEM_ml_kem_768;SIG_ml_dsa_65"`，注意 Android 15 的 16KB page 对齐。
-4. **一次性预密钥补充**：设备恢复后 OPK 池会随使用消耗，需实现低水位自动补充并重发 bundle。
-5. **PEP 变更订阅**：收到对端设备列表/bundle 变更通知时调用 `CapabilityService.invalidate`，目前缓存只靠 TTL 过期。
+1. **M2 互通实测（仍未完成，优先级最高）**：与**真实 Conversations 客户端**双向加解密。已验证登录、roster、OMEMO bundle 发布与线格式合规，但从未与真正的 Conversations 交换过一条加密消息。docs/06 明确要求此验收先行，需要一台装了 Conversations 的设备。
+2. **PEP 变更订阅**：收到对端设备列表/bundle 变更通知时调用 `CapabilityService.invalidate`，目前缓存只靠 TTL 过期。
+3. **SQLCipher 加密数据库**：消息与棘轮状态目前仍是明文 SQLite。
+4. **PQ 预密钥补充**：A 轨已有 `replenishPrekeys`；B 轨的 ML-KEM 一次性预密钥池尚无低水位补充。
+5. **liboqs on iOS**：当前只编译了 arm64-v8a 与 x86_64 两个 Android ABI。
+6. **UI 打磨**：见 docs/05，当前为主题 token + 气泡 + 两页布局，未做动画与平板适配。
+
+## 已完成的验证工具
+
+| 工具 | 用途 |
+|---|---|
+| `tool/smoke_test.sh <jid> <pass>` | 无人值守登录冒烟（`--dart-define` 注入凭据，仅 debug 生效） |
+| `tool/interop_probe.dart <jid> <pass> [peer]` | A 轨 bundle 线格式与 PEP 发布校验 |
+| `tool/pq_interop.dart <jidA> <passA> <jidB> <passB>` | **B 轨双账号真实互测**：PQ 加解密 + PEP 能力发现 |
+| `tool/build_liboqs.sh` | 构建 liboqs 静态库与 KAT 参考程序 |
+| `tool/previews/` | 把 UI 渲染成 PNG 供设计评审 |
+| `integration_test/native_pq_test.dart` | 设备上确认实际加载的是 native liboqs 还是纯 Dart |
