@@ -9,6 +9,7 @@
 // stay interoperable.
 
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:logging/logging.dart';
 import 'package:moxxmpp/moxxmpp.dart';
@@ -55,7 +56,11 @@ class BTrackManager {
   /// Creates (or restores) the local B-track device and publishes it.
   ///
   /// Called after connect; safe to call again to refresh the bundle.
-  Future<bool> initialise(String bareJid, {int opkCount = 20}) async {
+  Future<bool> initialise(
+    String bareJid, {
+    int opkCount = 20,
+    int pqCount = 5,
+  }) async {
     final pm = pubsubOf();
     if (pm == null) {
       _log.warning('no PubSub manager; B track unavailable');
@@ -65,7 +70,7 @@ class BTrackManager {
     final device = await PqDevice.generate(
       bareJid,
       opkCount: opkCount,
-      pqOpkCount: 5,
+      pqOpkCount: pqCount,
       kem: MlKem768Provider.instance.kem,
     );
     final sessions = PqSessionManager(kem: MlKem768Provider.instance.kem);
@@ -88,6 +93,10 @@ class BTrackManager {
     _log.info(
       published ? 'PQ bundle published' : 'PQ bundle publish failed',
     );
+    if (published) {
+      // Ensure the PQ one-time pool matches [pqOpkCount].
+      await replenishPrekeys(target: pqCount);
+    }
     return published;
   }
 
@@ -177,6 +186,44 @@ class BTrackManager {
       return null;
     }
     return session.layer.decrypt(message);
+  }
+
+  /// Refills the ML-KEM one-time prekey pool back up to [target] and
+  /// republishes the bundle.
+  ///
+  /// Mirrors what [XmppService.replenishPrekeys] does for the A track: each
+  /// new inbound B-track session consumes one PQ one-time prekey, and once
+  /// the pool drains every later handshake falls back to the signed PQ
+  /// prekey, which weakens the forward secrecy of those sessions.
+  ///
+  /// Returns the number of keys added.
+  Future<int> replenishPrekeys({int target = 5}) async {
+    final session = _session;
+    if (session == null) return 0;
+
+    var added = 0;
+    final kem = MlKem768Provider.instance.kem;
+    final existing = session.device.pqOpks.keys.toSet();
+    while (existing.length < target) {
+      final id = _freshId(existing);
+      existing.add(id);
+      session.device.pqOpks[id] = kem.generateKeyPair();
+      added++;
+    }
+    if (added == 0) return 0;
+
+    _log.info('replenished $added ML-KEM one-time prekey(s)');
+    await publish();
+    return added;
+  }
+
+  static int _freshId(Set<int> taken) {
+    final rnd = Random.secure();
+    var id = rnd.nextInt(0x7FFFFFFF);
+    while (id == 0 || taken.contains(id)) {
+      id = rnd.nextInt(0x7FFFFFFF);
+    }
+    return id;
   }
 
   /// Whether [peerJid] is fully PQ-capable, i.e. every one of its devices
