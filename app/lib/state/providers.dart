@@ -195,6 +195,25 @@ final chatTrackProvider =
   return override ?? await global;
 });
 
+/// Full-text search across every conversation, newest first.
+///
+/// Null while the needle is empty, so a caller can tell "no search running"
+/// from "a search that found nothing" — a blank results list and an unopened
+/// search must not look the same.
+final messageSearchProvider =
+    StreamProvider.autoDispose.family<List<Message>, String>((ref, needle) {
+  if (needle.trim().isEmpty) return Stream.value(const []);
+  return ref.watch(databaseProvider).searchMessages(needle);
+});
+
+/// Search inside one conversation.
+final chatMessageSearchProvider =
+    StreamProvider.autoDispose.family<List<Message>, ({String chatJid, String needle})>(
+  (ref, args) {
+  if (args.needle.trim().isEmpty) return Stream.value(const []);
+  return ref.watch(databaseProvider).searchInChat(args.chatJid, args.needle);
+});
+
 /// Reaction chips for the message whose addressable id is [targetId].
 ///
 /// Keyed on the id rather than the message row because that is what a reaction

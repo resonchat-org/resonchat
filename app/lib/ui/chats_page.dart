@@ -14,6 +14,7 @@ import '../xmpp/connection.dart';
 import '../omemo/track.dart';
 import '../state/providers.dart';
 import '../store/database.dart';
+import 'search.dart';
 import 'theme.dart';
 
 class ChatsPage extends ConsumerStatefulWidget {
@@ -88,7 +89,10 @@ class _ChatsPageState extends ConsumerState<ChatsPage> {
         actions: [
           IconButton(
             icon: const Icon(Icons.search),
-            onPressed: () {},
+            tooltip: 'Search messages',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const SearchPage()),
+            ),
           ),
           IconButton(
             icon: const Icon(Icons.settings),

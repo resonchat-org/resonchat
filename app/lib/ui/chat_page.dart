@@ -23,6 +23,7 @@ import '../xmpp/reactions.dart';
 import '../xmpp/retraction.dart';
 import '../xmpp/replies.dart';
 import 'message_actions.dart';
+import 'search.dart';
 import 'message_bubble.dart';
 import 'track_dialogs.dart';
 import 'theme.dart';
@@ -612,6 +613,15 @@ class _ChatPageState extends ConsumerState<ChatPage> {
             label: track.label,
             locked: track != Track.none,
             onTap: () => showTrackPicker(context, ref, widget.chatJid),
+          ),
+          IconButton(
+            icon: const Icon(Icons.search),
+            tooltip: 'Search in this chat',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => SearchPage(chatJid: widget.chatJid),
+              ),
+            ),
           ),
           IconButton(
             icon: const Icon(Icons.history),

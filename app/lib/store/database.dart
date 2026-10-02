@@ -82,9 +82,13 @@ class Messages extends Table {
   /// for the person who sent it.
   BoolColumn get retracted => boolean().withDefault(const Constant(false))();
 
-  /// When the retraction arrived, for ordering the "deleted" placeholder.
-  DateTimeColumn get retractedAt =>
-      dateTime().withDefault(currentDateAndTime)();
+  /// When the retraction arrived.
+  ///
+  /// Nullable with no default, deliberately: a SQL default would fill this on
+  /// every row, so `retractedAt != null` would be true of every message and the
+  /// column could not answer the only question anyone asks of it. This is the
+  /// same reasoning as [editedAt] below.
+  DateTimeColumn get retractedAt => dateTime().nullable()();
 
   /// Origin-id of the message this one replies to (XEP-0461), or empty.
   TextColumn get replyTo => text().withDefault(const Constant(''))();
@@ -194,7 +198,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
   @override
-  int get schemaVersion => 7;
+  int get schemaVersion => 9;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -207,6 +211,59 @@ class AppDatabase extends _$AppDatabase {
             await customStatement(
               "ALTER TABLE messages ADD COLUMN delivery_error TEXT NOT NULL "
               "DEFAULT ''",
+            );
+          }
+          if (from < 9) {
+            // retracted_at was created with a NOT NULL default, so every row
+            // has a value and the column cannot say whether the message was
+            // actually retracted. drift cannot change a column's nullability in
+            // place, and SQLite cannot either, so the column is rebuilt.
+            await customStatement('ALTER TABLE messages RENAME TO messages_old');
+            await customStatement(
+              'CREATE TABLE messages ('
+              'id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, '
+              'chat_jid TEXT NOT NULL REFERENCES chats (jid), '
+              'sender TEXT NOT NULL, '
+              'stanza_id TEXT NOT NULL DEFAULT \'\', '
+              'body TEXT NOT NULL, '
+              'timestamp INTEGER NOT NULL, '
+              'enc_mode TEXT NOT NULL DEFAULT \'none\', '
+              'incoming INTEGER NOT NULL, '
+              'delivered INTEGER NOT NULL DEFAULT 0, '
+              'is_carbon INTEGER NOT NULL DEFAULT 0, '
+              'delivery_error TEXT NOT NULL DEFAULT \'\', '
+              'retracted INTEGER NOT NULL DEFAULT 0, '
+              'retracted_at INTEGER, '
+              'reply_to TEXT NOT NULL DEFAULT \'\', '
+              'reply_body TEXT NOT NULL DEFAULT \'\', '
+              'reply_author TEXT NOT NULL DEFAULT \'\', '
+              'edited_at INTEGER)',
+            );
+            // `retracted` rather than `retracted_at` decides what counts: an
+            // existing row with retracted = 1 keeps a timestamp, and one with 0
+            // gets none.
+            await customStatement(
+              'INSERT INTO messages '
+              'SELECT id, chat_jid, sender, stanza_id, body, timestamp, '
+              'enc_mode, incoming, delivered, is_carbon, delivery_error, '
+              'retracted, '
+              'CASE WHEN retracted = 1 THEN \'2026-01-01 00:00:00\' ELSE NULL END, '
+              'reply_to, reply_body, reply_author, edited_at '
+              'FROM messages_old',
+            );
+            await customStatement('DROP TABLE messages_old');
+            await customStatement(
+              'CREATE INDEX IF NOT EXISTS messages_chat_time '
+              'ON messages (chat_jid, timestamp)',
+            );
+          }
+          if (from < 8) {
+            // The chat-list and message-list queries both filter on chat_jid and
+            // order by timestamp. Without this every conversation open scans the
+            // whole messages table.
+            await customStatement(
+              'CREATE INDEX IF NOT EXISTS messages_chat_time '
+              'ON messages (chat_jid, timestamp)',
             );
           }
           if (from < 7) {
@@ -600,6 +657,89 @@ class AppDatabase extends _$AppDatabase {
               (m) => OrderingTerm.asc(m.id),
             ]))
           .watch();
+
+  /// Makes [needle] safe to interpolate into a `LIKE` pattern.
+  ///
+  /// `%` and `_` are wildcards in SQL, so a user typing them gets matches that
+  /// have nothing to do with what they asked for — `%%%` in particular is true
+  /// of every row, which turns "I typed three percent signs" into "here is
+  /// your entire history". `escape` tells SQLite to treat `\` as the escape
+  /// character, so the wildcards become literal.
+  ///
+  /// Also collapses a needle that is nothing but wildcards to a string that
+  /// cannot match, because `ESCAPE` alone leaves `%%%` matching everything.
+  static String _likePattern(String needle) {
+    final escaped = needle
+        .replaceAll('\\', '\\\\')
+        .replaceAll('%', '\\%')
+        .replaceAll('_', '\\_');
+    if (escaped.replaceAll(RegExp(r'\\'), '').trim().isEmpty) {
+      // Only wildcards (or nothing). There is no honest result for this query.
+      return '\\x00';
+    }
+    return '%$escaped%';
+  }
+
+  /// Messages whose body contains [needle], newest first.
+  ///
+  /// Case-insensitive, because a user typing "ok" is looking for "OK" too, and
+  /// because making them reach for a capitals toggle to find their own message
+  /// is the kind of friction that gets reported as "search is broken".
+  ///
+  /// Excludes two kinds of row, because a result the user cannot act on is
+  /// worse than a missing result:
+  ///   * messages we could not open — their body is a placeholder, and matching
+  ///     the placeholder text would send them looking for words nobody wrote;
+  ///   * retracted messages — the body is kept on purpose so the sender can
+  ///     still read what they said, and a user who deleted it does not expect
+  ///     to find it again in search.
+  ///
+  /// Only ever consulted from a search, never on the message-list path: a `LIKE`
+  /// scan per keystroke over a table that grows with the archive is fine, but
+  /// running it for every conversation in the chat list is not.
+  Stream<List<Message>> searchMessages(String needle, {int limit = 200}) {
+    final trimmed = needle.trim();
+    if (trimmed.isEmpty) return Stream.value(const []);
+    final pattern = _likePattern(trimmed);
+    return (select(messages)
+          ..where(
+            (m) =>
+                m.body.like(pattern, escapeChar: r'\') &
+                m.retracted.equals(false) &
+                m.encMode.equals('error').not(),
+          )
+          ..orderBy([
+            (m) => OrderingTerm.desc(m.timestamp),
+            (m) => OrderingTerm.desc(m.id),
+          ])
+          ..limit(limit))
+        .watch();
+  }
+
+  /// Searches within one conversation.
+  Stream<List<Message>> searchInChat(
+    String chatJid,
+    String needle, {
+    int limit = 200,
+  }) {
+    final trimmed = needle.trim();
+    if (trimmed.isEmpty) return Stream.value(const []);
+    final pattern = _likePattern(trimmed);
+    return (select(messages)
+          ..where(
+            (m) =>
+                m.chatJid.equals(chatJid) &
+                m.body.like(pattern, escapeChar: r'\') &
+                m.retracted.equals(false) &
+                m.encMode.equals('error').not(),
+          )
+          ..orderBy([
+            (m) => OrderingTerm.desc(m.timestamp),
+            (m) => OrderingTerm.desc(m.id),
+          ])
+          ..limit(limit))
+        .watch();
+  }
 
   /// Creates or updates a chat row. [at] overrides the activity timestamp
   /// (tests and MAM imports need deterministic ordering).
