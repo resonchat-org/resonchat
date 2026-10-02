@@ -98,6 +98,9 @@ class MessageBubble extends StatelessWidget {
     this.retracted = false,
     this.edited = false,
     this.mine = false,
+    this.replyTo = '',
+    this.replyBody = '',
+    this.replyAuthor = '',
     this.onReact,
     this.onLongPress,
     this.onTap,
@@ -129,6 +132,20 @@ class MessageBubble extends StatelessWidget {
   /// Whether we sent it. Decides the wording of the retracted placeholder: the
   /// person who hit "delete" is the only one who can tell that it worked.
   final bool mine;
+
+  /// Origin-id of the message this one replies to, or empty.
+  final String replyTo;
+
+  /// The quoted text, copied onto this row rather than looked up.
+  ///
+  /// Copied because the quoted message is the one most likely to disappear: a
+  /// retraction is one tap away, and a quote that empties out the moment its
+  /// target is deleted leaves the reader with "replying to" and nothing under
+  /// it.
+  final String replyBody;
+
+  /// Nickname of the quoted message's author.
+  final String replyAuthor;
 
   /// Shown above the bubble in group chats, tinted per sender.
   final String? senderName;
@@ -167,6 +184,10 @@ class MessageBubble extends StatelessWidget {
                   fontWeight: FontWeight.w500,
                 ),
               ),
+            ),
+          if (replyTo.isNotEmpty && !retracted) _ReplyQuote(
+              body: replyBody,
+              author: replyAuthor,
             ),
           GestureDetector(
             onTap: onTap,
@@ -258,6 +279,72 @@ class MessageBubble extends StatelessWidget {
                 ],
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The quoted block drawn above a reply.
+///
+/// The quote sits *outside* the bubble, above it, the way Telegram and
+/// Conversations both draw it: it is not part of what was said, and putting it
+/// inside would make the reply look longer than it is.
+class _ReplyQuote extends StatelessWidget {
+  const _ReplyQuote({required this.body, required this.author});
+
+  final String body;
+  final String author;
+
+  @override
+  Widget build(BuildContext context) {
+    final tg = context.tg;
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 12,
+        right: 12,
+        bottom: 3,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 3,
+            // As tall as the text it labels; a fixed height either floats
+            // above a one-line quote or runs past a long one.
+            constraints: const BoxConstraints(minHeight: 18),
+            margin: const EdgeInsets.only(top: 2, right: 8),
+            color: tg.accent,
+          ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (author.isNotEmpty)
+                  Text(
+                    author,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: TgDimens.timeFontSize,
+                      fontWeight: FontWeight.w600,
+                      color: tg.accent,
+                    ),
+                  ),
+                Text(
+                  body,
+                  // Two lines: enough to recognise the message being answered,
+                  // not so much that the quote competes with the reply.
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: TgDimens.timeFontSize,
+                    color: tg.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );

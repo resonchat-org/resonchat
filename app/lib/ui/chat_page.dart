@@ -21,6 +21,7 @@ import '../store/database.dart';
 import '../xmpp/connection.dart';
 import '../xmpp/reactions.dart';
 import '../xmpp/retraction.dart';
+import '../xmpp/replies.dart';
 import 'message_actions.dart';
 import 'message_bubble.dart';
 import 'track_dialogs.dart';
@@ -52,6 +53,13 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
   /// Id of the message whose quick-reaction strip is open, or null.
   String? _reactingToId;
+
+  /// The message being replied to: its id, its text, and who wrote it.
+  ///
+  /// Held as three values rather than a row because the transcript rebuilds
+  /// underneath the composer, and a reply composer pointing at a row it no
+  /// longer holds would quote nothing.
+  ({String id, String body, String author})? _replyingTo;
   StreamSubscription<DeliveryFailure>? _failureSub;
 
   @override
@@ -231,7 +239,17 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       chosen = substituted;
     }
 
-    final outcome = await xmpp.sendOnTrack(peer, text, track: chosen);
+    final reply = _replyingTo;
+    final outcome = reply == null
+        ? await xmpp.sendOnTrack(peer, text, track: chosen)
+        : await sendReply(
+            xmpp,
+            to: peer,
+            body: text,
+            targetId: reply.id,
+            track: chosen,
+            quoteBody: reply.body,
+          );
     if (!outcome.sent) {
       // It was sendable a moment ago and is not now — a bundle went stale, or
       // the session dropped. Say so rather than showing a bubble that looks
@@ -256,8 +274,17 @@ class _ChatPageState extends ConsumerState<ChatPage> {
             // the one lie this app must not tell.
             encMode: Value(EncModeToken.of(outcome.track).wire),
             incoming: const Value(false),
+            // The quote is copied onto this row. Looking it up from the target
+            // message would empty the quote out the moment that message is
+            // retracted — and retracting it is one tap away.
+            replyTo: Value(reply?.id ?? ''),
+            replyBody: Value(reply?.body ?? ''),
+            replyAuthor: Value(reply?.author ?? ''),
           ),
         );
+    if (reply != null) {
+      setState(() => _replyingTo = null);
+    }
     return outcome;
   }
 
@@ -364,6 +391,19 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     if (!mounted || choice == null) return;
 
     switch (choice) {
+      case MessageAction.reply:
+        setState(() {
+          _replyingTo = (
+            id: message.stanzaId,
+            body: body,
+            author: message.incoming
+                ? widget.chatJid
+                : 'You',
+          );
+        });
+        // The keyboard is what the user wants next; opening the composer
+        // without it leaves them typing at nothing.
+        WidgetsBinding.instance.addPostFrameCallback((_) => _focus.requestFocus());
       case MessageAction.react:
         setState(() => _reactingToId = message.stanzaId);
       case MessageAction.copy:
@@ -610,6 +650,12 @@ class _ChatPageState extends ConsumerState<ChatPage> {
           // Editing replaces the input bar rather than sitting above it: two
           // text fields in one chat is ambiguous about which one a keystroke
           // goes to.
+          if (_replyingTo != null && _editingId == null)
+            ReplyPreview(
+              author: _replyingTo!.author,
+              body: _replyingTo!.body,
+              onCancel: () => setState(() => _replyingTo = null),
+            ),
           if (_editingId != null)
             EditComposer(
               initialText: _editingBody,

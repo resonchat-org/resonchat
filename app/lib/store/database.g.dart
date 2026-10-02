@@ -500,6 +500,42 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     requiredDuringInsert: false,
     defaultValue: currentDateAndTime,
   );
+  static const VerificationMeta _replyToMeta = const VerificationMeta(
+    'replyTo',
+  );
+  @override
+  late final GeneratedColumn<String> replyTo = GeneratedColumn<String>(
+    'reply_to',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _replyBodyMeta = const VerificationMeta(
+    'replyBody',
+  );
+  @override
+  late final GeneratedColumn<String> replyBody = GeneratedColumn<String>(
+    'reply_body',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _replyAuthorMeta = const VerificationMeta(
+    'replyAuthor',
+  );
+  @override
+  late final GeneratedColumn<String> replyAuthor = GeneratedColumn<String>(
+    'reply_author',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
   static const VerificationMeta _editedAtMeta = const VerificationMeta(
     'editedAt',
   );
@@ -526,6 +562,9 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     deliveryError,
     retracted,
     retractedAt,
+    replyTo,
+    replyBody,
+    replyAuthor,
     editedAt,
   ];
   @override
@@ -629,6 +668,27 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         ),
       );
     }
+    if (data.containsKey('reply_to')) {
+      context.handle(
+        _replyToMeta,
+        replyTo.isAcceptableOrUnknown(data['reply_to']!, _replyToMeta),
+      );
+    }
+    if (data.containsKey('reply_body')) {
+      context.handle(
+        _replyBodyMeta,
+        replyBody.isAcceptableOrUnknown(data['reply_body']!, _replyBodyMeta),
+      );
+    }
+    if (data.containsKey('reply_author')) {
+      context.handle(
+        _replyAuthorMeta,
+        replyAuthor.isAcceptableOrUnknown(
+          data['reply_author']!,
+          _replyAuthorMeta,
+        ),
+      );
+    }
     if (data.containsKey('edited_at')) {
       context.handle(
         _editedAtMeta,
@@ -696,6 +756,18 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         DriftSqlType.dateTime,
         data['${effectivePrefix}retracted_at'],
       )!,
+      replyTo: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}reply_to'],
+      )!,
+      replyBody: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}reply_body'],
+      )!,
+      replyAuthor: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}reply_author'],
+      )!,
       editedAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}edited_at'],
@@ -747,6 +819,21 @@ class Message extends DataClass implements Insertable<Message> {
   /// When the retraction arrived, for ordering the "deleted" placeholder.
   final DateTime retractedAt;
 
+  /// Origin-id of the message this one replies to (XEP-0461), or empty.
+  final String replyTo;
+
+  /// The quoted text, copied into this row.
+  ///
+  /// Denormalised on purpose. A quote is only useful if it still reads
+  /// correctly after the quoted message is deleted, retracted, or simply never
+  /// loaded — and the quoted message is the thing most likely to disappear,
+  /// since retracting it is a normal thing to do. Re-reading it from the target
+  /// row means a reply turns into an empty quote the moment its target goes.
+  final String replyBody;
+
+  /// Nickname of the quoted message's author, for the same reason.
+  final String replyAuthor;
+
   /// Set once this message was corrected (XEP-0308).
   ///
   /// Null for an uncorrected message so "edited" is only claimed when it
@@ -767,6 +854,9 @@ class Message extends DataClass implements Insertable<Message> {
     required this.deliveryError,
     required this.retracted,
     required this.retractedAt,
+    required this.replyTo,
+    required this.replyBody,
+    required this.replyAuthor,
     this.editedAt,
   });
   @override
@@ -785,6 +875,9 @@ class Message extends DataClass implements Insertable<Message> {
     map['delivery_error'] = Variable<String>(deliveryError);
     map['retracted'] = Variable<bool>(retracted);
     map['retracted_at'] = Variable<DateTime>(retractedAt);
+    map['reply_to'] = Variable<String>(replyTo);
+    map['reply_body'] = Variable<String>(replyBody);
+    map['reply_author'] = Variable<String>(replyAuthor);
     if (!nullToAbsent || editedAt != null) {
       map['edited_at'] = Variable<DateTime>(editedAt);
     }
@@ -806,6 +899,9 @@ class Message extends DataClass implements Insertable<Message> {
       deliveryError: Value(deliveryError),
       retracted: Value(retracted),
       retractedAt: Value(retractedAt),
+      replyTo: Value(replyTo),
+      replyBody: Value(replyBody),
+      replyAuthor: Value(replyAuthor),
       editedAt: editedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(editedAt),
@@ -831,6 +927,9 @@ class Message extends DataClass implements Insertable<Message> {
       deliveryError: serializer.fromJson<String>(json['deliveryError']),
       retracted: serializer.fromJson<bool>(json['retracted']),
       retractedAt: serializer.fromJson<DateTime>(json['retractedAt']),
+      replyTo: serializer.fromJson<String>(json['replyTo']),
+      replyBody: serializer.fromJson<String>(json['replyBody']),
+      replyAuthor: serializer.fromJson<String>(json['replyAuthor']),
       editedAt: serializer.fromJson<DateTime?>(json['editedAt']),
     );
   }
@@ -851,6 +950,9 @@ class Message extends DataClass implements Insertable<Message> {
       'deliveryError': serializer.toJson<String>(deliveryError),
       'retracted': serializer.toJson<bool>(retracted),
       'retractedAt': serializer.toJson<DateTime>(retractedAt),
+      'replyTo': serializer.toJson<String>(replyTo),
+      'replyBody': serializer.toJson<String>(replyBody),
+      'replyAuthor': serializer.toJson<String>(replyAuthor),
       'editedAt': serializer.toJson<DateTime?>(editedAt),
     };
   }
@@ -869,6 +971,9 @@ class Message extends DataClass implements Insertable<Message> {
     String? deliveryError,
     bool? retracted,
     DateTime? retractedAt,
+    String? replyTo,
+    String? replyBody,
+    String? replyAuthor,
     Value<DateTime?> editedAt = const Value.absent(),
   }) => Message(
     id: id ?? this.id,
@@ -884,6 +989,9 @@ class Message extends DataClass implements Insertable<Message> {
     deliveryError: deliveryError ?? this.deliveryError,
     retracted: retracted ?? this.retracted,
     retractedAt: retractedAt ?? this.retractedAt,
+    replyTo: replyTo ?? this.replyTo,
+    replyBody: replyBody ?? this.replyBody,
+    replyAuthor: replyAuthor ?? this.replyAuthor,
     editedAt: editedAt.present ? editedAt.value : this.editedAt,
   );
   Message copyWithCompanion(MessagesCompanion data) {
@@ -905,6 +1013,11 @@ class Message extends DataClass implements Insertable<Message> {
       retractedAt: data.retractedAt.present
           ? data.retractedAt.value
           : this.retractedAt,
+      replyTo: data.replyTo.present ? data.replyTo.value : this.replyTo,
+      replyBody: data.replyBody.present ? data.replyBody.value : this.replyBody,
+      replyAuthor: data.replyAuthor.present
+          ? data.replyAuthor.value
+          : this.replyAuthor,
       editedAt: data.editedAt.present ? data.editedAt.value : this.editedAt,
     );
   }
@@ -925,6 +1038,9 @@ class Message extends DataClass implements Insertable<Message> {
           ..write('deliveryError: $deliveryError, ')
           ..write('retracted: $retracted, ')
           ..write('retractedAt: $retractedAt, ')
+          ..write('replyTo: $replyTo, ')
+          ..write('replyBody: $replyBody, ')
+          ..write('replyAuthor: $replyAuthor, ')
           ..write('editedAt: $editedAt')
           ..write(')'))
         .toString();
@@ -945,6 +1061,9 @@ class Message extends DataClass implements Insertable<Message> {
     deliveryError,
     retracted,
     retractedAt,
+    replyTo,
+    replyBody,
+    replyAuthor,
     editedAt,
   );
   @override
@@ -964,6 +1083,9 @@ class Message extends DataClass implements Insertable<Message> {
           other.deliveryError == this.deliveryError &&
           other.retracted == this.retracted &&
           other.retractedAt == this.retractedAt &&
+          other.replyTo == this.replyTo &&
+          other.replyBody == this.replyBody &&
+          other.replyAuthor == this.replyAuthor &&
           other.editedAt == this.editedAt);
 }
 
@@ -981,6 +1103,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
   final Value<String> deliveryError;
   final Value<bool> retracted;
   final Value<DateTime> retractedAt;
+  final Value<String> replyTo;
+  final Value<String> replyBody;
+  final Value<String> replyAuthor;
   final Value<DateTime?> editedAt;
   const MessagesCompanion({
     this.id = const Value.absent(),
@@ -996,6 +1121,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     this.deliveryError = const Value.absent(),
     this.retracted = const Value.absent(),
     this.retractedAt = const Value.absent(),
+    this.replyTo = const Value.absent(),
+    this.replyBody = const Value.absent(),
+    this.replyAuthor = const Value.absent(),
     this.editedAt = const Value.absent(),
   });
   MessagesCompanion.insert({
@@ -1012,6 +1140,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     this.deliveryError = const Value.absent(),
     this.retracted = const Value.absent(),
     this.retractedAt = const Value.absent(),
+    this.replyTo = const Value.absent(),
+    this.replyBody = const Value.absent(),
+    this.replyAuthor = const Value.absent(),
     this.editedAt = const Value.absent(),
   }) : chatJid = Value(chatJid),
        sender = Value(sender),
@@ -1031,6 +1162,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Expression<String>? deliveryError,
     Expression<bool>? retracted,
     Expression<DateTime>? retractedAt,
+    Expression<String>? replyTo,
+    Expression<String>? replyBody,
+    Expression<String>? replyAuthor,
     Expression<DateTime>? editedAt,
   }) {
     return RawValuesInsertable({
@@ -1047,6 +1181,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
       if (deliveryError != null) 'delivery_error': deliveryError,
       if (retracted != null) 'retracted': retracted,
       if (retractedAt != null) 'retracted_at': retractedAt,
+      if (replyTo != null) 'reply_to': replyTo,
+      if (replyBody != null) 'reply_body': replyBody,
+      if (replyAuthor != null) 'reply_author': replyAuthor,
       if (editedAt != null) 'edited_at': editedAt,
     });
   }
@@ -1065,6 +1202,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Value<String>? deliveryError,
     Value<bool>? retracted,
     Value<DateTime>? retractedAt,
+    Value<String>? replyTo,
+    Value<String>? replyBody,
+    Value<String>? replyAuthor,
     Value<DateTime?>? editedAt,
   }) {
     return MessagesCompanion(
@@ -1081,6 +1221,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
       deliveryError: deliveryError ?? this.deliveryError,
       retracted: retracted ?? this.retracted,
       retractedAt: retractedAt ?? this.retractedAt,
+      replyTo: replyTo ?? this.replyTo,
+      replyBody: replyBody ?? this.replyBody,
+      replyAuthor: replyAuthor ?? this.replyAuthor,
       editedAt: editedAt ?? this.editedAt,
     );
   }
@@ -1127,6 +1270,15 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     if (retractedAt.present) {
       map['retracted_at'] = Variable<DateTime>(retractedAt.value);
     }
+    if (replyTo.present) {
+      map['reply_to'] = Variable<String>(replyTo.value);
+    }
+    if (replyBody.present) {
+      map['reply_body'] = Variable<String>(replyBody.value);
+    }
+    if (replyAuthor.present) {
+      map['reply_author'] = Variable<String>(replyAuthor.value);
+    }
     if (editedAt.present) {
       map['edited_at'] = Variable<DateTime>(editedAt.value);
     }
@@ -1149,6 +1301,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
           ..write('deliveryError: $deliveryError, ')
           ..write('retracted: $retracted, ')
           ..write('retractedAt: $retractedAt, ')
+          ..write('replyTo: $replyTo, ')
+          ..write('replyBody: $replyBody, ')
+          ..write('replyAuthor: $replyAuthor, ')
           ..write('editedAt: $editedAt')
           ..write(')'))
         .toString();
@@ -2657,6 +2812,9 @@ typedef $$MessagesTableCreateCompanionBuilder = MessagesCompanion Function({
   Value<String> deliveryError,
   Value<bool> retracted,
   Value<DateTime> retractedAt,
+  Value<String> replyTo,
+  Value<String> replyBody,
+  Value<String> replyAuthor,
   Value<DateTime?> editedAt,
 });
 typedef $$MessagesTableUpdateCompanionBuilder = MessagesCompanion Function({
@@ -2673,6 +2831,9 @@ typedef $$MessagesTableUpdateCompanionBuilder = MessagesCompanion Function({
   Value<String> deliveryError,
   Value<bool> retracted,
   Value<DateTime> retractedAt,
+  Value<String> replyTo,
+  Value<String> replyBody,
+  Value<String> replyAuthor,
   Value<DateTime?> editedAt,
 });
 
@@ -2764,6 +2925,21 @@ class $$MessagesTableFilterComposer
 
   ColumnFilters<DateTime> get retractedAt => $composableBuilder(
     column: $table.retractedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get replyTo => $composableBuilder(
+    column: $table.replyTo,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get replyBody => $composableBuilder(
+    column: $table.replyBody,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get replyAuthor => $composableBuilder(
+    column: $table.replyAuthor,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -2865,6 +3041,21 @@ class $$MessagesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get replyTo => $composableBuilder(
+    column: $table.replyTo,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get replyBody => $composableBuilder(
+    column: $table.replyBody,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get replyAuthor => $composableBuilder(
+    column: $table.replyAuthor,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get editedAt => $composableBuilder(
     column: $table.editedAt,
     builder: (column) => ColumnOrderings(column),
@@ -2943,6 +3134,17 @@ class $$MessagesTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<String> get replyTo =>
+      $composableBuilder(column: $table.replyTo, builder: (column) => column);
+
+  GeneratedColumn<String> get replyBody =>
+      $composableBuilder(column: $table.replyBody, builder: (column) => column);
+
+  GeneratedColumn<String> get replyAuthor => $composableBuilder(
+    column: $table.replyAuthor,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<DateTime> get editedAt =>
       $composableBuilder(column: $table.editedAt, builder: (column) => column);
 
@@ -3011,6 +3213,9 @@ class $$MessagesTableTableManager
                 Value<String> deliveryError = const Value.absent(),
                 Value<bool> retracted = const Value.absent(),
                 Value<DateTime> retractedAt = const Value.absent(),
+                Value<String> replyTo = const Value.absent(),
+                Value<String> replyBody = const Value.absent(),
+                Value<String> replyAuthor = const Value.absent(),
                 Value<DateTime?> editedAt = const Value.absent(),
               }) => MessagesCompanion(
                 id: id,
@@ -3026,6 +3231,9 @@ class $$MessagesTableTableManager
                 deliveryError: deliveryError,
                 retracted: retracted,
                 retractedAt: retractedAt,
+                replyTo: replyTo,
+                replyBody: replyBody,
+                replyAuthor: replyAuthor,
                 editedAt: editedAt,
               ),
           createCompanionCallback:
@@ -3043,6 +3251,9 @@ class $$MessagesTableTableManager
                 Value<String> deliveryError = const Value.absent(),
                 Value<bool> retracted = const Value.absent(),
                 Value<DateTime> retractedAt = const Value.absent(),
+                Value<String> replyTo = const Value.absent(),
+                Value<String> replyBody = const Value.absent(),
+                Value<String> replyAuthor = const Value.absent(),
                 Value<DateTime?> editedAt = const Value.absent(),
               }) => MessagesCompanion.insert(
                 id: id,
@@ -3058,6 +3269,9 @@ class $$MessagesTableTableManager
                 deliveryError: deliveryError,
                 retracted: retracted,
                 retractedAt: retractedAt,
+                replyTo: replyTo,
+                replyBody: replyBody,
+                replyAuthor: replyAuthor,
                 editedAt: editedAt,
               ),
           withReferenceMapper: (p0) => p0

@@ -12,15 +12,23 @@
 import 'package:flutter/material.dart';
 
 import '../omemo/track.dart';
+import 'theme.dart';
 
 /// The actions available on one message.
 class MessageActions {
   const MessageActions({
+    required this.canReply,
     required this.canReact,
     required this.canCopy,
     required this.canEdit,
     required this.canRetract,
   });
+
+  /// Replies address a message by its origin-id, so they need an addressable
+  /// one. A message from a client that published no stable id cannot be
+  /// replied to by reference — offering it would produce a reply whose
+  /// `> ` quote is the only link to its target.
+  final bool canReply;
 
   /// Reactions work on anything we can see, including a message we could not
   /// decrypt — that is exactly when the sender most wants to hear that we read
@@ -45,6 +53,7 @@ class MessageActions {
     required bool addressable,
   }) {
     return MessageActions(
+      canReply: !retracted && addressable,
       canReact: !retracted,
       canCopy: decrypted && !retracted,
       canEdit: mine && !retracted && decrypted,
@@ -53,11 +62,11 @@ class MessageActions {
   }
 
   bool get isEmpty =>
-      !canReact && !canCopy && !canEdit && !canRetract;
+      !canReply && !canReact && !canCopy && !canEdit && !canRetract;
 }
 
 /// The result of the menu.
-enum MessageAction { react, copy, edit, retract }
+enum MessageAction { reply, react, copy, edit, retract }
 
 /// Shows the menu and returns what the user picked, or null.
 Future<MessageAction?> showMessageMenu(
@@ -72,6 +81,12 @@ Future<MessageAction?> showMessageMenu(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (actions.canReply)
+            ListTile(
+              leading: const Icon(Icons.reply),
+              title: const Text('Reply'),
+              onTap: () => Navigator.of(context).pop(MessageAction.reply),
+            ),
           if (actions.canReact)
             ListTile(
               leading: const Icon(Icons.add_reaction_outlined),
@@ -162,6 +177,78 @@ class QuickReactionBar extends StatelessWidget {
                 onPressed: onDismissed,
                 icon: const Icon(Icons.close),
                 tooltip: 'Cancel',
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The strip above the input bar while a reply is being written.
+///
+/// Above the input rather than in it: the text being typed is the reply, and
+/// mixing a quote into the same field means the user edits their own reply by
+/// accident.
+class ReplyPreview extends StatelessWidget {
+  const ReplyPreview({
+    super.key,
+    required this.author,
+    required this.body,
+    required this.onCancel,
+  });
+
+  final String author;
+  final String body;
+  final VoidCallback onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.surfaceContainerHigh,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 3,
+                constraints: const BoxConstraints(minHeight: 20),
+                margin: const EdgeInsets.only(top: 2, right: 10),
+                color: theme.colorScheme.primary,
+              ),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Replying to $author',
+                      style: TextStyle(
+                        fontSize: TgDimens.timeFontSize,
+                        fontWeight: FontWeight.w600,
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                    Text(
+                      body,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: TgDimens.timeFontSize,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                onPressed: onCancel,
+                icon: const Icon(Icons.close, size: 18),
+                tooltip: 'Cancel reply',
               ),
             ],
           ),

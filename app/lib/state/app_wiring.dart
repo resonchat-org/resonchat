@@ -218,6 +218,12 @@ Future<void> storeInbound(AppDatabase db, InboundMessage msg) async {
       // id is a fallback and it changes across an archive round trip, so a
       // message keyed on it becomes unaddressable after a MAM import.
       stanzaId: Value(msg.originId ?? stanzaId),
+      // The reply body is the *stripped* one: [ReplyInfo.body] has the `> `
+      // quote already removed when the sender supplied the offsets, so storing
+      // it keeps the bubble free of a duplicated quote.
+      replyTo: Value(msg.reply?.targetId ?? ''),
+      replyBody: Value(msg.reply?.body ?? ''),
+      replyAuthor: Value(msg.from.toBare().toString()),
       // Never store the ciphertext of something we could not open: the
       // placeholder carries the failure, not the payload.
       body: Value(msg.encryptionError != null ? '' : msg.body),

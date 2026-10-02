@@ -86,6 +86,21 @@ class Messages extends Table {
   DateTimeColumn get retractedAt =>
       dateTime().withDefault(currentDateAndTime)();
 
+  /// Origin-id of the message this one replies to (XEP-0461), or empty.
+  TextColumn get replyTo => text().withDefault(const Constant(''))();
+
+  /// The quoted text, copied into this row.
+  ///
+  /// Denormalised on purpose. A quote is only useful if it still reads
+  /// correctly after the quoted message is deleted, retracted, or simply never
+  /// loaded — and the quoted message is the thing most likely to disappear,
+  /// since retracting it is a normal thing to do. Re-reading it from the target
+  /// row means a reply turns into an empty quote the moment its target goes.
+  TextColumn get replyBody => text().withDefault(const Constant(''))();
+
+  /// Nickname of the quoted message's author, for the same reason.
+  TextColumn get replyAuthor => text().withDefault(const Constant(''))();
+
   /// Set once this message was corrected (XEP-0308).
   ///
   /// Null for an uncorrected message so "edited" is only claimed when it
@@ -179,7 +194,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -192,6 +207,19 @@ class AppDatabase extends _$AppDatabase {
             await customStatement(
               "ALTER TABLE messages ADD COLUMN delivery_error TEXT NOT NULL "
               "DEFAULT ''",
+            );
+          }
+          if (from < 7) {
+            // XEP-0461 reply quote, copied onto the replying row so it
+            // survives its target being retracted or never loaded.
+            await customStatement(
+              "ALTER TABLE messages ADD COLUMN reply_to TEXT NOT NULL DEFAULT ''",
+            );
+            await customStatement(
+              "ALTER TABLE messages ADD COLUMN reply_body TEXT NOT NULL DEFAULT ''",
+            );
+            await customStatement(
+              "ALTER TABLE messages ADD COLUMN reply_author TEXT NOT NULL DEFAULT ''",
             );
           }
           if (from < 6) {

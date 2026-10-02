@@ -24,6 +24,7 @@ import 'capabilities.dart';
 import 'pq_incoming.dart';
 import 'pq_stanza.dart';
 import 'reactions.dart';
+import 'replies.dart';
 
 /// Decrypted inbound chat message, either track or plaintext.
 class InboundMessage {
@@ -40,6 +41,7 @@ class InboundMessage {
     this.reactions,
     this.retracts,
     this.corrects,
+    this.reply,
   });
 
   final JID from;
@@ -70,6 +72,14 @@ class InboundMessage {
   /// does not. Null when the sender published no stable id — which happens with
   /// some clients, so callers must have a fallback rather than assume one.
   final String? originId;
+
+  /// The reply metadata this message carries (XEP-0461), or null.
+  ///
+  /// Holds the quoted text as well as the target, because the quote has to be
+  /// stored rather than looked up: the quoted message is the one most likely to
+  /// be retracted, and a quote that empties out when its target is deleted is
+  /// worse than no quote.
+  final ReplyInfo? reply;
 
   /// The id of an earlier message this stanza retracts (XEP-0424).
   final String? retracts;
@@ -306,6 +316,9 @@ class XmppService {
     String body, {
     required Track track,
     bool requestReceipt = true,
+    String? replyTo,
+    String? quoteBody,
+    String? quoteAuthor,
   }) async {
     final caps = await capabilitiesFor(to);
     final resolution = resolveTrack(requested: track, capabilities: caps);
@@ -321,17 +334,43 @@ class XmppService {
       );
     }
 
+    // The fallback body a plain-text reader sees. Built here because it has to
+    // be the same text that goes into the encrypted payload and the one we
+    // strip on the way back in — computing it twice is how a reply arrives with
+    // its own first line quoted.
+    final fallback = replyTo == null || quoteBody == null
+        ? null
+        : buildReplyFallback(quoteBody, body);
+    final wireBody = fallback?.wireBody ?? body;
+
     final String? stanzaId;
     switch (track) {
       case Track.pq:
-        stanzaId = await sendPqMessage(to, body, requestReceipt: requestReceipt);
+        stanzaId = await sendPqMessage(
+          to,
+          wireBody,
+          requestReceipt: requestReceipt,
+          replyTo: replyTo,
+          quoteBody: quoteBody,
+          replyFallback: fallback,
+        );
       case Track.standard:
-        stanzaId = await sendOmemoMessage(to, body, requestReceipt: requestReceipt);
+        stanzaId = await sendOmemoMessage(
+          to,
+          wireBody,
+          requestReceipt: requestReceipt,
+          replyTo: replyTo,
+          quoteBody: quoteBody,
+          replyFallback: fallback,
+        );
       case Track.none:
         stanzaId = await sendUnencryptedMessage(
           to,
-          body,
+          wireBody,
           requestReceipt: requestReceipt,
+          replyTo: replyTo,
+          quoteBody: quoteBody,
+          replyFallback: fallback,
         );
     }
 
@@ -650,6 +689,9 @@ class XmppService {
       // reaction addresses a message by its origin-id.
       StableIdManager(),
       MessageReactionsManager(),
+      // XEP-0461 replies: the quoted text travels in the body fallback, the
+      // reference in a <reply> element.
+      MessageRepliesManager(),
       // XEP-0424 and XEP-0308. Both address an earlier message by its
       // origin-id, which is why they sit next to the stable-id manager.
       MessageRetractionManager(),
@@ -990,6 +1032,9 @@ class XmppService {
     JID to,
     String body, {
     bool requestReceipt = true,
+    String? replyTo,
+    String? quoteBody,
+    ReplyFallback? replyFallback,
   }) async {
     final track = bTrack;
     if (track == null || !track.ready) return null;
@@ -1010,6 +1055,13 @@ class XmppService {
         MessageBodyData(encryptedBodyFallback),
         MessageIdData(id),
         StableIdData(id, const []),
+        if (replyTo != null)
+          ReplyData(
+            replyTo,
+            body: quoteBody,
+            start: replyFallback?.start,
+            end: replyFallback?.end,
+          ),
         if (requestReceipt) const MessageDeliveryReceiptData(true),
         // XEP-0380: declare the track so the receiver can label the message
         // without decrypting it, and so a client that does not know this
@@ -1036,6 +1088,9 @@ class XmppService {
     JID to,
     String body, {
     bool requestReceipt = true,
+    String? replyTo,
+    String? quoteBody,
+    ReplyFallback? replyFallback,
   }) async {
     final mm = _connection?.getManagerById<MessageManager>(messageManager);
     if (mm == null) throw StateError('not connected');
@@ -1045,6 +1100,13 @@ class XmppService {
       TypedMap<StanzaHandlerExtension>.fromList([
         MessageBodyData(body),
         MessageIdData(id),
+        if (replyTo != null)
+          ReplyData(
+            replyTo,
+            body: quoteBody,
+            start: replyFallback?.start,
+            end: replyFallback?.end,
+          ),
         if (requestReceipt) const MessageDeliveryReceiptData(true),
       ]),
       type: 'chat',
@@ -1064,6 +1126,9 @@ class XmppService {
     JID to,
     String body, {
     bool requestReceipt = true,
+    String? replyTo,
+    String? quoteBody,
+    ReplyFallback? replyFallback,
   }) async {
     final connection = _connection;
     if (connection == null) throw StateError('not connected');
@@ -1080,6 +1145,13 @@ class XmppService {
     final children = <XMLNode>[
       MessageBodyData(body).toXML(),
       StableIdData(id, const []).toOriginIdElement(),
+      if (replyTo != null && replyFallback != null)
+        ...replyNodes(
+          targetId: replyTo,
+          quote: quoteBody ?? '',
+          fallback: replyFallback,
+        ),
+
       if (requestReceipt) MessageDeliveryReceiptData(true).toXML(),
     ];
     await connection.sendStanza(
@@ -1187,6 +1259,7 @@ class XmppService {
       // empty bubble above the one it reacts to.
       final reactionData = event.get<MessageReactionsData>();
       final stable = event.get<StableIdData>();
+      final replyData = event.get<ReplyData>();
       final retraction = event.get<MessageRetractionData>();
       final correction = event.get<LastMessageCorrectionData>();
       final inbound = InboundMessage(
@@ -1203,6 +1276,12 @@ class XmppService {
         originId: stable?.originId,
         retracts: retraction?.id,
         corrects: correction?.id,
+        reply: replyData == null
+            ? null
+            : ReplyInfo.from(
+                replyData,
+                event.get<MessageBodyData>()?.body ?? '',
+              ),
         reactions: reactionData == null
             ? null
             : ReactionUpdate(
