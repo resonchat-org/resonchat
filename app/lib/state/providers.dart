@@ -11,6 +11,7 @@ import '../omemo/dual_track_manager.dart';
 import '../omemo/protocol.dart';
 import '../omemo/track.dart';
 import '../store/database.dart';
+import '../xmpp/blocking.dart';
 import '../xmpp/reactions.dart';
 import '../store/omemo_device_store.dart';
 import '../xmpp/b_track_manager.dart';
@@ -213,6 +214,50 @@ final chatMessageSearchProvider =
   if (args.needle.trim().isEmpty) return Stream.value(const []);
   return ref.watch(databaseProvider).searchInChat(args.chatJid, args.needle);
 });
+
+/// The bare JIDs currently blocked (XEP-0191).
+///
+/// Read from the store rather than from the service's in-memory copy: this is
+/// what the UI draws, and the store is the thing that survives a restart.
+final blockedJidsProvider = FutureProvider<Set<String>>((ref) async {
+  // Invalidated by every block and unblock, so the tiles redraw.
+  ref.watch(blockRevisionProvider);
+  return ref.watch(databaseProvider).blockedJids();
+});
+
+/// Bumped whenever the block list changes.
+final blockRevisionProvider = StateProvider<int>((ref) => 0);
+
+/// True when [jid] is blocked.
+final isBlockedProvider = Provider.family<bool, String>((ref, jid) {
+  ref.watch(blockRevisionProvider);
+  return ref.watch(blockedJidsProvider).value?.contains(jid) ?? false;
+});
+
+/// Blocks or unblocks [jid], keeping the store and the service in step.
+Future<void> toggleBlocked(
+  WidgetRef ref,
+  String jid, {
+  required bool currentlyBlocked,
+}) async {
+  final db = ref.read(databaseProvider);
+  final xmpp = ref.read(xmppServiceProvider);
+  if (currentlyBlocked) {
+    await unblockContact(xmpp, db, jid);
+  } else {
+    await blockContact(xmpp, db, jid);
+  }
+  // Both writes happened; re-read rather than guessing, because a server push
+  // can arrive in between and the tile has to show what is actually enforced.
+  await _reloadBlocked(ref);
+  ref.read(blockRevisionProvider.notifier).state =
+      ref.read(blockRevisionProvider) + 1;
+}
+
+Future<void> _reloadBlocked(WidgetRef ref) async {
+  ref.read(xmppServiceProvider).blockedJids =
+      await ref.read(databaseProvider).blockedJids();
+}
 
 /// Reaction chips for the message whose addressable id is [targetId].
 ///

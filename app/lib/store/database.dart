@@ -149,6 +149,25 @@ class RosterEntries extends Table {
   Set<Column> get primaryKey => {jid};
 }
 
+/// One JID the user has blocked (XEP-0191).
+///
+/// Blocked on the server, so it is a *push* list rather than a local flag:
+/// another of our own devices blocking someone has to take effect here too, and
+/// a local flag would give the user the protection on one device and not the
+/// other.
+///
+/// The server enforces nothing on our behalf — it still routes messages. What
+/// blocking buys is that *we* stop acting as a reader and a signer for them,
+/// which is the part that actually matters for a messenger.
+class BlockedContacts extends Table {
+  TextColumn get jid => text()();
+  DateTimeColumn get blockedAt =>
+      dateTime().withDefault(currentDateAndTime)();
+
+  @override
+  Set<Column> get primaryKey => {jid};
+}
+
 /// A correction whose message has not arrived yet (XEP-0308).
 ///
 /// Order is not ours to choose: a correction can legitimately arrive before
@@ -213,6 +232,7 @@ class Meta extends Table {
       Chats,
       Messages,
       RosterEntries,
+      BlockedContacts,
       PendingCorrections,
       Reactions,
       Meta,
@@ -222,7 +242,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
   @override
-  int get schemaVersion => 10;
+  int get schemaVersion => 11;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -235,6 +255,13 @@ class AppDatabase extends _$AppDatabase {
             await customStatement(
               "ALTER TABLE messages ADD COLUMN delivery_error TEXT NOT NULL "
               "DEFAULT ''",
+            );
+          }
+          if (from < 11) {
+            await customStatement(
+              'CREATE TABLE IF NOT EXISTS blocked_contacts ('
+              'jid TEXT NOT NULL PRIMARY KEY, '
+              'blocked_at INTEGER NOT NULL DEFAULT 0)',
             );
           }
           if (from < 10) {
@@ -702,6 +729,33 @@ class AppDatabase extends _$AppDatabase {
       query.where((c) => c.archived.equals(false));
     }
     return query.watch();
+  }
+
+  /// The JIDs currently blocked (XEP-0191).
+  Future<Set<String>> blockedJids() async =>
+      (await select(blockedContacts).get()).map((b) => b.jid).toSet();
+
+  /// True when [jid] is blocked.
+  Future<bool> isBlocked(String jid) async =>
+      (await (select(blockedContacts)..where((b) => b.jid.equals(jid)))
+          .getSingleOrNull()) !=
+      null;
+
+  /// Records that [jid] is blocked.
+  ///
+  /// Idempotent. The server pushes the whole block list on every change, so a
+  /// duplicate entry is ordinary — and it arrives on the inbound path, where a
+  /// thrown constraint violation would take the push handler down with it.
+  Future<void> addBlocked(String jid) async {
+    await into(blockedContacts).insert(
+      BlockedContactsCompanion.insert(jid: jid),
+      mode: InsertMode.insertOrIgnore,
+    );
+  }
+
+  /// Records that [jid] is no longer blocked.
+  Future<void> removeBlocked(String jid) async {
+    await (delete(blockedContacts)..where((b) => b.jid.equals(jid))).go();
   }
 
   /// Marks [chatJid] as read: the unread count goes to zero and the read

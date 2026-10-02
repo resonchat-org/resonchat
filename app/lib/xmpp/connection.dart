@@ -19,6 +19,8 @@ import '../omemo/track_resolver.dart';
 import '../omemo/protocol.dart';
 import '../store/omemo_device_store.dart';
 import 'b_track_manager.dart';
+import 'blocked_inbound.dart';
+import 'blocking.dart';
 import 'eme.dart';
 import 'capabilities.dart';
 import 'pq_incoming.dart';
@@ -530,6 +532,63 @@ class XmppService {
     return SendOutcome(stanzaId: id, track: Track.standard);
   }
 
+  /// Blocks [items] on the server (XEP-0191).
+  ///
+  /// Returns false when the server refused or does not support it — which is
+  /// most servers. The caller keeps the local block either way: a block the
+  /// user was told about is worth honouring on this device even if nothing
+  /// else learns about it, because the alternative is "blocking did not work".
+  Future<bool> blockOnServer(List<String> items) async {
+    final manager = _connection?.getManagerById<BlockingManager>(blockingManager);
+    if (manager == null || items.isEmpty) return false;
+    try {
+      if (!await manager.isSupported()) return false;
+      return await manager.block(items);
+    } catch (e) {
+      _log.warning('server refused a block for $items: $e');
+      return false;
+    }
+  }
+
+  /// Removes [items] from the server's block list.
+  ///
+  /// Best-effort and silent on failure: the local removal has already happened
+  /// and telling the user "still blocked" because a server was unreachable
+  /// would just teach them not to trust the button.
+  Future<void> unblockOnServer(List<String> items) async {
+    final manager = _connection?.getManagerById<BlockingManager>(blockingManager);
+    if (manager == null || items.isEmpty) return;
+    try {
+      if (!await manager.isSupported()) return;
+      await manager.unblock(items);
+    } catch (e) {
+      _log.fine('could not unblock $items on the server: $e');
+    }
+  }
+
+  /// The blocked bare JIDs, consulted on every inbound message.
+  ///
+  /// Held on the service rather than read from the database per stanza: this is
+  /// on the hot path for every message, and a database read there would be a
+  /// query per message for a list that changes a handful of times a week.
+  /// The blocked bare JIDs, consulted on every inbound message.
+  ///
+  /// Held here rather than read from the database per stanza: this is on the
+  /// hot path for every message, and the list changes a handful of times a
+  /// week. [AppWiring] keeps it in step with the store.
+  Set<String> blockedJids = const {};
+
+  /// A blocked contact's message we refused to open.
+  Stream<BlockedMessageDropped> get blockedMessages =>
+      _blockedDropped.stream;
+  final _blockedDropped =
+      StreamController<BlockedMessageDropped>.broadcast();
+
+  /// The JIDs currently blocked, as last pushed by the server.
+  Stream<Set<String>> get blocklistChanges => _blocklistChanges.stream;
+  final _blocklistChanges =
+      StreamController<Set<String>>.broadcast();
+
   /// Attaches the capability resolver so [autoShouldEncrypt] works.
   void attachCapabilities(CapabilityService service) =>
       _capabilities = service;
@@ -644,6 +703,21 @@ class XmppService {
     // Default to the capability-driven decision so encryption turns on by
     // itself once both sides support OMEMO.
     _shouldEncrypt = autoShouldEncrypt;
+    // Held as a local so the manager can read the blocked list through a
+    // closure, and so it survives `disconnect()` — a block is a property of the
+    // account, not of the session.
+    final blockedInbound = BlockedInboundManager(
+      () => blockedJids,
+      (from) {
+        final jid = from.toBare().toString();
+        _log.info('dropped a message from blocked $jid before opening it');
+        if (!_blockedDropped.isClosed) {
+          _blockedDropped.add(
+            BlockedMessageDropped(from: jid, reason: 'refused before decrypt'),
+          );
+        }
+      },
+    );
     final connection = XmppConnection(
       reconnect ? TestingReconnectionPolicy() : NeverReconnectPolicy(),
       // TODO(M7): replace with a connectivity_plus-backed manager plus
@@ -692,10 +766,17 @@ class XmppService {
       // XEP-0461 replies: the quoted text travels in the body fallback, the
       // reference in a <reply> element.
       MessageRepliesManager(),
+      // XEP-0191 blocking. Push events matter: another of our devices
+      // blocking someone has to take effect here too.
+      BlockingManager(),
       // XEP-0424 and XEP-0308. Both address an earlier message by its
       // origin-id, which is why they sit next to the stable-id manager.
       MessageRetractionManager(),
       LastMessageCorrectionManager(),
+      // XEP-0191: refuse a blocked contact's messages before anything opens
+      // them. Ahead of the OMEMO handler by priority; registered here because
+      // the only way to control that ordering is to be in the same list.
+      blockedInbound,
       // B-track inbound. moxxmpp has no handler for the PQ namespace, so
       // without this an incoming PQ message arrives as the literal fallback
       // body with no error: a silent, perfectly plausible-looking delivery.
@@ -1296,6 +1377,14 @@ class XmppService {
       _deliveryReceipts.add(
         DeliveryReceipt(from: event.from, stanzaId: event.id),
       );
+    } else if (event is BlocklistBlockPushEvent) {
+      // Another of our devices blocked these. As authoritative as tapping the
+      // button here, which is the whole reason this is a server-side list.
+      if (!_blocklistChanges.isClosed) {
+        _blocklistChanges.add(event.items.toSet());
+      }
+    } else if (event is BlocklistUnblockPushEvent) {
+      if (!_blocklistChanges.isClosed) _blocklistChanges.add(const {});
     } else if (event is PubSubNotificationEvent) {
       _onPepNotification(event);
     } else if (event is MessageEvent) {

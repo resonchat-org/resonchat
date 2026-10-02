@@ -207,6 +207,31 @@ class _TrackPickerState extends ConsumerState<_TrackPicker> {
                 },
                 child: Text('Use the global default (${global.label})'),
               ),
+            const Divider(),
+            BlockContactTile(
+              contact: widget.chatJid,
+              blocked: ref.watch(isBlockedProvider(widget.chatJid)),
+              onToggle: () async {
+                final messenger = ScaffoldMessenger.of(context);
+                final wasBlocked = ref.read(isBlockedProvider(widget.chatJid));
+                Navigator.of(context).pop();
+                await toggleBlocked(
+                  ref,
+                  widget.chatJid,
+                  currentlyBlocked: wasBlocked,
+                );
+                messenger.showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      wasBlocked
+                          ? 'Unblocked. Their messages will be shown again.'
+                          : 'Blocked. Their messages will no longer be opened '
+                              'or stored on this device.',
+                    ),
+                  ),
+                );
+              },
+            ),
             const SizedBox(height: 8),
           ],
         ),
@@ -314,4 +339,46 @@ Future<bool> confirmPlaintext(
     ),
   );
   return agreed ?? false;
+}
+/// The block/unblock entry in the conversation's menu.
+///
+/// The wording is the point. "Block" in other apps implies the messages stop
+/// arriving, and users believe it: they block someone and then trust that
+/// there is nothing left to read. The server still routes them — what blocking
+/// does is stop *us* from opening them — so this says exactly that, in the
+/// place where the decision is made.
+class BlockContactTile extends StatelessWidget {
+  const BlockContactTile({
+    super.key,
+    required this.contact,
+    required this.blocked,
+    required this.onToggle,
+  });
+
+  final String contact;
+  final bool blocked;
+  final Future<void> Function() onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ListTile(
+      leading: Icon(
+        blocked ? Icons.lock_open : Icons.block,
+        color: blocked ? theme.colorScheme.primary : theme.colorScheme.error,
+      ),
+      title: Text(blocked ? 'Unblock $contact' : 'Block $contact'),
+      subtitle: Text(
+        blocked
+            ? 'Their messages will be shown and stored again.'
+            : 'Their messages still arrive, but will not be opened, stored '
+                'or acknowledged.',
+        style: TextStyle(
+          fontSize: 12,
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+      onTap: onToggle,
+    );
+  }
 }

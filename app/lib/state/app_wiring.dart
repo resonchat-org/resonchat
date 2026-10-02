@@ -14,6 +14,7 @@ import '../omemo/track.dart';
 import '../omemo/track_advice.dart';
 import '../store/database.dart';
 import '../xmpp/capabilities.dart';
+import '../xmpp/blocking.dart';
 import '../xmpp/connection.dart';
 import '../xmpp/reactions.dart';
 import '../xmpp/retraction.dart';
@@ -79,6 +80,25 @@ class _AppWiringState extends ConsumerState<AppWiring> {
             ),
       );
     }));
+    // XEP-0191: the blocked list lives on the server so another of our
+    // devices enforcing it also takes effect here. Loaded once at startup and
+    // pushed whenever the server sends a change.
+    unawaited(_loadBlocked(ref));
+    _subs.add(xmpp.blocklistChanges.listen((pushed) async {
+      final db = ref.read(databaseProvider);
+      if (pushed.isEmpty) {
+        // An empty push means "unblock everything" (XEP-0191). Distinguishing
+        // that from "no change" matters: treating it as no-change would leave
+        // this device enforcing blocks the user lifted elsewhere.
+        for (final jid in await db.blockedJids()) {
+          await db.removeBlocked(jid);
+        }
+      } else {
+        await applyBlockPush(db, pushed);
+      }
+      await _loadBlocked(ref);
+    }));
+
     // XEP-0444: reactions are stored, never inserted as messages. A reaction
     // arrives in its own stanza; storing it would put an empty bubble above
     // the message it belongs to.
@@ -172,10 +192,26 @@ Future<void> _acceptInbound(WidgetRef ref, InboundMessage msg) async {
   // because muting is a promise that nothing will interrupt.
   if (chat?.muted ?? false) return;
   if (chat?.archived ?? false) return;
+  // A blocked contact's message should not have reached here at all — the
+  // inbound handler drops it before it is opened. Counting it defensively costs
+  // one lookup and removes a whole class of "why is there a badge for someone I
+  // blocked" reports.
+  if (ref.read(xmppServiceProvider).blockedJids.contains(chatJid)) return;
   await db.markChatUnread(
     chatJid,
     arrivedAt: msg.archiveTimestamp ?? DateTime.now(),
   );
+}
+
+/// Reads the block list from the store into the service's in-memory copy.
+///
+/// The service keeps the list because the inbound path is on the hot path for
+/// every message, and the store is not. Keeping the two in step is this
+/// function's whole job, which is why every writer goes through here.
+Future<void> _loadBlocked(WidgetRef ref) async {
+  final db = ref.read(databaseProvider);
+  final jids = await db.blockedJids();
+  ref.read(xmppServiceProvider).blockedJids = jids;
 }
 
 /// The last capability snapshot seen per conversation.
