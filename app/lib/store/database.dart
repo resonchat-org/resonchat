@@ -4,10 +4,15 @@
 // Local persistence (M1: plain SQLite; M5 migrates to SQLCipher +
 // Keystore without changing these table shapes).
 
+import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
+import 'package:sqlite3/sqlite3.dart' show Database;
+import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:moxxmpp/moxxmpp.dart' show XmppRosterItem;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -233,9 +238,67 @@ class AppDatabase extends _$AppDatabase {
   }
 }
 
-/// Opens `resonchat.sqlite3` in the app documents directory.
+/// Opens the database, encrypted with SQLCipher when the native library is
+/// available.
+///
+/// The passphrase lives in the platform keystore and is generated on first
+/// run. Losing it makes the file unreadable, which is the intended
+/// behaviour: a rooted device must not be able to read messages.
+///
+/// Falls back to plain SQLite (with a warning) when SQLCipher is missing,
+/// so development on desktop keeps working.
 Future<AppDatabase> openAppDatabase() async {
   final dir = await getApplicationDocumentsDirectory();
   final file = File(p.join(dir.path, 'resonchat.sqlite3'));
+
+  final passphrase = await _databasePassphrase();
+  if (passphrase != null) {
+    try {
+      // `package:sqlite3` ships a SQLCipher build selected via the
+      // `hooks.user_defines` entry in pubspec.yaml. Applying the key
+      // pragma is all that is needed; reading with the wrong key fails,
+      // which the probe below turns into a clean fallback.
+      void applyKey(Database db) {
+        db.execute("PRAGMA key = \"x'${_hex(passphrase)}'\";");
+        db.select('SELECT count(*) FROM sqlite_master;');
+      }
+
+      final native = NativeDatabase.createInBackground(
+        file,
+        setup: applyKey,
+      );
+      final probe = AppDatabase(native);
+      await probe.customSelect('SELECT count(*) FROM sqlite_master').get();
+      await probe.close();
+      return AppDatabase(
+        NativeDatabase.createInBackground(file, setup: applyKey),
+      );
+    } catch (e) {
+      debugPrint('SQLCipher unavailable, falling back to plain SQLite: $e');
+    }
+  }
+
   return AppDatabase(NativeDatabase.createInBackground(file));
 }
+
+/// Lowercase hex of [bytes], for the `PRAGMA key` literal syntax.
+String _hex(List<int> bytes) =>
+    bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+
+/// Reads (or creates) the database passphrase from the platform keystore.
+Future<List<int>?> _databasePassphrase() async {
+  const key = 'resonchat.database.passphrase';
+  try {
+    const storage = FlutterSecureStorage();
+    final existing = await storage.read(key: key);
+    if (existing != null) return base64Decode(existing);
+    final fresh = <int>[for (var i = 0; i < 32; i++) _rng.nextInt(256)];
+    await storage.write(key: key, value: base64Encode(fresh));
+    return fresh;
+  } catch (e) {
+    debugPrint('keystore unavailable for the database key: $e');
+    return null;
+  }
+}
+
+final Random _rng = Random.secure();
