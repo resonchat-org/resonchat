@@ -3,10 +3,13 @@
 
 import 'dart:async';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'providers.dart';
+import '../store/database.dart';
+import '../xmpp/connection.dart';
 
 /// Connects the connection's streams to persistent state for the app's
 /// lifetime: delivery receipts, delivery failures and capability
@@ -62,6 +65,15 @@ class _AppWiringState extends ConsumerState<AppWiring> {
             ),
       );
     }));
+    // Persist inbound traffic. This used to live in the chat list, so a
+    // message that arrived while the user was somewhere else in the app
+    // was never written down — a silent data loss that only showed up as a
+    // conversation that looked empty when reopened.
+    _subs.add(
+      xmpp.inbound.listen(
+        (msg) => unawaited(storeInbound(ref.read(databaseProvider), msg)),
+      ),
+    );
   }
 
   @override
@@ -74,4 +86,33 @@ class _AppWiringState extends ConsumerState<AppWiring> {
 
   @override
   Widget build(BuildContext context) => widget.child;
+}
+
+
+/// Writes one inbound message into the store.
+///
+/// Idempotent by stanza id, so a carbon that arrives twice, or a message
+/// that is also replayed from the archive, cannot duplicate a bubble.
+Future<void> storeInbound(AppDatabase db, InboundMessage msg) async {
+  final chatJid = msg.from.toBare().toString();
+  await db.upsertChat(chatJid);
+
+  // A carbon duplicates a message we already hold locally.
+  if (msg.isCarbonCopy) return;
+  final stanzaId = msg.stanzaId ?? '';
+  if (await db.findByStanzaId(chatJid, stanzaId) != null) return;
+
+  await db.insertMessage(
+    MessagesCompanion(
+      chatJid: Value(chatJid),
+      sender: Value(msg.from.toString()),
+      stanzaId: Value(stanzaId),
+      // Never store the ciphertext of something we could not open: the
+      // placeholder carries the failure, not the payload.
+      body: Value(msg.encryptionError != null ? '' : msg.body),
+      timestamp: Value(msg.archiveTimestamp ?? DateTime.now()),
+      encMode: Value(msg.encryptionError != null ? 'error' : 'none'),
+      incoming: const Value(true),
+    ),
+  );
 }

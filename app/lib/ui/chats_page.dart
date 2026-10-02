@@ -5,9 +5,11 @@
 // (GPL-2.0-or-later): 54dp avatar, two-line text column, unread badge,
 // pinned/mute affordances and swipe-to-archive/delete.
 
-import 'package:drift/drift.dart' hide Column;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:moxxmpp/moxxmpp.dart'
+    show JID, RosterManager, rosterManager;
+import '../xmpp/connection.dart';
 
 import '../omemo/protocol.dart';
 import '../state/providers.dart';
@@ -25,50 +27,57 @@ class _ChatsPageState extends ConsumerState<ChatsPage> {
   final _jid = TextEditingController();
 
   @override
-  void initState() {
-    super.initState();
-    final xmpp = ref.read(xmppServiceProvider);
-
-    // Pump inbound traffic into the store while this page lives.
-    xmpp.inbound.listen((msg) async {
-      final db = ref.read(databaseProvider);
-      final chatJid = msg.from.toBare().toString();
-      await db.upsertChat(chatJid);
-
-      // A carbon duplicates a message we already hold locally.
-      if (msg.isCarbonCopy) return;
-      final stanzaId = msg.stanzaId ?? '';
-      if (await db.findByStanzaId(chatJid, stanzaId) != null) return;
-
-      await db.insertMessage(
-        MessagesCompanion(
-          chatJid: Value(chatJid),
-          sender: Value(msg.from.toString()),
-          stanzaId: Value(stanzaId),
-          body: Value(msg.encryptionError != null ? '' : msg.body),
-          // Archived messages keep their original send time.
-          timestamp: Value(msg.archiveTimestamp ?? DateTime.now()),
-          encMode: Value(msg.encryptionError != null ? 'error' : 'none'),
-          incoming: const Value(true),
-        ),
-      );
-    });
-
-  }
-
-  @override
   void dispose() {
     _jid.dispose();
     super.dispose();
   }
 
+  /// Opens a conversation with [jid], adding the contact first.
+  ///
+  /// Merely creating a local row is not enough: a server only routes stanzas
+  /// between accounts that are in each other's roster, so a chat opened this
+  /// way would silently never receive anything. Adding the contact and
+  /// asking for the subscription is what makes it a real conversation.
   Future<void> _openChat() async {
-    final jid = _jid.text.trim();
-    if (jid.isEmpty) return;
-    await ref.read(databaseProvider).upsertChat(jid);
+    final raw = _jid.text.trim();
+    if (raw.isEmpty) return;
+    final jid = bareJidOf(raw);
+    if (jid == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('That does not look like a JID')),
+      );
+      return;
+    }
+
+    final xmpp = ref.read(xmppServiceProvider);
+    final db = ref.read(databaseProvider);
+    await db.upsertChat(jid);
     _jid.clear();
+
+    if (xmpp.state == XmppConnectionState.connected) {
+      final roster =
+          xmpp.connection?.getManagerById<RosterManager>(rosterManager);
+      final added = await roster?.addToRoster(jid, jid) ?? false;
+      if (added) {
+        await xmpp.requestSubscription(JID.fromString(jid));
+        await xmpp.subscribePeerPep(JID.fromString(jid));
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            added
+                ? 'Contact request sent. Messages stay on this device '
+                    'until they accept.'
+                : 'Could not add the contact on the server.',
+          ),
+        ),
+      );
+    }
     if (mounted) Navigator.of(context).pushNamed('/chat', arguments: jid);
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -268,4 +277,20 @@ class _ChatRow extends ConsumerWidget {
     if (t.year == now.year && t.day == now.day) return '$h:$m';
     return '${t.day}/${t.month}';
   }
+}
+
+/// Reduces whatever the user typed to a bare JID, or null if it is not one.
+///
+/// `user@example.org/phone` and `user@example.org` are the same contact for
+/// roster purposes; only the bare form belongs in the roster, and putting a
+/// full JID there silently creates a second, unreachable entry.
+String? bareJidOf(String raw) {
+  final trimmed = raw.trim();
+  final slash = trimmed.indexOf('/');
+  final bare = slash == -1 ? trimmed : trimmed.substring(0, slash);
+  final parts = bare.split('@');
+  if (parts.length != 2 || parts[0].isEmpty || parts[1].isEmpty) return null;
+  // A domain must look like a domain, not a fragment of one.
+  if (parts[1].contains(' ')) return null;
+  return bare;
 }
