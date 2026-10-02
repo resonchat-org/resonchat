@@ -4,12 +4,16 @@
 import 'dart:async';
 
 import 'package:drift/drift.dart' show Value;
+import 'package:logging/logging.dart';
+import 'package:moxxmpp/moxxmpp.dart' show JID;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'providers.dart';
 import '../omemo/track.dart';
+import '../omemo/track_advice.dart';
 import '../store/database.dart';
+import '../xmpp/capabilities.dart';
 import '../xmpp/connection.dart';
 
 /// Connects the connection's streams to persistent state for the app's
@@ -56,6 +60,13 @@ class _AppWiringState extends ConsumerState<AppWiring> {
     // A PEP change must drop the cached answer, not wait out the TTL.
     _subs.add(xmpp.capabilityChanges.listen((jid) {
       ref.read(capabilityServiceProvider).invalidate(jid);
+      // The cached answer is dropped, but the chat's own provider is not
+      // refreshed here: doing it immediately would resolve the new
+      // capabilities in the background of a PEP notification nobody asked
+      // for, and — worse — let a transient bundle-fetch failure arrive as if
+      // it were a real change. The advice below re-resolves and compares,
+      // which is the only place a change should be interpreted.
+      unawaited(_noticeCapabilityChange(ref, jid));
     }));
     // XEP-0184: flip our outgoing messages to "delivered".
     _subs.add(xmpp.deliveryReceipts.listen((receipt) {
@@ -82,6 +93,9 @@ class _AppWiringState extends ConsumerState<AppWiring> {
     for (final sub in _subs) {
       sub.cancel();
     }
+    // The advice stream outlives this widget on purpose: the chat page
+    // subscribes to it, and tearing it down here would close the stream under
+    // a listener that is still mounted.
     super.dispose();
   }
 
@@ -89,6 +103,65 @@ class _AppWiringState extends ConsumerState<AppWiring> {
   Widget build(BuildContext context) => widget.child;
 }
 
+
+/// Re-resolves one conversation after a PEP change and records any advice
+/// worth showing (docs/10 §8).
+///
+/// Deliberately does **not** touch the stored track. A message's protocol
+/// changing for the same contact without the user doing anything looks like a
+/// bug, and they have no way to tell it apart from their choice being
+/// overridden.
+///
+/// The previous snapshot is kept so only real transitions are reported. Without
+/// it, every PEP notification would re-announce the same situation.
+Future<void> _noticeCapabilityChange(WidgetRef ref, JID jid) async {
+  final bare = jid.toBare().toString();
+  final service = ref.read(capabilityServiceProvider);
+  final before = _lastCapabilities[bare];
+  try {
+    final after = await service.forChat(jid);
+    _lastCapabilities[bare] = after;
+    // globalTrackProvider never resolves to null; the override may be absent,
+    // which is the case that falls through to the default.
+    final chosen = await ref.read(databaseProvider).trackOverride(bare) ??
+        await ref.read(globalTrackProvider.future);
+    final track = chosen ?? Track.standard;
+    final advice = compareCapabilities(
+      chatJid: bare,
+      chosen: track,
+      previous: before ?? after,
+      current: after,
+    );
+    if (advice != null) _advice.add(advice);
+  } catch (e) {
+    // A failed re-resolve is not a change. Swallowing it here is what keeps
+    // the stream alive and the conversation's cached answer absent, so the
+    // next send refuses rather than guessing.
+    Logger('AppWiring').fine('capability re-resolve for $bare failed: $e');
+  }
+}
+
+/// The last capability snapshot seen per conversation.
+///
+/// Held in memory on purpose: it answers "did something change since we last
+/// looked", and persisting it would mean a snapshot from last week being
+/// compared against today's as though it were current.
+final _lastCapabilities = <String, ChatCapabilities>{};
+
+/// Advice about conversations whose capabilities changed.
+///
+/// A stream rather than stored state: each piece is worth showing once, and a
+/// stored banner would come back after a restart for something that may no
+/// longer be true.
+final _advice = StreamController<TrackAdvice>.broadcast();
+Stream<TrackAdvice> get trackAdvice => _advice.stream;
+
+/// Forgets the snapshot for [jid], so the next change is judged against
+/// nothing rather than against a stale answer.
+///
+/// Called when the account changes: another account's devices are another
+/// account's business.
+void forgetCapabilityHistory() => _lastCapabilities.clear();
 
 /// Writes one inbound message into the store.
 ///

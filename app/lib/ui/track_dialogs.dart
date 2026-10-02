@@ -13,9 +13,76 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../omemo/track.dart';
+import '../omemo/track_advice.dart';
 import '../omemo/track_resolver.dart';
 import '../state/providers.dart';
 import '../xmpp/capabilities.dart';
+
+/// The banner shown when a contact's capabilities changed (docs/10 §8).
+///
+/// Two shapes, because the two directions are not equally urgent. An upgrade
+/// is a quiet offer the user can decline forever. A downgrade that breaks the
+/// chosen track is stated plainly, because the alternative to reading it is a
+/// message that silently fails to send.
+class TrackAdviceBanner extends StatelessWidget {
+  const TrackAdviceBanner({
+    super.key,
+    required this.advice,
+    required this.onSwitch,
+    required this.onDismiss,
+  });
+
+  final TrackAdvice advice;
+  final VoidCallback onSwitch;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final urgent = advice.kind == TrackAdviceKind.chosenTrackBlocked;
+    return Material(
+      color: urgent ? theme.colorScheme.errorContainer : theme.colorScheme.surfaceContainerHighest,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+        child: Row(
+          children: [
+            Icon(
+              urgent ? Icons.warning_amber_rounded : Icons.shield,
+              size: 18,
+              color: urgent
+                  ? theme.colorScheme.onErrorContainer
+                  : theme.colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                advice.message,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: urgent
+                      ? theme.colorScheme.onErrorContainer
+                      : theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: onSwitch,
+              child: Text('Switch to ${advice.suggestion.label}'),
+            ),
+            IconButton(
+              onPressed: onDismiss,
+              icon: const Icon(Icons.close, size: 18),
+              tooltip: 'Dismiss',
+              color: urgent
+                  ? theme.colorScheme.onErrorContainer
+                  : theme.colorScheme.onSurfaceVariant,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 /// The track picker: the user's protocol choice for one conversation.
 ///

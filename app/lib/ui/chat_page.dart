@@ -12,7 +12,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:moxxmpp/moxxmpp.dart' show JID;
 
 import '../omemo/track.dart';
+import '../omemo/track_advice.dart';
 import '../omemo/track_resolver.dart';
+import '../state/app_wiring.dart';
 import '../state/providers.dart';
 import '../store/database.dart';
 import '../xmpp/connection.dart';
@@ -49,6 +51,18 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         .read(xmppServiceProvider)
         .deliveryFailures
         .listen(_onDeliveryFailure);
+    _adviceSub = trackAdvice.listen(_onAdvice);
+  }
+
+  @override
+  void didUpdateWidget(ChatPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Advice names the conversation it is about, so switching chats clears it.
+    // Keeping it would show the previous contact's devices above this
+    // contact's messages.
+    if (oldWidget.chatJid != widget.chatJid && _advice != null) {
+      setState(() => _advice = null);
+    }
   }
 
   Future<void> _onDeliveryFailure(DeliveryFailure failure) async {
@@ -103,6 +117,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   @override
   void dispose() {
     _failureSub?.cancel();
+    _adviceSub?.cancel();
     _scroll
       ..removeListener(_onScroll)
       ..dispose();
@@ -264,6 +279,34 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     );
   }
 
+  StreamSubscription<TrackAdvice>? _adviceSub;
+
+  /// The most recent advice about *this* conversation, or null.
+  ///
+  /// Advice about other conversations is dropped rather than stored: showing a
+  /// banner for one contact's devices above another contact's messages is worse
+  /// than showing nothing, and the chat page has no way to display advice for a
+  /// conversation it is not showing.
+  TrackAdvice? _advice;
+
+  void _onAdvice(TrackAdvice advice) {
+    if (advice.chatJid != widget.chatJid) return;
+    if (!mounted) return;
+    setState(() => _advice = advice);
+  }
+
+  void _dismissAdvice() {
+    if (_advice == null) return;
+    setState(() => _advice = null);
+  }
+
+  void _adoptAdvice() {
+    final advice = _advice;
+    if (advice == null) return;
+    setState(() => _advice = null);
+    unawaited(setChatTrack(ref, widget.chatJid, advice.suggestion));
+  }
+
   @override
   Widget build(BuildContext context) {
     final tg = context.tg;
@@ -340,6 +383,12 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       body: Column(
         children: [
           _SubscriptionBanner(chatJid: widget.chatJid),
+          if (_advice != null)
+            TrackAdviceBanner(
+              advice: _advice!,
+              onSwitch: _adoptAdvice,
+              onDismiss: _dismissAdvice,
+            ),
           Expanded(
             child: Container(
               color: tg.pageBackground,
