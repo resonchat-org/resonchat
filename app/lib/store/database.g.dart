@@ -39,8 +39,25 @@ class $ChatsTable extends Chats with TableInfo<$ChatsTable, Chat> {
     requiredDuringInsert: false,
     defaultValue: currentDateAndTime,
   );
+  static const VerificationMeta _trackOverrideMeta = const VerificationMeta(
+    'trackOverride',
+  );
   @override
-  List<GeneratedColumn> get $columns => [jid, title, lastActivity];
+  late final GeneratedColumn<String> trackOverride = GeneratedColumn<String>(
+    'track_override',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    jid,
+    title,
+    lastActivity,
+    trackOverride,
+  ];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -76,6 +93,15 @@ class $ChatsTable extends Chats with TableInfo<$ChatsTable, Chat> {
         ),
       );
     }
+    if (data.containsKey('track_override')) {
+      context.handle(
+        _trackOverrideMeta,
+        trackOverride.isAcceptableOrUnknown(
+          data['track_override']!,
+          _trackOverrideMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -97,6 +123,10 @@ class $ChatsTable extends Chats with TableInfo<$ChatsTable, Chat> {
         DriftSqlType.dateTime,
         data['${effectivePrefix}last_activity'],
       )!,
+      trackOverride: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}track_override'],
+      )!,
     );
   }
 
@@ -110,10 +140,21 @@ class Chat extends DataClass implements Insertable<Chat> {
   final String jid;
   final String title;
   final DateTime lastActivity;
+
+  /// The track the user picked for this conversation, or empty for "use the
+  /// global default" (docs/10 §3).
+  ///
+  /// Deliberately not a foreign key to a settings table: the choice is about
+  /// this conversation, and the default is a fallback the row simply does not
+  /// override. Null also means "never chosen", which is what keeps a fresh
+  /// install on the standard track instead of silently inheriting whatever a
+  /// previous conversation was set to.
+  final String trackOverride;
   const Chat({
     required this.jid,
     required this.title,
     required this.lastActivity,
+    required this.trackOverride,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -121,6 +162,7 @@ class Chat extends DataClass implements Insertable<Chat> {
     map['jid'] = Variable<String>(jid);
     map['title'] = Variable<String>(title);
     map['last_activity'] = Variable<DateTime>(lastActivity);
+    map['track_override'] = Variable<String>(trackOverride);
     return map;
   }
 
@@ -129,6 +171,7 @@ class Chat extends DataClass implements Insertable<Chat> {
       jid: Value(jid),
       title: Value(title),
       lastActivity: Value(lastActivity),
+      trackOverride: Value(trackOverride),
     );
   }
 
@@ -141,6 +184,7 @@ class Chat extends DataClass implements Insertable<Chat> {
       jid: serializer.fromJson<String>(json['jid']),
       title: serializer.fromJson<String>(json['title']),
       lastActivity: serializer.fromJson<DateTime>(json['lastActivity']),
+      trackOverride: serializer.fromJson<String>(json['trackOverride']),
     );
   }
   @override
@@ -150,13 +194,20 @@ class Chat extends DataClass implements Insertable<Chat> {
       'jid': serializer.toJson<String>(jid),
       'title': serializer.toJson<String>(title),
       'lastActivity': serializer.toJson<DateTime>(lastActivity),
+      'trackOverride': serializer.toJson<String>(trackOverride),
     };
   }
 
-  Chat copyWith({String? jid, String? title, DateTime? lastActivity}) => Chat(
+  Chat copyWith({
+    String? jid,
+    String? title,
+    DateTime? lastActivity,
+    String? trackOverride,
+  }) => Chat(
     jid: jid ?? this.jid,
     title: title ?? this.title,
     lastActivity: lastActivity ?? this.lastActivity,
+    trackOverride: trackOverride ?? this.trackOverride,
   );
   Chat copyWithCompanion(ChatsCompanion data) {
     return Chat(
@@ -165,6 +216,9 @@ class Chat extends DataClass implements Insertable<Chat> {
       lastActivity: data.lastActivity.present
           ? data.lastActivity.value
           : this.lastActivity,
+      trackOverride: data.trackOverride.present
+          ? data.trackOverride.value
+          : this.trackOverride,
     );
   }
 
@@ -173,49 +227,56 @@ class Chat extends DataClass implements Insertable<Chat> {
     return (StringBuffer('Chat(')
           ..write('jid: $jid, ')
           ..write('title: $title, ')
-          ..write('lastActivity: $lastActivity')
+          ..write('lastActivity: $lastActivity, ')
+          ..write('trackOverride: $trackOverride')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(jid, title, lastActivity);
+  int get hashCode => Object.hash(jid, title, lastActivity, trackOverride);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is Chat &&
           other.jid == this.jid &&
           other.title == this.title &&
-          other.lastActivity == this.lastActivity);
+          other.lastActivity == this.lastActivity &&
+          other.trackOverride == this.trackOverride);
 }
 
 class ChatsCompanion extends UpdateCompanion<Chat> {
   final Value<String> jid;
   final Value<String> title;
   final Value<DateTime> lastActivity;
+  final Value<String> trackOverride;
   final Value<int> rowid;
   const ChatsCompanion({
     this.jid = const Value.absent(),
     this.title = const Value.absent(),
     this.lastActivity = const Value.absent(),
+    this.trackOverride = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   ChatsCompanion.insert({
     required String jid,
     this.title = const Value.absent(),
     this.lastActivity = const Value.absent(),
+    this.trackOverride = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : jid = Value(jid);
   static Insertable<Chat> custom({
     Expression<String>? jid,
     Expression<String>? title,
     Expression<DateTime>? lastActivity,
+    Expression<String>? trackOverride,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
       if (jid != null) 'jid': jid,
       if (title != null) 'title': title,
       if (lastActivity != null) 'last_activity': lastActivity,
+      if (trackOverride != null) 'track_override': trackOverride,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -224,12 +285,14 @@ class ChatsCompanion extends UpdateCompanion<Chat> {
     Value<String>? jid,
     Value<String>? title,
     Value<DateTime>? lastActivity,
+    Value<String>? trackOverride,
     Value<int>? rowid,
   }) {
     return ChatsCompanion(
       jid: jid ?? this.jid,
       title: title ?? this.title,
       lastActivity: lastActivity ?? this.lastActivity,
+      trackOverride: trackOverride ?? this.trackOverride,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -246,6 +309,9 @@ class ChatsCompanion extends UpdateCompanion<Chat> {
     if (lastActivity.present) {
       map['last_activity'] = Variable<DateTime>(lastActivity.value);
     }
+    if (trackOverride.present) {
+      map['track_override'] = Variable<String>(trackOverride.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -258,6 +324,7 @@ class ChatsCompanion extends UpdateCompanion<Chat> {
           ..write('jid: $jid, ')
           ..write('title: $title, ')
           ..write('lastActivity: $lastActivity, ')
+          ..write('trackOverride: $trackOverride, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -1502,12 +1569,14 @@ typedef $$ChatsTableCreateCompanionBuilder = ChatsCompanion Function({
   required String jid,
   Value<String> title,
   Value<DateTime> lastActivity,
+  Value<String> trackOverride,
   Value<int> rowid,
 });
 typedef $$ChatsTableUpdateCompanionBuilder = ChatsCompanion Function({
   Value<String> jid,
   Value<String> title,
   Value<DateTime> lastActivity,
+  Value<String> trackOverride,
   Value<int> rowid,
 });
 
@@ -1555,6 +1624,11 @@ class $$ChatsTableFilterComposer extends Composer<_$AppDatabase, $ChatsTable> {
 
   ColumnFilters<DateTime> get lastActivity => $composableBuilder(
     column: $table.lastActivity,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get trackOverride => $composableBuilder(
+    column: $table.trackOverride,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -1607,6 +1681,11 @@ class $$ChatsTableOrderingComposer
     column: $table.lastActivity,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get trackOverride => $composableBuilder(
+    column: $table.trackOverride,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$ChatsTableAnnotationComposer
@@ -1626,6 +1705,11 @@ class $$ChatsTableAnnotationComposer
 
   GeneratedColumn<DateTime> get lastActivity => $composableBuilder(
     column: $table.lastActivity,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get trackOverride => $composableBuilder(
+    column: $table.trackOverride,
     builder: (column) => column,
   );
 
@@ -1686,11 +1770,13 @@ class $$ChatsTableTableManager
                 Value<String> jid = const Value.absent(),
                 Value<String> title = const Value.absent(),
                 Value<DateTime> lastActivity = const Value.absent(),
+                Value<String> trackOverride = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ChatsCompanion(
                 jid: jid,
                 title: title,
                 lastActivity: lastActivity,
+                trackOverride: trackOverride,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -1698,11 +1784,13 @@ class $$ChatsTableTableManager
                 required String jid,
                 Value<String> title = const Value.absent(),
                 Value<DateTime> lastActivity = const Value.absent(),
+                Value<String> trackOverride = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ChatsCompanion.insert(
                 jid: jid,
                 title: title,
                 lastActivity: lastActivity,
+                trackOverride: trackOverride,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

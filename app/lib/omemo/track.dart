@@ -86,6 +86,26 @@ enum Track {
           true,
         _ => false,
       };
+
+  /// The token written to `chats.track_override` and to the global default.
+  ///
+  /// Exactly [label], so a stored value is what the user would have read off
+  /// the screen. A hand-edited or restored database stays debuggable, and the
+  /// two cannot drift apart because there is only one string.
+  String get stored => label;
+
+  /// Recovers a track from a stored token.
+  ///
+  /// Null for anything unrecognised, and the caller decides what to do. The
+  /// safe default is the standard track rather than plaintext: silently
+  /// downgrading a stored choice to "no encryption" would send messages in
+  /// the clear because of a typo.
+  static Track? fromStored(String value) => switch (value.toLowerCase()) {
+        'po' || 'pq' || 'pqomemo' => Track.pq,
+        'om' || 'standard' || 'standardomemo' => Track.standard,
+        'no' || 'none' => Track.none,
+        _ => null,
+      };
 }
 
 /// The token stored in `messages.enc_mode`.

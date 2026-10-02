@@ -15,6 +15,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:moxxmpp/moxxmpp.dart' show XmppRosterItem;
 import 'package:path/path.dart' as p;
+import 'package:resonchat/omemo/track.dart';
 import 'package:path_provider/path_provider.dart';
 
 part 'database.g.dart';
@@ -25,6 +26,17 @@ class Chats extends Table {
   TextColumn get title => text().withDefault(const Constant(''))();
   DateTimeColumn get lastActivity =>
       dateTime().withDefault(currentDateAndTime)();
+
+  /// The track the user picked for this conversation, or empty for "use the
+  /// global default" (docs/10 §3).
+  ///
+  /// Deliberately not a foreign key to a settings table: the choice is about
+  /// this conversation, and the default is a fallback the row simply does not
+  /// override. Null also means "never chosen", which is what keeps a fresh
+  /// install on the standard track instead of silently inheriting whatever a
+  /// previous conversation was set to.
+  TextColumn get trackOverride =>
+      text().withDefault(const Constant(''))();
 
   @override
   Set<Column> get primaryKey => {jid};
@@ -89,7 +101,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -104,8 +116,51 @@ class AppDatabase extends _$AppDatabase {
               "DEFAULT ''",
             );
           }
+          if (from < 3) {
+            // Per-conversation track choice. Empty string means "no override",
+            // which is also the right answer for every conversation that
+            // existed before this column: nobody had chosen yet.
+            //
+            // No rewrite of messages.enc_mode here: that column stores what a
+            // message *actually used*, which is a fact about the past and does
+            // not change because we renamed the vocabulary. The rename lives
+            // in EncModeToken.parse, which still understands the old words.
+            await customStatement(
+              "ALTER TABLE chats ADD COLUMN track_override TEXT NOT NULL "
+              "DEFAULT ''",
+            );
+          }
         },
       );
+
+  /// The track the user chose for [chatJid], or null to use the global
+  /// default.
+  Future<Track?> trackOverride(String chatJid) async {
+    final row = (await (select(chats)..where((c) => c.jid.equals(chatJid)))
+            .getSingleOrNull())
+        ?.trackOverride;
+    if (row == null || row.isEmpty) return null;
+    return Track.fromStored(row);
+  }
+
+  /// Pins [chatJid] to [track], or clears the override when [track] is null.
+  Future<void> setTrackOverride(String chatJid, Track? track) async {
+    final value = track?.stored ?? '';
+    final updated = await (update(chats)..where((c) => c.jid.equals(chatJid)))
+        .write(ChatsCompanion(trackOverride: Value(value)));
+    if (updated == 0) {
+      // A conversation the user picked a track for before any message was
+      // exchanged has no row yet. Creating it here keeps "the override is
+      // set" independent of "a chat exists", which is what the settings UI
+      // assumes.
+      await into(chats).insert(
+        ChatsCompanion(jid: Value(chatJid), trackOverride: Value(value)),
+        mode: InsertMode.insertOrIgnore,
+      );
+      await (update(chats)..where((c) => c.jid.equals(chatJid)))
+          .write(ChatsCompanion(trackOverride: Value(value)));
+    }
+  }
 
   Future<List<RosterEntry>> allRosterEntries() =>
       (select(rosterEntries)).get();
