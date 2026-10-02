@@ -263,6 +263,7 @@ class XmppService {
   }) async {
     await disconnect();
     _state = XmppConnectionState.connecting;
+    _rosterState = rosterState;
 
     _moxxOmemo = OmemoManager(
       // Lazy: an OMEMO event can arrive before the device is created.
@@ -291,7 +292,9 @@ class XmppService {
     _pubsub = PubSubManager();
     await connection.registerManagers([
       PresenceManager(),
-      RosterManager(rosterState ?? TestingRosterStateManager(null, const [])),
+      RosterManager(
+        rosterState ?? (_rosterState = TestingRosterStateManager(null, const [])),
+      ),
       DiscoManager(const []),
       _pubsub!,
       MessageManager(),
@@ -583,15 +586,24 @@ class XmppService {
   /// Whether our PQ bundle is published and ready to use.
   bool get bTrackReady => bTrack?.ready ?? false;
 
-  /// Fetches the roster and returns the entries (also cached by drift).
+  /// Fetches the roster and returns **every** entry.
+  ///
+  /// The returned list must come from the local cache, not from the IQ.
+  /// With RFC 6121 versioning a server that has nothing to report answers
+  /// with an empty `<iq/>`, and moxxmpp faithfully turns that into an empty
+  /// item list — so returning it would empty the contact list on every start
+  /// after the first. The cache already holds the delta applied, so it is
+  /// the authoritative full roster.
   Future<List<XmppRosterItem>> requestRoster() async {
     final rm = _connection?.getManagerById<RosterManager>(rosterManager);
     if (rm == null) return const [];
-    final result = await rm.requestRoster();
-    return result.isType<RosterRequestResult>()
-        ? result.get<RosterRequestResult>().items
-        : const [];
+    await rm.requestRoster();
+    final cached = await _rosterState?.loadRosterCache();
+    return cached?.roster ?? const [];
   }
+
+  /// The roster store in use, so [requestRoster] can read the full list.
+  BaseRosterStateManager? _rosterState;
 
   /// Encrypts and sends [body] on the PQ track when [to] is fully PQ-capable,
   /// otherwise returns null so the caller can fall back to the A track.

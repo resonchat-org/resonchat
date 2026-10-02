@@ -23,10 +23,10 @@ Future<void> main(List<String> args) async {
     exitCode = 64;
     return;
   }
-  Logger.root.level = Level.INFO;
+  Logger.root.level = Level.FINEST;
   Logger.root.onRecord.listen((r) {
-    if (r.loggerName.contains('XmppConnection') &&
-        r.level <= Level.FINE) {
+    final m = r.message.toString();
+    if (m.startsWith('==>') || m.startsWith('<==')) {
       // ignore: avoid_print
       print('  ${r.message.toString().replaceAll('\n', ' ')}');
     }
@@ -131,6 +131,10 @@ Future<void> main(List<String> args) async {
       // ignore: avoid_print
       print('INBOUND from=${event.from} to=${event.to} type=${event.type} '
           'id=${event.id} error=${event.error} body=$body');
+      if (event.error != null) {
+        // ignore: avoid_print
+        print('  SERVER REFUSAL: ${event.error}');
+      }
     }
   });
   await Future<void>.delayed(const Duration(seconds: 25));

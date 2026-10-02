@@ -77,12 +77,48 @@ abstract class StanzaError {
         return ServiceUnavailableError();
     }
 
-    return UnknownStanzaError();
+    // Keep the server's actual objection. Collapsing it into
+    // UnknownStanzaError threw away the only useful part of the answer -
+    // "not-authorized" and "service-unavailable" call for completely
+    // different responses, and neither was visible before.
+    return GenericStanzaError(
+      type: '${error.attributes['type'] ?? ''}',
+      code: '${error.attributes['code'] ?? ''}',
+      text: error.firstTag('text')?.text ?? '',
+      condition: specificError.tag,
+    );
   }
 
   static StanzaError? fromStanza(Stanza stanza) {
     return fromXMLNode(stanza);
   }
+}
+
+/// An error condition this class does not model, with the server's own
+/// wording preserved so callers can act on it.
+class GenericStanzaError extends StanzaError {
+  GenericStanzaError({
+    required this.type,
+    required this.code,
+    required this.text,
+    required this.condition,
+  });
+
+  /// RFC 6120 error type, e.g. `modify`, `cancel`, `auth`.
+  final String type;
+
+  /// Legacy error code, e.g. `404`.
+  final String code;
+
+  /// Human-readable text supplied by the server, if any.
+  final String text;
+
+  /// The defined condition's element name, e.g. `forbidden`.
+  final String condition;
+
+  @override
+  String toString() => 'GenericStanzaError(type: $type, code: $code, '
+      'condition: $condition${text.isEmpty ? '' : ', text: $text'})';
 }
 
 /// Recipient does not provide a given service.

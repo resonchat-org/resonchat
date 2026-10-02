@@ -66,10 +66,33 @@ Future<void> main(List<String> args) async {
   // ignore: avoid_print
   print('logged in as $jid; peeking at $peer\n');
 
-  for (final node in const [
-  'eu.siacs.conversations.axolotl.bundles',
-  'eu.siacs.conversations.axolotl.bundles:889064890',
-  'urn:xmpp:omemo:2:bundles:889064890',
+    // Our own roster as the server reports it, forced to a full fetch with an
+  // empty ver so a version mismatch cannot hide the answer.
+  // ignore: avoid_print
+  print('--- own roster (ver="") ---');
+  final rosterRaw = await pubsub.getAttributes().sendStanza(
+        StanzaDetails(
+          Stanza.iq(
+            type: 'get',
+            children: [
+              XMLNode.xmlns(
+                tag: 'query',
+                xmlns: 'jabber:iq:roster',
+                attributes: {'ver': ''},
+              ),
+            ],
+          ),
+          shouldEncrypt: false,
+        ),
+      );
+  // ignore: avoid_print
+  print(rosterRaw == null
+      ? '  (timeout)'
+      : '  type=${rosterRaw.attributes['type']}\n'
+          '  ${rosterRaw.toXml().replaceAll('\n', '\n  ')}');
+
+for (final node in const [
+  'eu.siacs.conversations.axolotl.devicelist',
 ]) {
   // ignore: avoid_print
   print('--- $node ---');
