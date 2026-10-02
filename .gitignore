@@ -52,3 +52,6 @@ Thumbs.db
 # Native build artifacts
 app/android/app/.cxx/
 third_party/liboqs/build/
+
+# UI previews (generated, see app/tool/previews/)
+app/build/ui-previews/

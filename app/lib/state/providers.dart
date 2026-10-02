@@ -53,6 +53,11 @@ final chatsProvider = StreamProvider<List<Chat>>(
   (ref) => ref.watch(databaseProvider).watchChats(),
 );
 
+/// Last message preview for the chat list row.
+final lastMessageProvider = StreamProvider.family<String?, String>(
+  (ref, chatJid) => ref.watch(databaseProvider).watchLastMessage(chatJid),
+);
+
 /// Per-chat outbound encryption mode (M4 drives this from capability
 /// state; M1/M2 default to plaintext until the user enables OMEMO).
 final encModeProvider =

@@ -202,6 +202,24 @@ class AppDatabase extends _$AppDatabase {
         .write(const MessagesCompanion(delivered: Value(true)));
   }
 
+  /// Preview line for the chat list: the newest message body, prefixed
+  /// with the sender when it did not come from us.
+  Stream<String?> watchLastMessage(String chatJid) {
+    final query = select(messages)
+      ..where((m) => m.chatJid.equals(chatJid))
+      ..orderBy([
+        (m) => OrderingTerm.desc(m.timestamp),
+        (m) => OrderingTerm.desc(m.id),
+      ])
+      ..limit(1);
+    return query.watchSingleOrNull().map((row) {
+      if (row == null) return null;
+      if (row.encMode == 'error') return 'Unable to decrypt';
+      final prefix = row.incoming ? '' : 'You: ';
+      return '$prefix${row.body}';
+    });
+  }
+
   /// Finds an already-stored inbound message by its stanza id, so that a
   /// second copy (e.g. carbon + direct delivery) is not duplicated.
   Future<int?> findByStanzaId(String chatJid, String stanzaId) async {
