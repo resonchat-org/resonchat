@@ -148,7 +148,21 @@ class RosterManager extends XmppManagerBase {
       return state..done = true;
     }
 
-    final query = stanza.firstTag('query', xmlns: rosterXmlns)!;
+    // The stanza handler matched on a <query> in the roster namespace, but
+    // that match and firstTag() do not always resolve namespaces the same
+    // way (an inherited declaration is invisible to the latter). Dereferencing
+    // the result therefore crashed the whole connection handler on a
+    // perfectly ordinary push. Fall back to a name-only lookup, and tolerate
+    // its absence.
+    final query = stanza.firstTag('query', xmlns: rosterXmlns) ??
+        stanza.children.where((c) => c.tag == 'query').firstOrNull;
+    if (query == null) {
+      logger.warning(
+        'Roster push without a <query> element: ${stanza.toXml()}',
+      );
+      return state..done = true;
+    }
+
     logger.fine('Roster push: ${query.toXml()}');
     final item = query.firstTag('item');
 
@@ -312,9 +326,12 @@ class RosterManager extends XmppManagerBase {
   }
 
   bool rosterVersioningAvailable() {
-    return getAttributes()
-        .getNegotiatorById<RosterFeatureNegotiator>(rosterNegotiator)!
-        .isSupported;
+    // The negotiator is optional: a caller may simply not have registered
+    // it. Treating that as "not supported" is correct, and far better than
+    // throwing a null-check error out of requestRoster().
+    final negotiator =
+        getAttributes().getNegotiatorById<RosterFeatureNegotiator>(rosterNegotiator);
+    return negotiator?.isSupported ?? false;
   }
 
   /// Attempts to add [jid] with a title of [title] and groups [groups] to the roster.

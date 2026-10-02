@@ -31,6 +31,8 @@ import 'package:omemo_dart/omemo_dart.dart' show OmemoBundle;
 import 'package:resonchat/omemo/dual_track_manager.dart';
 import 'package:resonchat/omemo/protocol.dart';
 import 'package:resonchat/xmpp/capabilities.dart';
+import 'package:resonchat/store/database.dart';
+import 'package:resonchat/store/roster_state.dart';
 import 'package:resonchat/xmpp/connection.dart';
 
 /// Strings shared between steps, so a failure can be reported by name.
@@ -65,20 +67,25 @@ void main() {
     });
 
     final xmpp = XmppService();
+    AppDatabase? db;
     try {
       // --- connect ------------------------------------------------------
-      final ok = await xmpp.connect(jid: jid, password: password);
+      // A real, persistent roster store. With the in-memory default the
+      // server is told we have no contacts, so it refuses to route anything
+      // and every message comes back as an error — which looks exactly like
+      // a client bug.
+      db = await openAppDatabase();
+      final ok = await xmpp.connect(
+        jid: jid,
+        password: password,
+        rosterState: DriftRosterStateManager(db),
+        reconnect: false,
+      );
       check('connected to $jid', ok, xmpp.lastError ?? '');
       expect(ok, isTrue, reason: 'cannot continue without a connection');
 
       // --- our own device, as a real client would have ------------------
-      final deviceId = await xmpp.ensureOmemoDevice();
-      // ignore: avoid_print
-      print('our device $deviceId published in both dialects');
-      check('local OMEMO device created', true, 'id $deviceId');
-      expect(deviceId, isNotNull);
-      await xmpp.replenishPrekeys();
-      check('one-time prekeys replenished', true);
+      check('local OMEMO device created', true, 'pending');
 
       // --- capability service, wired exactly as the app wires it --------
       final tracks = DualTrackManager(
@@ -86,9 +93,20 @@ void main() {
         pubsubOf: () => xmpp.pubsub!,
       );
       xmpp.tracks = tracks;
+
+      final deviceId = await xmpp.ensureOmemoDevice();
+      // ignore: avoid_print
+      print('our device $deviceId published in both dialects');
+      results.remove('local OMEMO device created');
+      check('local OMEMO device created', true, 'id $deviceId');
+      expect(deviceId, isNotNull);
+      await xmpp.replenishPrekeys();
+      check('one-time prekeys replenished', true);
       final caps = CapabilityService(
         tracks: () => tracks,
         ourDeviceId: () async => deviceId,
+        // No PQ device in this probe, so the A track must be chosen.
+        ourPqDevices: () async => const <int>{},
       );
       xmpp.attachCapabilities(caps);
 
@@ -99,8 +117,22 @@ void main() {
         'roster entry added for $peer',
         await roster!.addToRoster(peer.toBare().toString(), 'interop peer'),
       );
+      await xmpp.requestRoster();
+      for (final item in await xmpp.requestRoster()) {
+        // ignore: avoid_print
+        print('roster ${item.jid}: subscription=${item.subscription} '
+            'ask=${item.ask}');
+      }
       await xmpp.sendAvailablePresence();
+      // A one-sided relationship makes most servers refuse to route, which
+      // is indistinguishable from a delivery bug — so ask, and auto-approve
+      // whatever comes back.
+      await xmpp.requestSubscription(peer);
       await xmpp.subscribePeerPep(peer);
+      xmpp.subscriptionRequests.listen((jid) {
+        // ignore: avoid_print
+        print('approved subscription from $jid');
+      });
 
       // --- read a bundle written by another implementation -------------
       // This is the first time our parser sees foreign data, so any wire
@@ -161,7 +193,16 @@ void main() {
       // ignore: avoid_print
       print('\nListening ${listenSeconds}s for inbound messages…');
       final decrypted = <String>[];
+      // Diagnostic: log *every* message stanza we see, encrypted or not, so a
+      // silent routing failure is distinguishable from a decryption failure.
+      final rawSub = xmpp.rawMessages.listen((event) {
+        // ignore: avoid_print
+        print('[${DateTime.now().toIso8601String()}] RAW $event');
+      });
       final sub = xmpp.inbound.listen((m) {
+        // ignore: avoid_print
+        print('[${DateTime.now().toIso8601String()}] DECODED from=${m.from} '
+            'body="${m.body}" err=${m.encryptionError}');
         if (m.from.toBare() != peer.toBare()) return;
         if (m.encryptionError != null) {
           check('inbound from ${m.from} decrypted', false,
@@ -176,12 +217,33 @@ void main() {
       });
       await Future<void>.delayed(Duration(seconds: listenSeconds));
       await sub.cancel();
+      await rawSub.cancel();
+      if (decrypted.isEmpty) {
+        // Nothing arrived live. Distinguish "server never routed it" from
+        // "we could not decrypt it" by asking the archive.
+        // ignore: avoid_print
+        print('nothing live; asking the archive (MAM) for $peer');
+        try {
+          final archived = await xmpp.fetchHistory(peer);
+          // ignore: avoid_print
+          print('archive returned $archived message(s)');
+        } catch (e) {
+          // The archive is a fallback diagnostic, never a hard requirement.
+          // ignore: avoid_print
+          print('archive unavailable: $e');
+        }
+      }
       if (decrypted.isEmpty) {
         check('received at least one decrypted inbound message', false,
             'nothing arrived from the peer in ${listenSeconds}s');
       }
+    } catch (e, st) {
+      // A server dropping an idle stream is not an interoperability
+      // failure; record it so the summary stays honest but keep going.
+      check('probe completed without a transport error', false, '$e\n$st');
     } finally {
       await xmpp.disconnect();
+      await db?.close();
       // ignore: avoid_print
       print('\n---- summary ----');
       var failed = 0;

@@ -54,6 +54,37 @@ class InboundMessage {
   final DateTime? archiveTimestamp;
 }
 
+/// What arrived for one inbound message, before the UI sees it.
+///
+/// Diagnostic counterpart to [InboundMessage]: `encrypted` plus a null
+/// `decryptionError` and an empty `body` is the signature of a message we
+/// could not open, whereas no entry at all means the server never routed
+/// it to us.
+class MessageTrace {
+  const MessageTrace({
+    required this.from,
+    required this.encrypted,
+    required this.id,
+    required this.type,
+    required this.error,
+    required this.decryptionError,
+    required this.body,
+  });
+
+  final JID from;
+  final bool encrypted;
+  final String? id;
+  final String? type;
+  final String? error;
+  final String? decryptionError;
+  final String body;
+
+  @override
+  String toString() => 'MessageTrace(from=$from id=$id type=$type '
+      'encrypted=$encrypted error=$error decryptionError=$decryptionError '
+      'body=${body.isEmpty ? "<none>" : '"$body"'})';
+}
+
 /// The peer's typing state (XEP-0085).
 enum TypingState { inactive, composing, paused }
 
@@ -164,6 +195,11 @@ class XmppService {
   /// Peer typing/composing notifications (XEP-0085).
   Stream<TypingNotification> get typingStates => _typingStates.stream;
 
+  /// Every inbound message stanza as it came off the wire, before any
+  /// decryption. Diagnostic counterpart to [inbound].
+  Stream<MessageTrace> get rawMessages => _rawMessages.stream;
+  final _rawMessages = StreamController<MessageTrace>.broadcast();
+
   OmemoManager? get moxxOmemo => _moxxOmemo;
   omemo_dart.OmemoManager? get omemo => _omemo;
 
@@ -180,6 +216,28 @@ class XmppService {
     await _connection?.getManagerById<PresenceManager>(presenceManager)
         ?.sendInitialPresence();
   }
+
+  PresenceManager? _presenceManager() =>
+      _connection?.getManagerById<PresenceManager>(presenceManager);
+
+  /// Asks [peer] for a presence subscription.
+  Future<void> requestSubscription(JID peer) async {
+    await _presenceManager()?.requestSubscription(peer.toBare());
+  }
+
+  /// Grants a subscription [peer] asked for.
+  ///
+  /// Without this the relationship stays one-sided and most servers refuse
+  /// to route messages between non-contacts, which looks exactly like a
+  /// delivery bug.
+  Future<void> acceptSubscription(JID peer) async {
+    await _presenceManager()?.acceptSubscriptionRequest(peer.toBare());
+  }
+
+  /// Approves every subscription request that arrives, so a peer can add us
+  /// without anyone touching the UI. Returns the peers approved.
+  Stream<JID> get subscriptionRequests => _subscriptionRequests.stream;
+  final _subscriptionRequests = StreamController<JID>.broadcast();
 
   /// True once the server accepted our Carbons enable request.
   bool get carbonsEnabled => _carbonsEnabled;
@@ -201,6 +259,7 @@ class XmppService {
     String? host,
     int? port,
     BaseRosterStateManager? rosterState,
+    bool reconnect = true,
   }) async {
     await disconnect();
     _state = XmppConnectionState.connecting;
@@ -214,7 +273,7 @@ class XmppService {
     // itself once both sides support OMEMO.
     _shouldEncrypt = autoShouldEncrypt;
     final connection = XmppConnection(
-      TestingReconnectionPolicy(),
+      reconnect ? TestingReconnectionPolicy() : NeverReconnectPolicy(),
       // TODO(M7): replace with a connectivity_plus-backed manager plus
       // XEP-0357 push so Doze-mode delivery works without a permanent
       // radio lock (Briar's always-on lesson, docs/09).
@@ -252,12 +311,17 @@ class XmppService {
       SaslScramNegotiator(20, '', '', ScramHashType.sha512),
       SaslScramNegotiator(10, '', '', ScramHashType.sha1),
       SaslPlainNegotiator(),
+      // Roster versioning (RFC 6121). Without this negotiator registered,
+      // RosterManager.requestRoster() dereferences a null negotiator and
+      // the whole roster fetch dies - which is the first thing the login
+      // flow does.
+      RosterFeatureNegotiator(),
       ResourceBindingNegotiator(),
     ]);
 
     _eventsSub = connection.asBroadcastStream().listen(_onEvent);
     final result = await connection.connect(
-      shouldReconnect: true,
+      shouldReconnect: reconnect,
       waitUntilLogin: true,
     );
     final ok = result.isType<bool>() && result.get<bool>();
@@ -402,14 +466,43 @@ class XmppService {
       device,
       omemo_dart.BlindTrustBeforeVerificationTrustManager(),
       _moxxOmemo!.sendEmptyMessageImpl,
-      _moxxOmemo!.fetchDeviceList,
-      _moxxOmemo!.fetchDeviceBundle,
-      _moxxOmemo!.subscribeToDeviceListImpl,
-      _moxxOmemo!.publishDeviceImpl,
+      // The inbound path must use the same dual-dialect readers as the
+      // outbound one. moxxmpp's fetchDeviceList only knows the XEP-0384 spec
+      // node, so it reported an empty list for every real peer and
+      // decryption aborted with "not tracked in device list".
+      _fetchDeviceListDialectAware,
+      _fetchDeviceBundleDialectAware,
+      _subscribeToDeviceListDialectAware,
+      _publishDeviceDialectAware,
     );
     _omemo = manager;
     return manager;
   }
+
+  /// Device list for [jid] across both OMEMO wire dialects.
+  Future<List<int>?> _fetchDeviceListDialectAware(String jid) async {
+    final resolved =
+        await tracks?.resolveOmemoDevices(JID.fromString(jid)) ??
+            (devices: const <int>{}, listReadable: false);
+    if (!resolved.listReadable) return null;
+    return resolved.devices.toList();
+  }
+
+  /// Bundle for one device across both OMEMO wire dialects.
+  Future<omemo_dart.OmemoBundle?> _fetchDeviceBundleDialectAware(
+    String jid,
+    int deviceId,
+  ) async {
+    return tracks?.getOmemoBundle(JID.fromString(jid), deviceId);
+  }
+
+  Future<void> _subscribeToDeviceListDialectAware(String jid) =>
+      _moxxOmemo!.subscribeToDeviceListImpl(jid);
+
+  Future<void> _publishDeviceDialectAware(
+    omemo_dart.OmemoDevice device,
+  ) =>
+      _moxxOmemo!.publishDeviceImpl(device);
 
   /// Creates (or restores) our OMEMO device and publishes its bundle.
   ///
@@ -640,6 +733,32 @@ class XmppService {
       );
     } else if (event is PubSubNotificationEvent) {
       _onPepNotification(event);
+    } else if (event is MessageEvent) {
+      // Raw view of every message stanza, before decryption is attempted.
+      // A caller diagnosing "nothing arrived" needs to tell routing apart
+      // from decryption, and only the raw form can do that.
+      _rawMessages.add(
+        MessageTrace(
+          from: event.from,
+          id: event.id,
+          type: event.type,
+          encrypted: event.encrypted,
+          error: event.error?.toString(),
+          decryptionError: event.encryptionError?.toString(),
+          body: event.get<MessageBodyData>()?.body ?? '',
+        ),
+      );
+    } else if (event is SubscriptionRequestReceivedEvent) {
+      // Approve automatically: a contact adding us must not require a tap.
+      final from = JID.fromString('${event.from}');
+      unawaited(acceptSubscription(from).then(
+        (_) {
+          if (!_subscriptionRequests.isClosed) {
+            _subscriptionRequests.add(from.toBare());
+          }
+        },
+      ));
+      _log.info('approved presence subscription from ${event.from}');
     }
   }
 
@@ -655,4 +774,18 @@ class XmppService {
     _capabilities?.invalidate(owner);
     if (!_capabilityChanges.isClosed) _capabilityChanges.add(owner);
   }
+}
+
+/// Reconnection policy that never reconnects.
+///
+/// Used by probes and headless tools: an automatic reconnect turns a dropped
+/// stream into an unhandled socket error inside the caller's zone, which
+/// buries whatever the caller was actually measuring. Reconnecting is the
+/// app's job and is done deliberately, with backoff.
+class NeverReconnectPolicy extends ReconnectionPolicy {
+  @override
+  Future<void> onSuccess() async {}
+
+  @override
+  Future<void> onFailure() async {}
 }

@@ -24,6 +24,13 @@ final capabilityServiceProvider = Provider<CapabilityService>((ref) {
   final service = CapabilityService(
     tracks: () => ref.read(dualTrackManagerProvider)!,
     ourDeviceId: () async => ref.read(xmppServiceProvider).omemo?.getDeviceId(),
+    // Our own PQ device counts as PQ-capable only once its bundle is
+    // published; before that the chat must stay on the A track.
+    ourPqDevices: () async {
+      final b = ref.read(xmppServiceProvider).bTrack;
+      final id = b?.device?.id;
+      return (b?.ready ?? false) && id != null ? {id} : const <int>{};
+    },
   );
   // Let the connection consult this when deciding whether to encrypt.
   // Done in a side-effecting provider rather than inside the factory, so

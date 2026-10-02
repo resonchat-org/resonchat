@@ -147,9 +147,21 @@ class DualTrackManager {
 
   /// Raw device ids from [jid]'s OMEMO device list, whichever dialect it
   /// published.
-  Future<Set<int>> fetchOmemoDeviceIds(JID jid) async {
+  Future<Set<int>> fetchOmemoDeviceIds(JID jid) async =>
+      (await resolveOmemoDevices(jid)).devices;
+
+  /// [jid]'s OMEMO devices whose bundle actually fetches, plus whether the
+  /// device list itself could be read.
+  ///
+  /// The two answers must stay separate: "this contact publishes no
+  /// devices" is a real, actionable answer, while "we could not read the
+  /// list" means we know nothing and must not decide anything on that basis.
+  Future<({Set<int> devices, bool listReadable})> resolveOmemoDevices(
+    JID jid,
+  ) async {
     final pm = pubsubOf();
-    final ids = <int>{};
+    final listed = <int>{};
+    var listReadable = false;
     for (final node in [omemoDefactoDevicesNode, ...omemoSpecDevicesNodes]) {
       final items = await pm.getItems(jid, node);
       if (!items.isType<List<PubSubItem>>()) continue;
@@ -157,13 +169,21 @@ class DualTrackManager {
         try {
           final doc = XmlDocument.parse(item.payload.toXml());
           final parsed = parseOmemoDeviceList(doc.rootElement);
-          if (parsed != null) ids.addAll(parsed);
+          if (parsed == null) continue;
+          listReadable = true;
+          listed.addAll(parsed);
         } catch (_) {
           // A payload we cannot read simply contributes nothing.
         }
       }
     }
-    return ids;
+    if (!listReadable) return (devices: const <int>{}, listReadable: false);
+
+    final devices = <int>{};
+    for (final id in listed) {
+      if (await getOmemoBundle(jid, id) != null) devices.add(id);
+    }
+    return (devices: devices, listReadable: true);
   }
 
   /// Fetches one device's standard OMEMO bundle, or null when

@@ -52,6 +52,7 @@ class CapabilityService {
   CapabilityService({
     required this.tracks,
     required this.ourDeviceId,
+    this.ourPqDevices = _noPqDevices,
     this.ttl = const Duration(minutes: 5),
   });
 
@@ -62,6 +63,16 @@ class CapabilityService {
 
   /// Our own OMEMO device id, or null before the device exists.
   final Future<int?> Function() ourDeviceId;
+
+  /// Our own B-track device ids, empty when the PQ device is not published.
+  ///
+  /// Our own devices have to appear in the capability sets too: the
+  /// decision requires *every* recipient device to be covered, and a
+  /// carbon copy we cannot decrypt is exactly the bug the invariant exists
+  /// to prevent.
+  final Future<Set<int>> Function() ourPqDevices;
+
+  static Future<Set<int>> _noPqDevices() async => const <int>{};
 
   final Duration ttl;
 
@@ -90,24 +101,35 @@ class CapabilityService {
 
   Future<ChatCapabilities> _resolve(JID jid) async {
     final bare = jid.toBare();
-    
 
     // A track's device list must include our own id, otherwise Carbons
     // copies of our messages would be undecryptable.
     final ourId = await ourDeviceId();
-    final omemoDevices = await tracks().aTrack.fetchDeviceList(
-      bare.toString(),
-    );
 
-    final devices = <int>{...?omemoDevices};
-    if (ourId != null) devices.add(ourId);
+    // Read the device list ourselves rather than through moxxmpp: its
+    // fetchDeviceList only knows the XEP-0384 spec node, which no real
+    // client publishes to, so it silently reported an empty list for
+    // everyone. See lib/omemo/defacto.dart.
+    final resolved = await tracks().resolveOmemoDevices(bare);
+
+    final devices = <int>{...resolved.devices};
+    final ours = <int>{};
+    if (ourId != null) ours.add(ourId);
+    devices.addAll(ours);
 
     final pqDevices = await tracks().getPqCapableDevices(bare);
+    final ourPq = await ourPqDevices();
+
+    // We hold our own OMEMO keys by definition, so our device ids count as
+    // OMEMO-capable without a round-trip.
+    final omemo = <int>{...resolved.devices, ...ours};
 
     // Only devices we can actually deliver to count as PQ-capable; a
-    // stale capability cache must not upgrade a mixed chat.
-    final pq = pqDevices.intersection(devices);
-    final omemo = omemoDevices?.toSet() ?? devices;
+    // stale capability cache must not upgrade a mixed chat. Our own PQ
+    // device only qualifies once its bundle is actually published.
+    final pq = <int>{...pqDevices.intersection(devices), ...ourPq}..retainWhere(
+          devices.contains,
+        );
 
     final mode = decideEncMode(
       allDevices: devices,
@@ -121,11 +143,14 @@ class CapabilityService {
       omemoDevices: omemo,
       pqDevices: pq,
       checkedAt: DateTime.now(),
-      reliable: omemoDevices != null,
+      // An empty device list is a real answer ("this contact has no
+      // devices"); an unreadable one is not. Conflating them would send
+      // unencrypted mail believing the peer was merely device-less.
+      reliable: resolved.listReadable,
     );
     _log.fine(
       'caps($bare): ${caps.mode.name} devices=${caps.recipientDevices} '
-      'pq=${caps.pqDevices}',
+      'pq=${caps.pqDevices} reliable=${caps.reliable}',
     );
     _cache[bare.toString()] = caps;
     return caps;
