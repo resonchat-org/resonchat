@@ -11,9 +11,8 @@ import 'package:moxxmpp/moxxmpp.dart'
     show JID, RosterManager, rosterManager;
 import '../xmpp/connection.dart';
 
-import '../omemo/track.dart';
 import '../state/providers.dart';
-import '../store/database.dart';
+import 'chat_row.dart';
 import 'search.dart';
 import 'theme.dart';
 
@@ -114,7 +113,11 @@ class _ChatsPageState extends ConsumerState<ChatsPage> {
                         child: Divider(height: 0.5, color: context.tg.separator),
                       ),
                       itemBuilder: (context, i) =>
-                          _ChatRow(chat: list[i]),
+                          ChatRow(
+                      chat: list[i],
+                      onOpen: () => Navigator.of(context)
+                          .pushNamed('/chat', arguments: list[i].jid),
+                    ),
                     ),
               loading: () =>
                   const Center(child: CircularProgressIndicator()),
@@ -172,123 +175,7 @@ class _OpenChatBar extends StatelessWidget {
 }
 
 /// One conversation row.
-class _ChatRow extends ConsumerWidget {
-  const _ChatRow({required this.chat});
 
-  final Chat chat;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final tg = context.tg;
-    final title = chat.title.isEmpty ? chat.jid : chat.title;
-    // The chosen track for this conversation, so a chat row shows what the
-    // user picked rather than what a capability lookup happened to say.
-    final track = ref.watch(chatTrackProvider(chat.jid)).value ?? Track.standard;
-    final preview = ref.watch(lastMessageProvider(chat.jid));
-    final locked = track != Track.none;
-
-    return InkWell(
-      onTap: () => Navigator.of(context).pushNamed('/chat', arguments: chat.jid),
-      child: Container(
-        height: TgDimens.chatsRowHeight,
-        padding: const EdgeInsets.symmetric(
-          horizontal: TgDimens.chatsHorizontalPadding,
-        ),
-        child: Row(
-          children: [
-            // Shared element with the chat page's avatar, so opening a
-            // conversation carries the avatar across instead of cutting.
-            Hero(
-              tag: 'avatar-${chat.jid}',
-              child: CircleAvatar(
-                radius: TgDimens.avatarChats / 2,
-                backgroundColor: tg.accent.withValues(alpha: 0.18),
-                child: Text(
-                  title.isEmpty ? '?' : title[0].toUpperCase(),
-                  style: TextStyle(
-                    color: tg.accent,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      if (locked)
-                        Padding(
-                          padding: const EdgeInsets.only(right: 4),
-                          child: Icon(Icons.lock, size: 12, color: tg.accent),
-                        ),
-                      Expanded(
-                        child: Text(
-                          title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: TgDimens.chatTitleFontSize,
-                            fontWeight: FontWeight.w500,
-                            color: tg.textPrimary,
-                          ),
-                        ),
-                      ),
-                      Text(
-                        _timeOf(chat.lastActivity),
-                        style: TextStyle(
-                          fontSize: TgDimens.timeFontSize,
-                          color: tg.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: TgDimens.chatsTitleGap),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          preview.value ?? '',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: TgDimens.chatSubtitleFontSize,
-                            color: tg.textSecondary,
-                          ),
-                        ),
-                      ),
-                      if (locked)
-                        Text(
-                          track.label,
-                          style: TextStyle(
-                            fontSize: TgDimens.timeFontSize,
-                            color: tg.accent,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  static String _timeOf(DateTime t) {
-    final now = DateTime.now();
-    final h = t.hour.toString().padLeft(2, '0');
-    final m = t.minute.toString().padLeft(2, '0');
-    if (t.year == now.year && t.day == now.day) return '$h:$m';
-    return '${t.day}/${t.month}';
-  }
-}
 
 /// Reduces whatever the user typed to a bare JID, or null if it is not one.
 ///

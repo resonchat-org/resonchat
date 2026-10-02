@@ -94,7 +94,7 @@ class _AppWiringState extends ConsumerState<AppWiring> {
     // conversation that looked empty when reopened.
     _subs.add(
       xmpp.inbound.listen(
-        (msg) => unawaited(storeInbound(ref.read(databaseProvider), msg)),
+        (msg) => unawaited(_acceptInbound(ref, msg)),
       ),
     );
   }
@@ -150,6 +150,32 @@ Future<void> _noticeCapabilityChange(WidgetRef ref, JID jid) async {
     // next send refuses rather than guessing.
     Logger('AppWiring').fine('capability re-resolve for $bare failed: $e');
   }
+}
+
+/// Stores one inbound message and updates the conversation's unread state.
+///
+/// Unread is decided here rather than in the chat list, because the list is not
+/// necessarily mounted: a message that arrives with no UI on screen has to be
+/// counted somewhere, or opening the app later shows a conversation that looks
+/// read when a message was sitting there the whole time.
+Future<void> _acceptInbound(WidgetRef ref, InboundMessage msg) async {
+  final db = ref.read(databaseProvider);
+  await storeInbound(db, msg);
+  final chatJid = msg.from.toBare().toString();
+  // A carbon is a copy of one of our own messages. Counting it would show an
+  // unread badge for something the user wrote.
+  if (msg.isCarbonCopy) return;
+  final chat = (await db.watchChats().first)
+      .where((c) => c.jid == chatJid)
+      .firstOrNull;
+  // Muted conversations still receive and store; they just do not get a badge,
+  // because muting is a promise that nothing will interrupt.
+  if (chat?.muted ?? false) return;
+  if (chat?.archived ?? false) return;
+  await db.markChatUnread(
+    chatJid,
+    arrivedAt: msg.archiveTimestamp ?? DateTime.now(),
+  );
 }
 
 /// The last capability snapshot seen per conversation.

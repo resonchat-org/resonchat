@@ -73,6 +73,11 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         .deliveryFailures
         .listen(_onDeliveryFailure);
     _adviceSub = trackAdvice.listen(_onAdvice);
+    // Opening a conversation is what "read" means. Done here rather than when a
+    // message scrolls past, because a conversation opened at the bottom is read
+    // from where it is scrolled to, and a message the user scrolled past
+    // deliberately is not unread.
+    unawaited(ref.read(databaseProvider).markChatRead(widget.chatJid));
   }
 
   @override

@@ -27,6 +27,30 @@ class Chats extends Table {
   DateTimeColumn get lastActivity =>
       dateTime().withDefault(currentDateAndTime)();
 
+  /// Pinned to the top of the chat list.
+  BoolColumn get pinned => boolean().withDefault(const Constant(false))();
+
+  /// Notifications suppressed for this conversation.
+  ///
+  /// A local decision, not a server one: there is no standard way to tell a
+  /// contact "stop notifying me about this", and pretending otherwise would
+  /// mean the setting silently does nothing on another device.
+  BoolColumn get muted => boolean().withDefault(const Constant(false))();
+
+  /// Moved out of the main list into the archive.
+  BoolColumn get archived => boolean().withDefault(const Constant(false))();
+
+  /// Unread inbound messages.
+  ///
+  /// Counted rather than derived, because "unread" has to survive the app
+  /// being closed: deriving it from the message table means every launch
+  /// re-reads the whole transcript to work out what was already read.
+  IntColumn get unreadCount => integer().withDefault(const Constant(0))();
+
+  /// Where the reader had got to, so a jump lands in the right place.
+  DateTimeColumn get lastReadAt =>
+      dateTime().withDefault(currentDateAndTime)();
+
   /// The track the user picked for this conversation, or empty for "use the
   /// global default" (docs/10 §3).
   ///
@@ -198,7 +222,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
   @override
-  int get schemaVersion => 9;
+  int get schemaVersion => 10;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -211,6 +235,25 @@ class AppDatabase extends _$AppDatabase {
             await customStatement(
               "ALTER TABLE messages ADD COLUMN delivery_error TEXT NOT NULL "
               "DEFAULT ''",
+            );
+          }
+          if (from < 10) {
+            await customStatement(
+              'ALTER TABLE chats ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0',
+            );
+            await customStatement(
+              'ALTER TABLE chats ADD COLUMN muted INTEGER NOT NULL DEFAULT 0',
+            );
+            await customStatement(
+              'ALTER TABLE chats ADD COLUMN archived INTEGER NOT NULL DEFAULT 0',
+            );
+            await customStatement(
+              'ALTER TABLE chats ADD COLUMN unread_count INTEGER NOT NULL '
+              'DEFAULT 0',
+            );
+            await customStatement(
+              'ALTER TABLE chats ADD COLUMN last_read_at INTEGER NOT NULL '
+              'DEFAULT 0',
             );
           }
           if (from < 9) {
@@ -639,12 +682,99 @@ class AppDatabase extends _$AppDatabase {
 
   /// Chat list, newest activity first. `jid` breaks ties because drift
   /// stores DateTime at second precision.
-  Stream<List<Chat>> watchChats() => (select(chats)
-        ..orderBy([
-          (c) => OrderingTerm.desc(c.lastActivity),
-          (c) => OrderingTerm.asc(c.jid),
-        ]))
-      .watch();
+  /// The chat list, in the order the user sees it.
+  ///
+  /// Pinned first, then most recent. The tiebreaker on jid matters more than it
+  /// looks: two conversations with the same last-activity second would otherwise
+  /// swap places between rebuilds, which reads as the list jittering.
+  Stream<List<Chat>> watchChats({bool includeArchived = false}) {
+    final query = select(chats)
+      ..orderBy([
+        (c) => OrderingTerm.desc(c.pinned),
+        (c) => OrderingTerm.desc(c.lastActivity),
+        (c) => OrderingTerm.asc(c.jid),
+      ]);
+    // Applied conditionally rather than as `includeArchived || !archived`:
+    // folding a Dart bool into the SQL expression makes the query depend on a
+    // value that is not in the database, so the stream cannot be re-used for
+    // the other case and the two lists can drift apart.
+    if (!includeArchived) {
+      query.where((c) => c.archived.equals(false));
+    }
+    return query.watch();
+  }
+
+  /// Marks [chatJid] as read: the unread count goes to zero and the read
+  /// marker moves to now.
+  ///
+  /// The marker is stored rather than inferred so that "read" survives the app
+  /// being closed. Inferring it from the message table would mean re-reading
+  /// the whole transcript on every launch.
+  Future<void> markChatRead(String chatJid, {DateTime? at}) async {
+    await (update(chats)..where((c) => c.jid.equals(chatJid))).write(
+      ChatsCompanion(
+        unreadCount: const Value(0),
+        lastReadAt: Value(at ?? DateTime.now()),
+      ),
+    );
+  }
+
+  /// Increments the unread count for [chatJid], and pulls the read marker back
+  /// so the next mark-read does not swallow the increment.
+  ///
+  /// The arithmetic happens in SQL rather than read-modify-write: two messages
+  /// arriving while the UI is idle would otherwise both read the same count and
+  /// one would be lost. Counting is exactly where an off-by-one stays invisible
+  /// to the user until they open the chat and find a message already marked
+  /// read.
+  Future<void> markChatUnread(
+    String chatJid, {
+    required DateTime arrivedAt,
+  }) async {
+    // Raw SQL because drift's typed update cannot express
+    // `unread_count = unread_count + 1`. The guard is in the same statement on
+    // purpose: archive replay delivers old messages, and counting those would
+    // show a badge for a conversation the user has already read.
+    //
+    // Seconds, not milliseconds: that is what drift stores a DateTime as, and
+    // getting it wrong makes the comparison always false, so every replayed
+    // message counts and the guard is quietly dead.
+    await customStatement(
+      'UPDATE chats SET unread_count = unread_count + 1 '
+      'WHERE jid = ? AND last_read_at <= ?',
+      [chatJid, arrivedAt.millisecondsSinceEpoch ~/ 1000],
+    );
+  }
+
+  /// Sets one of the per-conversation switches.
+  Future<void> setChatFlag(
+    String chatJid, {
+    bool? pinned,
+    bool? muted,
+    bool? archived,
+  }) async {
+    final updated = await (update(chats)..where((c) => c.jid.equals(chatJid)))
+        .write(
+      ChatsCompanion(
+        pinned: pinned == null ? const Value.absent() : Value(pinned),
+        muted: muted == null ? const Value.absent() : Value(muted),
+        archived: archived == null ? const Value.absent() : Value(archived),
+      ),
+    );
+    if (updated == 0) {
+      // Pinning a conversation that has no row yet — opening a chat from a JID
+      // and pinning it before any message exists. Creating the row keeps
+      // "the flag is set" independent of "the conversation exists".
+      await upsertChat(chatJid);
+      await (update(chats)..where((c) => c.jid.equals(chatJid))).write(
+        ChatsCompanion(
+          pinned: pinned == null ? const Value.absent() : Value(pinned),
+          muted: muted == null ? const Value.absent() : Value(muted),
+          archived: archived == null ? const Value.absent() : Value(archived),
+        ),
+      );
+    }
+  }
 
   /// Messages in conversation order. `timestamp` first (so imported
   /// history sorts correctly), then `id` as the insertion-order
