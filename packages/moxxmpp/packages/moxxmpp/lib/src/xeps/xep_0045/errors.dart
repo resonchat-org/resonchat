@@ -23,3 +23,40 @@ class JoinForbiddenError extends MUCError {}
 
 /// Indicates that an unspecific error occurred while joining.
 class MUCUnspecificError extends MUCError {}
+
+/// The room needs a password this client does not implement.
+///
+/// Its own type rather than [JoinForbiddenError], because "you are not allowed"
+/// and "you need a password" need different sentences and one generic refusal
+/// forces both into one.
+class PasswordRequiredError implements MUCError {
+  @override
+  String toString() => 'the room requires a password';
+}
+
+/// The requested nickname is already in use.
+class NicknameTakenError implements MUCError {
+  @override
+  String toString() => 'the nickname is already in use in this room';
+}
+
+/// This account is banned from the room.
+class BannedFromRoomError implements MUCError {
+  @override
+  String toString() => 'this account is banned from the room';
+}
+
+/// The room is at its occupant limit.
+class RoomFullError implements MUCError {
+  @override
+  String toString() => 'the room is full';
+}
+
+/// The service answered, but it does not have the room the client asked for.
+///
+/// Its own type because it is the one refusal where the *address* is the likely
+/// mistake, and "could not join" sends the user looking for the wrong problem.
+class RoomNotFoundError implements MUCError {
+  @override
+  String toString() => 'the service does not have that room';
+}

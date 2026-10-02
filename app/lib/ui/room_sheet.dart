@@ -76,19 +76,45 @@ class _JoinRoomSheetState extends ConsumerState<JoinRoomSheet> {
     navigator.pushNamed('/chat', arguments: roomJid);
   }
 
-  static String _describe(MUCError error) => switch (error.toString()) {
-        String s when s.contains('nickname in use') || s.contains('409') =>
-          'That nickname is taken in this room. Pick another.',
-        String s when s.contains('password') || s.contains('auth') =>
-          'This room needs a password, which this client does not support yet.',
-        String s when s.contains('banned') =>
-          'You are banned from this room.',
-        String s when s.contains('max') || s.contains('503') =>
-          'This room is full.',
-        String s when s.contains('nickname') =>
-          'A nickname is required to join.',
-        _ => 'Could not join: $error',
-      };
+  /// One sentence per refusal.
+  ///
+  /// Matched on the error *type* rather than on its text: moxxmpp's own
+  /// `toString()` is not a contract, and a message that has to be rewritten
+  /// every time it changes is a message that will be wrong for one release.
+  static String _describe(Object error) {
+    if (error is NicknameTakenError) {
+      return 'That nickname is taken in this room. Pick another.';
+    }
+    if (error is PasswordRequiredError) {
+      return 'This room needs a password, which this client does not support '
+          'yet.';
+    }
+    if (error is BannedFromRoomError) {
+      return 'You are banned from this room.';
+    }
+    if (error is RoomFullError) {
+      return 'This room is full.';
+    }
+    if (error is JoinForbiddenError) {
+      return 'The room refused the join without saying why.';
+    }
+    if (error is NoNicknameSpecified) {
+      return 'A nickname is required to join.';
+    }
+    if (error is RoomNotFoundError) {
+      // The address is the likely mistake, and this is the one refusal where
+      // that is almost certainly true.
+      return 'That service has no room at that address. Group rooms look like '
+          'room@conference.example.org.';
+    }
+    if (error is MucServiceUnresponsive) {
+      // The most likely cause by far: an address that is not a group chat.
+      // "Could not join" would leave the user with nothing to act on.
+      return 'Nothing answered at that address. Check the room address — group '
+          'rooms look like room@conference.example.org.';
+    }
+    return 'Could not join: $error';
+  }
 
   @override
   Widget build(BuildContext context) {

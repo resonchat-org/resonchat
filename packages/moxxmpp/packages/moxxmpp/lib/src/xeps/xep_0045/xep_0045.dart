@@ -57,6 +57,19 @@ class MUCManager extends XmppManagerBase {
           // Before the PresenceManager
           priority: PresenceManager.presenceHandlerPriority + 1,
         ),
+        // A refusal is a presence *error*, and an error presence carries no
+        // <x xmlns='http://jabber.org/protocol/muc#user'/> — it carries an
+        // <error/> instead. So the handler above never sees it, the join's
+        // completer is never completed, and every refusal (nickname taken,
+        // password required, banned, room full) looks exactly like a service
+        // that simply did not answer. Those are very different things to show a
+        // user, so errors get their own handler.
+        StanzaHandler(
+          stanzaTag: 'presence',
+          callback: _onPresenceError,
+          tagName: 'error',
+          priority: PresenceManager.presenceHandlerPriority + 1,
+        ),
       ];
 
   @override
@@ -246,6 +259,64 @@ class MUCManager extends XmppManagerBase {
     return _cacheLock.synchronized(() => _mucRoomCache[roomJid]);
   }
 
+  /// Handles a presence *error* from a room we are trying to join.
+  ///
+  /// Split out of `_onPresence` because the error presence has no muc#user
+  /// `<x/>`, so the handler registered for that tag never sees it. Keeping the
+  /// branch inside that handler meant it was dead code, and a dead branch here
+  /// is not a warning: every refusal silently became a join that never
+  /// completes.
+  Future<StanzaHandlerData> _onPresenceError(
+    Stanza presence,
+    StanzaHandlerData state,
+  ) async {
+    final from = presence.from;
+    if (from == null) return state;
+    final bareFrom = JID.fromString(from).toBare();
+    return _cacheLock.synchronized(() {
+      // Only failures of a join we are waiting on matter. Presence errors from
+      // elsewhere on the server are not ours to resolve.
+      if (_mucRoomCache[bareFrom] == null) return state;
+      final completer = _mucRoomJoinCompleter[bareFrom];
+      if (completer == null || completer.isCompleted) return state;
+
+      final errorTag = presence.firstTag('error');
+      final condition = errorTag == null
+          ? null
+          : errorTag.firstTagByXmlns(fullStanzaXmlns)?.tag;
+      final Result<bool, MUCError> result;
+      switch (condition) {
+        case 'forbidden':
+          result = Result(JoinForbiddenError());
+        case 'not-authorized':
+          // Distinguished from `forbidden` because they need different
+          // sentences: one means "you are not allowed", the other "you need a
+          // password this client does not handle".
+          result = Result(PasswordRequiredError());
+        case 'conflict':
+          result = Result(NicknameTakenError());
+        case 'not-allowed':
+          result = Result(BannedFromRoomError());
+        case 'item-not-found':
+          result = Result(RoomNotFoundError());
+        case 'service-unavailable':
+          result = Result(RoomFullError());
+        default:
+          result = Result(MUCUnspecificError());
+      }
+
+      _mucRoomCache.remove(bareFrom);
+      completer.complete(result);
+      _mucRoomJoinCompleter.remove(bareFrom);
+      return StanzaHandlerData(
+        true,
+        false,
+        presence,
+        state.extensions,
+      );
+    });
+  }
+
   Future<StanzaHandlerData> _onPresence(
     Stanza presence,
     StanzaHandlerData state,
@@ -269,27 +340,6 @@ class MUCManager extends XmppManagerBase {
         // TODO(Unknown): Handle presence from the room itself.
         logger.finest('Ignoring presence as it has no resource');
         return state;
-      }
-
-      if (presence.type == 'error') {
-        final errorTag = presence.firstTag('error')!;
-        final error = errorTag.firstTagByXmlns(fullStanzaXmlns)!;
-        Result<bool, MUCError> result;
-        if (error.tag == 'forbidden') {
-          result = Result(JoinForbiddenError());
-        } else {
-          result = Result(MUCUnspecificError());
-        }
-
-        _mucRoomCache.remove(bareFrom);
-        _mucRoomJoinCompleter[bareFrom]!.complete(result);
-        _mucRoomJoinCompleter.remove(bareFrom);
-        return StanzaHandlerData(
-          true,
-          false,
-          presence,
-          state.extensions,
-        );
       }
 
       final x = presence.firstTag('x', xmlns: mucUserXmlns)!;

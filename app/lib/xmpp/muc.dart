@@ -30,6 +30,23 @@ import 'package:moxxmpp/moxxmpp.dart';
 import '../omemo/track.dart';
 import '../omemo/track_resolver.dart';
 
+/// A MUC service that did not answer a join at all.
+///
+/// Not one of moxxmpp's error types, on purpose: "the service did not reply" and
+/// "the service refused" are different things, and the user needs to be told
+/// which happened. Collapsing them into one "could not join" is what makes a
+/// mistyped room address indistinguishable from a ban.
+class MucServiceUnresponsive implements MUCError {
+  const MucServiceUnresponsive(this.roomJid);
+
+  final String roomJid;
+
+  @override
+  String toString() =>
+      'no response from the service hosting $roomJid (wrong address, or the '
+      'service is not a group-chat service)';
+}
+
 /// One person in a room.
 class Occupant {
   const Occupant({

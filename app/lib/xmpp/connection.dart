@@ -8,6 +8,7 @@
 import 'dart:async';
 
 import 'package:logging/logging.dart';
+import 'package:moxlib/moxlib.dart';
 import 'package:moxxmpp/moxxmpp.dart';
 import 'package:moxxmpp_socket_tcp/moxxmpp_socket_tcp.dart';
 import 'package:omemo_dart/omemo_dart.dart' as omemo_dart;
@@ -538,10 +539,28 @@ class XmppService {
   /// Returns the error rather than throwing, because a room can refuse for a
   /// dozen ordinary reasons — name taken, room full, password required,
   /// banned — and each needs a different sentence in front of the user.
-  Future<MUCError?> joinGroupChat(String roomJid, String nick) async {
+  Future<MUCError?> joinGroupChat(
+    String roomJid,
+    String nick, {
+    Duration timeout = const Duration(seconds: 20),
+  }) async {
     final manager = muc;
     if (manager == null) return NoNicknameSpecified();
-    final result = await manager.joinRoom(JID.fromString(roomJid), nick);
+    // moxxmpp's joinRoom waits on a completer that its presence handler
+    // completes. A MUC service that never answers — wrong address, a service
+    // that is not a MUC at all, a server that drops the request — leaves that
+    // completer open forever, which is a spinner that never stops and a future
+    // that never returns. Bounded here rather than in moxxmpp so the reason
+    // reaches the user as text.
+    final result = await manager
+        .joinRoom(JID.fromString(roomJid), nick)
+        .timeout(
+          timeout,
+          // The one error type moxxmpp does not have, which is the point: a
+          // service that simply did not answer is a different thing from one
+          // that refused, and the user needs to be told which happened.
+          onTimeout: () => Result<bool, MUCError>(MucServiceUnresponsive(roomJid)),
+        );
     if (!result.isType<bool>()) return result.get<MUCError>();
     return null;
   }
