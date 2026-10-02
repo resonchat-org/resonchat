@@ -17,8 +17,11 @@ import 'protocol.dart';
 class PqBundle {
   PqBundle({
     required this.deviceId,
+    required this.jid,
     required this.spk,
+    required this.spkId,
     required this.spkSignature,
+    required this.ikEncoded,
     required this.prekeys,
     required this.pqSpkId,
     required this.pqSpk,
@@ -28,9 +31,17 @@ class PqBundle {
 
   final int deviceId;
 
+  /// Bare JID that owns this bundle, needed to build a [PqDevice].
+  final String jid;
+
   // Classic (A-track) part, base64.
   final String spk;
+  final int spkId;
   final String spkSignature;
+
+  /// X25519 identity key (public, base64). Shared with the A track so one
+  /// fingerprint identifies the device across both tracks.
+  final String ikEncoded;
   final Map<int, String> prekeys;
 
   // PQ part, base64. ML-KEM-768 pk = 1184 bytes.
@@ -48,8 +59,9 @@ class PqBundle {
       'bundle',
       attributes: {'xmlns': pomemoXmlns, 'device': '$deviceId'},
       nest: () {
-        builder.element('spk', nest: spk);
+        builder.element('spk', attributes: {'id': '$spkId'}, nest: spk);
         builder.element('spsk', nest: spkSignature);
+        builder.element('ik', nest: ikEncoded);
         builder.element('prekeys', nest: () {
           for (final entry in prekeys.entries) {
             builder.element('pk',
@@ -70,7 +82,7 @@ class PqBundle {
     return builder.buildDocument().rootElement;
   }
 
-  static PqBundle fromXml(XmlElement el) {
+  static PqBundle fromXml(XmlElement el, {String? jidOfBundle}) {
     String one(String tag) => el.findElements(tag).single.innerText;
     Map<int, String> keyMap(String parent, String child) {
       final out = <int, String>{};
@@ -83,10 +95,14 @@ class PqBundle {
     }
 
     final pqSpkEls = el.findElements('pqspk');
+    final spkEls = el.findElements('spk');
     return PqBundle(
       deviceId: int.parse(el.getAttribute('device')!),
-      spk: one('spk'),
+      jid: jidOfBundle ?? '',
+      spk: spkEls.isEmpty ? '' : spkEls.single.innerText,
+      spkId: spkEls.isEmpty ? -1 : int.parse(spkEls.single.getAttribute('id')!),
       spkSignature: one('spsk'),
+      ikEncoded: el.findElements('ik').singleOrNull?.innerText ?? '',
       prekeys: keyMap('prekeys', 'pk'),
       pqSpkId: pqSpkEls.isEmpty
           ? -1

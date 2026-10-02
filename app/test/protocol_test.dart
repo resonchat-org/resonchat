@@ -92,8 +92,11 @@ void main() {
     test('round-trips a full PQ bundle', () {
       final bundle = PqBundle(
         deviceId: 4242,
+        jid: 'me@example.org',
         spk: 'c3Br',
+        spkId: 7,
         spkSignature: 'c2ln',
+        ikEncoded: 'aWs=',
         prekeys: {10: 'cGswMQ==', 11: 'cGswMg=='},
         pqSpkId: 1,
         pqSpk: 'cHFzcGs=',
@@ -103,11 +106,12 @@ void main() {
       final xml = bundle.toXml().toXmlString();
       expect(xml, contains('urn:xmpp:pomemo:0'));
 
-      final parsed =
-          PqBundle.fromXml(_rootOf(xml));
+      final parsed = PqBundle.fromXml(_rootOf(xml));
       expect(parsed.deviceId, 4242);
       expect(parsed.spk, 'c3Br');
+      expect(parsed.spkId, 7);
       expect(parsed.spkSignature, 'c2ln');
+      expect(parsed.ikEncoded, 'aWs=');
       expect(parsed.prekeys, bundle.prekeys);
       expect(parsed.pqSpkId, 1);
       expect(parsed.pqSpk, 'cHFzcGs=');
@@ -119,8 +123,11 @@ void main() {
     test('bundle without PQ keys reports hasPqKeys false', () {
       final bundle = PqBundle(
         deviceId: 7,
+        jid: 'me@example.org',
         spk: 'a',
+        spkId: 1,
         spkSignature: 'b',
+        ikEncoded: 'aWs=',
         prekeys: const {},
         pqSpkId: -1,
         pqSpk: '',

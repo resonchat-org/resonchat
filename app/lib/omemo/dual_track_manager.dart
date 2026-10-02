@@ -4,11 +4,17 @@
 // Dual-track manager: A track (standard OMEMO via moxxmpp) plus B track
 // (PQ-OMEMO via our own PEP nodes). See docs/02 and docs/03.
 
+import 'dart:convert';
+
+import 'package:cryptography/cryptography.dart';
 import 'package:moxxmpp/moxxmpp.dart';
+import 'package:omemo_dart/omemo_dart.dart' hide OmemoManager;
 import 'package:xml/xml.dart';
 
+import '../pq/mlkem.dart';
 import 'bundle_codec.dart';
 import 'negotiation.dart';
+import 'pq_session.dart';
 import 'protocol.dart';
 
 /// Owns the B track's PEP state and the outbound-track decision.
@@ -25,6 +31,89 @@ class DualTrackManager {
 
   final OmemoManager aTrack;
   final PubSubManager Function() pubsubOf;
+
+  /// Loads every B-track device of [jid] as a [PqDevice], ready to
+  /// encrypt to.
+  ///
+  /// Returns an empty list when the peer publishes no PQ bundle, which is
+  /// how the negotiation learns they are not PQ-capable.
+  Future<List<PqDevice>> loadPqDevices(JID jid) async {
+    final devices = await getPqCapableDevices(jid);
+    final out = <PqDevice>[];
+    for (final id in devices) {
+      final bundle = await getPqBundle(jid, id);
+      if (bundle == null) continue;
+      final device = await deviceFromBundle(bundle);
+      if (device != null) out.add(device);
+    }
+    return out;
+  }
+
+  /// Rebuilds a [PqDevice] from its published bundle.
+  ///
+  /// Only the public halves exist on the wire, so the returned device
+  /// carries usable public keys but empty private material — it is safe to
+  /// encrypt *to* it, never to decrypt.
+  static Future<PqDevice?> deviceFromBundle(PqBundle bundle) async {
+    try {
+      final spk = base64Decode(bundle.spk);
+      final signature = base64Decode(bundle.spkSignature);
+      final ik = base64Decode(bundle.ikEncoded);
+      final pqSpk = base64Decode(bundle.pqSpk);
+      if (spk.length != 32 || ik.length != 32 || signature.length != 64) {
+        return null;
+      }
+      if (pqSpk.length != MlKem768.publicKeyLength) return null;
+
+      final opks = <int, OmemoKeyPair>{};
+      for (final e in bundle.prekeys.entries) {
+        final bytes = base64Decode(e.value);
+        if (bytes.length != 32) continue;
+        // Public-only key pair: enough for DH from our side.
+        opks[e.key] = OmemoKeyPair.fromBytes(
+          bytes,
+          // A zero private key never gets used; we only ever read `.pk`.
+          List<int>.filled(32, 0),
+          KeyPairType.x25519,
+        );
+      }
+      final pqOpks = <int, KemKeyPair>{};
+      for (final e in bundle.pqPrekeys.entries) {
+        final bytes = base64Decode(e.value);
+        if (bytes.length != MlKem768.publicKeyLength) continue;
+        pqOpks[e.key] = KemKeyPair(
+          publicKey: bytes,
+          secretKey: List<int>.filled(MlKem768.secretKeyLength, 0),
+        );
+      }
+
+      return PqDevice(
+        jid: bundle.jid,
+        id: bundle.deviceId,
+        ikDh: OmemoKeyPair.fromBytes(
+          ik,
+          List<int>.filled(32, 0),
+          KeyPairType.x25519,
+        ),
+        spk: OmemoKeyPair.fromBytes(
+          spk,
+          List<int>.filled(32, 0),
+          KeyPairType.x25519,
+        ),
+        spkId: bundle.spkId,
+        spkSignature: signature,
+        pqSpk: pqSpk,
+        pqSpkSecret: const [],
+        pqSpkId: bundle.pqSpkId,
+        pqSpkSignature: base64Decode(bundle.pqSpkSignature),
+        opks: opks,
+        pqOpks: pqOpks,
+      );
+    } catch (_) {
+      // A malformed bundle means "not usable", not a crash.
+      return null;
+    }
+  }
 
   /// PQ-capable device ids of [jid]: present in the B-track device list
   /// *and* serving a retrievable bundle with PQ keys.
@@ -53,7 +142,7 @@ class DualTrackManager {
     if (!res.isType<PubSubItem>()) return null;
     try {
       final doc = XmlDocument.parse(res.get<PubSubItem>().payload.toXml());
-      return PqBundle.fromXml(doc.rootElement);
+      return PqBundle.fromXml(doc.rootElement, jidOfBundle: jid.toBare().toString());
     } catch (_) {
       return null;
     }
