@@ -1,5 +1,10 @@
 library omemo_dart;
 
+// The wire types (OMEMOMessage, OMEMOAuthenticatedMessage,
+// OMEMOKeyExchange) appear in this library's public API — ratchetEncrypt
+// returns one — so callers must be able to name them.
+export 'src/protobuf/schema.pb.dart';
+
 export 'src/double_ratchet/double_ratchet.dart';
 export 'src/errors.dart';
 export 'src/helpers.dart';

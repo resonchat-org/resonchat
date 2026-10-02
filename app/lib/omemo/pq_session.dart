@@ -19,7 +19,6 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:cryptography/cryptography.dart';
-import 'package:logging/logging.dart';
 import 'package:omemo_dart/omemo_dart.dart' as omemo;
 
 import '../crypto/pqxdh.dart';
@@ -161,7 +160,7 @@ class PqSessionError implements Exception {
 class PqSessionManager {
   PqSessionManager({required this.kem});
 
-  final Logger _log = Logger('PqSessionManager');
+
   final MlKem768 kem;
 
   /// Established ratchets, keyed by "jid/deviceId".
@@ -235,15 +234,18 @@ class PqSessionManager {
       own.ikDh.pk,
       ek.pk,
       derived.rootKey,
+      // Initiator's IK first, responder's second.
       _associatedData(
         await own.ikDh.pk.getBytes(),
         await peer.ikDh.pk.getBytes(),
       ),
       opkEntry?.key ?? -1,
     );
-    putRatchet(own.jid, peer.id, ratchet);
-    // Map by the *peer's* device id from the initiator's perspective.
-    putRatchet(peer.jid, own.id, ratchet);
+    // One ratchet per remote device, keyed the way every lookup does:
+    // (peer jid, peer device id). Storing it under our own jid as well
+    // aliased the same state object under two keys and desynchronised the
+    // chains.
+    putRatchet(peer.jid, peer.id, ratchet);
 
     return PqKeyExchange(
       ekBytes: await ek.pk.getBytes(),
@@ -270,6 +272,7 @@ class PqSessionManager {
     required String senderJid,
     required int senderDeviceId,
     required PqKeyEntry kex,
+    required List<int> senderIkDh,
   }) async {
     final ekBytes = kex.ek;
     if (ekBytes == null || ekBytes.isEmpty) {
@@ -312,12 +315,11 @@ class PqSessionManager {
       }
     }
 
-    final peerIk = _senderIks[senderJid];
-    if (peerIk == null) {
-      throw PqSessionError(
-        'no cached identity key for $senderJid; fetch their bundle first',
-      );
+    final peerIk = senderIkDh;
+    if (peerIk.isEmpty) {
+      throw PqSessionError('sender identity key is empty');
     }
+    _senderIks[senderJid] = peerIk;
 
     final derived = await derivePqxdh(
       dh1: await x25519Agree(
@@ -344,7 +346,8 @@ class PqSessionManager {
       pkId ?? -1,
       ek,
       derived.rootKey,
-      _associatedData(await own.ikDh.pk.getBytes(), peerIk),
+      // Alice (the sender) first, matching the initiator's ordering.
+      _associatedData(peerIk, await own.ikDh.pk.getBytes()),
     );
     putRatchet(senderJid, senderDeviceId, ratchet);
     return ratchet;
@@ -360,16 +363,18 @@ class PqSessionManager {
 
   /// Associated data binding the session to both identity keys.
   ///
-  /// The A track uses `IK_a || IK_b` (see omemo_dart's x3dh). We do the
-  /// same: both sides must know both identity keys. The initiator has them
-  /// from the bundle; the responder looks the sender's up in its cache.
-  /// If either is missing we throw rather than silently weakening the
-  /// binding.
-  List<int> _associatedData(List<int> ownIkDh, List<int> peerIkDh) {
-    if (ownIkDh.isEmpty || peerIkDh.isEmpty) {
+  /// Order matters and must match the A track: `IK_initiator ||
+  /// IK_responder`. Both sides compute this, so a mismatch here silently
+  /// produces different root keys and every message fails to decrypt.
+  /// [initiatorIk] is therefore always the *sender* of the first message.
+  List<int> _associatedData(
+    List<int> initiatorIkDh,
+    List<int> responderIkDh,
+  ) {
+    if (initiatorIkDh.isEmpty || responderIkDh.isEmpty) {
       throw const PqSessionError('associated data needs both identity keys');
     }
-    return Uint8List.fromList(<int>[...ownIkDh, ...peerIkDh]);
+    return Uint8List.fromList(<int>[...initiatorIkDh, ...responderIkDh]);
   }
 
   /// Drops a session, e.g. when a device is removed.

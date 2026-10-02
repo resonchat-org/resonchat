@@ -135,9 +135,8 @@ void main() {
       );
       await lyingMgr.initiate(own: alice, peer: bob);
 
-      final honestRatchet =
-          honestMgr.ratchetFor(bob.jid, alice.id)!;
-      final lyingRatchet = lyingMgr.ratchetFor(bob.jid, alice.id)!;
+      final honestRatchet = honestMgr.ratchetFor(bob.jid, bob.id)!;
+      final lyingRatchet = lyingMgr.ratchetFor(bob.jid, bob.id)!;
       expect(
         honestRatchet.rk,
         isNot(lyingRatchet.rk),
@@ -273,11 +272,6 @@ void main() {
       final initiator = PqSessionManager(kem: kem);
       final responder = PqSessionManager(kem: kem);
 
-      responder.cacheSenderIdentity(
-        alice.jid,
-        await alice.ikDh.pk.getBytes(),
-      );
-
       final kex = await initiator.initiate(own: alice, peer: bob);
       expect(kex.ekBytes.length, 32);
 
@@ -303,6 +297,7 @@ void main() {
         senderJid: alice.jid,
         senderDeviceId: alice.id,
         kex: onWire,
+        senderIkDh: await alice.ikDh.pk.getBytes(),
       );
       expect(ratchet, isNotNull);
       expect(responder.hasRatchet(alice.jid, alice.id), isTrue);
