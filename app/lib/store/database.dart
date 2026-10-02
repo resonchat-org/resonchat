@@ -714,22 +714,36 @@ class AppDatabase extends _$AppDatabase {
   /// Pinned first, then most recent. The tiebreaker on jid matters more than it
   /// looks: two conversations with the same last-activity second would otherwise
   /// swap places between rebuilds, which reads as the list jittering.
-  Stream<List<Chat>> watchChats({bool includeArchived = false}) {
+  Stream<List<Chat>> watchChats({
+    bool includeArchived = false,
+    bool archivedOnly = false,
+  }) {
     final query = select(chats)
       ..orderBy([
         (c) => OrderingTerm.desc(c.pinned),
         (c) => OrderingTerm.desc(c.lastActivity),
         (c) => OrderingTerm.asc(c.jid),
       ]);
-    // Applied conditionally rather than as `includeArchived || !archived`:
-    // folding a Dart bool into the SQL expression makes the query depend on a
-    // value that is not in the database, so the stream cannot be re-used for
-    // the other case and the two lists can drift apart.
-    if (!includeArchived) {
+    // Applied conditionally rather than as a Dart bool folded into the SQL
+    // expression: `includeArchived || !archived` makes the query depend on a
+    // value that is not in the database, so the same stream cannot serve both
+    // lists and the two can drift apart.
+    if (archivedOnly) {
+      query.where((c) => c.archived.equals(true));
+    } else if (!includeArchived) {
       query.where((c) => c.archived.equals(false));
     }
     return query.watch();
   }
+
+  /// Archived conversations only.
+  ///
+  /// A separate method rather than a flag on [watchChats], because "the
+  /// archive" is a place the user goes and "everything" is not; a caller that
+  /// has to remember which combination of flags means what is how the archive
+  /// ends up showing the whole chat list.
+  Stream<List<Chat>> watchArchivedChats() =>
+      watchChats(includeArchived: true, archivedOnly: true);
 
   /// The JIDs currently blocked (XEP-0191).
   Future<Set<String>> blockedJids() async =>

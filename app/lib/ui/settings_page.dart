@@ -5,8 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../pq/liboqs_mlkem.dart';
+import '../omemo/track.dart';
 import '../state/providers.dart';
 import '../xmpp/connection.dart';
+import 'archive_page.dart';
 import 'theme.dart';
 
 /// App settings. Deliberately free of branding that would suggest any
@@ -24,6 +26,48 @@ class SettingsPage extends ConsumerWidget {
       appBar: AppBar(title: const Text('Settings')),
       body: ListView(
         children: [
+          _header(tg, 'Default encryption'),
+          // The global default is a real decision, so it gets the same
+          // three-option choice as a conversation does rather than a switch
+          // whose "off" state means something different from every other
+          // track. Changing it never touches a conversation that has its own
+          // choice — only the ones that were following along.
+          Consumer(
+            builder: (context, ref, _) {
+              final current =
+                  ref.watch(globalTrackProvider).value ?? Track.standard;
+              return Column(
+                children: [
+                  for (final track in Track.values)
+                    RadioListTile<Track>(
+                      value: track,
+                      // ignore: deprecated_member_use
+                      groupValue: current,
+                      // ignore: deprecated_member_use
+                      onChanged: (value) {
+                        if (value != null) setGlobalTrack(ref, value);
+                      },
+                      title: Text('${track.label}  ${track.description}'),
+                      secondary: Icon(
+                        track.icon,
+                        color: track == Track.none
+                            ? tg.danger
+                            : tg.accent,
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.archive_outlined),
+            title: const Text('Archived conversations'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const ArchivePage()),
+            ),
+          ),
+
           _header(tg, 'Connection'),
           ListTile(
             leading: const Icon(Icons.cloud_outlined),

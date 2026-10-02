@@ -74,6 +74,28 @@ void main() {
       );
     });
 
+    test('the archive shows only archived conversations', () async {
+      // Getting this wrong makes "Archived" a second copy of the whole chat
+      // list, which is worse than having no archive page: the user cannot tell
+      // which list they are looking at.
+      await touch('kept@example.org', 10);
+      await touch('hidden@example.org', 20);
+      await db.setChatFlag('hidden@example.org', archived: true);
+      expect(
+        (await db.watchArchivedChats().first).map((c) => c.jid),
+        ['hidden@example.org'],
+      );
+    });
+
+    test('archiving everything leaves an empty archive, not an empty list',
+        () async {
+      await touch('a@example.org', 10);
+      await db.setChatFlag('a@example.org', archived: true);
+      expect(await db.watchChats().first, isEmpty);
+      expect(await db.watchArchivedChats().first, hasLength(1));
+      expect(await db.watchChats(includeArchived: true).first, hasLength(1));
+    });
+
     test('a pinned conversation can also be archived', () async {
       // Pin and archive are independent: a user may want a busy conversation
       // out of the way but still findable at the top of the archive.

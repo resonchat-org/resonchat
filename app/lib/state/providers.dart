@@ -215,6 +215,11 @@ final chatMessageSearchProvider =
   return ref.watch(databaseProvider).searchInChat(args.chatJid, args.needle);
 });
 
+/// Archived conversations, most recent first.
+final archivedChatsProvider = StreamProvider<List<Chat>>(
+  (ref) => ref.watch(databaseProvider).watchArchivedChats(),
+);
+
 /// The bare JIDs currently blocked (XEP-0191).
 ///
 /// Read from the store rather than from the service's in-memory copy: this is

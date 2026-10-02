@@ -12,6 +12,7 @@ import 'package:moxxmpp/moxxmpp.dart'
 import '../xmpp/connection.dart';
 
 import '../state/providers.dart';
+import 'archive_page.dart';
 import 'chat_row.dart';
 import 'search.dart';
 import 'theme.dart';
@@ -91,6 +92,13 @@ class _ChatsPageState extends ConsumerState<ChatsPage> {
             tooltip: 'Search messages',
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute<void>(builder: (_) => const SearchPage()),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.archive_outlined),
+            tooltip: 'Archived',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const ArchivePage()),
             ),
           ),
           IconButton(
