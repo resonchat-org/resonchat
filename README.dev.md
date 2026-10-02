@@ -81,7 +81,7 @@ OMEMO 设备密钥注意：`cryptography` 的 `SecretBox.concatenation()` 布局
 | M1 通信基线 | ✅ 连接/SASL SCRAM-SHA-256、资源绑定、roster（drift 持久化 + RFC 6121 版本）、明文收发、XEP-0184 回执、XEP-0085 输入状态、XEP-0280 Carbons、**XEP-0313 MAM**（已从上游 `feat/mam` 并入）、drift 消息存储、最小 UI。剩余验证项：与真实服务端/客户端的双账号互发 |
 | M2 标准 OMEMO | 🟡 moxxmpp `OmemoManager` + `omemo_dart` 已接线，设备/bundle 发布、指纹、TOFU 委托上游，**设备密钥已持久化**（Keystore 封存 + drift 存储）；**与 Conversations 的真实互通尚未验证**（需真机 + 测试账号 + 本地 prosody） |
 | M3 PQ 内核 | 🟡 PQXDH KDF、ML-KEM-768 抽象与纯 Dart 实现、双轨 bundle/消息编解码已有测试覆盖；**liboqs FFI 尚未接入**，B 轨会话建立（ratchet 接线）未做 |
-| M4 协商与回退 | 🟡 `decideEncMode` 状态机（纯函数，有测试）与 B 轨 PEP 能力查询已完成；UI 徽标为静态，尚未由能力驱动 |
+| M4 协商与回退 | 🟡 `decideEncMode` 状态机（纯函数，有穷举测试）、B 轨 PEP 能力查询、`CapabilityService`（5 分钟缓存 + 并发去重 + `reliable` 标记）已完成，并已接到 moxxmpp 的 `ShouldEncrypt`：**A 轨加密现在会自动生效**；B 轨加密（PQ 消息构造与 ratchet 接线）未做 |
 | M5 存储与保护 | 🟡 OMEMO 设备密钥已用 Keystore 封存后落库（M5 的骨架就位）；SQLCipher 加密数据库、密钥备份/恢复、「不保存明文」选项未做 |
 | M6 UI | ⬜ 当前为功能性最小 UI，主题 token 只是起始值，未做 Telegram 观感打磨 |
 | M7 发布 | ⬜ |
@@ -89,7 +89,7 @@ OMEMO 设备密钥注意：`cryptography` 的 `SecretBox.concatenation()` 布局
 ## 关键待办（下一步优先级）
 
 1. **M2 互通实测（最高优先级）**：起本地 prosody + 两个账号，与 Conversations 双向加解密；这是整个项目的关键路径，M2 不过关就不该投 M3。
-2. **B 轨会话接线**：PQXDH 已能派生 root/chain key，需接到 ratchet 与收发流程。
+2. **B 轨会话接线**：PQXDH 已能派生 root/chain key，需接到 ratchet 与收发流程（B 轨目前只有编解码与能力查询）。
 3. **liboqs FFI**：替换 `pqcrypto` 纯 Dart 实现，走 `OQS_MINIMAL_BUILD="KEM_ml_kem_768;SIG_ml_dsa_65"`，注意 Android 15 的 16KB page 对齐。
-4. **OMEMO 加密开关接线**：`encModeProvider` 目前恒为 `none`，需按会话能力驱动 `ShouldEncrypt`。
-5. **一次性预密钥补充**：设备恢复后 OPK 池会随使用消耗，需实现低水位自动补充并重发 bundle。
+4. **一次性预密钥补充**：设备恢复后 OPK 池会随使用消耗，需实现低水位自动补充并重发 bundle。
+5. **PEP 变更订阅**：收到对端设备列表/bundle 变更通知时调用 `CapabilityService.invalidate`，目前缓存只靠 TTL 过期。

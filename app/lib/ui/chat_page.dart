@@ -98,7 +98,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
             body: Value(text),
             timestamp: Value(DateTime.now()),
             encMode: Value(
-              ref.read(encModeProvider(widget.chatJid)).name,
+              ref.read(chatEncModeProvider(widget.chatJid)).name,
             ),
             incoming: const Value(false),
           ),
@@ -126,7 +126,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   Widget build(BuildContext context) {
     final tg = context.tg;
     final messages = ref.watch(messagesProvider(widget.chatJid));
-    final mode = ref.watch(encModeProvider(widget.chatJid));
+    final mode = ref.watch(chatEncModeProvider(widget.chatJid));
 
     return Scaffold(
       appBar: AppBar(

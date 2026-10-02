@@ -175,7 +175,7 @@ class _ChatRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final tg = context.tg;
     final title = chat.title.isEmpty ? chat.jid : chat.title;
-    final mode = ref.watch(encModeProvider(chat.jid));
+    final mode = ref.watch(chatEncModeProvider(chat.jid));
     final preview = ref.watch(lastMessageProvider(chat.jid));
     final locked = mode != EncMode.none;
 

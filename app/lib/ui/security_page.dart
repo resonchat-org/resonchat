@@ -47,7 +47,7 @@ class _SecurityPageState extends ConsumerState<SecurityPage> {
 
   @override
   Widget build(BuildContext context) {
-    final mode = ref.watch(encModeProvider(widget.chatJid));
+    final mode = ref.watch(chatEncModeProvider(widget.chatJid));
     return Scaffold(
       appBar: AppBar(title: Text(widget.chatJid)),
       body: ListView(

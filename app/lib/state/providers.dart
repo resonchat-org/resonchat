@@ -5,16 +5,40 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:moxxmpp/moxxmpp.dart' show JID;
 
+import '../omemo/dual_track_manager.dart';
 import '../omemo/protocol.dart';
 import '../store/database.dart';
 import '../store/omemo_device_store.dart';
+import '../xmpp/capabilities.dart';
 import '../xmpp/connection.dart';
 
 /// Overridden in `main()` with the opened database.
 final databaseProvider = Provider<AppDatabase>(
   (ref) => throw UnimplementedError('databaseProvider not overridden'),
 );
+
+final capabilityServiceProvider = Provider<CapabilityService>((ref) {
+  final service = CapabilityService(
+    tracks: () => ref.read(dualTrackManagerProvider)!,
+    ourDeviceId: () async => ref.read(xmppServiceProvider).omemo?.getDeviceId(),
+  );
+  // Let the connection consult this when deciding whether to encrypt.
+  ref.read(xmppServiceProvider).attachCapabilities(service);
+  return service;
+});
+
+/// The dual-track managers, available once the connection is up.
+final dualTrackManagerProvider = Provider<DualTrackManager?>((ref) {
+  final moxxOmemo = ref.watch(xmppServiceProvider).moxxOmemo;
+  if (moxxOmemo == null) return null;
+  final connection = ref.watch(xmppServiceProvider);
+  return DualTrackManager(
+    aTrack: moxxOmemo,
+    pubsubOf: () => connection.pubsub!,
+  );
+});
 
 final xmppServiceProvider = Provider<XmppService>((ref) {
   // Device keys are sealed under a Keystore-held key and the sealed blob
@@ -58,7 +82,30 @@ final lastMessageProvider = StreamProvider.family<String?, String>(
   (ref, chatJid) => ref.watch(databaseProvider).watchLastMessage(chatJid),
 );
 
-/// Per-chat outbound encryption mode (M4 drives this from capability
-/// state; M1/M2 default to plaintext until the user enables OMEMO).
+/// Encryption mode for a chat, or [EncMode.none] while resolving.
+///
+/// UI-facing convenience over [encModeProvider]; never blocks on the
+/// network, so a chat row renders immediately with an honest "not yet
+/// encrypted" state instead of a spinner.
+final chatEncModeProvider = Provider.family<EncMode, String>((ref, chatJid) {
+  return ref.watch(encModeProvider(chatJid)).maybeWhen(
+        data: (mode) => mode,
+        orElse: () => EncMode.none,
+      );
+});
+
+/// Per-chat outbound encryption mode, resolved from live capability data
+/// (M4). Recomputes whenever the connection or cache changes; falls back
+/// to [EncMode.none] while resolving or when data is unreliable, so the
+/// UI never claims a protection level we cannot guarantee.
 final encModeProvider =
-    StateProvider.family<EncMode, String>((ref, chatJid) => EncMode.none);
+    FutureProvider.family<EncMode, String>((ref, chatJid) async {
+      // Watching the connection forces a re-resolve after reconnect.
+      ref.watch(connectionStateProvider);
+      final xmpp = ref.read(xmppServiceProvider);
+      if (xmpp.omemo == null) return EncMode.none;
+      final caps = await ref
+          .read(capabilityServiceProvider)
+          .forChat(JID.fromString(chatJid));
+      return caps.reliable ? caps.mode : EncMode.none;
+    });

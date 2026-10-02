@@ -12,7 +12,9 @@ import 'package:moxxmpp/moxxmpp.dart';
 import 'package:moxxmpp_socket_tcp/moxxmpp_socket_tcp.dart';
 import 'package:omemo_dart/omemo_dart.dart' as omemo_dart;
 
+import '../omemo/protocol.dart';
 import '../store/omemo_device_store.dart';
+import 'capabilities.dart';
 
 /// Decrypted inbound chat message, either track or plaintext.
 class InboundMessage {
@@ -93,6 +95,7 @@ class XmppService {
   final OmemoDeviceStore? deviceStore;
 
   XmppConnection? _connection;
+  PubSubManager? _pubsub;
   omemo_dart.OmemoManager? _omemo;
   OmemoManager? _moxxOmemo;
   CarbonsManager? _carbons;
@@ -102,7 +105,37 @@ class XmppService {
   final _typingStates = StreamController<TypingNotification>.broadcast();
   XmppConnectionState _state = XmppConnectionState.disconnected;
 
+  /// Overrides the automatic per-chat decision. Set by the settings UI.
   set shouldEncrypt(ShouldEncrypt fn) => _shouldEncrypt = fn;
+
+  /// Consulted by [autoShouldEncrypt]; null means "derive from the
+  /// capability service".
+  ShouldEncrypt? _encryptOverride;
+
+  set encryptOverride(ShouldEncrypt? fn) => _encryptOverride = fn;
+
+  /// True when stanzas to [to] should be encrypted: either the user
+  /// forced it, or the capability service says at least the standard
+  /// track is safe for every recipient device.
+  ///
+  /// This is what moxxmpp's OmemoManager asks before wrapping a stanza,
+  /// so a wrong `false` leaks plaintext while a wrong `true` produces
+  /// unreadable ciphertext. We deliberately only return true when we are
+  /// *sure* (docs/01 §7 invariant 1).
+  Future<bool> autoShouldEncrypt(JID to) async {
+    final override = _encryptOverride;
+    if (override != null) return override(to);
+    final caps = _capabilities == null
+        ? null
+        : await _capabilities!.forChat(to);
+    if (caps == null || !caps.reliable) return false;
+    return caps.mode != EncMode.none;
+  }
+
+  /// Attaches the capability resolver so [autoShouldEncrypt] works.
+  void attachCapabilities(CapabilityService service) =>
+      _capabilities = service;
+  CapabilityService? _capabilities;
 
   XmppConnectionState get state => _state;
   Stream<InboundMessage> get inbound => _inbound.stream;
@@ -115,6 +148,10 @@ class XmppService {
 
   OmemoManager? get moxxOmemo => _moxxOmemo;
   omemo_dart.OmemoManager? get omemo => _omemo;
+
+  /// PubSub/PEP manager; null until connected. The B track publishes and
+  /// fetches its device list and bundles through it.
+  PubSubManager? get pubsub => _pubsub;
 
   /// True once the server accepted our Carbons enable request.
   bool get carbonsEnabled => _carbonsEnabled;
@@ -141,6 +178,9 @@ class XmppService {
       () async => _omemo!,
       (toJid, _) => _shouldEncrypt(toJid),
     );
+    // Default to the capability-driven decision so encryption turns on by
+    // itself once both sides support OMEMO.
+    _shouldEncrypt = autoShouldEncrypt;
     final connection = XmppConnection(
       TestingReconnectionPolicy(),
       // TODO(M7): replace with a connectivity_plus-backed manager plus
@@ -157,11 +197,12 @@ class XmppService {
       );
 
     _carbons = CarbonsManager();
+    _pubsub = PubSubManager();
     await connection.registerManagers([
       PresenceManager(),
       RosterManager(rosterState ?? TestingRosterStateManager(null, const [])),
       DiscoManager(const []),
-      PubSubManager(),
+      _pubsub!,
       MessageManager(),
       MessageDeliveryReceiptManager(),
       ChatStateManager(),
