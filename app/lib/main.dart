@@ -12,6 +12,7 @@ import 'ui/chats_page.dart';
 import 'ui/login_page.dart';
 import 'ui/chat_page.dart';
 import 'ui/security_page.dart';
+import 'ui/settings_page.dart';
 import 'ui/theme.dart';
 
 Future<void> main() async {

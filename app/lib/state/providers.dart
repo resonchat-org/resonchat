@@ -111,6 +111,20 @@ final lastMessageProvider = StreamProvider.family<String?, String>(
   (ref, chatJid) => ref.watch(databaseProvider).watchLastMessage(chatJid),
 );
 
+/// Live capability snapshot for a chat, or null while resolving.
+///
+/// The encryption info page shows this so the user can see exactly which
+/// devices are counted as recipients.
+final chatCapabilitiesProvider =
+    FutureProvider.family<ChatCapabilities?, String>((ref, chatJid) async {
+      ref.watch(connectionStateProvider);
+      final xmpp = ref.read(xmppServiceProvider);
+      if (xmpp.omemo == null) return null;
+      final caps =
+          await ref.read(capabilityServiceProvider).forChat(JID.fromString(chatJid));
+      return caps.reliable ? caps : null;
+    });
+
 /// Encryption mode for a chat, or [EncMode.none] while resolving.
 ///
 /// UI-facing convenience over [encModeProvider]; never blocks on the
