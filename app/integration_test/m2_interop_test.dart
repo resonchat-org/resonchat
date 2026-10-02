@@ -73,6 +73,8 @@ void main() {
 
       // --- our own device, as a real client would have ------------------
       final deviceId = await xmpp.ensureOmemoDevice();
+      // ignore: avoid_print
+      print('our device $deviceId published in both dialects');
       check('local OMEMO device created', true, 'id $deviceId');
       expect(deviceId, isNotNull);
       await xmpp.replenishPrekeys();
@@ -83,6 +85,7 @@ void main() {
         aTrack: xmpp.moxxOmemo!,
         pubsubOf: () => xmpp.pubsub!,
       );
+      xmpp.tracks = tracks;
       final caps = CapabilityService(
         tracks: () => tracks,
         ourDeviceId: () async => deviceId,
@@ -113,12 +116,17 @@ void main() {
 
       for (final id in peerDevices) {
         final bundle = await tracks.getOmemoBundle(peer, id);
+        final detail = bundle == null
+            ? 'could not parse'
+            : 'spk ${_len(bundle.spkEncoded)}B '
+                'sig ${_len(bundle.spkSignatureEncoded)}B '
+                'ik ${_len(bundle.ikEncoded)}B '
+                'opks ${bundle.opksEncoded.length} '
+                'pk sizes ${bundle.opksEncoded.values.map(_len).toSet().toList()}';
         check(
           'device $id bundle verifies (spk sig ik sizes, opks present)',
           bundle != null && _bundleLooksSane(bundle),
-          bundle == null
-              ? 'could not parse'
-              : 'spkId ${bundle.spkId}, ${bundle.opksEncoded.length} opks',
+          detail,
         );
       }
 
@@ -196,6 +204,14 @@ void main() {
 
 /// Structural sanity of a foreign bundle. Size mismatches here are how a
 /// silent incompatibility announces itself.
+int _len(String b64) {
+  try {
+    return base64Decode(b64).length;
+  } catch (_) {
+    return -1;
+  }
+}
+
 bool _bundleLooksSane(OmemoBundle b) {
   try {
     if (base64Decode(b.spkEncoded).length != 32) return false;

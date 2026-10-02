@@ -14,6 +14,7 @@ import 'package:xml/xml.dart';
 
 import '../pq/mlkem.dart';
 import 'bundle_codec.dart';
+import 'defacto.dart';
 import 'negotiation.dart';
 import 'pq_session.dart';
 import 'protocol.dart';
@@ -129,93 +130,121 @@ class DualTrackManager {
     }
   }
 
-  /// Device ids in [jid]'s standard OMEMO list whose bundle actually
+/// Device ids in [jid]'s standard OMEMO list whose bundle actually
   /// fetches.
   ///
-  /// This is the A-track half of [getPqCapableDevices], and it is the first
-  /// thing that reads a bundle another implementation wrote — so it is
-  /// also the first place our wire-format assumptions are tested against
-  /// reality. A device that lists itself but serves nothing usable is
-  /// excluded, because encrypting to it would produce a message nobody can
-  /// read.
+  /// The de-facto node is tried first, then the XEP-0384 spec node; a
+  /// device that lists itself but serves nothing usable is excluded,
+  /// because encrypting to it would produce a message nobody can read.
   Future<Set<int>> getOmemoCapableDevices(JID jid) async {
-    final pm = pubsubOf();
-    final items = await pm.getItems(jid, omemoDevicesXmlns);
-    if (!items.isType<List<PubSubItem>>()) return {};
+    final ids = await fetchOmemoDeviceIds(jid);
     final result = <int>{};
-    for (final item in items.get<List<PubSubItem>>()) {
-      for (final dev in item.payload.children
-          .where((c) => c.tag == 'device')) {
-        final id = int.tryParse('${dev.attributes['id']}');
-        if (id == null) continue;
-        if (await getOmemoBundle(jid, id) != null) result.add(id);
-      }
+    for (final id in ids) {
+      if (await getOmemoBundle(jid, id) != null) result.add(id);
     }
     return result;
   }
 
-  /// Parses an XEP-0384 §5.2 `<bundle/>`.
-///
-/// Throws [FormatException] on anything structurally wrong, so a caller can
-/// treat a broken bundle as "this device cannot be read" instead of
-/// crashing the encryption path.
-omemo.OmemoBundle parseOmemoBundle(
-  XmlElement el, {
-  required String jid,
-  required int deviceId,
-}) {
-  if (el.localName != 'bundle') {
-    throw FormatException('not a bundle element: ${el.localName}');
-  }
-
-  String text(String tag) {
-    final found = el.findElements(tag);
-    if (found.isEmpty) throw FormatException('bundle has no <$tag>');
-    return found.single.innerText;
-  }
-
-  final opks = <int, String>{};
-  for (final section in el.findElements('prekeys')) {
-    for (final pk in section.findElements('pk')) {
-      final id = int.tryParse('${pk.getAttribute('id')}');
-      if (id == null) continue;
-      opks[id] = pk.innerText;
+  /// Raw device ids from [jid]'s OMEMO device list, whichever dialect it
+  /// published.
+  Future<Set<int>> fetchOmemoDeviceIds(JID jid) async {
+    final pm = pubsubOf();
+    final ids = <int>{};
+    for (final node in [omemoDefactoDevicesNode, ...omemoSpecDevicesNodes]) {
+      final items = await pm.getItems(jid, node);
+      if (!items.isType<List<PubSubItem>>()) continue;
+      for (final item in items.get<List<PubSubItem>>()) {
+        try {
+          final doc = XmlDocument.parse(item.payload.toXml());
+          final parsed = parseOmemoDeviceList(doc.rootElement);
+          if (parsed != null) ids.addAll(parsed);
+        } catch (_) {
+          // A payload we cannot read simply contributes nothing.
+        }
+      }
     }
+    return ids;
   }
 
-  return omemo.OmemoBundle(
-    jid,
-    deviceId,
-    text('spk'),
-    int.parse('${el.findElements('spk').single.getAttribute('id')}'),
-    text('spsk'),
-    text('ik'),
-    opks,
-  );
-}
-
-/// Fetches one device's standard OMEMO bundle, or null when
+  /// Fetches one device's standard OMEMO bundle, or null when
   /// absent/malformed.
   ///
-  /// omemo_dart has no bundle parser — it receives already-decoded bundles
-  /// through an injected fetch function — so this is our own reader for
-  /// XEP-0384 §5.2. It is the first code in the project to interpret a
-  /// bundle written by another implementation, which is exactly where a
-  /// wire-format assumption would surface.
+  /// omemo_dart has no bundle parser - it receives already-decoded bundles
+  /// through an injected fetch function - so this is our own reader. It is
+  /// the first code in the project to interpret a bundle written by another
+  /// implementation, which is exactly where a wire-format assumption shows
+  /// up; hence the two-dialect tolerance in `parseOmemoBundle`.
+  ///
+  /// Note the item id: real clients publish the bundle under the item
+  /// `current`, while moxxmpp uses the device id. Asking for one specific
+  /// id and failing on the other would make every peer look incapable, so
+  /// the whole node is fetched and whichever item parses is taken.
   Future<omemo.OmemoBundle?> getOmemoBundle(JID jid, int deviceId) async {
     final pm = pubsubOf();
-    final res = await pm.getItem(jid, omemoBundlesXmlns, '$deviceId');
-    if (!res.isType<PubSubItem>()) return null;
-    try {
-      final doc = XmlDocument.parse(res.get<PubSubItem>().payload.toXml());
-      return parseOmemoBundle(
-        doc.rootElement,
-        jid: jid.toBare().toString(),
-        deviceId: deviceId,
-      );
-    } catch (_) {
-      return null;
+    final nodes = [
+      '$omemoDefactoBundlesNode:$deviceId',
+      for (final n in omemoSpecBundlesNodes) '$n:$deviceId',
+    ];
+    for (final node in nodes) {
+      final items = await pm.getItems(jid, node);
+      if (!items.isType<List<PubSubItem>>()) continue;
+      for (final item in items.get<List<PubSubItem>>()) {
+        try {
+          final doc = XmlDocument.parse(item.payload.toXml());
+          return parseOmemoBundle(
+            doc.rootElement,
+            jid: jid.toBare().toString(),
+            deviceId: deviceId,
+          );
+        } catch (_) {
+          // Try the next item, then the next dialect.
+        }
+      }
     }
+    return null;
+  }
+
+  /// Publishes our standard-OMEMO bundle in **both** dialects.
+  ///
+  /// The de-facto form is what real clients read; the spec form is what
+  /// moxxmpp's own `publishBundle` writes and what a future client might
+  /// adopt. Returns true when at least one form was accepted.
+  Future<bool> publishOmemoBundle(
+    JID bareJid,
+    omemo.OmemoBundle bundle,
+  ) async {
+    final pm = pubsubOf();
+    final ids = await fetchOmemoDeviceIds(bareJid)..add(bundle.id);
+
+    final listResult = await pm.publish(
+      bareJid,
+      omemoDefactoDevicesNode,
+      XMLNode.fromString(deviceListToDefactoXml(ids).toXmlString()),
+      id: 'current',
+      options: const PubSubPublishOptions(accessModel: 'open'),
+    );
+    final listOk = listResult.isType<bool>() && listResult.get<bool>();
+
+    final bundleResult = await pm.publish(
+      bareJid,
+      '$omemoDefactoBundlesNode:${bundle.id}',
+      XMLNode.fromString(bundleToDefactoXml(bundle).toXmlString()),
+      id: 'current',
+      options: const PubSubPublishOptions(accessModel: 'open', maxItems: '1'),
+    );
+    final bundleOk = bundleResult.isType<bool>() && bundleResult.get<bool>();
+
+    // Also the XEP-0384 spec dialect, through moxxmpp. Its payload bool is
+    // `deviceBundlePublish.isType<PubSubError>()` - true means failure.
+    bool specOk = false;
+    try {
+      final spec = await aTrack.publishBundle(bundle);
+      specOk = spec.isType<bool>() && !spec.get<bool>();
+    } catch (_) {
+      specOk = false;
+    }
+
+    return listOk && bundleOk || specOk;
   }
 
   /// PQ-capable device ids of [jid]: present in the B-track device list

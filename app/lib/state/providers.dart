@@ -49,10 +49,13 @@ final Provider<DualTrackManager?> dualTrackManagerProvider = Provider<DualTrackM
   final moxxOmemo = xmpp.moxxOmemo;
   final pubsub = xmpp.pubsub;
   if (moxxOmemo == null || pubsub == null) return null;
-  return DualTrackManager(
+  final tracks = DualTrackManager(
     aTrack: moxxOmemo,
     pubsubOf: () => pubsub,
   );
+  // Let the service publish our A-track bundle in both wire dialects.
+  xmpp.tracks = tracks;
+  return tracks;
 });
 
 final Provider<XmppService> xmppServiceProvider = Provider<XmppService>((

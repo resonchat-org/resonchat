@@ -12,6 +12,8 @@ import 'package:moxxmpp/moxxmpp.dart';
 import 'package:moxxmpp_socket_tcp/moxxmpp_socket_tcp.dart';
 import 'package:omemo_dart/omemo_dart.dart' as omemo_dart;
 
+import '../omemo/defacto.dart';
+import '../omemo/dual_track_manager.dart';
 import '../omemo/protocol.dart';
 import '../store/omemo_device_store.dart';
 import 'b_track_manager.dart';
@@ -280,6 +282,18 @@ class XmppService {
     return ok;
   }
 
+  /// PEP nodes worth a subscription: both OMEMO dialects plus the PQ track.
+  ///
+  /// The de-facto node is what real clients announce on, so subscribing
+  /// only to the XEP-0384 spec node means we would never see a peer add a
+  /// device.
+  static const List<String> _subscribedPepNodes = <String>[
+    omemoDefactoDevicesNode,
+    ...omemoSpecDevicesNodes,
+    pomemoDevicesXmlns,
+    pomemoBundlesXmlns,
+  ];
+
   /// Subscribes to our own OMEMO device list so the server pushes device
   /// changes to us (which also keeps our peers' lists fresh when they
   /// republish). Peer nodes are subscribed lazily on first use.
@@ -287,12 +301,7 @@ class XmppService {
     final pm = _pubsub;
     if (pm == null) return;
     final bare = _connection!.connectionSettings.jid.toBare();
-    for (final node in const [
-      omemoDevicesXmlns,
-      omemoBundlesXmlns,
-      pomemoDevicesXmlns,
-      pomemoBundlesXmlns,
-    ]) {
+    for (final node in _subscribedPepNodes) {
       final result = await pm.subscribe(bare, node);
       if (!result.isType<bool>() || !result.get<bool>()) {
         _log.fine('could not subscribe to $node: $result');
@@ -306,12 +315,7 @@ class XmppService {
     final pm = _pubsub;
     if (pm == null) return;
     final bare = peer.toBare();
-    for (final node in const [
-      omemoDevicesXmlns,
-      omemoBundlesXmlns,
-      pomemoDevicesXmlns,
-      pomemoBundlesXmlns,
-    ]) {
+    for (final node in _subscribedPepNodes) {
       await pm.subscribe(bare, node);
     }
   }
@@ -414,24 +418,39 @@ class XmppService {
   Future<int> ensureOmemoDevice({int opkAmount = 20}) async {
     final manager = await _omemoOrCreate(opkAmount: opkAmount);
     final id = await manager.getDeviceId();
-    final bundle = await (await manager.getDevice()).toBundle();
-    final published = await _moxxOmemo!.publishBundle(bundle);
-    // moxxmpp returns Result<bool> whose payload is
-    // `deviceBundlePublish.isType<PubSubError>()` — **true means
-    // failure**. Reading it the other way round made a successful
-    // publish log a warning and skip persisting the device.
-    final failed = !published.isType<bool>() || published.get<bool>();
-    if (failed) {
+    final device = await manager.getDevice();
+    final bundle = await device.toBundle();
+    final bare = JID.fromString(_connection!.connectionSettings.jid.toBare().toString());
+
+    // Publish through the dual-track manager so the bundle lands in both
+    // the de-facto and the XEP-0384 dialects. Publishing only the spec form
+    // makes us invisible to every client that actually exists.
+    final published = tracks == null
+        ? await _moxxOmemo!.publishBundle(bundle).then(
+              // moxxmpp's payload bool is
+              // `deviceBundlePublish.isType<PubSubError>()` — true means
+              // failure.
+              (r) => r.isType<bool>() && !r.get<bool>(),
+              onError: (_) => false,
+            )
+        : await tracks!.publishOmemoBundle(bare, bundle);
+    if (!published) {
       _log.warning('OMEMO bundle publish reported failure');
     }
 
     // Persist only after a confirmed publish so we never store keys the
     // server does not know about.
-    if (!failed) {
-      await deviceStore?.save(await manager.getDevice());
+    if (published) {
+      await deviceStore?.save(device);
     }
     return id;
   }
+
+  /// Publishes our standard-OMEMO bundle in both wire dialects.
+  ///
+  /// The app sets this so [ensureOmemoDevice] does not have to reach back
+  /// into the provider graph.
+  DualTrackManager? tracks;
 
   /// Tops the one-time-prekey pool back up to [target] and republishes the
   /// bundle. omemo_dart burns one OPK per new inbound session, so without
@@ -628,10 +647,7 @@ class XmppService {
   /// capability may have flipped, so the cached answer must go.
   void _onPepNotification(PubSubNotificationEvent event) {
     final node = event.item.node;
-    if (node != omemoDevicesXmlns &&
-        node != omemoBundlesXmlns &&
-        node != pomemoDevicesXmlns &&
-        node != pomemoBundlesXmlns) {
+    if (!_subscribedPepNodes.contains(node)) {
       return;
     }
     final owner = JID.fromString(event.from).toBare();
