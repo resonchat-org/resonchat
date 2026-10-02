@@ -13,6 +13,7 @@ import 'dart:io';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:moxxmpp/moxxmpp.dart';
+import 'package:resonchat/omemo/track.dart';
 import 'package:resonchat/state/app_wiring.dart';
 import 'package:resonchat/store/database.dart';
 import 'package:resonchat/ui/chats_page.dart';
@@ -68,12 +69,14 @@ void main() {
       String? stanzaId = 's1',
       bool carbon = false,
       String from = 'peer@example.org/phone',
+      Track? track,
     }) =>
         InboundMessage(
           from: JID.fromString(from),
           body: body,
           stanzaId: stanzaId,
           isCarbonCopy: carbon,
+          track: track,
         );
 
     test('an ordinary message is stored once', () async {
@@ -109,6 +112,50 @@ void main() {
       final rows = await db.watchMessages('peer@example.org').first;
       expect(rows.single.body, isEmpty);
       expect(rows.single.encMode, 'error');
+    });
+
+    // docs/10 §4.3. Before the track was recorded, every inbound message was
+    // stored as 'none' — so a message from Conversations arrived in the UI
+    // marked NO, telling the user their correspondent had sent in the clear.
+    group('the stored track is what the sender declared', () {
+      // Distinct stanza ids: these are separate conversations' worth of rows
+      // sharing one database, and storeInbound deduplicates by id.
+      Future<String?> storedTrack(String id, InboundMessage m) async {
+        await storeInbound(db, m);
+        final rows = await db.watchMessages('peer@example.org').first;
+        return rows.firstWhere((r) => r.stanzaId == id).encMode;
+      }
+
+      test('a PQ message is stored as PQ', () async {
+        expect(
+          await storedTrack(
+            'pq1',
+            message(body: 'hi', stanzaId: 'pq1', track: Track.pq),
+          ),
+          EncModeToken.pq.wire,
+        );
+      });
+
+      test('a standard OMEMO message is stored as OM, not as plaintext',
+          () async {
+        expect(
+          await storedTrack(
+            'om1',
+            message(body: 'hi', stanzaId: 'om1', track: Track.standard),
+          ),
+          EncModeToken.standard.wire,
+        );
+      });
+
+      test('a message with no declaration is stored as plaintext', () async {
+        // No <encryption/> element means the sender made no claim. Calling
+        // that OM because we happen to be able to decrypt it would be
+        // inventing a fact about somebody else's client.
+        expect(
+          await storedTrack('plain1', message(body: 'hi', stanzaId: 'plain1')),
+          EncModeToken.none.wire,
+        );
+      });
     });
 
     test('a message with no stanza id is still stored exactly once', () async {

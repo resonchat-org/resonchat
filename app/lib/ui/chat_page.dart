@@ -11,11 +11,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:moxxmpp/moxxmpp.dart' show JID;
 
-import '../omemo/protocol.dart';
+import '../omemo/track.dart';
+import '../omemo/track_resolver.dart';
 import '../state/providers.dart';
 import '../store/database.dart';
 import '../xmpp/connection.dart';
 import 'message_bubble.dart';
+import 'track_dialogs.dart';
 import 'theme.dart';
 
 class ChatPage extends ConsumerStatefulWidget {
@@ -34,6 +36,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
   bool _typingNotified = false;
   bool _atBottom = true;
+  /// Guards against a double tap sending twice while the first send awaits.
+  bool _sending = false;
   StreamSubscription<DeliveryFailure>? _failureSub;
 
   @override
@@ -136,30 +140,112 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     );
   }
 
-  Future<void> _send() async {
+  /// Sends the input on [track], asking the user when it cannot be used.
+  ///
+  /// Returns the outcome so the caller can store what actually went out.
+  /// Returns null when the user cancelled or nothing was sent — in both cases
+  /// the text must go back into the box, because the user did not send it.
+  Future<SendOutcome?> _sendOn(Track track) async {
     final text = _input.text.trim();
-    if (text.isEmpty) return;
-    _input.clear();
-    _typingNotified = false;
+    if (text.isEmpty) return null;
+
+    var chosen = track;
     final xmpp = ref.read(xmppServiceProvider);
-    final stanzaId = await xmpp.sendPlainText(
-      JID.fromString(widget.chatJid),
-      text,
-    );
+    final peer = JID.fromString(widget.chatJid).toBare();
+
+    final caps = await xmpp.capabilitiesFor(peer);
+    final resolution = resolveTrack(requested: chosen, capabilities: caps);
+
+    // Choosing plaintext always asks, whatever the peer supports. The
+    // confirmation is about the act, not about the capability check.
+    if (chosen == Track.none) {
+      final alternative = resolution.alternative ?? Track.standard;
+      if (!mounted) return null;
+      final agreed = await confirmPlaintext(
+        context,
+        contact: widget.chatJid,
+        alternative: alternative,
+      );
+      if (!agreed || !mounted) return null;
+    } else if (!resolution.canSend) {
+      // Refuse and explain. Nothing is sent here, and nothing is sent on
+      // another track without a separate decision from the user.
+      final alternative = resolution.alternative ?? Track.standard;
+      if (!mounted) return null;
+      final substituted = await askTrackSubstitute(
+        context,
+        blocked: resolution.blocked!,
+        alternative: alternative,
+      );
+      if (substituted == null || !mounted) return null;
+      if (substituted == Track.none) {
+        if (!mounted) return null;
+        final agreed = await confirmPlaintext(
+          context,
+          contact: widget.chatJid,
+          alternative: Track.standard,
+        );
+        if (!agreed || !mounted) return null;
+      }
+      chosen = substituted;
+    }
+
+    final outcome = await xmpp.sendOnTrack(peer, text, track: chosen);
+    if (!outcome.sent) {
+      // It was sendable a moment ago and is not now — a bundle went stale, or
+      // the session dropped. Say so rather than showing a bubble that looks
+      // sent.
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Not sent: ${outcome.blocked?.title ?? 'unknown reason'}')),
+        );
+      }
+      return null;
+    }
+
     await ref.read(databaseProvider).insertMessage(
           MessagesCompanion(
             chatJid: Value(widget.chatJid),
             sender: const Value('me'),
-            stanzaId: Value(stanzaId ?? ''),
+            stanzaId: Value(outcome.stanzaId ?? ''),
             body: Value(text),
             timestamp: Value(DateTime.now()),
-            encMode: Value(
-              ref.read(chatEncModeProvider(widget.chatJid)).name,
-            ),
+            // What went out, as reported by the send — never the track we
+            // hoped for. A bubble labelled PO that travelled as plaintext is
+            // the one lie this app must not tell.
+            encMode: Value(EncModeToken.of(outcome.track).wire),
             incoming: const Value(false),
           ),
         );
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    return outcome;
+  }
+
+  Future<void> _send() async {
+    if (_sending) return;
+    final track = await ref.read(chatTrackProvider(widget.chatJid).future);
+    _sending = true;
+    final outcome = await _sendOn(track);
+    _sending = false;
+
+    final text = _input.text.trim();
+    if (outcome?.sent ?? false) {
+      _input.clear();
+      _typingNotified = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    } else if (text.isNotEmpty && mounted) {
+      // Put the text back. It was never sent, and a user who typed a message
+      // and watched the box empty has no way to know what happened to it.
+      _showUnsentNotice();
+    }
+  }
+
+  void _showUnsentNotice() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Message not sent. It is still in the box.'),
+        duration: Duration(seconds: 4),
+      ),
+    );
   }
 
   Future<void> _loadHistory() async {
@@ -182,7 +268,11 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   Widget build(BuildContext context) {
     final tg = context.tg;
     final messages = ref.watch(messagesProvider(widget.chatJid));
-    final mode = ref.watch(chatEncModeProvider(widget.chatJid));
+    // The chosen track, not the negotiated one. The header says what the user
+    // picked; whether it can actually be used is decided at send time and
+    // explained there if not.
+    final track = ref.watch(chatTrackProvider(widget.chatJid)).value ??
+        Track.standard;
 
     return Scaffold(
       appBar: AppBar(
@@ -222,7 +312,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                     overflow: TextOverflow.ellipsis,
                   ),
                   Text(
-                    encModeLabel(mode),
+                    track.description.split(' — ').first,
                     style: TextStyle(
                       fontSize: TgDimens.timeFontSize,
                       fontWeight: FontWeight.w400,
@@ -236,10 +326,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         ),
         actions: [
           EncBadge(
-            label: encModeLabel(mode),
-            locked: mode != EncMode.none,
-            onTap: () => Navigator.of(context)
-                .pushNamed('/encryption', arguments: widget.chatJid),
+            label: track.label,
+            locked: track != Track.none,
+            onTap: () => showTrackPicker(context, ref, widget.chatJid),
           ),
           IconButton(
             icon: const Icon(Icons.history),
@@ -319,7 +408,7 @@ class _MessageList extends StatelessWidget {
           unreadMarked = true;
         }
       }
-      if (m.encMode == 'error') {
+      if (EncModeToken.parse(m.encMode) == EncModeToken.error) {
         rows.add(
           ListTile(
             dense: true,
@@ -351,6 +440,11 @@ class _MessageList extends StatelessWidget {
               m.incoming ? BubbleSide.incoming : BubbleSide.outgoing,
           delivered: m.delivered,
           failed: m.deliveryError.isNotEmpty,
+          // What the message actually used, from what the sender declared —
+          // not what we would have chosen. For a message this client sent, the
+          // value written at send time is the one that counts, which is why it
+          // is read back from the row rather than recomputed.
+          track: EncModeToken.parse(m.encMode).track ?? Track.none,
         ),
       );
     }

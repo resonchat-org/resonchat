@@ -19,6 +19,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:logging/logging.dart';
 import 'package:moxxmpp/moxxmpp.dart';
 import 'package:omemo_dart/omemo_dart.dart';
+import 'package:resonchat/omemo/track.dart';
 import 'package:resonchat/omemo/defacto.dart';
 import 'package:resonchat/omemo/dual_track_manager.dart';
 import 'package:xml/xml.dart';
@@ -153,10 +154,18 @@ void main() {
       // fallback path exactly as a real user would.
       const fromA = 'hello A to B — plain ASCII';
       const fromB = '你好 B → A · emoji 🔐 · ünïcödé';
-      final idSentA = await a.sendPlainText(otherOfB, fromA);
-      final idSentB = await b.sendPlainText(otherOfA, fromB);
-      check('A accepted a stanza for sending', idSentA != null);
-      check('B accepted a stanza for sending', idSentB != null);
+      final sentA = await a.sendOnTrack(otherOfB, fromA, track: Track.standard);
+      final sentB = await b.sendOnTrack(otherOfA, fromB, track: Track.standard);
+      check(
+        'A accepted a stanza for sending',
+        sentA.sent,
+        sentA.blocked?.name ?? '',
+      );
+      check(
+        'B accepted a stanza for sending',
+        sentB.sent,
+        sentB.blocked?.name ?? '',
+      );
 
       // --- wait for delivery, resending periodically -----------------------
       // Servers cache presence and policy decisions, so a message sent in the
@@ -172,8 +181,8 @@ void main() {
         if (round % 20 == 0) {
           // ignore: avoid_print
           print('resending (round $round)');
-          await a.sendPlainText(otherOfB, fromA);
-          await b.sendPlainText(otherOfA, fromB);
+          await a.sendOnTrack(otherOfB, fromA, track: Track.standard);
+          await b.sendOnTrack(otherOfA, fromB, track: Track.standard);
         }
       }
       await subA.cancel();

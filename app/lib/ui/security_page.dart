@@ -13,7 +13,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../crypto/fingerprint.dart';
-import '../omemo/protocol.dart';
+import '../omemo/track.dart';
+import '../omemo/track_resolver.dart';
+import '../xmpp/capabilities.dart';
 import '../state/providers.dart';
 import 'theme.dart';
 
@@ -73,7 +75,8 @@ class _SecurityPageState extends ConsumerState<SecurityPage> {
   @override
   Widget build(BuildContext context) {
     final tg = context.tg;
-    final mode = ref.watch(chatEncModeProvider(widget.chatJid));
+    final track = ref.watch(chatTrackProvider(widget.chatJid)).value ??
+        Track.standard;
     final caps = ref.watch(chatCapabilitiesProvider(widget.chatJid)).value;
 
     return Scaffold(
@@ -83,11 +86,11 @@ class _SecurityPageState extends ConsumerState<SecurityPage> {
           _section(tg, 'This chat'),
           ListTile(
             leading: Icon(
-              mode == EncMode.none ? Icons.lock_open : Icons.lock,
-              color: mode == EncMode.none ? tg.textSecondary : tg.accent,
+              track.icon,
+              color: track == Track.none ? tg.textSecondary : tg.accent,
             ),
-            title: const Text('Messages are'),
-            subtitle: Text(_describe(mode)),
+            title: Text('You chose ${track.label}'),
+            subtitle: Text(_describe(track, caps)),
           ),
 
           _section(tg, 'Devices'),
@@ -179,12 +182,20 @@ class _SecurityPageState extends ConsumerState<SecurityPage> {
         ),
       );
 
-  static String _describe(EncMode mode) => switch (mode) {
-        EncMode.pqOmemo => 'End-to-end encrypted with post-quantum keys',
-        EncMode.standardOmemo =>
-          'End-to-end encrypted (standard OMEMO, works with other apps)',
-        EncMode.none => 'Not encrypted — no compatible device found',
-      };
+  /// The chosen track, and separately whether it can currently be used.
+  static String _describe(Track track, ChatCapabilities? caps) {
+    final resolution = resolveTrack(requested: track, capabilities: caps);
+    if (!resolution.canSend) {
+      return '${resolution.blocked!.consequence} '
+          'Nothing is sent on ${track.label} until you choose otherwise.';
+    }
+    return switch (track) {
+      Track.pq => 'End-to-end encrypted with post-quantum keys',
+      Track.standard =>
+        'End-to-end encrypted (standard OMEMO, works with other apps)',
+      Track.none => 'Sent in the clear, as you chose',
+    };
+  }
 }
 
 /// Explicit, two-sided checklist. Briar's post-mortem showed that a

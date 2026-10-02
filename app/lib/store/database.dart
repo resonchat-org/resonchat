@@ -124,7 +124,8 @@ class AppDatabase extends _$AppDatabase {
             // No rewrite of messages.enc_mode here: that column stores what a
             // message *actually used*, which is a fact about the past and does
             // not change because we renamed the vocabulary. The rename lives
-            // in EncModeToken.parse, which still understands the old words.
+            // in EncModeToken.parse, which still understands the old words
+            // ('pq', 'standard', ...).
             await customStatement(
               "ALTER TABLE chats ADD COLUMN track_override TEXT NOT NULL "
               "DEFAULT ''",

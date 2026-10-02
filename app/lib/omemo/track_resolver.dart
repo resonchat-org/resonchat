@@ -48,6 +48,53 @@ enum TrackBlocked {
   pqUnavailable,
 }
 
+/// Wording for each blocked case.
+///
+/// Kept apart from the widgets so the phrasing can be reviewed — and tested —
+/// without rendering anything. The subject of every sentence is what happens to
+/// the *recipient*, since that is the part the sender cannot see.
+extension TrackBlockedMessage on TrackBlocked {
+  String get title => switch (this) {
+        TrackBlocked.unknownPeers => 'Cannot check what they support',
+        TrackBlocked.unreachableDevices => 'They have no reachable device',
+        TrackBlocked.standardUnavailable =>
+          'Standard encryption is not possible here',
+        TrackBlocked.pqUnavailable =>
+          'They cannot read post-quantum messages',
+      };
+
+  String get consequence => switch (this) {
+        TrackBlocked.unknownPeers =>
+          "We could not read this contact's device list, so we do not know "
+              'what they can open.',
+        TrackBlocked.unreachableDevices =>
+          'This contact publishes no encryption device we can encrypt to, so '
+              'any message we send would go out readable.',
+        TrackBlocked.standardUnavailable =>
+          'At least one of their devices has no standard OMEMO bundle, so an '
+              'encrypted message would be unreadable on that device.',
+        TrackBlocked.pqUnavailable =>
+          'At least one of their devices is not an resonchat device, and it '
+              'cannot read post-quantum messages.',
+      };
+
+  /// The line that must not be softened.
+  ///
+  /// Not "they may not be able to read it" — the concrete consequence, so
+  /// there is nothing left for the reader to interpret.
+  String get outcome => switch (this) {
+        TrackBlocked.unknownPeers =>
+          'This message will not be sent until we can tell what they support.',
+        TrackBlocked.unreachableDevices =>
+          'The only way to send is in the clear, readable by anyone with '
+              'access to the server.',
+        TrackBlocked.standardUnavailable =>
+          'Sending in the clear is the only way this message gets read.',
+        TrackBlocked.pqUnavailable =>
+          'The other person will not be able to read this message at all.',
+      };
+}
+
 /// The outcome of resolving a choice against what the peer supports.
 class TrackResolution {
   const TrackResolution._({

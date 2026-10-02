@@ -16,6 +16,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:moxxmpp/moxxmpp.dart' show JID;
 
+import '../omemo/track.dart';
+import '../omemo/track_resolver.dart';
+import '../xmpp/capabilities.dart';
 import '../state/providers.dart';
 import '../xmpp/connection.dart';
 import 'theme.dart';
@@ -31,7 +34,7 @@ class ProfilePage extends ConsumerWidget {
     final chat = ref.watch(chatProvider(chatJid)).value;
     final contact = ref.watch(contactStateProvider(chatJid)).value;
     final caps = ref.watch(chatCapabilitiesProvider(chatJid)).value;
-    final mode = ref.watch(chatEncModeProvider(chatJid));
+    final track = ref.watch(chatTrackProvider(chatJid)).value ?? Track.standard;
     final xmpp = ref.watch(xmppServiceProvider);
     final connected = xmpp.state == XmppConnectionState.connected;
 
@@ -98,11 +101,13 @@ class ProfilePage extends ConsumerWidget {
           _section(tg, 'Encryption'),
           ListTile(
             leading: Icon(
-              mode.name == 'none' ? Icons.lock_open : Icons.lock,
-              color: mode.name == 'none' ? tg.textSecondary : tg.accent,
+              track.icon,
+              color: track == Track.none ? tg.textSecondary : tg.accent,
             ),
-            title: const Text('This conversation'),
-            subtitle: Text(protectionSentence(mode.name, caps?.pqDevices.isNotEmpty ?? false)),
+            title: Text('This conversation: ${track.label}'),
+            subtitle: Text(
+              protectionSentence(track, caps, context),
+            ),
           ),
           ListTile(
             leading: const Icon(Icons.devices_other),
@@ -186,14 +191,30 @@ class ProfilePage extends ConsumerWidget {
     await ref.read(databaseProvider).clearChatMessages(chatJid);
   }
 
-  static String protectionSentence(String mode, bool hasPq) => switch (mode) {
-        'pqOmemo' => 'End-to-end encrypted with post-quantum keys.',
-        'standardOmemo' =>
-          'End-to-end encrypted (standard OMEMO, works with other apps).',
-        _ => hasPq
-            ? 'Not encrypted right now, although a post-quantum bundle exists.'
-            : 'Not encrypted — no compatible device found.',
-      };
+  /// What this conversation will actually do, as distinct from what the user
+  /// picked.
+  ///
+  /// The chosen track is reported first and on its own, because it is the
+  /// decision. Whether it is currently usable is a second, separate fact — and
+  /// conflating the two is what makes a "protected" badge show on a
+  /// conversation whose messages are not being protected.
+  static String protectionSentence(
+    Track track,
+    ChatCapabilities? caps,
+    BuildContext context,
+  ) {
+    final resolution = resolveTrack(requested: track, capabilities: caps);
+    if (!resolution.canSend) {
+      return 'You chose ${track.label}. ${resolution.blocked!.consequence} '
+          'Nothing has been sent; you will be asked each time.';
+    }
+    return switch (track) {
+      Track.pq => 'End-to-end encrypted with post-quantum keys.',
+      Track.standard =>
+        'End-to-end encrypted (standard OMEMO, works with other apps).',
+      Track.none => 'Sent in the clear, as you chose.',
+    };
+  }
 
   static Widget _section(TgColors tg, String title) => Padding(
         padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),

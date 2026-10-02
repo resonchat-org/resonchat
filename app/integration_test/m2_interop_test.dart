@@ -28,6 +28,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:logging/logging.dart';
 import 'package:moxxmpp/moxxmpp.dart' show JID, RosterManager, rosterManager;
 import 'package:omemo_dart/omemo_dart.dart' show OmemoBundle;
+import 'package:resonchat/omemo/track.dart';
 import 'package:resonchat/omemo/dual_track_manager.dart';
 import 'package:resonchat/omemo/protocol.dart';
 import 'package:resonchat/xmpp/capabilities.dart';
@@ -177,15 +178,20 @@ void main() {
       );
 
       // --- send a real OMEMO message -----------------------------------
-      // preferPq is off deliberately: the reference client speaks standard
-      // OMEMO, so this exercises exactly the path it can read.
+      // The standard track is named explicitly: the reference client speaks
+      // OMEMO and cannot read PQ, so this exercises exactly the path it can.
       const plaintext = 'interop from resonchat 9f3a2b';
-      final stanzaId = await xmpp.sendPlainText(
+      final outcome = await xmpp.sendOnTrack(
         peer,
         plaintext,
-        preferPq: false,
+        track: Track.standard,
       );
-      check('stanza accepted for sending', stanzaId != null, 'id $stanzaId');
+      final stanzaId = outcome.stanzaId;
+      check(
+        'stanza accepted for sending',
+        outcome.sent,
+        outcome.blocked == null ? 'id $stanzaId' : 'blocked: ${outcome.blocked}',
+      );
       // ignore: avoid_print
       print('sent: "$plaintext" → $peer (look for it in the peer client)');
 

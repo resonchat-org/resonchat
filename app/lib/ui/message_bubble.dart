@@ -8,6 +8,7 @@
 
 import 'package:flutter/material.dart';
 
+import '../omemo/track.dart';
 import 'theme.dart';
 
 enum BubbleSide { incoming, outgoing }
@@ -90,6 +91,7 @@ class MessageBubble extends StatelessWidget {
     this.senderColor,
     this.delivered = false,
     this.failed = false,
+    this.track = Track.none,
     this.onLongPress,
     this.onTap,
   });
@@ -97,6 +99,13 @@ class MessageBubble extends StatelessWidget {
   final String text;
   final DateTime time;
   final BubbleSide side;
+
+  /// Which track this message actually travelled on.
+  ///
+  /// Defaults to [Track.none] rather than being required: a bubble that
+  /// forgets to say so would then claim "no encryption" for a message that
+  /// was encrypted, which is the one mistake this label must never make.
+  final Track track;
 
   /// Shown above the bubble in group chats, tinted per sender.
   final String? senderName;
@@ -173,6 +182,7 @@ class MessageBubble extends StatelessWidget {
                       delivered: delivered,
                       failed: failed,
                       mine: mine,
+                      track: track,
                     ),
                   ],
                 ),
@@ -185,19 +195,25 @@ class MessageBubble extends StatelessWidget {
   }
 }
 
-/// Timestamp plus receipt ticks, baseline-aligned with the message text.
+/// Timestamp, receipt ticks and the track this message used.
+///
+/// The track sits in the meta row rather than its own line: it is metadata
+/// about the message, and the two-letter code is only readable at the size
+/// the timestamp is already drawn at.
 class _MetaRow extends StatelessWidget {
   const _MetaRow({
     required this.time,
     required this.delivered,
     required this.failed,
     required this.mine,
+    required this.track,
   });
 
   final DateTime time;
   final bool delivered;
   final bool failed;
   final bool mine;
+  final Track track;
 
   String get _timeText {
     final h = time.hour.toString().padLeft(2, '0');
@@ -237,6 +253,24 @@ class _MetaRow extends StatelessWidget {
                     : tg.textSecondary,
           ),
         ],
+        // Before the ticks on outgoing messages, after on incoming ones, so
+        // the track lines up on the outer edge of the bubble either way.
+        const SizedBox(width: 5),
+        Icon(
+          track.icon,
+          size: 12,
+          color: track == Track.none ? tg.danger : tg.textSecondary,
+        ),
+        const SizedBox(width: 1),
+        Text(
+          track.label,
+          style: TextStyle(
+            fontSize: TgDimens.timeFontSize - 1,
+            fontWeight: FontWeight.w500,
+            letterSpacing: 0.3,
+            color: track == Track.none ? tg.danger : tg.textSecondary,
+          ),
+        ),
       ],
     );
   }

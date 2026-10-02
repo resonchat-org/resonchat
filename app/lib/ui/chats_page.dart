@@ -11,7 +11,7 @@ import 'package:moxxmpp/moxxmpp.dart'
     show JID, RosterManager, rosterManager;
 import '../xmpp/connection.dart';
 
-import '../omemo/protocol.dart';
+import '../omemo/track.dart';
 import '../state/providers.dart';
 import '../store/database.dart';
 import 'theme.dart';
@@ -177,9 +177,11 @@ class _ChatRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final tg = context.tg;
     final title = chat.title.isEmpty ? chat.jid : chat.title;
-    final mode = ref.watch(chatEncModeProvider(chat.jid));
+    // The chosen track for this conversation, so a chat row shows what the
+    // user picked rather than what a capability lookup happened to say.
+    final track = ref.watch(chatTrackProvider(chat.jid)).value ?? Track.standard;
     final preview = ref.watch(lastMessageProvider(chat.jid));
-    final locked = mode != EncMode.none;
+    final locked = track != Track.none;
 
     return InkWell(
       onTap: () => Navigator.of(context).pushNamed('/chat', arguments: chat.jid),
@@ -257,7 +259,7 @@ class _ChatRow extends ConsumerWidget {
                       ),
                       if (locked)
                         Text(
-                          encModeLabel(mode),
+                          track.label,
                           style: TextStyle(
                             fontSize: TgDimens.timeFontSize,
                             color: tg.accent,

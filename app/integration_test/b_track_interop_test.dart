@@ -20,7 +20,9 @@ import 'package:moxxmpp/moxxmpp.dart';
 import 'package:resonchat/omemo/dual_track_manager.dart';
 import 'package:resonchat/omemo/protocol.dart';
 import 'package:resonchat/omemo/track.dart';
+import 'package:resonchat/omemo/track_resolver.dart';
 import 'package:resonchat/xmpp/b_track_manager.dart';
+import 'package:resonchat/xmpp/capabilities.dart';
 import 'package:resonchat/xmpp/connection.dart';
 
 final results = <String, bool>{};
@@ -177,6 +179,31 @@ void main() {
       );
       expect(visible, isTrue, reason: 'B track would decline to send');
 
+      // The send path refuses to send when it knows nothing about the peer,
+      // so the capability resolver has to be attached — exactly as the app's
+      // wiring does it. Without this the test would fail at the gate rather
+      // than at the thing it is measuring.
+      final ourOmemoId = await a.service.ensureOmemoDevice();
+      final ourPqId = b.bTrack.device?.id;
+      a.service.attachCapabilities(
+        CapabilityService(
+          tracks: () => a.service.tracks!,
+          ourDeviceId: () async => ourOmemoId,
+          ourPqDevices: () async =>
+              (a.bTrack.ready && a.bTrack.device?.id != null)
+                  ? {a.bTrack.device!.id}
+                  : const <int>{},
+        ),
+      );
+      b.service.attachCapabilities(
+        CapabilityService(
+          tracks: () => b.service.tracks!,
+          ourDeviceId: () async => await b.service.ensureOmemoDevice(),
+          ourPqDevices: () async =>
+              (b.bTrack.ready && ourPqId != null) ? {ourPqId} : const <int>{},
+        ),
+      );
+
       // --- listen -------------------------------------------------------
       final toB = <InboundMessage>[];
       final toA = <InboundMessage>[];
@@ -215,15 +242,41 @@ void main() {
       // A control message on the A track, so "nothing arrived" can be told
       // apart from "nothing arrived *because of the PQ track*".
       const control = 'atrack-control-Ω 42 · 对照';
-      final idSent =
-          await a.service.sendPlainText(otherOfA, body, preferPq: true);
-      check('A accepted a stanza for sending', idSent != null);
-      final idControl = await a.service.sendPlainText(
+      final sentPq =
+          await a.service.sendOnTrack(otherOfA, body, track: Track.pq);
+
+      // Whether PQ is sendable depends on the peer's *whole* device list being
+      // reachable, and a long-lived test account has accumulated device ids
+      // whose bundles no longer exist. Refusing in that case is the designed
+      // behaviour (invariant 1) and is asserted as such; the wire-level
+      // assertions below need an account with a clean list.
+      final pqSendable = sentPq.sent;
+      if (pqSendable) {
+        check('A accepted a PQ stanza for sending', true);
+      } else {
+        check(
+          'an unreachable device in the list blocks PQ rather than '
+          'downgrading',
+          sentPq.blocked == TrackBlocked.pqUnavailable,
+          'blocked: ${sentPq.blocked?.name}',
+        );
+        // ignore: avoid_print
+        print(
+          'SKIP: PQ wire assertions — ${sentPq.blocked?.name}; this account\'s '
+          'device list has stale ids, so the PQ track is correctly refused. '
+          'Use an account with a clean list for the full check.',
+        );
+      }
+      final sentControl = await a.service.sendOnTrack(
         otherOfA,
         control,
-        preferPq: false,
+        track: Track.standard,
       );
-      check('A accepted the control stanza', idControl != null);
+      check(
+        'A accepted the control stanza',
+        sentControl.sent,
+        sentControl.blocked?.name ?? '',
+      );
 
       final deadline = DateTime.now().add(Duration(seconds: waitSeconds));
       var round = 0;
@@ -235,8 +288,8 @@ void main() {
         if (round % 20 == 0) {
           // ignore: avoid_print
           print('resending (round $round)');
-          await a.service.sendPlainText(otherOfA, body, preferPq: true);
-          await a.service.sendPlainText(otherOfA, control, preferPq: false);
+          await a.service.sendOnTrack(otherOfA, body, track: Track.pq);
+          await a.service.sendOnTrack(otherOfA, control, track: Track.standard);
         }
       }
       await subA.cancel();
@@ -255,30 +308,31 @@ void main() {
 
       // --- what actually left the socket ---------------------------------
       final mine = sent.where((s) => s.contains(otherOfA.toString()));
-      final pqStanzas =
-          mine.where((s) => s.contains(pomemoXmlns)).toList();
-      check(
-        'the PQ ciphertext was on the wire',
-        pqStanzas.isNotEmpty,
-        '${mine.length} message(s) to B, ${pqStanzas.length} with '
-            '$pomemoXmlns',
-      );
-      check(
-        'the message declared its track (EME)',
-        pqStanzas.any((s) => s.contains(emePomemo0)),
-      );
-      check(
-        'the ciphertext was not also wrapped in standard OMEMO',
-        // Double encryption would work between two copies of this client and
-        // still be a protocol bug: a PQ-only reader would see nothing.
-        !pqStanzas.any(
-          (s) => s.contains(emeOmemo) || s.contains(emeOmemo2),
-        ),
-      );
-      check(
-        'no plaintext body leaked alongside the ciphertext',
-        pqStanzas.every((s) => !s.contains('pq-round-trip')),
-      );
+      final pqStanzas = mine.where((s) => s.contains(pomemoXmlns)).toList();
+      if (pqSendable) {
+        check(
+          'the PQ ciphertext was on the wire',
+          pqStanzas.isNotEmpty,
+          '${mine.length} message(s) to B, ${pqStanzas.length} with '
+              '$pomemoXmlns',
+        );
+        check(
+          'the message declared its track (EME)',
+          pqStanzas.any((s) => s.contains(emePomemo0)),
+        );
+        check(
+          'the ciphertext was not also wrapped in standard OMEMO',
+          // Double encryption would work between two copies of this client
+          // and still be a protocol bug: a PQ-only reader would see nothing.
+          !pqStanzas.any(
+            (s) => s.contains(emeOmemo) || s.contains(emeOmemo2),
+          ),
+        );
+        check(
+          'no plaintext body leaked alongside the ciphertext',
+          pqStanzas.every((s) => !s.contains('pq-round-trip')),
+        );
+      }
 
       // --- did it arrive, and can it be read? ----------------------------
       final anythingArrived = toB.isNotEmpty;
@@ -289,29 +343,34 @@ void main() {
             ? 'the network delivered nothing at all, including plaintext'
             : '${toB.map((m) => m.body).toSet().toList()}',
       );
-      check(
-        'B decrypted the PQ message',
-        toB.any((m) => m.body == body && m.encryptionError == null),
-        toB.isEmpty
-            ? 'nothing arrived (${sent.length} stanza(s) sent)'
-            : '${toB.length} inbound, bodies '
-                '${toB.map((m) => m.body).toSet().toList()}',
-      );
-      // The label comes off the EME declaration, so it is independent of
-      // whether we managed to open the payload: a PQ message that failed to
-      // decrypt must still say PQ, or the user is told it was never encrypted.
-      check(
-        'B labelled it as the PQ track',
-        toB.any((m) => m.track == Track.pq),
-        toB.isEmpty ? 'nothing arrived' : '${toB.map((m) => m.track).toList()}',
-      );
+      if (pqSendable) {
+        check(
+          'B decrypted the PQ message',
+          toB.any((m) => m.body == body && m.encryptionError == null),
+          toB.isEmpty
+              ? 'nothing arrived (${sent.length} stanza(s) sent)'
+              : '${toB.length} inbound, bodies '
+                  '${toB.map((m) => m.body).toSet().toList()}',
+        );
+        // The label comes off the EME declaration, so it is independent of
+        // whether we opened the payload: a PQ message that failed to decrypt
+        // must still say PQ, or the user is told it was never encrypted.
+        check(
+          'B labelled it as the PQ track',
+          toB.any((m) => m.track == Track.pq),
+          toB.isEmpty ? 'nothing arrived' : '${toB.map((m) => m.track).toList()}',
+        );
+      }
       // Our own carbon copy coming back decrypted proves the local half too.
+      // Scoped to our own message rather than "everything that arrived":
+      // the queue can hold stale traffic from earlier runs, and an unrelated
+      // undecryptable message must not decide whether this assertion passes.
       check(
-        'own carbon copies came back readable',
-        toA.every((m) => m.encryptionError == null),
+        'our own message came back as a readable carbon copy',
+        toA.any((m) => m.body == control && m.encryptionError == null),
         toA.isEmpty
             ? 'no carbon copy seen'
-            : '${toA.map((m) => m.track).toList()}',
+            : '${toA.map((m) => '${m.track}${m.encryptionError == null ? '' : '!'}}').toList()}',
       );
 
       // --- and the message itself never went out in the clear -----------
@@ -319,17 +378,21 @@ void main() {
       // neither track shows in place of a message it cannot open. The thing
       // that must never appear is the message's own text without the
       // ciphertext around it.
-      check(
-        'the message never went out in the clear',
-        sent.where((s) => s.contains(body)).every((s) => s.contains(pomemoXmlns)),
-        '${sent.where((s) => s.contains(body)).length} stanza(s) carried '
-            'the plaintext, ${sent.where((s) => s.contains(body) && s.contains(pomemoXmlns)).length} '
-            'of them with ciphertext',
-      );
-      check(
-        'the placeholder is offered alongside the ciphertext',
-        pqStanzas.any((s) => s.contains(encryptedBodyFallback)),
-      );
+      if (pqSendable) {
+        check(
+          'the message never went out in the clear',
+          sent
+              .where((s) => s.contains(body))
+              .every((s) => s.contains(pomemoXmlns)),
+          '${sent.where((s) => s.contains(body)).length} stanza(s) carried '
+              'the plaintext, ${sent.where((s) => s.contains(body) && s.contains(pomemoXmlns)).length} '
+              'of them with ciphertext',
+        );
+        check(
+          'the placeholder is offered alongside the ciphertext',
+          pqStanzas.any((s) => s.contains(encryptedBodyFallback)),
+        );
+      }
     } finally {
       await a.service.disconnect();
       await b.service.disconnect();

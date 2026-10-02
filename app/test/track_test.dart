@@ -118,6 +118,22 @@ void main() {
       }
     });
 
+    test('the column and the per-chat setting use one spelling', () {
+      // Two vocabularies in one database is how a column ends up holding
+      // 'pq' from an old build and 'PO' from a new one, and every read has
+      // to guess which it got.
+      for (final token in EncModeToken.values) {
+        final track = token.track;
+        if (track != null) expect(token.wire, track.stored);
+      }
+    });
+
+    test('of() and parse() are inverses for every track', () {
+      for (final track in Track.values) {
+        expect(EncModeToken.parse(EncModeToken.of(track).wire).track, track);
+      }
+    });
+
     test('legacy values from earlier builds still resolve', () {
       // Without this, every message stored before the rename would silently
       // become "unencrypted" the next time it was read.

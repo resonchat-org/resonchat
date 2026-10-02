@@ -8,6 +8,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'providers.dart';
+import '../omemo/track.dart';
 import '../store/database.dart';
 import '../xmpp/connection.dart';
 
@@ -111,7 +112,14 @@ Future<void> storeInbound(AppDatabase db, InboundMessage msg) async {
       // placeholder carries the failure, not the payload.
       body: Value(msg.encryptionError != null ? '' : msg.body),
       timestamp: Value(msg.archiveTimestamp ?? DateTime.now()),
-      encMode: Value(msg.encryptionError != null ? 'error' : 'none'),
+      encMode: Value(
+        // A message we could not open is a condition, not a track: the UI has
+        // to say "this was encrypted, but not by us", and "none" would say
+        // the opposite.
+        msg.encryptionError != null
+            ? EncModeToken.error.wire
+            : EncModeToken.of(msg.track ?? Track.none).wire,
+      ),
       incoming: const Value(true),
     ),
   );

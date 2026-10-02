@@ -108,6 +108,27 @@ void main() {
       expect(await db.trackOverride('b@example.org'), isNull);
     });
 
+    test('receiving a message does not wipe the choice', () async {
+      // Every inbound message calls upsertChat. If that insert does not carry
+      // track_override forward, the user's protocol choice is silently reset
+      // to the global default by ordinary use — and to plaintext, if the
+      // default is that.
+      await db.upsertChat('bob@example.org');
+      await db.setTrackOverride('bob@example.org', Track.none);
+      await db.upsertChat('bob@example.org');
+      expect(await db.trackOverride('bob@example.org'), Track.none);
+
+      await db.insertMessage(
+        MessagesCompanion(
+          chatJid: const Value('bob@example.org'),
+          sender: const Value('bob@example.org'),
+          body: const Value('hi'),
+          incoming: const Value(true),
+        ),
+      );
+      expect(await db.trackOverride('bob@example.org'), Track.none);
+    });
+
     test('a legacy row without the column reads as no override', () {
       // Migration v2 -> v3 backfills the column with ''. Such a row means
       // "never chosen", which is what it means.

@@ -112,30 +112,47 @@ enum Track {
 ///
 /// Deliberately a closed vocabulary: the column is a database contract, and
 /// binding it to a Dart enum identifier would let a rename silently rewrite
-/// history. [error] is not a track but a condition — an encrypted message we
-/// could not open — and it shares the column because the UI needs to say
-/// "this was encrypted, but not by us" in one place.
+/// history.
+///
+/// The stored spelling is [Track.stored] — the same two letters the user
+/// reads under a message — so the column and [chats.track_override] cannot
+/// disagree about what "pq" was called. [error] is the only value with a
+/// spelling of its own, because it is a condition rather than a track: a
+/// message that was encrypted by something we cannot read.
 enum EncModeToken {
-  none('none'),
-  standard('standard'),
-  pq('pq'),
-  error('error');
+  none(Track.none),
+  standard(Track.standard),
+  pq(Track.pq),
+  error(null);
 
-  const EncModeToken(this.wire);
+  const EncModeToken(this.track);
 
-  final String wire;
+  /// The track this token records, or null for [error].
+  final Track? track;
 
-  static EncModeToken parse(String? value) => switch (value) {
-        'standard' || 'standardOmemo' => EncModeToken.standard,
-        'pq' || 'pqOmemo' => EncModeToken.pq,
-        'error' => EncModeToken.error,
-        _ => EncModeToken.none,
+  /// The stored form.
+  String get wire => track?.stored ?? 'error';
+
+  /// The token for [track].
+  static EncModeToken of(Track track) => switch (track) {
+        Track.none => EncModeToken.none,
+        Track.standard => EncModeToken.standard,
+        Track.pq => EncModeToken.pq,
       };
 
-  Track? get track => switch (this) {
-        EncModeToken.none => Track.none,
-        EncModeToken.standard => Track.standard,
-        EncModeToken.pq => Track.pq,
-        EncModeToken.error => null,
+  /// Reads a stored value, including every spelling earlier builds wrote.
+  ///
+  /// An unrecognised value resolves to [none] rather than throwing: a single
+  /// corrupt row must not make the whole history unreadable. Note this is the
+  /// one place where "give up and treat as plaintext" is acceptable, because
+  /// the value describes a message that was *already sent* — there is nothing
+  /// left to protect by being uncertain about it. The same uncertainty on the
+  /// send path is not acceptable, which is why [fromStored] returns null.
+  static EncModeToken parse(String? value) => switch (value?.toLowerCase()) {
+        'po' || 'pq' || 'pqomemo' => EncModeToken.pq,
+        'om' || 'standard' || 'standardomemo' => EncModeToken.standard,
+        'no' || 'none' => EncModeToken.none,
+        'error' => EncModeToken.error,
+        _ => EncModeToken.none,
       };
 }

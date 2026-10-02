@@ -18,6 +18,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:logging/logging.dart';
 import 'package:moxxmpp/moxxmpp.dart';
+import 'package:resonchat/omemo/track.dart';
 import 'package:resonchat/omemo/dual_track_manager.dart';
 import 'package:resonchat/xmpp/connection.dart';
 
@@ -71,7 +72,7 @@ void main() {
 
       final body = '$marker$unicodeSuffix';
       final stanzaId =
-          await xmpp.sendPlainText(peer, body, preferPq: false);
+          await xmpp.sendOnTrack(peer, body, track: Track.standard);
       // ignore: avoid_print
       print('stanzaId=$stanzaId');
 

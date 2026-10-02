@@ -9,6 +9,7 @@ import 'package:moxxmpp/moxxmpp.dart' show JID;
 
 import '../omemo/dual_track_manager.dart';
 import '../omemo/protocol.dart';
+import '../omemo/track.dart';
 import '../store/database.dart';
 import '../store/omemo_device_store.dart';
 import '../xmpp/b_track_manager.dart';
@@ -173,28 +174,57 @@ final chatCapabilitiesProvider =
 
 /// Encryption mode for a chat, or [EncMode.none] while resolving.
 ///
-/// UI-facing convenience over [encModeProvider]; never blocks on the
-/// network, so a chat row renders immediately with an honest "not yet
-/// encrypted" state instead of a spinner.
-final chatEncModeProvider = Provider.family<EncMode, String>((ref, chatJid) {
-  return ref.watch(encModeProvider(chatJid)).maybeWhen(
-        data: (mode) => mode,
-        orElse: () => EncMode.none,
-      );
+/// The track messages in [chatJid] go out on: the per-conversation override
+/// if the user set one, otherwise the global default.
+///
+/// This is the *choice*, not a negotiated answer and not what the peer
+/// supports. Keeping the three apart is the whole point — a value that blended
+/// them would silently change what the user asked for whenever a capability
+/// lookup came back different.
+///
+/// The default is [Track.standard]: it is the only track a third-party client
+/// can read, and a fresh install that starts on plaintext would hand every new
+/// conversation to anyone with access to the server.
+final chatTrackProvider =
+    FutureProvider.family<Track, String>((ref, chatJid) async {
+  // Watched, not just read: the picker and the header have to re-resolve when
+  // the global default changes, or they disagree until the next restart.
+  final global = ref.watch(globalTrackProvider.future);
+  final override = await ref.watch(databaseProvider).trackOverride(chatJid);
+  return override ?? await global;
 });
 
-/// Per-chat outbound encryption mode, resolved from live capability data
-/// (M4). Recomputes whenever the connection or cache changes; falls back
-/// to [EncMode.none] while resolving or when data is unreliable, so the
-/// UI never claims a protection level we cannot guarantee.
-final encModeProvider =
-    FutureProvider.family<EncMode, String>((ref, chatJid) async {
-      // Watching the connection forces a re-resolve after reconnect.
-      ref.watch(connectionStateProvider);
-      final xmpp = ref.read(xmppServiceProvider);
-      if (xmpp.omemo == null) return EncMode.none;
-      final caps = await ref
-          .read(capabilityServiceProvider)
-          .forChat(JID.fromString(chatJid));
-      return caps.reliable ? caps.mode : EncMode.none;
-    });
+/// The override set for [chatJid], or null when there is none.
+///
+/// Separate from [chatTrackProvider] because "inherits the global default" and
+/// "is set to the same value as the global default" are different states: only
+/// the first one follows a later change to the default.
+final chatTrackOverrideProvider =
+    FutureProvider.family<Track?, String>((ref, chatJid) {
+  // Invalidated by setChatTrack, so this re-reads after a change.
+  return ref.watch(databaseProvider).trackOverride(chatJid);
+});
+
+/// The track used by conversations with no override of their own.
+final globalTrackProvider = FutureProvider<Track>((ref) async {
+  final stored = await ref.read(databaseProvider).metaValue(_globalTrackKey);
+  if (stored == null) return Track.standard;
+  // A corrupt setting resolves to the standard track, never to plaintext: an
+  // unreadable value must not cost the user their encryption.
+  return Track.fromStored(stored) ?? Track.standard;
+});
+
+/// Stores the global default.
+Future<void> setGlobalTrack(WidgetRef ref, Track track) async {
+  await ref.read(databaseProvider).setMetaValue(_globalTrackKey, track.stored);
+}
+
+/// Pins [chatJid] to [track], or clears the override when null.
+Future<void> setChatTrack(WidgetRef ref, String chatJid, Track? track) async {
+  await ref.read(databaseProvider).setTrackOverride(chatJid, track);
+  ref.invalidate(chatTrackOverrideProvider(chatJid));
+  ref.invalidate(chatTrackProvider(chatJid));
+}
+
+/// Database key holding the global default track.
+const _globalTrackKey = 'global_track';

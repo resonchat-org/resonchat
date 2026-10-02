@@ -15,6 +15,7 @@ import 'package:omemo_dart/omemo_dart.dart' as omemo_dart;
 import '../omemo/defacto.dart';
 import '../omemo/dual_track_manager.dart';
 import '../omemo/track.dart';
+import '../omemo/track_resolver.dart';
 import '../omemo/protocol.dart';
 import '../store/omemo_device_store.dart';
 import 'b_track_manager.dart';
@@ -149,6 +150,30 @@ enum XmppConnectionState { disconnected, connecting, connected }
 /// plaintext; the chat UI flips this per conversation (M2/M4).
 typedef ShouldEncrypt = Future<bool> Function(JID to);
 
+/// What a send on a chosen track actually did.
+///
+/// [track] is the track that went out, never the one that was asked for.
+/// When [blocked] is set, nothing was sent and [stanzaId] is null.
+class SendOutcome {
+  const SendOutcome({
+    required this.stanzaId,
+    required this.track,
+    this.blocked,
+  });
+
+  /// Null when nothing was sent.
+  final String? stanzaId;
+
+  /// The track asked for, and — when [stanzaId] is set — the one used.
+  final Track track;
+
+  /// Why the message could not be sent, if it could not.
+  final TrackBlocked? blocked;
+
+  /// True when a stanza went out.
+  bool get sent => stanzaId != null;
+}
+
 class XmppService {
   XmppService({
     ShouldEncrypt? shouldEncrypt,
@@ -216,6 +241,81 @@ class XmppService {
         : await _capabilities!.forChat(to);
     if (caps == null || !caps.reliable) return false;
     return caps.mode != EncMode.none;
+  }
+
+  /// Capabilities for [to], or null when they could not be established.
+  Future<ChatCapabilities?> capabilitiesFor(JID to) async {
+    final caps = _capabilities;
+    if (caps == null) return null;
+    try {
+      return await caps.forChat(to);
+    } catch (e) {
+      // A capability lookup that throws is indistinguishable, for our
+      // purposes, from one that found nothing. Letting it escape would take
+      // the send button down with it.
+      _log.warning('capability lookup for $to failed: $e');
+      return null;
+    }
+  }
+
+  /// Sends [body] to [to] on exactly [track], or refuses.
+  ///
+  /// The single entry point for outbound chat messages. There is deliberately
+  /// no variant that takes "any track that works": an argument like that is
+  /// how a PQ message becomes plaintext without anybody deciding so.
+  ///
+  /// A blocked outcome means the message was not sent and the caller must
+  /// ask the user. It does not retry on a different track.
+  Future<SendOutcome> sendOnTrack(
+    JID to,
+    String body, {
+    required Track track,
+    bool requestReceipt = true,
+  }) async {
+    final caps = await capabilitiesFor(to);
+    final resolution = resolveTrack(requested: track, capabilities: caps);
+    if (!resolution.canSend) {
+      _log.info(
+        'refusing to send to $to on ${track.stored}: '
+        '${resolution.blocked?.name}',
+      );
+      return SendOutcome(
+        stanzaId: null,
+        track: track,
+        blocked: resolution.blocked,
+      );
+    }
+
+    final String? stanzaId;
+    switch (track) {
+      case Track.pq:
+        stanzaId = await sendPqMessage(to, body, requestReceipt: requestReceipt);
+      case Track.standard:
+        stanzaId = await sendOmemoMessage(to, body, requestReceipt: requestReceipt);
+      case Track.none:
+        stanzaId = await sendUnencryptedMessage(
+          to,
+          body,
+          requestReceipt: requestReceipt,
+        );
+    }
+
+    // A track that was judged sendable can still fail at the last moment —
+    // a bundle goes stale between the check and the send. Returning the
+    // requested track with a null stanza id says "nothing went out" without
+    // pretending a different track was substituted.
+    if (stanzaId == null) {
+      return SendOutcome(
+        stanzaId: null,
+        track: track,
+        blocked: switch (track) {
+          Track.pq => TrackBlocked.pqUnavailable,
+          Track.standard => TrackBlocked.standardUnavailable,
+          Track.none => TrackBlocked.unreachableDevices,
+        },
+      );
+    }
+    return SendOutcome(stanzaId: stanzaId, track: track);
   }
 
   /// Attaches the capability resolver so [autoShouldEncrypt] works.
@@ -733,28 +833,24 @@ class XmppService {
     return id;
   }
 
-  /// Sends a chat message, requesting a delivery receipt (XEP-0184).
-  /// Returns the stanza id used for the receipt, or null on failure.
-  Future<String?> sendPlainText(
+  /// Sends on the standard OMEMO track.
+  ///
+  /// No EME element here on purpose: moxxmpp's OmemoManager adds the
+  /// declaration itself, and only once it has actually encrypted the stanza.
+  /// Adding a second one from this side would either duplicate the element
+  /// or, worse, claim encryption on a message that went out in plaintext.
+  ///
+  /// The caller has already established that the standard track is reachable
+  /// for every recipient device, which is also what tells moxxmpp's
+  /// `shouldEncrypt` hook to wrap this stanza.
+  Future<String?> sendOmemoMessage(
     JID to,
     String body, {
     bool requestReceipt = true,
-    bool preferPq = true,
   }) async {
-    // Try the B track first; it declines (returns null) unless every
-    // recipient device is PQ-capable, so a standard peer still gets the
-    // A track below.
-    if (preferPq) {
-      final pqId = await sendPqMessage(to, body, requestReceipt: requestReceipt);
-      if (pqId != null) return pqId;
-    }
     final mm = _connection?.getManagerById<MessageManager>(messageManager);
     if (mm == null) throw StateError('not connected');
     final id = _nextStanzaId();
-    // No EME here on purpose. moxxmpp's OmemoManager adds the declaration
-    // itself, and only once it has actually encrypted the stanza — adding a
-    // second one from this side would either duplicate the element or, worse,
-    // claim encryption on a message that went out in plaintext.
     await mm.sendMessage(
       to,
       TypedMap<StanzaHandlerExtension>.fromList([
@@ -763,6 +859,50 @@ class XmppService {
         if (requestReceipt) const MessageDeliveryReceiptData(true),
       ]),
       type: 'chat',
+    );
+    return id;
+  }
+
+  /// Sends a chat message in the clear, requesting a delivery receipt
+  /// (XEP-0184).
+  ///
+  /// Only reachable once the user has chosen [Track.none] and been told what
+  /// it means. There is no capability check here and deliberately no
+  /// encryption attempt: this method does exactly one thing, so there is no
+  /// path where calling it "for safety" quietly encrypts, and none where
+  /// failing to encrypt produces something that looks protected.
+  Future<String?> sendUnencryptedMessage(
+    JID to,
+    String body, {
+    bool requestReceipt = true,
+  }) async {
+    final connection = _connection;
+    if (connection == null) throw StateError('not connected');
+    final id = _nextStanzaId();
+
+    // Built here rather than through MessageManager so `shouldEncrypt: false`
+    // is stated on the stanza itself.
+    //
+    // The alternative — flipping a shared flag that the `shouldEncrypt` hook
+    // reads — makes the decision depend on which send happens to be in flight
+    // at the moment the hook runs. A plaintext send racing an encrypted one to
+    // the same contact would then take the wrong one with it. Per-stanza is
+    // the only place this can be decided without a race.
+    final children = <XMLNode>[
+      MessageBodyData(body).toXML(),
+      if (requestReceipt) MessageDeliveryReceiptData(true).toXML(),
+    ];
+    await connection.sendStanza(
+      StanzaDetails(
+        Stanza.message(
+          to: to.toString(),
+          id: id,
+          type: 'chat',
+          children: children,
+        ),
+        awaitable: false,
+        shouldEncrypt: false,
+      ),
     );
     return id;
   }
