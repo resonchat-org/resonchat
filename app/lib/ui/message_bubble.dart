@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 
 import '../omemo/track.dart';
 import '../xmpp/reactions.dart';
+import '../xmpp/retraction.dart';
 import 'theme.dart';
 
 enum BubbleSide { incoming, outgoing }
@@ -94,6 +95,9 @@ class MessageBubble extends StatelessWidget {
     this.failed = false,
     this.track = Track.none,
     this.reactions = const [],
+    this.retracted = false,
+    this.edited = false,
+    this.mine = false,
     this.onReact,
     this.onLongPress,
     this.onTap,
@@ -116,6 +120,16 @@ class MessageBubble extends StatelessWidget {
   /// Tapping a chip toggles it; offered the whole quick set for a new one.
   final void Function(String emoji)? onReact;
 
+  /// True once the sender retracted this message (XEP-0424).
+  final bool retracted;
+
+  /// True once this message was corrected (XEP-0308).
+  final bool edited;
+
+  /// Whether we sent it. Decides the wording of the retracted placeholder: the
+  /// person who hit "delete" is the only one who can tell that it worked.
+  final bool mine;
+
   /// Shown above the bubble in group chats, tinted per sender.
   final String? senderName;
   final Color? senderColor;
@@ -130,7 +144,7 @@ class MessageBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tg = context.tg;
-    final mine = side == BubbleSide.outgoing;
+    final mine = this.mine || side == BubbleSide.outgoing;
     final color = mine ? tg.ownBubble : tg.peerBubble;
 
     return Padding(
@@ -176,15 +190,39 @@ class MessageBubble extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Flexible(
-                      child: Text(
-                        text,
-                        style: TextStyle(
-                          fontSize: TgDimens.messageFontSize,
-                          color: tg.textPrimary,
-                          height: 1.3,
+                      child: retracted
+                          ? Text(
+                              mine ? kRetractedNoticeMine : kRetractedNotice,
+                              style: TextStyle(
+                                fontSize: TgDimens.messageFontSize,
+                                fontStyle: FontStyle.italic,
+                                color: tg.textSecondary,
+                                height: 1.3,
+                              ),
+                            )
+                          : Text(
+                              text,
+                              style: TextStyle(
+                                fontSize: TgDimens.messageFontSize,
+                                color: tg.textPrimary,
+                                height: 1.3,
+                              ),
+                            ),
+                    ),
+                    // The marker sits beside the timestamp rather than on its
+                    // own line: it is metadata about the text, and a separate
+                    // row would push the bubble taller for every edit.
+                    if (edited && !retracted)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 6, bottom: 2),
+                        child: Text(
+                          'edited',
+                          style: TextStyle(
+                            fontSize: TgDimens.timeFontSize - 1,
+                            color: tg.textSecondary,
+                          ),
                         ),
                       ),
-                    ),
                     const SizedBox(width: 8),
                     _MetaRow(
                       time: time,
@@ -198,7 +236,7 @@ class MessageBubble extends StatelessWidget {
               ),
             ),
           ),
-          if (reactions.isNotEmpty)
+          if (reactions.isNotEmpty && !retracted)
             Padding(
               padding: EdgeInsets.only(
                 top: 3,

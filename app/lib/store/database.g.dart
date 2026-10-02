@@ -473,6 +473,44 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     requiredDuringInsert: false,
     defaultValue: const Constant(''),
   );
+  static const VerificationMeta _retractedMeta = const VerificationMeta(
+    'retracted',
+  );
+  @override
+  late final GeneratedColumn<bool> retracted = GeneratedColumn<bool>(
+    'retracted',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("retracted" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _retractedAtMeta = const VerificationMeta(
+    'retractedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> retractedAt = GeneratedColumn<DateTime>(
+    'retracted_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  static const VerificationMeta _editedAtMeta = const VerificationMeta(
+    'editedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> editedAt = GeneratedColumn<DateTime>(
+    'edited_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -486,6 +524,9 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     delivered,
     isCarbon,
     deliveryError,
+    retracted,
+    retractedAt,
+    editedAt,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -573,6 +614,27 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         ),
       );
     }
+    if (data.containsKey('retracted')) {
+      context.handle(
+        _retractedMeta,
+        retracted.isAcceptableOrUnknown(data['retracted']!, _retractedMeta),
+      );
+    }
+    if (data.containsKey('retracted_at')) {
+      context.handle(
+        _retractedAtMeta,
+        retractedAt.isAcceptableOrUnknown(
+          data['retracted_at']!,
+          _retractedAtMeta,
+        ),
+      );
+    }
+    if (data.containsKey('edited_at')) {
+      context.handle(
+        _editedAtMeta,
+        editedAt.isAcceptableOrUnknown(data['edited_at']!, _editedAtMeta),
+      );
+    }
     return context;
   }
 
@@ -626,6 +688,18 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         DriftSqlType.string,
         data['${effectivePrefix}delivery_error'],
       )!,
+      retracted: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}retracted'],
+      )!,
+      retractedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}retracted_at'],
+      )!,
+      editedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}edited_at'],
+      ),
     );
   }
 
@@ -661,6 +735,24 @@ class Message extends DataClass implements Insertable<Message> {
   /// usual causes are a server service policy, a non-mutual subscription, or
   /// a blocked account, and each needs a different thing from the user.
   final String deliveryError;
+
+  /// True once the sender retracted this message for everyone (XEP-0424).
+  ///
+  /// The body is kept rather than cleared. Clearing it would look identical to
+  /// the message having been encrypted and unreadable, and the two need
+  /// different words — and it would make "show the message anyway" impossible
+  /// for the person who sent it.
+  final bool retracted;
+
+  /// When the retraction arrived, for ordering the "deleted" placeholder.
+  final DateTime retractedAt;
+
+  /// Set once this message was corrected (XEP-0308).
+  ///
+  /// Null for an uncorrected message so "edited" is only claimed when it
+  /// happened; a boolean defaulting to false cannot tell "not edited" from
+  /// "edited and we lost the flag in a migration".
+  final DateTime? editedAt;
   const Message({
     required this.id,
     required this.chatJid,
@@ -673,6 +765,9 @@ class Message extends DataClass implements Insertable<Message> {
     required this.delivered,
     required this.isCarbon,
     required this.deliveryError,
+    required this.retracted,
+    required this.retractedAt,
+    this.editedAt,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -688,6 +783,11 @@ class Message extends DataClass implements Insertable<Message> {
     map['delivered'] = Variable<bool>(delivered);
     map['is_carbon'] = Variable<bool>(isCarbon);
     map['delivery_error'] = Variable<String>(deliveryError);
+    map['retracted'] = Variable<bool>(retracted);
+    map['retracted_at'] = Variable<DateTime>(retractedAt);
+    if (!nullToAbsent || editedAt != null) {
+      map['edited_at'] = Variable<DateTime>(editedAt);
+    }
     return map;
   }
 
@@ -704,6 +804,11 @@ class Message extends DataClass implements Insertable<Message> {
       delivered: Value(delivered),
       isCarbon: Value(isCarbon),
       deliveryError: Value(deliveryError),
+      retracted: Value(retracted),
+      retractedAt: Value(retractedAt),
+      editedAt: editedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(editedAt),
     );
   }
 
@@ -724,6 +829,9 @@ class Message extends DataClass implements Insertable<Message> {
       delivered: serializer.fromJson<bool>(json['delivered']),
       isCarbon: serializer.fromJson<bool>(json['isCarbon']),
       deliveryError: serializer.fromJson<String>(json['deliveryError']),
+      retracted: serializer.fromJson<bool>(json['retracted']),
+      retractedAt: serializer.fromJson<DateTime>(json['retractedAt']),
+      editedAt: serializer.fromJson<DateTime?>(json['editedAt']),
     );
   }
   @override
@@ -741,6 +849,9 @@ class Message extends DataClass implements Insertable<Message> {
       'delivered': serializer.toJson<bool>(delivered),
       'isCarbon': serializer.toJson<bool>(isCarbon),
       'deliveryError': serializer.toJson<String>(deliveryError),
+      'retracted': serializer.toJson<bool>(retracted),
+      'retractedAt': serializer.toJson<DateTime>(retractedAt),
+      'editedAt': serializer.toJson<DateTime?>(editedAt),
     };
   }
 
@@ -756,6 +867,9 @@ class Message extends DataClass implements Insertable<Message> {
     bool? delivered,
     bool? isCarbon,
     String? deliveryError,
+    bool? retracted,
+    DateTime? retractedAt,
+    Value<DateTime?> editedAt = const Value.absent(),
   }) => Message(
     id: id ?? this.id,
     chatJid: chatJid ?? this.chatJid,
@@ -768,6 +882,9 @@ class Message extends DataClass implements Insertable<Message> {
     delivered: delivered ?? this.delivered,
     isCarbon: isCarbon ?? this.isCarbon,
     deliveryError: deliveryError ?? this.deliveryError,
+    retracted: retracted ?? this.retracted,
+    retractedAt: retractedAt ?? this.retractedAt,
+    editedAt: editedAt.present ? editedAt.value : this.editedAt,
   );
   Message copyWithCompanion(MessagesCompanion data) {
     return Message(
@@ -784,6 +901,11 @@ class Message extends DataClass implements Insertable<Message> {
       deliveryError: data.deliveryError.present
           ? data.deliveryError.value
           : this.deliveryError,
+      retracted: data.retracted.present ? data.retracted.value : this.retracted,
+      retractedAt: data.retractedAt.present
+          ? data.retractedAt.value
+          : this.retractedAt,
+      editedAt: data.editedAt.present ? data.editedAt.value : this.editedAt,
     );
   }
 
@@ -800,7 +922,10 @@ class Message extends DataClass implements Insertable<Message> {
           ..write('incoming: $incoming, ')
           ..write('delivered: $delivered, ')
           ..write('isCarbon: $isCarbon, ')
-          ..write('deliveryError: $deliveryError')
+          ..write('deliveryError: $deliveryError, ')
+          ..write('retracted: $retracted, ')
+          ..write('retractedAt: $retractedAt, ')
+          ..write('editedAt: $editedAt')
           ..write(')'))
         .toString();
   }
@@ -818,6 +943,9 @@ class Message extends DataClass implements Insertable<Message> {
     delivered,
     isCarbon,
     deliveryError,
+    retracted,
+    retractedAt,
+    editedAt,
   );
   @override
   bool operator ==(Object other) =>
@@ -833,7 +961,10 @@ class Message extends DataClass implements Insertable<Message> {
           other.incoming == this.incoming &&
           other.delivered == this.delivered &&
           other.isCarbon == this.isCarbon &&
-          other.deliveryError == this.deliveryError);
+          other.deliveryError == this.deliveryError &&
+          other.retracted == this.retracted &&
+          other.retractedAt == this.retractedAt &&
+          other.editedAt == this.editedAt);
 }
 
 class MessagesCompanion extends UpdateCompanion<Message> {
@@ -848,6 +979,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
   final Value<bool> delivered;
   final Value<bool> isCarbon;
   final Value<String> deliveryError;
+  final Value<bool> retracted;
+  final Value<DateTime> retractedAt;
+  final Value<DateTime?> editedAt;
   const MessagesCompanion({
     this.id = const Value.absent(),
     this.chatJid = const Value.absent(),
@@ -860,6 +994,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     this.delivered = const Value.absent(),
     this.isCarbon = const Value.absent(),
     this.deliveryError = const Value.absent(),
+    this.retracted = const Value.absent(),
+    this.retractedAt = const Value.absent(),
+    this.editedAt = const Value.absent(),
   });
   MessagesCompanion.insert({
     this.id = const Value.absent(),
@@ -873,6 +1010,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     this.delivered = const Value.absent(),
     this.isCarbon = const Value.absent(),
     this.deliveryError = const Value.absent(),
+    this.retracted = const Value.absent(),
+    this.retractedAt = const Value.absent(),
+    this.editedAt = const Value.absent(),
   }) : chatJid = Value(chatJid),
        sender = Value(sender),
        body = Value(body),
@@ -889,6 +1029,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Expression<bool>? delivered,
     Expression<bool>? isCarbon,
     Expression<String>? deliveryError,
+    Expression<bool>? retracted,
+    Expression<DateTime>? retractedAt,
+    Expression<DateTime>? editedAt,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -902,6 +1045,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
       if (delivered != null) 'delivered': delivered,
       if (isCarbon != null) 'is_carbon': isCarbon,
       if (deliveryError != null) 'delivery_error': deliveryError,
+      if (retracted != null) 'retracted': retracted,
+      if (retractedAt != null) 'retracted_at': retractedAt,
+      if (editedAt != null) 'edited_at': editedAt,
     });
   }
 
@@ -917,6 +1063,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Value<bool>? delivered,
     Value<bool>? isCarbon,
     Value<String>? deliveryError,
+    Value<bool>? retracted,
+    Value<DateTime>? retractedAt,
+    Value<DateTime?>? editedAt,
   }) {
     return MessagesCompanion(
       id: id ?? this.id,
@@ -930,6 +1079,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
       delivered: delivered ?? this.delivered,
       isCarbon: isCarbon ?? this.isCarbon,
       deliveryError: deliveryError ?? this.deliveryError,
+      retracted: retracted ?? this.retracted,
+      retractedAt: retractedAt ?? this.retractedAt,
+      editedAt: editedAt ?? this.editedAt,
     );
   }
 
@@ -969,6 +1121,15 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     if (deliveryError.present) {
       map['delivery_error'] = Variable<String>(deliveryError.value);
     }
+    if (retracted.present) {
+      map['retracted'] = Variable<bool>(retracted.value);
+    }
+    if (retractedAt.present) {
+      map['retracted_at'] = Variable<DateTime>(retractedAt.value);
+    }
+    if (editedAt.present) {
+      map['edited_at'] = Variable<DateTime>(editedAt.value);
+    }
     return map;
   }
 
@@ -985,7 +1146,10 @@ class MessagesCompanion extends UpdateCompanion<Message> {
           ..write('incoming: $incoming, ')
           ..write('delivered: $delivered, ')
           ..write('isCarbon: $isCarbon, ')
-          ..write('deliveryError: $deliveryError')
+          ..write('deliveryError: $deliveryError, ')
+          ..write('retracted: $retracted, ')
+          ..write('retractedAt: $retractedAt, ')
+          ..write('editedAt: $editedAt')
           ..write(')'))
         .toString();
   }
@@ -1335,6 +1499,321 @@ class RosterEntriesCompanion extends UpdateCompanion<RosterEntry> {
           ..write('subscription: $subscription, ')
           ..write('ask: $ask, ')
           ..write('groups: $groups, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $PendingCorrectionsTable extends PendingCorrections
+    with TableInfo<$PendingCorrectionsTable, PendingCorrection> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $PendingCorrectionsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _targetIdMeta = const VerificationMeta(
+    'targetId',
+  );
+  @override
+  late final GeneratedColumn<String> targetId = GeneratedColumn<String>(
+    'target_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _bodyMeta = const VerificationMeta('body');
+  @override
+  late final GeneratedColumn<String> body = GeneratedColumn<String>(
+    'body',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _encModeMeta = const VerificationMeta(
+    'encMode',
+  );
+  @override
+  late final GeneratedColumn<String> encMode = GeneratedColumn<String>(
+    'enc_mode',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('none'),
+  );
+  static const VerificationMeta _correctedAtMeta = const VerificationMeta(
+    'correctedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> correctedAt = GeneratedColumn<DateTime>(
+    'corrected_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [targetId, body, encMode, correctedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'pending_corrections';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<PendingCorrection> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('target_id')) {
+      context.handle(
+        _targetIdMeta,
+        targetId.isAcceptableOrUnknown(data['target_id']!, _targetIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_targetIdMeta);
+    }
+    if (data.containsKey('body')) {
+      context.handle(
+        _bodyMeta,
+        body.isAcceptableOrUnknown(data['body']!, _bodyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_bodyMeta);
+    }
+    if (data.containsKey('enc_mode')) {
+      context.handle(
+        _encModeMeta,
+        encMode.isAcceptableOrUnknown(data['enc_mode']!, _encModeMeta),
+      );
+    }
+    if (data.containsKey('corrected_at')) {
+      context.handle(
+        _correctedAtMeta,
+        correctedAt.isAcceptableOrUnknown(
+          data['corrected_at']!,
+          _correctedAtMeta,
+        ),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {targetId};
+  @override
+  PendingCorrection map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return PendingCorrection(
+      targetId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}target_id'],
+      )!,
+      body: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}body'],
+      )!,
+      encMode: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}enc_mode'],
+      )!,
+      correctedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}corrected_at'],
+      )!,
+    );
+  }
+
+  @override
+  $PendingCorrectionsTable createAlias(String alias) {
+    return $PendingCorrectionsTable(attachedDatabase, alias);
+  }
+}
+
+class PendingCorrection extends DataClass
+    implements Insertable<PendingCorrection> {
+  final String targetId;
+  final String body;
+  final String encMode;
+  final DateTime correctedAt;
+  const PendingCorrection({
+    required this.targetId,
+    required this.body,
+    required this.encMode,
+    required this.correctedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['target_id'] = Variable<String>(targetId);
+    map['body'] = Variable<String>(body);
+    map['enc_mode'] = Variable<String>(encMode);
+    map['corrected_at'] = Variable<DateTime>(correctedAt);
+    return map;
+  }
+
+  PendingCorrectionsCompanion toCompanion(bool nullToAbsent) {
+    return PendingCorrectionsCompanion(
+      targetId: Value(targetId),
+      body: Value(body),
+      encMode: Value(encMode),
+      correctedAt: Value(correctedAt),
+    );
+  }
+
+  factory PendingCorrection.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return PendingCorrection(
+      targetId: serializer.fromJson<String>(json['targetId']),
+      body: serializer.fromJson<String>(json['body']),
+      encMode: serializer.fromJson<String>(json['encMode']),
+      correctedAt: serializer.fromJson<DateTime>(json['correctedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'targetId': serializer.toJson<String>(targetId),
+      'body': serializer.toJson<String>(body),
+      'encMode': serializer.toJson<String>(encMode),
+      'correctedAt': serializer.toJson<DateTime>(correctedAt),
+    };
+  }
+
+  PendingCorrection copyWith({
+    String? targetId,
+    String? body,
+    String? encMode,
+    DateTime? correctedAt,
+  }) => PendingCorrection(
+    targetId: targetId ?? this.targetId,
+    body: body ?? this.body,
+    encMode: encMode ?? this.encMode,
+    correctedAt: correctedAt ?? this.correctedAt,
+  );
+  PendingCorrection copyWithCompanion(PendingCorrectionsCompanion data) {
+    return PendingCorrection(
+      targetId: data.targetId.present ? data.targetId.value : this.targetId,
+      body: data.body.present ? data.body.value : this.body,
+      encMode: data.encMode.present ? data.encMode.value : this.encMode,
+      correctedAt: data.correctedAt.present
+          ? data.correctedAt.value
+          : this.correctedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PendingCorrection(')
+          ..write('targetId: $targetId, ')
+          ..write('body: $body, ')
+          ..write('encMode: $encMode, ')
+          ..write('correctedAt: $correctedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(targetId, body, encMode, correctedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is PendingCorrection &&
+          other.targetId == this.targetId &&
+          other.body == this.body &&
+          other.encMode == this.encMode &&
+          other.correctedAt == this.correctedAt);
+}
+
+class PendingCorrectionsCompanion extends UpdateCompanion<PendingCorrection> {
+  final Value<String> targetId;
+  final Value<String> body;
+  final Value<String> encMode;
+  final Value<DateTime> correctedAt;
+  final Value<int> rowid;
+  const PendingCorrectionsCompanion({
+    this.targetId = const Value.absent(),
+    this.body = const Value.absent(),
+    this.encMode = const Value.absent(),
+    this.correctedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  PendingCorrectionsCompanion.insert({
+    required String targetId,
+    required String body,
+    this.encMode = const Value.absent(),
+    this.correctedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : targetId = Value(targetId),
+       body = Value(body);
+  static Insertable<PendingCorrection> custom({
+    Expression<String>? targetId,
+    Expression<String>? body,
+    Expression<String>? encMode,
+    Expression<DateTime>? correctedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (targetId != null) 'target_id': targetId,
+      if (body != null) 'body': body,
+      if (encMode != null) 'enc_mode': encMode,
+      if (correctedAt != null) 'corrected_at': correctedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  PendingCorrectionsCompanion copyWith({
+    Value<String>? targetId,
+    Value<String>? body,
+    Value<String>? encMode,
+    Value<DateTime>? correctedAt,
+    Value<int>? rowid,
+  }) {
+    return PendingCorrectionsCompanion(
+      targetId: targetId ?? this.targetId,
+      body: body ?? this.body,
+      encMode: encMode ?? this.encMode,
+      correctedAt: correctedAt ?? this.correctedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (targetId.present) {
+      map['target_id'] = Variable<String>(targetId.value);
+    }
+    if (body.present) {
+      map['body'] = Variable<String>(body.value);
+    }
+    if (encMode.present) {
+      map['enc_mode'] = Variable<String>(encMode.value);
+    }
+    if (correctedAt.present) {
+      map['corrected_at'] = Variable<DateTime>(correctedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PendingCorrectionsCompanion(')
+          ..write('targetId: $targetId, ')
+          ..write('body: $body, ')
+          ..write('encMode: $encMode, ')
+          ..write('correctedAt: $correctedAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -1870,6 +2349,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $ChatsTable chats = $ChatsTable(this);
   late final $MessagesTable messages = $MessagesTable(this);
   late final $RosterEntriesTable rosterEntries = $RosterEntriesTable(this);
+  late final $PendingCorrectionsTable pendingCorrections =
+      $PendingCorrectionsTable(this);
   late final $ReactionsTable reactions = $ReactionsTable(this);
   late final $MetaTable meta = $MetaTable(this);
   @override
@@ -1880,6 +2361,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     chats,
     messages,
     rosterEntries,
+    pendingCorrections,
     reactions,
     meta,
   ];
@@ -2173,6 +2655,9 @@ typedef $$MessagesTableCreateCompanionBuilder = MessagesCompanion Function({
   Value<bool> delivered,
   Value<bool> isCarbon,
   Value<String> deliveryError,
+  Value<bool> retracted,
+  Value<DateTime> retractedAt,
+  Value<DateTime?> editedAt,
 });
 typedef $$MessagesTableUpdateCompanionBuilder = MessagesCompanion Function({
   Value<int> id,
@@ -2186,6 +2671,9 @@ typedef $$MessagesTableUpdateCompanionBuilder = MessagesCompanion Function({
   Value<bool> delivered,
   Value<bool> isCarbon,
   Value<String> deliveryError,
+  Value<bool> retracted,
+  Value<DateTime> retractedAt,
+  Value<DateTime?> editedAt,
 });
 
 final class $$MessagesTableReferences
@@ -2266,6 +2754,21 @@ class $$MessagesTableFilterComposer
 
   ColumnFilters<String> get deliveryError => $composableBuilder(
     column: $table.deliveryError,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get retracted => $composableBuilder(
+    column: $table.retracted,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get retractedAt => $composableBuilder(
+    column: $table.retractedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get editedAt => $composableBuilder(
+    column: $table.editedAt,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -2352,6 +2855,21 @@ class $$MessagesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<bool> get retracted => $composableBuilder(
+    column: $table.retracted,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get retractedAt => $composableBuilder(
+    column: $table.retractedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get editedAt => $composableBuilder(
+    column: $table.editedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$ChatsTableOrderingComposer get chatJid {
     final $$ChatsTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -2417,6 +2935,17 @@ class $$MessagesTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<bool> get retracted =>
+      $composableBuilder(column: $table.retracted, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get retractedAt => $composableBuilder(
+    column: $table.retractedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get editedAt =>
+      $composableBuilder(column: $table.editedAt, builder: (column) => column);
+
   $$ChatsTableAnnotationComposer get chatJid {
     final $$ChatsTableAnnotationComposer composer = $composerBuilder(
       composer: this,
@@ -2480,6 +3009,9 @@ class $$MessagesTableTableManager
                 Value<bool> delivered = const Value.absent(),
                 Value<bool> isCarbon = const Value.absent(),
                 Value<String> deliveryError = const Value.absent(),
+                Value<bool> retracted = const Value.absent(),
+                Value<DateTime> retractedAt = const Value.absent(),
+                Value<DateTime?> editedAt = const Value.absent(),
               }) => MessagesCompanion(
                 id: id,
                 chatJid: chatJid,
@@ -2492,6 +3024,9 @@ class $$MessagesTableTableManager
                 delivered: delivered,
                 isCarbon: isCarbon,
                 deliveryError: deliveryError,
+                retracted: retracted,
+                retractedAt: retractedAt,
+                editedAt: editedAt,
               ),
           createCompanionCallback:
               ({
@@ -2506,6 +3041,9 @@ class $$MessagesTableTableManager
                 Value<bool> delivered = const Value.absent(),
                 Value<bool> isCarbon = const Value.absent(),
                 Value<String> deliveryError = const Value.absent(),
+                Value<bool> retracted = const Value.absent(),
+                Value<DateTime> retractedAt = const Value.absent(),
+                Value<DateTime?> editedAt = const Value.absent(),
               }) => MessagesCompanion.insert(
                 id: id,
                 chatJid: chatJid,
@@ -2518,6 +3056,9 @@ class $$MessagesTableTableManager
                 delivered: delivered,
                 isCarbon: isCarbon,
                 deliveryError: deliveryError,
+                retracted: retracted,
+                retractedAt: retractedAt,
+                editedAt: editedAt,
               ),
           withReferenceMapper: (p0) => p0
               .map(
@@ -2793,6 +3334,213 @@ typedef $$RosterEntriesTableProcessedTableManager =
         BaseReferences<_$AppDatabase, $RosterEntriesTable, RosterEntry>,
       ),
       RosterEntry,
+      PrefetchHooks Function()
+    >;
+typedef $$PendingCorrectionsTableCreateCompanionBuilder =
+    PendingCorrectionsCompanion Function({
+      required String targetId,
+      required String body,
+      Value<String> encMode,
+      Value<DateTime> correctedAt,
+      Value<int> rowid,
+    });
+typedef $$PendingCorrectionsTableUpdateCompanionBuilder =
+    PendingCorrectionsCompanion Function({
+      Value<String> targetId,
+      Value<String> body,
+      Value<String> encMode,
+      Value<DateTime> correctedAt,
+      Value<int> rowid,
+    });
+
+class $$PendingCorrectionsTableFilterComposer
+    extends Composer<_$AppDatabase, $PendingCorrectionsTable> {
+  $$PendingCorrectionsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get targetId => $composableBuilder(
+    column: $table.targetId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get body => $composableBuilder(
+    column: $table.body,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get encMode => $composableBuilder(
+    column: $table.encMode,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get correctedAt => $composableBuilder(
+    column: $table.correctedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$PendingCorrectionsTableOrderingComposer
+    extends Composer<_$AppDatabase, $PendingCorrectionsTable> {
+  $$PendingCorrectionsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get targetId => $composableBuilder(
+    column: $table.targetId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get body => $composableBuilder(
+    column: $table.body,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get encMode => $composableBuilder(
+    column: $table.encMode,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get correctedAt => $composableBuilder(
+    column: $table.correctedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$PendingCorrectionsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $PendingCorrectionsTable> {
+  $$PendingCorrectionsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get targetId =>
+      $composableBuilder(column: $table.targetId, builder: (column) => column);
+
+  GeneratedColumn<String> get body =>
+      $composableBuilder(column: $table.body, builder: (column) => column);
+
+  GeneratedColumn<String> get encMode =>
+      $composableBuilder(column: $table.encMode, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get correctedAt => $composableBuilder(
+    column: $table.correctedAt,
+    builder: (column) => column,
+  );
+}
+
+class $$PendingCorrectionsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $PendingCorrectionsTable,
+          PendingCorrection,
+          $$PendingCorrectionsTableFilterComposer,
+          $$PendingCorrectionsTableOrderingComposer,
+          $$PendingCorrectionsTableAnnotationComposer,
+          $$PendingCorrectionsTableCreateCompanionBuilder,
+          $$PendingCorrectionsTableUpdateCompanionBuilder,
+          (
+            PendingCorrection,
+            BaseReferences<
+              _$AppDatabase,
+              $PendingCorrectionsTable,
+              PendingCorrection
+            >,
+          ),
+          PendingCorrection,
+          PrefetchHooks Function()
+        > {
+  $$PendingCorrectionsTableTableManager(
+    _$AppDatabase db,
+    $PendingCorrectionsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$PendingCorrectionsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$PendingCorrectionsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$PendingCorrectionsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> targetId = const Value.absent(),
+                Value<String> body = const Value.absent(),
+                Value<String> encMode = const Value.absent(),
+                Value<DateTime> correctedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => PendingCorrectionsCompanion(
+                targetId: targetId,
+                body: body,
+                encMode: encMode,
+                correctedAt: correctedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String targetId,
+                required String body,
+                Value<String> encMode = const Value.absent(),
+                Value<DateTime> correctedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => PendingCorrectionsCompanion.insert(
+                targetId: targetId,
+                body: body,
+                encMode: encMode,
+                correctedAt: correctedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$PendingCorrectionsTable, PendingCorrection>(
+                    table,
+                  ),
+                  BaseReferences<
+                    _$AppDatabase,
+                    $PendingCorrectionsTable,
+                    PendingCorrection
+                  >(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$PendingCorrectionsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $PendingCorrectionsTable,
+      PendingCorrection,
+      $$PendingCorrectionsTableFilterComposer,
+      $$PendingCorrectionsTableOrderingComposer,
+      $$PendingCorrectionsTableAnnotationComposer,
+      $$PendingCorrectionsTableCreateCompanionBuilder,
+      $$PendingCorrectionsTableUpdateCompanionBuilder,
+      (
+        PendingCorrection,
+        BaseReferences<
+          _$AppDatabase,
+          $PendingCorrectionsTable,
+          PendingCorrection
+        >,
+      ),
+      PendingCorrection,
       PrefetchHooks Function()
     >;
 typedef $$ReactionsTableCreateCompanionBuilder = ReactionsCompanion Function({
@@ -3119,6 +3867,8 @@ class $AppDatabaseManager {
       $$MessagesTableTableManager(_db, _db.messages);
   $$RosterEntriesTableTableManager get rosterEntries =>
       $$RosterEntriesTableTableManager(_db, _db.rosterEntries);
+  $$PendingCorrectionsTableTableManager get pendingCorrections =>
+      $$PendingCorrectionsTableTableManager(_db, _db.pendingCorrections);
   $$ReactionsTableTableManager get reactions =>
       $$ReactionsTableTableManager(_db, _db.reactions);
   $$MetaTableTableManager get meta => $$MetaTableTableManager(_db, _db.meta);

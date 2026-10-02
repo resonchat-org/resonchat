@@ -38,6 +38,8 @@ class InboundMessage {
     this.track,
     this.originId,
     this.reactions,
+    this.retracts,
+    this.corrects,
   });
 
   final JID from;
@@ -68,6 +70,14 @@ class InboundMessage {
   /// does not. Null when the sender published no stable id — which happens with
   /// some clients, so callers must have a fallback rather than assume one.
   final String? originId;
+
+  /// The id of an earlier message this stanza retracts (XEP-0424).
+  final String? retracts;
+
+  /// The id of an earlier message this stanza corrects (XEP-0308).
+  ///
+  /// Not null only when a correction actually applies to something we can name.
+  final String? corrects;
 
   /// A reaction broadcast carried by this same stanza, if any.
   ///
@@ -385,6 +395,102 @@ class XmppService {
     }
   }
 
+  /// Retracts a message for everyone (XEP-0424).
+  ///
+  /// Sent in the clear, with the fallback body XEP-0424 specifies: the
+  /// recipient's client has to be able to act on the retraction whether or not
+  /// it can decrypt anything, and a client that shows nothing at all is worse
+  /// than one that shows "this message was deleted".
+  ///
+  /// Built here rather than through MessageManager for the same reason as
+  /// reactions: it must not be wrapped by the A track, and its stanza id is
+  /// minted locally so an echoed retraction cannot land in the transcript as an
+  /// empty bubble.
+  Future<bool> retractMessage(
+    JID to, {
+    required String targetId,
+  }) async {
+    final connection = _connection;
+    if (connection == null) return false;
+    try {
+      await connection.sendStanza(
+        StanzaDetails(
+          Stanza.message(
+            to: to.toString(),
+            id: _nextStanzaId(),
+            type: 'chat',
+            children: [
+              XMLNode.xmlns(
+                tag: 'apply-to',
+                xmlns: fasteningXmlns,
+                attributes: <String, String>{'id': targetId},
+                children: [XMLNode.xmlns(tag: 'retract', xmlns: messageRetractionXmlns)],
+              ),
+              XMLNode(tag: 'body', text: 'This message has been deleted'),
+              XMLNode.xmlns(tag: 'fallback', xmlns: fallbackIndicationXmlns),
+            ],
+          ),
+          awaitable: false,
+          shouldEncrypt: false,
+        ),
+      );
+      return true;
+    } catch (e) {
+      _log.warning('could not retract $targetId for $to: $e');
+      return false;
+    }
+  }
+
+  /// Sends a correction of the message addressed by [targetId] (XEP-0308).
+  ///
+  /// Goes out through the normal encrypted path, because a correction *is*
+  /// content: the corrected text has exactly the same claim to privacy as the
+  /// original, and a correction that leaks to the server is worse than no
+  /// correction at all.
+  ///
+  /// Refuses rather than falling back to plaintext, for the same reason
+  /// [sendOnTrack] does.
+  Future<SendOutcome> correctMessage(
+    JID to, {
+    required String targetId,
+    required String body,
+  }) async {
+    if (targetId.isEmpty) {
+      return const SendOutcome(
+        stanzaId: null,
+        track: Track.none,
+        blocked: TrackBlocked.unreachableDevices,
+      );
+    }
+    final caps = await capabilitiesFor(to);
+    final resolution = resolveTrack(requested: Track.standard, capabilities: caps);
+    if (!resolution.canSend) {
+      return SendOutcome(
+        stanzaId: null,
+        track: Track.standard,
+        blocked: resolution.blocked,
+      );
+    }
+    final mm = _connection?.getManagerById<MessageManager>(messageManager);
+    if (mm == null) throw StateError('not connected');
+    final id = _nextStanzaId();
+    await mm.sendMessage(
+      to,
+      TypedMap<StanzaHandlerExtension>.fromList([
+        MessageBodyData(body),
+        MessageIdData(id),
+        StableIdData(id, const []),
+        // XEP-0308. Without this the recipient receives an ordinary message
+        // with the corrected text and now has two bubbles instead of one
+        // corrected one — the correction is exactly the part that carries no
+        // information on its own.
+        LastMessageCorrectionData(targetId),
+      ]),
+      type: 'chat',
+    );
+    return SendOutcome(stanzaId: id, track: Track.standard);
+  }
+
   /// Attaches the capability resolver so [autoShouldEncrypt] works.
   void attachCapabilities(CapabilityService service) =>
       _capabilities = service;
@@ -544,6 +650,10 @@ class XmppService {
       // reaction addresses a message by its origin-id.
       StableIdManager(),
       MessageReactionsManager(),
+      // XEP-0424 and XEP-0308. Both address an earlier message by its
+      // origin-id, which is why they sit next to the stable-id manager.
+      MessageRetractionManager(),
+      LastMessageCorrectionManager(),
       // B-track inbound. moxxmpp has no handler for the PQ namespace, so
       // without this an incoming PQ message arrives as the literal fallback
       // body with no error: a silent, perfectly plausible-looking delivery.
@@ -1077,6 +1187,8 @@ class XmppService {
       // empty bubble above the one it reacts to.
       final reactionData = event.get<MessageReactionsData>();
       final stable = event.get<StableIdData>();
+      final retraction = event.get<MessageRetractionData>();
+      final correction = event.get<LastMessageCorrectionData>();
       final inbound = InboundMessage(
         from: event.from,
         body: error != null
@@ -1089,6 +1201,8 @@ class XmppService {
         archiveTimestamp: mam?.delay.timestamp,
         track: foreign ? null : Track.fromEme(eme),
         originId: stable?.originId,
+        retracts: retraction?.id,
+        corrects: correction?.id,
         reactions: reactionData == null
             ? null
             : ReactionUpdate(

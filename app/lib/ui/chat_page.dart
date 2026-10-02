@@ -8,6 +8,7 @@ import 'dart:async';
 
 import 'package:drift/drift.dart' hide Column;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:moxxmpp/moxxmpp.dart' show JID;
 
@@ -19,6 +20,8 @@ import '../state/providers.dart';
 import '../store/database.dart';
 import '../xmpp/connection.dart';
 import '../xmpp/reactions.dart';
+import '../xmpp/retraction.dart';
+import 'message_actions.dart';
 import 'message_bubble.dart';
 import 'track_dialogs.dart';
 import 'theme.dart';
@@ -41,6 +44,14 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   bool _atBottom = true;
   /// Guards against a double tap sending twice while the first send awaits.
   bool _sending = false;
+
+  /// The message being corrected, or null. Held as an id rather than a row so
+  /// an edit survives the list rebuilding underneath it.
+  String? _editingId;
+  String _editingBody = '';
+
+  /// Id of the message whose quick-reaction strip is open, or null.
+  String? _reactingToId;
   StreamSubscription<DeliveryFailure>? _failureSub;
 
   @override
@@ -331,6 +342,113 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     );
   }
 
+  /// Long-press on a message: the context menu, then whatever it leads to.
+  Future<void> _showMessageMenu(Message message, String body) async {
+    if (!mounted) return;
+    final track = storedTrack(message.encMode);
+    final actions = MessageActions.for_(
+      mine: !message.incoming,
+      retracted: message.retracted,
+      // An undecryptable message has no body to copy or correct; offering
+      // either would act on a placeholder.
+      decrypted: message.encMode != EncModeToken.error.wire && !message.retracted,
+      addressable: message.stanzaId.isNotEmpty,
+    );
+    if (actions.isEmpty) return;
+
+    final choice = await showMessageMenu(
+      context,
+      actions: actions,
+      trackIsPlaintext: track == Track.none,
+    );
+    if (!mounted || choice == null) return;
+
+    switch (choice) {
+      case MessageAction.react:
+        setState(() => _reactingToId = message.stanzaId);
+      case MessageAction.copy:
+        unawaited(
+          Clipboard.setData(ClipboardData(text: body)).then((_) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Copied')),
+            );
+          }),
+        );
+      case MessageAction.edit:
+        setState(() {
+          _editingId = message.stanzaId;
+          _editingBody = body;
+        });
+      case MessageAction.retract:
+        await _doRetract(message);
+    }
+  }
+
+  /// Retracts [message], then applies it locally.
+  ///
+  /// The local copy is updated only after the send succeeded. The other way
+  /// round would leave a message greyed out locally while the recipient — and
+  /// the user's other devices — still have it.
+  Future<void> _doRetract(Message message) async {
+    final db = ref.read(databaseProvider);
+    final sent = await retractMessage(
+      ref.read(xmppServiceProvider),
+      chatJid: widget.chatJid,
+      targetId: message.stanzaId,
+    );
+    if (!sent) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not delete: the message was not sent.')),
+      );
+      return;
+    }
+    await db.markRetracted(message.stanzaId);
+    if (mounted) setState(() {});
+  }
+
+  /// Sends a correction for [_editingId] and stores it.
+  ///
+  /// Sent on the conversation's current track, like any other message: a
+  /// correction of an encrypted message must not travel in the clear, or the
+  /// server learns the corrected text.
+  Future<void> _submitCorrection(String body) async {
+    final targetId = _editingId;
+    if (targetId == null) return;
+    final db = ref.read(databaseProvider);
+    final outcome = await ref
+        .read(xmppServiceProvider)
+        .correctMessage(
+          JID.fromString(widget.chatJid).toBare(),
+          targetId: targetId,
+          body: body,
+        );
+    if (!outcome.sent) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Not corrected: ${outcome.blocked?.title ?? 'unknown reason'}',
+          ),
+        ),
+      );
+      return;
+    }
+    await db.applyCorrection(
+      chatJid: widget.chatJid,
+      targetId: targetId,
+      body: body,
+      encMode: EncModeToken.of(outcome.track).wire,
+    );
+    if (mounted) {
+      setState(() {
+        _editingId = null;
+        _editingBody = '';
+      });
+    }
+  }
+
   void _bumpReactions() {
     final rev = ref.read(reactionRevisionProvider);
     ref.read(reactionRevisionProvider.notifier).state = rev + 1;
@@ -481,6 +599,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                   onRetryDecrypt: () =>
                       _loadHistory(),
                   onReact: _toggleReaction,
+                  onMenu: _showMessageMenu,
                 ),
                 loading: () =>
                     const Center(child: CircularProgressIndicator()),
@@ -488,12 +607,35 @@ class _ChatPageState extends ConsumerState<ChatPage> {
               ),
             ),
           ),
-          _InputBar(
-            controller: _input,
-            focusNode: _focus,
-            onChanged: _onInputChanged,
-            onSend: _send,
-          ),
+          // Editing replaces the input bar rather than sitting above it: two
+          // text fields in one chat is ambiguous about which one a keystroke
+          // goes to.
+          if (_editingId != null)
+            EditComposer(
+              initialText: _editingBody,
+              onSubmit: _submitCorrection,
+              onCancel: () => setState(() {
+                _editingId = null;
+                _editingBody = '';
+              }),
+            )
+          else
+            _InputBar(
+              controller: _input,
+              focusNode: _focus,
+              onChanged: _onInputChanged,
+              onSend: _send,
+            ),
+          if (_reactingToId != null)
+            QuickReactionBar(
+              emoji: kQuickReactions,
+              onPicked: (emoji) {
+                final target = _reactingToId;
+                setState(() => _reactingToId = null);
+                if (target != null) unawaited(_toggleReaction(target, emoji));
+              },
+              onDismissed: () => setState(() => _reactingToId = null),
+            ),
         ],
       ),
       floatingActionButton: _atBottom
@@ -515,6 +657,7 @@ class _MessageList extends StatelessWidget {
     required this.scroll,
     required this.onRetryDecrypt,
     required this.onReact,
+    required this.onMenu,
   });
 
   final List<Message> messages;
@@ -524,6 +667,11 @@ class _MessageList extends StatelessWidget {
   /// Toggling one emoji on one message. Takes the addressable id, because that
   /// is what a reaction refers to.
   final void Function(String targetId, String emoji) onReact;
+
+  /// Long-press on one message. Gets the row so the page can read the stored
+  /// track, which decides both the plaintext notice and whether editing is
+  /// offered.
+  final void Function(Message message, String body) onMenu;
 
   @override
   Widget build(BuildContext context) {
@@ -572,8 +720,8 @@ class _MessageList extends StatelessWidget {
       rows.add(
         _ReactionBubble(
           message: m,
-          onReact: (emoji) =>
-              onReact(m.stanzaId, emoji),
+          onReact: (emoji) => onReact(m.stanzaId, emoji),
+          onMenu: (body) => onMenu(m, body),
         ),
       );
     }
@@ -738,10 +886,15 @@ class _SubscriptionBanner extends ConsumerWidget {
 /// Split out so the chips can come from their own provider: they change
 /// whenever anyone reacts, which is independent of the message list rebuilding.
 class _ReactionBubble extends ConsumerWidget {
-  const _ReactionBubble({required this.message, required this.onReact});
+  const _ReactionBubble({
+    required this.message,
+    required this.onReact,
+    required this.onMenu,
+  });
 
   final Message message;
   final void Function(String emoji) onReact;
+  final void Function(String body) onMenu;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -763,7 +916,11 @@ class _ReactionBubble extends ConsumerWidget {
       // recomputed, so the label survives a change of mind afterwards.
       track: EncModeToken.parse(message.encMode).track ?? Track.none,
       reactions: reactions,
+      retracted: message.retracted,
+      edited: message.editedAt != null,
+      mine: !message.incoming,
       onReact: onReact,
+      onLongPress: message.retracted ? null : () => onMenu(message.body),
     );
   }
 }

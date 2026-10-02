@@ -73,6 +73,25 @@ class Messages extends Table {
   /// a blocked account, and each needs a different thing from the user.
   TextColumn get deliveryError =>
       text().withDefault(const Constant(''))();
+
+  /// True once the sender retracted this message for everyone (XEP-0424).
+  ///
+  /// The body is kept rather than cleared. Clearing it would look identical to
+  /// the message having been encrypted and unreadable, and the two need
+  /// different words — and it would make "show the message anyway" impossible
+  /// for the person who sent it.
+  BoolColumn get retracted => boolean().withDefault(const Constant(false))();
+
+  /// When the retraction arrived, for ordering the "deleted" placeholder.
+  DateTimeColumn get retractedAt =>
+      dateTime().withDefault(currentDateAndTime)();
+
+  /// Set once this message was corrected (XEP-0308).
+  ///
+  /// Null for an uncorrected message so "edited" is only claimed when it
+  /// happened; a boolean defaulting to false cannot tell "not edited" from
+  /// "edited and we lost the flag in a migration".
+  DateTimeColumn get editedAt => dateTime().nullable()();
 }
 
 /// Roster cache + RFC 6121 version, persisted for roster versioning.
@@ -85,6 +104,27 @@ class RosterEntries extends Table {
 
   @override
   Set<Column> get primaryKey => {jid};
+}
+
+/// A correction whose message has not arrived yet (XEP-0308).
+///
+/// Order is not ours to choose: a correction can legitimately arrive before
+/// the message it corrects — over a slow link, out of two resource
+/// connections, or because the original was archived and never loaded. Storing
+/// the correction as a message of its own shows the same text twice, once
+/// stale and once correct, which is worse than showing nothing for a moment.
+///
+/// Held by target id and consumed when the message lands.
+class PendingCorrections extends Table {
+  TextColumn get targetId => text()();
+
+  TextColumn get body => text()();
+  TextColumn get encMode => text().withDefault(const Constant('none'))();
+  DateTimeColumn get correctedAt =>
+      dateTime().withDefault(currentDateAndTime)();
+
+  @override
+  Set<Column> get primaryKey => {targetId};
 }
 
 /// One emoji reaction by one person on one message (XEP-0444).
@@ -125,12 +165,21 @@ class Meta extends Table {
   Set<Column> get primaryKey => {key};
 }
 
-@DriftDatabase(tables: [Chats, Messages, RosterEntries, Reactions, Meta])
+@DriftDatabase(
+    tables: [
+      Chats,
+      Messages,
+      RosterEntries,
+      PendingCorrections,
+      Reactions,
+      Meta,
+    ],
+  )
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -143,6 +192,28 @@ class AppDatabase extends _$AppDatabase {
             await customStatement(
               "ALTER TABLE messages ADD COLUMN delivery_error TEXT NOT NULL "
               "DEFAULT ''",
+            );
+          }
+          if (from < 6) {
+            await customStatement(
+              'CREATE TABLE IF NOT EXISTS pending_corrections ('
+              'target_id TEXT NOT NULL PRIMARY KEY, '
+              'body TEXT NOT NULL, '
+              'enc_mode TEXT NOT NULL DEFAULT \'none\', '
+              'corrected_at INTEGER NOT NULL DEFAULT 0)',
+            );
+          }
+          if (from < 5) {
+            // XEP-0424 retraction + XEP-0308 correction markers.
+            await customStatement(
+              'ALTER TABLE messages ADD COLUMN retracted INTEGER NOT NULL '
+              'DEFAULT 0',
+            );
+            await customStatement(
+              'ALTER TABLE messages ADD COLUMN retracted_at INTEGER',
+            );
+            await customStatement(
+              'ALTER TABLE messages ADD COLUMN edited_at INTEGER',
             );
           }
           if (from < 4) {
@@ -191,6 +262,101 @@ class AppDatabase extends _$AppDatabase {
   ///
   /// Cleared when the conversation's track changes away from NO, so returning
   /// to plaintext asks again.
+  /// Marks the message addressed by [targetId] as retracted for everyone.
+  ///
+  /// Returns false when no such message is held, which is not an error: a
+  /// retraction for a message that arrived out of order, or for one we never
+  /// had, has to be a no-op rather than a failure.
+  ///
+  /// Returns false when no such message is held, which is not an error: a
+  /// retraction for a message that arrived out of order, or for one we never
+  /// had, has to be a no-op rather than a failure. The sender retracting
+  /// something before we received it is ordinary, not exceptional.
+  Future<bool> markRetracted(String targetId) async {
+    if (targetId.isEmpty) return false;
+    // Never un-retract: a second retraction for the same message is a replay,
+    // and honouring it would flip the marker back off.
+    final changed = await (update(messages)
+          ..where((
+            m,
+          ) =>
+              m.stanzaId.equals(targetId) & m.retracted.equals(false)))
+        .write(
+      MessagesCompanion(
+        retracted: const Value(true),
+        retractedAt: Value(DateTime.now()),
+      ),
+    );
+    return changed > 0;
+  }
+
+  /// Applies a correction (XEP-0308) to the message addressed by [targetId],
+  /// inserting it when the original was never seen.
+  ///
+  /// Both cases are handled here rather than by the caller because they are
+  /// the same operation from the store's point of view, and the arrival order
+  /// is not ours to choose: a correction can legitimately arrive before the
+  /// message it corrects, and whichever way round they land the result must be
+  /// one row with the corrected body.
+  ///
+  /// [encMode] is the track the sender declared, not one we picked. A
+  /// correction is a new rendering of their message, and mislabelling its
+  /// encryption would be exactly the lie the per-message label exists to
+  /// avoid.
+  Future<void> applyCorrection({
+    required String chatJid,
+    required String targetId,
+    required String body,
+    required String encMode,
+  }) async {
+    if (targetId.isEmpty) return;
+    final now = DateTime.now();
+    final updated = await (update(messages)
+          ..where((m) => m.stanzaId.equals(targetId)))
+        .write(
+      MessagesCompanion(
+        body: Value(body),
+        editedAt: Value(now),
+        // Kept in step with a correction of a retracted message: the sender
+        // un-deleted it by correcting it, and a placeholder that outlives its
+        // message is the wrong history.
+        retracted: const Value(false),
+      ),
+    );
+    if (updated > 0) {
+      await upsertChat(chatJid);
+      return;
+    }
+    // Never seen the original. Held until it arrives, and applied by
+    // insertMessage so the two can land in either order. Storing it as a
+    // message of its own would show the same text twice — once stale, once
+    // correct — which is worse than showing nothing for a moment.
+    await into(pendingCorrections).insertOnConflictUpdate(
+      PendingCorrectionsCompanion.insert(
+        targetId: targetId,
+        body: body,
+        encMode: Value(encMode),
+        correctedAt: Value(now),
+      ),
+    );
+  }
+
+  /// The correction waiting for [targetId], or null.
+  ///
+  /// Exposed because the failure worth testing for is a held correction being
+  /// silently dropped, which leaves a permanently stale message on screen.
+  Future<PendingCorrection?> pendingCorrection(String targetId) =>
+      (select(pendingCorrections)
+            ..where((p) => p.targetId.equals(targetId)))
+          .getSingleOrNull();
+
+  /// Drops a held correction, once it has been applied.
+  Future<void> clearPendingCorrection(String targetId) async {
+    await (delete(pendingCorrections)
+          ..where((p) => p.targetId.equals(targetId)))
+        .go();
+  }
+
   /// Records one reactor's full set of emojis on [targetId].
   ///
   /// A reaction broadcast is the *complete* list from that reactor, not a
@@ -425,7 +591,31 @@ class AppDatabase extends _$AppDatabase {
 
   Future<void> insertMessage(MessagesCompanion message) async {
     await transaction(() async {
-      await into(messages).insert(message);
+      // A correction that arrived before its message is applied here rather
+      // than stored as a message of its own: showing the same text twice — once
+      // stale, once correct — is worse than showing nothing for a moment.
+      final targetId = message.stanzaId.present
+          ? message.stanzaId.value
+          : '';
+      PendingCorrection? pending;
+      if (targetId.isNotEmpty) {
+        pending = await pendingCorrection(targetId);
+      }
+      final effective = pending == null
+          ? message
+          : message.copyWith(
+              body: Value(pending.body),
+              editedAt: Value(pending.correctedAt),
+              // The sender's declaration wins over the archive's: an archived
+              // copy carries no EME, and reporting "no encryption" for a
+              // message we were told was encrypted is the lie the label rule
+              // exists to prevent.
+              encMode: Value(pending.encMode),
+              retracted: const Value(false),
+            );
+
+      await into(messages).insert(effective);
+      if (pending != null) await clearPendingCorrection(targetId);
       // Bump the chat's activity only when the message is newer than what
       // we already recorded (importing old history must not regress it).
       final ts = message.timestamp.present

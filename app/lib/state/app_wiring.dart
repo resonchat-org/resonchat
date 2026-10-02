@@ -16,6 +16,7 @@ import '../store/database.dart';
 import '../xmpp/capabilities.dart';
 import '../xmpp/connection.dart';
 import '../xmpp/reactions.dart';
+import '../xmpp/retraction.dart';
 
 /// Connects the connection's streams to persistent state for the app's
 /// lifetime: delivery receipts, delivery failures and capability
@@ -185,6 +186,28 @@ Future<void> storeInbound(AppDatabase db, InboundMessage msg) async {
   if (msg.isCarbonCopy) return;
   final stanzaId = msg.stanzaId ?? '';
   if (await db.findByStanzaId(chatJid, stanzaId) != null) return;
+
+  // A stanza carrying an apply-to is an instruction about an earlier message,
+  // not a message. Storing it would put a duplicate bubble next to the one it
+  // refers to, and for a retraction the bubble would contain the fallback text
+  // as though the sender had written it.
+  if (msg.retracts != null) {
+    await applyRetraction(db, msg.retracts!);
+    return;
+  }
+  if (msg.corrects != null) {
+    // A correction is a new rendering of the original: the body is its real
+    // content, encrypted like any other message, so the track comes from the
+    // sender's declaration rather than from anything we chose.
+    await correctMessage(
+      db: db,
+      chatJid: chatJid,
+      targetId: msg.corrects!,
+      body: msg.body,
+      track: msg.track ?? Track.none,
+    );
+    return;
+  }
 
   await db.insertMessage(
     MessagesCompanion(
