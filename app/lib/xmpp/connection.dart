@@ -110,6 +110,12 @@ class XmppService {
   final _inbound = StreamController<InboundMessage>.broadcast();
   final _deliveryReceipts = StreamController<DeliveryReceipt>.broadcast();
   final _typingStates = StreamController<TypingNotification>.broadcast();
+
+  /// Fires when a PEP node we care about changes, so cached capabilities
+  /// can be dropped instead of waiting out the TTL.
+  final _capabilityChanges = StreamController<JID>.broadcast();
+  Stream<JID> get capabilityChanges => _capabilityChanges.stream;
+
   XmppConnectionState _state = XmppConnectionState.disconnected;
 
   /// Overrides the automatic per-chat decision. Set by the settings UI.
@@ -254,9 +260,46 @@ class XmppService {
       _carbonsEnabled = await _carbons!.enableCarbons();
       _mamAvailable = await _isMamAvailable();
       _log.info('carbons: $_carbonsEnabled, mam: $_mamAvailable');
+      await _subscribeOwnPep();
     }
     _log.info('connect($jid): $ok');
     return ok;
+  }
+
+  /// Subscribes to our own OMEMO device list so the server pushes device
+  /// changes to us (which also keeps our peers' lists fresh when they
+  /// republish). Peer nodes are subscribed lazily on first use.
+  Future<void> _subscribeOwnPep() async {
+    final pm = _pubsub;
+    if (pm == null) return;
+    final bare = _connection!.connectionSettings.jid.toBare();
+    for (final node in const [
+      omemoDevicesXmlns,
+      omemoBundlesXmlns,
+      pomemoDevicesXmlns,
+      pomemoBundlesXmlns,
+    ]) {
+      final result = await pm.subscribe(bare, node);
+      if (!result.isType<bool>() || !result.get<bool>()) {
+        _log.fine('could not subscribe to $node: $result');
+      }
+    }
+  }
+
+  /// Subscribes to a peer's OMEMO device list so we learn about new devices
+  /// immediately instead of waiting out the capability TTL.
+  Future<void> subscribePeerPep(JID peer) async {
+    final pm = _pubsub;
+    if (pm == null) return;
+    final bare = peer.toBare();
+    for (final node in const [
+      omemoDevicesXmlns,
+      omemoBundlesXmlns,
+      pomemoDevicesXmlns,
+      pomemoBundlesXmlns,
+    ]) {
+      await pm.subscribe(bare, node);
+    }
   }
 
   /// Asks the server whether it keeps a message archive.
@@ -534,6 +577,24 @@ class XmppService {
       _deliveryReceipts.add(
         DeliveryReceipt(from: event.from, stanzaId: event.id),
       );
+    } else if (event is PubSubNotificationEvent) {
+      _onPepNotification(event);
     }
+  }
+
+  /// A peer added or removed a device, or republished a bundle. Their PQ
+  /// capability may have flipped, so the cached answer must go.
+  void _onPepNotification(PubSubNotificationEvent event) {
+    final node = event.item.node;
+    if (node != omemoDevicesXmlns &&
+        node != omemoBundlesXmlns &&
+        node != pomemoDevicesXmlns &&
+        node != pomemoBundlesXmlns) {
+      return;
+    }
+    final owner = JID.fromString(event.from).toBare();
+    _log.info('PEP change on $node by $owner; dropping cached capabilities');
+    _capabilities?.invalidate(owner);
+    if (!_capabilityChanges.isClosed) _capabilityChanges.add(owner);
   }
 }
