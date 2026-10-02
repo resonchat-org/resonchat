@@ -221,7 +221,12 @@ Future<void> setGlobalTrack(WidgetRef ref, Track track) async {
 
 /// Pins [chatJid] to [track], or clears the override when null.
 Future<void> setChatTrack(WidgetRef ref, String chatJid, Track? track) async {
-  await ref.read(databaseProvider).setTrackOverride(chatJid, track);
+  final db = ref.read(databaseProvider);
+  await db.setTrackOverride(chatJid, track);
+  // Leaving plaintext re-arms the warning for next time. Otherwise a user who
+  // once confirmed it would never see it again — including on the way back,
+  // which is the transition worth a fresh look.
+  await db.clearPlaintextAcknowledgement(chatJid);
   ref.invalidate(chatTrackOverrideProvider(chatJid));
   ref.invalidate(chatTrackProvider(chatJid));
 }

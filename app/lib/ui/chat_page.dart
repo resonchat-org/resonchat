@@ -176,12 +176,22 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     if (chosen == Track.none) {
       final alternative = resolution.alternative ?? Track.standard;
       if (!mounted) return null;
-      final agreed = await confirmPlaintext(
-        context,
-        contact: widget.chatJid,
-        alternative: alternative,
-      );
-      if (!agreed || !mounted) return null;
+      // Asked once per conversation, not once per message. A warning that
+      // fires on every send is a warning nobody reads, and the message it
+      // would have covered is exactly the one that goes out in the clear
+      // unread.
+      final db = ref.read(databaseProvider);
+      final acknowledged = await db.plaintextAcknowledged(widget.chatJid);
+      if (!mounted) return null;
+      if (!acknowledged) {
+        final agreed = await confirmPlaintext(
+          context,
+          contact: widget.chatJid,
+          alternative: alternative,
+        );
+        if (!agreed || !mounted) return null;
+        await db.acknowledgePlaintext(widget.chatJid);
+      }
     } else if (!resolution.canSend) {
       // Refuse and explain. Nothing is sent here, and nothing is sent on
       // another track without a separate decision from the user.
@@ -195,6 +205,10 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       if (substituted == null || !mounted) return null;
       if (substituted == Track.none) {
         if (!mounted) return null;
+        // Deliberate downgrade to plaintext, reached from a dialog rather than
+        // from the picker: worth confirming even in a conversation that has
+        // already acknowledged plaintext, because the user did not choose this
+        // one — they were offered it as the only way the message gets through.
         final agreed = await confirmPlaintext(
           context,
           contact: widget.chatJid,

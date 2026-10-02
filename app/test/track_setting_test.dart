@@ -13,6 +13,12 @@ import 'package:test/test.dart';
 import 'package:resonchat/omemo/track.dart';
 import 'package:resonchat/store/database.dart';
 
+/// Mirrors what the settings UI does when the track changes.
+Future<void> setTrackForTest(AppDatabase db, String chatJid, Track? track) async {
+  await db.setTrackOverride(chatJid, track);
+  await db.clearPlaintextAcknowledgement(chatJid);
+}
+
 void main() {
   late AppDatabase db;
 
@@ -133,6 +139,36 @@ void main() {
       // Migration v2 -> v3 backfills the column with ''. Such a row means
       // "never chosen", which is what it means.
       expect(Track.fromStored(''), isNull);
+    });
+  });
+
+  group('the plaintext warning is remembered per conversation', () {
+    // docs/10 §11 #7. A warning on every message is a warning nobody reads,
+    // and the message it would have covered is exactly the one that goes out
+    // in the clear unread.
+    test('a fresh conversation has not acknowledged it', () async {
+      expect(await db.plaintextAcknowledged('bob@example.org'), isFalse);
+    });
+
+    test('acknowledging silences it, and only for that conversation',
+        () async {
+      await db.acknowledgePlaintext('bob@example.org');
+      expect(await db.plaintextAcknowledged('bob@example.org'), isTrue);
+      expect(await db.plaintextAcknowledged('carol@example.org'), isFalse);
+    });
+
+    test('it can be cleared, which is what switching away re-arms', () async {
+      await db.acknowledgePlaintext('bob@example.org');
+      await db.clearPlaintextAcknowledgement('bob@example.org');
+      expect(await db.plaintextAcknowledged('bob@example.org'), isFalse);
+    });
+
+    test('a changed track re-arms the warning', () async {
+      // Returning to plaintext is the transition worth a fresh confirmation:
+      // the circumstances that led away from it are usually why one came back.
+      await db.acknowledgePlaintext('bob@example.org');
+      await setTrackForTest(db, 'bob@example.org', Track.standard);
+      expect(await db.plaintextAcknowledged('bob@example.org'), isFalse);
     });
   });
 

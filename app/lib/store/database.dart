@@ -134,6 +134,30 @@ class AppDatabase extends _$AppDatabase {
         },
       );
 
+  /// True when the user has acknowledged, for this conversation, that
+  /// plaintext is readable by anyone with server access.
+  ///
+  /// Remembered per conversation on purpose. Asking on every single message
+  /// teaches the user that the warning is a formality, and the moment it
+  /// matters — a sensitive message to a contact whose devices all failed —
+  /// they will dismiss it without reading. Asking once per conversation, and
+  /// never when they chose NO deliberately, is the balance.
+  ///
+  /// Cleared when the conversation's track changes away from NO, so returning
+  /// to plaintext asks again.
+  Future<bool> plaintextAcknowledged(String chatJid) async {
+    final value = await metaValue('plaintext_ack:$chatJid');
+    return value == '1';
+  }
+
+  Future<void> acknowledgePlaintext(String chatJid) async {
+    await setMetaValue('plaintext_ack:$chatJid', '1');
+  }
+
+  Future<void> clearPlaintextAcknowledgement(String chatJid) async {
+    await deleteMetaValue('plaintext_ack:$chatJid');
+  }
+
   /// The track the user chose for [chatJid], or null to use the global
   /// default.
   Future<Track?> trackOverride(String chatJid) async {
