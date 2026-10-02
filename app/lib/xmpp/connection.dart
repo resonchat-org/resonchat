@@ -22,6 +22,7 @@ import 'b_track_manager.dart';
 import 'blocked_inbound.dart';
 import 'blocking.dart';
 import 'eme.dart';
+import 'muc.dart';
 import 'capabilities.dart';
 import 'pq_incoming.dart';
 import 'pq_stanza.dart';
@@ -532,6 +533,44 @@ class XmppService {
     return SendOutcome(stanzaId: id, track: Track.standard);
   }
 
+  /// Joins a group chat at `roomJid` as [nick].
+  ///
+  /// Returns the error rather than throwing, because a room can refuse for a
+  /// dozen ordinary reasons — name taken, room full, password required,
+  /// banned — and each needs a different sentence in front of the user.
+  Future<MUCError?> joinGroupChat(String roomJid, String nick) async {
+    final manager = muc;
+    if (manager == null) return NoNicknameSpecified();
+    final result = await manager.joinRoom(JID.fromString(roomJid), nick);
+    if (!result.isType<bool>()) return result.get<MUCError>();
+    return null;
+  }
+
+  /// Leaves a group chat.
+  Future<void> leaveGroupChat(String roomJid) async {
+    final manager = muc;
+    if (manager == null) return;
+    final result = await manager.leaveRoom(JID.fromString(roomJid));
+    if (!result.isType<bool>()) {
+      _log.info('leaving $roomJid failed: ${result.get<MUCError>()}');
+    }
+  }
+
+  /// The room's occupants, updated as presence arrives.
+  ///
+  /// A stream rather than a getter because the membership is the thing that
+  /// changes: it moves on every join and every leave, including other people's
+  /// devices, and a cached snapshot is wrong within seconds.
+  Stream<GroupChat?> roomOccupants(String roomJid) {
+    final bare = JID.fromString(roomJid).toBare().toString();
+    return _roomOccupants.stream
+        .where((chat) => chat?.roomJid == bare);
+  }
+
+  /// The current state of [roomJid], or null when we are not in it.
+  Future<RoomState?> groupChatState(String roomJid) async =>
+      await muc?.getRoomState(JID.fromString(roomJid));
+
   /// Blocks [items] on the server (XEP-0191).
   ///
   /// Returns false when the server refused or does not support it — which is
@@ -627,6 +666,9 @@ class XmppService {
   /// The underlying connection, for callers that need a manager this class
   /// does not wrap (roster edits, presence, diagnostics).
   XmppConnection? get connection => _connection;
+
+  /// The XEP-0045 manager, or null before connecting.
+  MUCManager? get muc => _connection?.getManagerById<MUCManager>(mucManager);
 
   /// The XEP-0084 avatar manager, or null before connecting.
   UserAvatarManager? get avatarManager => _connection
@@ -766,6 +808,8 @@ class XmppService {
       // XEP-0084 avatars. Needs the PubSub manager, which is why it is
       // registered alongside everything else rather than lazily.
       UserAvatarManager(),
+      // XEP-0045 group chats.
+      MUCManager(),
       // XEP-0444 reactions, plus the stable-id manager they depend on: a
       // reaction addresses a message by its origin-id.
       StableIdManager(),
@@ -1289,6 +1333,39 @@ class XmppService {
     _state = XmppConnectionState.disconnected;
   }
 
+  /// Republishes a room's state after any presence event for it.
+  ///
+  /// Re-read from the manager rather than patched from the event, because the
+  /// events arrive in an order the server chooses and a patch applied in the
+  /// wrong order leaves the member list permanently wrong with nothing to
+  /// correct it.
+  final _roomOccupants = StreamController<GroupChat?>.broadcast();
+
+  Future<void> _publishRoomState(XmppEvent event) async {
+    final roomJid = switch (event) {
+      MemberJoinedEvent e => e.roomJid,
+      MemberChangedEvent e => e.roomJid,
+      MemberLeftEvent e => e.roomJid,
+      MemberChangedNickEvent e => e.roomJid,
+      OwnDataChangedEvent e => e.roomJid,
+      _ => null,
+    };
+    if (roomJid == null) return;
+    final state = await groupChatState(roomJid.toBare().toString());
+    if (state == null || _roomOccupants.isClosed) return;
+    _roomOccupants.add(
+      GroupChat(
+        roomJid: roomJid.toBare().toString(),
+        // A room with no nick is one we are not in; showing the member list of
+        // a room we only queried would be a list of people we are not talking
+        // to.
+        nick: state.nick ?? '',
+        occupants: state.members.values.map(Occupant.from).toList(),
+        joined: state.joined,
+      ),
+    );
+  }
+
   void _onEvent(XmppEvent event) {
     if (event is MessageEvent) {
       final error = event.encryptionError;
@@ -1384,6 +1461,12 @@ class XmppService {
       _deliveryReceipts.add(
         DeliveryReceipt(from: event.from, stanzaId: event.id),
       );
+    } else if (event is MemberJoinedEvent ||
+        event is MemberChangedEvent ||
+        event is MemberLeftEvent ||
+        event is MemberChangedNickEvent ||
+        event is OwnDataChangedEvent) {
+      unawaited(_publishRoomState(event));
     } else if (event is BlocklistBlockPushEvent) {
       // Another of our devices blocked these. As authoritative as tapping the
       // button here, which is the whole reason this is a server-side list.

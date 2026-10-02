@@ -13,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:moxxmpp/moxxmpp.dart' show JID;
 
 import '../omemo/track.dart';
+import '../xmpp/muc.dart';
 import '../omemo/track_advice.dart';
 import '../omemo/track_resolver.dart';
 import '../state/app_wiring.dart';
@@ -25,6 +26,7 @@ import '../xmpp/retraction.dart';
 import '../xmpp/replies.dart';
 import 'contact_avatar.dart';
 import 'message_actions.dart';
+import 'room_sheet.dart';
 import 'search.dart';
 import 'message_bubble.dart';
 import 'track_dialogs.dart';
@@ -65,6 +67,14 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   ({String id, String body, String author})? _replyingTo;
   StreamSubscription<DeliveryFailure>? _failureSub;
 
+  /// The group chat this page is showing, or null for a 1:1 conversation.
+  ///
+  /// Derived once in initState rather than watched: a room's membership moves
+  /// constantly, and rebuilding the whole page — including the input bar the
+  /// user is typing into — every time somebody joins is not acceptable.
+  GroupChat? _room;
+  String? _roomJid;
+
   @override
   void initState() {
     super.initState();
@@ -80,6 +90,12 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     // from where it is scrolled to, and a message the user scrolled past
     // deliberately is not unread.
     unawaited(ref.read(databaseProvider).markChatRead(widget.chatJid));
+
+    final parsed = GroupChat.parseAddress(widget.chatJid);
+    if (parsed != null) {
+      _roomJid = parsed.roomJid;
+      unawaited(_loadRoom());
+    }
   }
 
   @override
@@ -377,6 +393,42 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     );
   }
 
+  Future<void> _loadRoom() async {
+    final jid = _roomJid;
+    if (jid == null) return;
+    final chat = await ref.read(roomStateProvider(jid).future);
+    if (!mounted || chat == null) return;
+    setState(() {
+      _room = chat;
+      // Join on first open. Doing it here rather than from a button means the
+      // conversation the user tapped is one they can talk in, which is what
+      // they were asking for by tapping it.
+      if (!chat.joined) {
+        unawaited(ref.read(xmppServiceProvider).joinGroupChat(chat.roomJid, chat.nick));
+      }
+    });
+  }
+
+  Future<void> _showMembers() async {
+    final chat = _room;
+    if (chat == null) return;
+    final result = await showRoomSheet(context, chat);
+    if (!mounted || result == null) return;
+    if (result.leaving) {
+      await ref.read(xmppServiceProvider).leaveGroupChat(chat.roomJid);
+      if (mounted) Navigator.of(context).maybePop();
+      return;
+    }
+    // A private conversation from inside a room: the member's nickname is not a
+    // JID, so this goes through the room's service and is resolved to a real
+    // address by the server's occupant lookup.
+    if (result.nick != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Private chat with ${result.nick} is not set up yet.')),
+      );
+    }
+  }
+
   /// Long-press on a message: the context menu, then whatever it leads to.
   Future<void> _showMessageMenu(Message message, String body) async {
     if (!mounted) return;
@@ -665,6 +717,12 @@ class _ChatPageState extends ConsumerState<ChatPage> {
             locked: track != Track.none,
             onTap: () => showTrackPicker(context, ref, widget.chatJid),
           ),
+          if (_room != null)
+            IconButton(
+              icon: const Icon(Icons.group_outlined),
+              tooltip: 'Members',
+              onPressed: _showMembers,
+            ),
           IconButton(
             icon: const Icon(Icons.search),
             tooltip: 'Search in this chat',

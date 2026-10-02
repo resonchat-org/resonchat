@@ -14,6 +14,7 @@ import '../omemo/track.dart';
 import '../store/database.dart';
 import '../xmpp/avatar.dart';
 import '../xmpp/blocking.dart';
+import '../xmpp/muc.dart';
 import '../xmpp/reactions.dart';
 import '../store/omemo_device_store.dart';
 import '../xmpp/b_track_manager.dart';
@@ -249,6 +250,35 @@ final avatarRevisionProvider = StateProvider<int>((ref) => 0);
 
 /// Bytes already fetched this session, so a re-render never re-fetches.
 final _avatarBlobCache = <String, Uint8List>{};
+
+/// The room we are currently in, or null.
+///
+/// Keyed by the bare room JID so a chat page opened at `room@server/nick` and
+/// one opened at `room@server` read the same state — a room and a person's
+/// address are the same conversation, and treating them as two would leave the
+/// member list empty half the time.
+final roomStateProvider =
+    FutureProvider.family<GroupChat?, String>((ref, roomJid) async {
+  // Re-reads when the occupant stream fires, so a new arrival shows up without
+  // anything having to invalidate this.
+  ref.watch(roomOccupantsProvider(roomJid));
+  final xmpp = ref.watch(xmppServiceProvider);
+  final state = await xmpp.groupChatState(roomJid);
+  if (state == null) return null;
+  return GroupChat(
+    roomJid: roomJid,
+    nick: state.nick ?? '',
+    occupants: state.members.values.map(Occupant.from).toList(),
+    joined: state.joined,
+  );
+});
+
+/// Occupants of [roomJid], updated as presence arrives.
+final roomOccupantsProvider =
+    StreamProvider.family<List<Occupant>, String>((ref, roomJid) {
+  final xmpp = ref.watch(xmppServiceProvider);
+  return xmpp.roomOccupants(roomJid).map((chat) => chat?.occupants ?? const []);
+});
 
 /// Archived conversations, most recent first.
 final archivedChatsProvider = StreamProvider<List<Chat>>(

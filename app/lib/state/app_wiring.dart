@@ -241,13 +241,23 @@ void forgetCapabilityHistory() => _lastCapabilities.clear();
 /// Idempotent by stanza id, so a carbon that arrives twice, or a message
 /// that is also replayed from the archive, cannot duplicate a bubble.
 Future<void> storeInbound(AppDatabase db, InboundMessage msg) async {
+  // In a room the sender is the *nick*, not the address. Storing the room as
+  // the conversation and the nick as the sender is what makes `room@server`
+  // and `room@server/nick` the same conversation in the chat list, and what
+  // puts the right name on the bubble.
   final chatJid = msg.from.toBare().toString();
+  final sender = msg.from.toString();
   await db.upsertChat(chatJid);
 
   // A carbon duplicates a message we already hold locally.
   if (msg.isCarbonCopy) return;
   final stanzaId = msg.stanzaId ?? '';
   if (await db.findByStanzaId(chatJid, stanzaId) != null) return;
+  // A room message is identified by its sender's full JID, not just the room:
+  // two people in the same room can, and frequently do, send stanzas with the
+  // same id. Deduplicating on the bare room would drop the second one.
+  final dedupeKey = sender.isEmpty ? stanzaId : sender;
+  if (await db.findByStanzaId(chatJid, dedupeKey) != null) return;
 
   // A stanza carrying an apply-to is an instruction about an earlier message,
   // not a message. Storing it would put a duplicate bubble next to the one it
@@ -274,7 +284,7 @@ Future<void> storeInbound(AppDatabase db, InboundMessage msg) async {
   await db.insertMessage(
     MessagesCompanion(
       chatJid: Value(chatJid),
-      sender: Value(msg.from.toString()),
+      sender: Value(sender),
       // The origin-id when the sender published one, because that is the id
       // reactions, replies, edits and retractions address. The server's stanza
       // id is a fallback and it changes across an archive round trip, so a

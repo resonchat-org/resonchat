@@ -97,7 +97,13 @@ extension TrackBlockedMessage on TrackBlocked {
 
 /// The outcome of resolving a choice against what the peer supports.
 class TrackResolution {
-  const TrackResolution._({
+  /// Public because a room's resolution is a genuinely different question and
+  /// is answered in muc.dart. The property that matters — that a resolution
+  /// never reports a track other than the one requested — is therefore
+  /// enforced by tests rather than by visibility, which is the right way round:
+  /// a compile error would not have stopped anyone from getting it wrong
+  /// inside this file either.
+  const TrackResolution({
     required this.track,
     required this.blocked,
   });
@@ -139,7 +145,7 @@ TrackResolution resolveTrack({
   // Blocking here would mean refusing a decision the user was told about and
   // made anyway, which is the same objection as overriding a PQ choice.
   if (requested == Track.none) {
-    return const TrackResolution._(track: Track.none, blocked: null);
+    return const TrackResolution(track: Track.none, blocked: null);
   }
 
   // No snapshot at all is the same epistemic state as an unreadable one:
@@ -147,7 +153,7 @@ TrackResolution resolveTrack({
   // is fine" is the mistake that turns a slow network into a security hole.
   final caps = capabilities;
   if (caps == null || !caps.reliable) {
-    return TrackResolution._(
+    return TrackResolution(
       track: requested,
       blocked: TrackBlocked.unknownPeers,
     );
@@ -159,15 +165,15 @@ TrackResolution resolveTrack({
 
   switch (requested) {
     case Track.none:
-      return const TrackResolution._(track: Track.none, blocked: null);
+      return const TrackResolution(track: Track.none, blocked: null);
 
     case Track.standard:
       if (allReachable) {
-        return const TrackResolution._(track: Track.standard, blocked: null);
+        return const TrackResolution(track: Track.standard, blocked: null);
       }
       // Distinguish "we don't know them" from "we know and cannot reach
       // them": the first may resolve on a retry, the second will not.
-      return TrackResolution._(
+      return TrackResolution(
         track: Track.standard,
         blocked: caps.recipientDevices.isEmpty
             ? TrackBlocked.unreachableDevices
@@ -179,9 +185,9 @@ TrackResolution resolveTrack({
       // `every` is vacuously true — there is nobody to encrypt to, so the
       // track has nothing to carry.
       if (allPq) {
-        return const TrackResolution._(track: Track.pq, blocked: null);
+        return const TrackResolution(track: Track.pq, blocked: null);
       }
-      return const TrackResolution._(
+      return const TrackResolution(
         track: Track.pq,
         blocked: TrackBlocked.pqUnavailable,
       );
