@@ -763,6 +763,17 @@ class XmppService {
       // A carbon is our own message from another resource: it must not be
       // stored as an inbound bubble (docs/03 §4).
       final isCarbon = event.get<CarbonsData>()?.isCarbon ?? false;
+      // An undecryptable carbon is not a lost message. It is one of our own
+      // outgoing messages mirrored to this resource, encrypted for the
+      // *peer's* devices — we were never a recipient, so nobody lost
+      // anything. Showing "Unable to decrypt" for it invents a problem.
+      if (isCarbon && error != null) {
+        _log.fine(
+          'dropping undecryptable carbon from ${event.from}: '
+          'we were not a recipient of our own message',
+        );
+        return;
+      }
       final mam = event.get<MAMData>();
       final state = event.get<ChatState>();
       if (state != null) {

@@ -54,13 +54,6 @@ class _ChatsPageState extends ConsumerState<ChatsPage> {
       );
     });
 
-    // XEP-0184: flip our outgoing messages to "delivered".
-    xmpp.deliveryReceipts.listen((receipt) async {
-      await ref.read(databaseProvider).markDelivered(
-            receipt.from.toBare().toString(),
-            receipt.stanzaId,
-          );
-    });
   }
 
   @override
