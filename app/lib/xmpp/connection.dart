@@ -157,6 +157,9 @@ class XmppService {
   bool get carbonsEnabled => _carbonsEnabled;
   bool _carbonsEnabled = false;
 
+  /// Reason the last [connect] failed, for display in the UI.
+  String? lastError;
+
   /// Whether the server advertises the MAM archive (XEP-0313). Queried
   /// lazily; cached per connection.
   bool get mamAvailable => _mamAvailable;
@@ -212,7 +215,14 @@ class XmppService {
     ]);
     await connection.registerFeatureNegotiators([
       StartTlsNegotiator(),
-      SaslScramNegotiator(10, '', '', ScramHashType.sha256),
+      // Preferred order: strongest first. moxxmpp picks the first
+      // negotiator whose mechanism the server advertises, so servers
+      // without SCRAM-SHA-256 (e.g. conversations.im offers PLAIN and
+      // SCRAM-SHA-1 only) still authenticate.
+      SaslScramNegotiator(30, '', '', ScramHashType.sha256),
+      SaslScramNegotiator(20, '', '', ScramHashType.sha512),
+      SaslScramNegotiator(10, '', '', ScramHashType.sha1),
+      SaslPlainNegotiator(),
       ResourceBindingNegotiator(),
     ]);
 
@@ -222,6 +232,14 @@ class XmppService {
       waitUntilLogin: true,
     );
     final ok = result.isType<bool>() && result.get<bool>();
+    if (!ok) {
+      // Surface the actual reason: "authentication failed" is useless
+      // when the real cause is a TLS or SRV problem.
+      lastError = result.isType<XmppError>()
+          ? '${result.get<XmppError>()}'
+          : 'connection failed (${result.dataRuntimeType})';
+      _log.severe('connect failed: $lastError');
+    }
     _connection = ok ? connection : null;
     _state =
         ok ? XmppConnectionState.connected : XmppConnectionState.disconnected;
@@ -306,16 +324,45 @@ class XmppService {
     final id = await _omemo!.getDeviceId();
     final bundle = await (await _omemo!.getDevice()).toBundle();
     final published = await _moxxOmemo!.publishBundle(bundle);
-    if (!published.isType<bool>() || !published.get<bool>()) {
+    // moxxmpp returns Result<bool> whose payload is
+    // `deviceBundlePublish.isType<PubSubError>()` — **true means
+    // failure**. Reading it the other way round made a successful
+    // publish log a warning and skip persisting the device.
+    final failed = !published.isType<bool>() || published.get<bool>();
+    if (failed) {
       _log.warning('OMEMO bundle publish reported failure');
     }
 
-    // Persist after a successful publish so we never store keys the
+    // Persist only after a confirmed publish so we never store keys the
     // server does not know about.
-    if (published.isType<bool>() && published.get<bool>()) {
+    if (!failed) {
       await deviceStore?.save(device);
     }
     return id;
+  }
+
+  /// Tops the one-time-prekey pool back up to [target] and republishes the
+  /// bundle. omemo_dart burns one OPK per new inbound session, so without
+  /// this the pool drains and later sessions lose forward secrecy by
+  /// falling back to the signed prekey.
+  ///
+  /// Call after [ensureOmemoDevice]; safe to call repeatedly.
+  Future<int> replenishPrekeys({int target = 20}) async {
+    final om = _omemo;
+    if (om == null) return 0;
+    final added = await om.replenishOnetimePrekeys(target);
+    if (added > 0) {
+      // Keep the local copy in sync with what peers can now fetch.
+      await deviceStore?.save(await om.getDevice());
+    }
+    return added;
+  }
+
+  /// Number of one-time prekeys still available locally.
+  Future<int> availablePrekeyCount() async {
+    final om = _omemo;
+    if (om == null) return 0;
+    return (await om.getDevice()).opks.length;
   }
 
   /// Fetches the roster and returns the entries (also cached by drift).

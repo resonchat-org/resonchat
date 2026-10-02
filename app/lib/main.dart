@@ -1,8 +1,10 @@
 // Copyright (C) 2026 resonchat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:logging/logging.dart';
 
 import 'state/providers.dart';
 import 'store/database.dart';
@@ -14,8 +16,25 @@ import 'ui/theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Route package:logging output to logcat/stdout so connection problems
+  // are diagnosable on a device (debug builds only).
+  if (kDebugMode) {
+    Logger.root.level = Level.ALL;
+    Logger.root.onRecord.listen((record) {
+      debugPrint(
+        '[${record.level.name}] ${record.loggerName}: ${record.message}',
+      );
+    });
+  }
+
   final db = await openAppDatabase();
-  runApp(ProviderScope(overrides: [databaseProvider.overrideWithValue(db)], child: const App()));
+  runApp(
+    ProviderScope(
+      overrides: [databaseProvider.overrideWithValue(db)],
+      child: const App(),
+    ),
+  );
 }
 
 class App extends StatelessWidget {

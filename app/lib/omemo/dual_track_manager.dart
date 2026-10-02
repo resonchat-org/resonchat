@@ -61,6 +61,11 @@ class DualTrackManager {
 
   /// Publishes our B-track device list entry + bundle.
   /// Returns true only when the bundle item was accepted.
+  ///
+  /// Note the two conventions in play: [PubSubManager.publish] yields
+  /// `Result<PubSubError, bool>` where **true means success**, whereas
+  /// moxxmpp's `OmemoManager.publishBundle` (used for the A track) yields
+  /// a bool where **true means failure**. Do not mix them up.
   Future<bool> publishPqBundle(JID bareJid, PqBundle bundle) async {
     final pm = pubsubOf();
 
