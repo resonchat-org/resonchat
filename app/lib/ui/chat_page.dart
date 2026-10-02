@@ -65,6 +65,15 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   /// underneath the composer, and a reply composer pointing at a row it no
   /// longer holds would quote nothing.
   ({String id, String body, String author})? _replyingTo;
+
+  /// Stanza ids currently selected, in selection order.
+  ///
+  /// An ordered set rather than a bool per message because the order the user
+  /// picked them in is the order they are forwarded in, and "select five
+  /// messages and get them shuffled" is its own bug.
+  final _selection = <String>[];
+
+  bool get _selectionMode => _selection.isNotEmpty;
   StreamSubscription<DeliveryFailure>? _failureSub;
 
   /// The group chat this page is showing, or null for a 1:1 conversation.
@@ -663,6 +672,122 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     }
   }
 
+  /// Adds or removes [message] from the selection.
+  ///
+  /// A message with no addressable id cannot be forwarded or retracted, so it
+  /// is not selectable at all — offering it would produce a selection the user
+  /// cannot act on.
+  void _toggleSelected(Message message) {
+    if (message.stanzaId.isEmpty || message.retracted) return;
+    setState(() {
+      if (_selection.contains(message.stanzaId)) {
+        _selection.remove(message.stanzaId);
+      } else {
+        _selection.add(message.stanzaId);
+      }
+    });
+  }
+
+  /// Forwards everything selected, in the order it was picked.
+  Future<void> _forwardSelection() async {
+    if (!mounted) return;
+    final ids = List<String>.from(_selection);
+    final messages = await ref.read(databaseProvider).watchMessages(widget.chatJid).first;
+    final byId = {for (final m in messages) m.stanzaId: m};
+    final items = <ForwardItem>[
+      for (final id in ids)
+        if (byId[id] != null && byId[id]!.body.trim().isNotEmpty)
+          ForwardItem(body: byId[id]!.body, chatJid: widget.chatJid),
+    ];
+    if (!mounted) return;
+    if (items.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Nothing there to forward.')),
+      );
+      return;
+    }
+    final target = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => ForwardTargetSheet(items: items),
+    );
+    if (target == null || !mounted) return;
+    if (ref.read(isBlockedProvider(target))) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Unblock $target before forwarding to them.')),
+      );
+      return;
+    }
+    final track = await ref.read(chatTrackProvider(target).future);
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final outcome = await forwardMessages(
+      ref.read(xmppServiceProvider),
+      toJid: JID.fromString(target).toBare(),
+      items: items,
+      track: track,
+    );
+    if (!outcome.ok && mounted) {
+      // Partial forwards are reported rather than silently dropped: the user
+      // is the only one who knows which of the selected messages mattered.
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Forwarded ${outcome.forwarded} of ${items.length}, then stopped: '
+            'the $target track cannot be used right now.',
+          ),
+        ),
+      );
+      return;
+    }
+    setState(_selection.clear);
+  }
+
+  /// Retracts the selected messages that we sent.
+  ///
+  /// Only ours: XEP-0424 is an instruction to the recipient's own client, so
+  /// retracting somebody else's message would change only our copy — which is
+  /// not "delete for everyone" and is not what the button said.
+  Future<void> _deleteSelection() async {
+    if (!mounted) return;
+    final ids = List<String>.from(_selection);
+    final messages = await ref.read(databaseProvider).watchMessages(widget.chatJid).first;
+    final mine = [
+      for (final m in messages)
+        if (ids.contains(m.stanzaId) && !m.incoming) m.stanzaId,
+    ];
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    if (mine.isEmpty) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Only your own messages can be deleted.')),
+      );
+      return;
+    }
+    var deleted = 0;
+    for (final id in mine) {
+      final ok = await retractMessage(
+        ref.read(xmppServiceProvider),
+        chatJid: widget.chatJid,
+        targetId: id,
+      );
+      if (!ok) break;
+      deleted++;
+    }
+    if (deleted < mine.length) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Deleted $deleted of ${mine.length}; the rest could not be sent.',
+          ),
+        ),
+      );
+    }
+    await ref.read(databaseProvider).markRetracted(mine.first);
+    // Refresh the rows that were marked above; one update covers the list.
+    if (mounted) setState(() => _selection.clear());
+  }
+
   void _bumpReactions() {
     final rev = ref.read(reactionRevisionProvider);
     ref.read(reactionRevisionProvider.notifier).state = rev + 1;
@@ -829,6 +954,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                       _loadHistory(),
                   onReact: _toggleReaction,
                   onMenu: _showMessageMenu,
+                  onToggleSelected: _toggleSelected,
+                  selectionMode: _selectionMode,
+                  selectedIds: _selection,
                 ),
                 loading: () =>
                     const Center(child: CircularProgressIndicator()),
@@ -845,7 +973,14 @@ class _ChatPageState extends ConsumerState<ChatPage> {
               body: _replyingTo!.body,
               onCancel: () => setState(() => _replyingTo = null),
             ),
-          if (_editingId != null)
+          if (_selectionMode)
+            SelectionBar(
+              count: _selection.length,
+              onForward: _forwardSelection,
+              onDelete: _deleteSelection,
+              onCancel: () => setState(_selection.clear),
+            )
+          else if (_editingId != null)
             EditComposer(
               initialText: _editingBody,
               onSubmit: _submitCorrection,
@@ -893,6 +1028,9 @@ class _MessageList extends StatelessWidget {
     required this.onRetryDecrypt,
     required this.onReact,
     required this.onMenu,
+    required this.onToggleSelected,
+    required this.selectionMode,
+    required this.selectedIds,
   });
 
   final List<Message> messages;
@@ -907,6 +1045,15 @@ class _MessageList extends StatelessWidget {
   /// track, which decides both the plaintext notice and whether editing is
   /// offered.
   final void Function(Message message, String body) onMenu;
+
+  /// Toggling a message in the selection.
+  final void Function(Message message) onToggleSelected;
+
+  /// Whether the chat is in selection mode, so a tap selects rather than acts.
+  final bool selectionMode;
+
+  /// The stanza ids currently selected, in the order they were picked.
+  final List<String> selectedIds;
 
   @override
   Widget build(BuildContext context) {
@@ -955,8 +1102,11 @@ class _MessageList extends StatelessWidget {
       rows.add(
         _ReactionBubble(
           message: m,
+          selectionMode: selectionMode,
+          selected: selectedIds.contains(m.stanzaId),
           onReact: (emoji) => onReact(m.stanzaId, emoji),
           onMenu: (body) => onMenu(m, body),
+          onToggleSelected: () => onToggleSelected(m),
         ),
       );
     }
@@ -1123,13 +1273,19 @@ class _SubscriptionBanner extends ConsumerWidget {
 class _ReactionBubble extends ConsumerWidget {
   const _ReactionBubble({
     required this.message,
+    required this.selectionMode,
+    required this.selected,
     required this.onReact,
     required this.onMenu,
+    required this.onToggleSelected,
   });
 
   final Message message;
+  final bool selectionMode;
+  final bool selected;
   final void Function(String emoji) onReact;
   final void Function(String body) onMenu;
+  final void Function() onToggleSelected;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1154,8 +1310,18 @@ class _ReactionBubble extends ConsumerWidget {
       retracted: message.retracted,
       edited: message.editedAt != null,
       mine: !message.incoming,
+      selected: selected,
+      selectionMode: selectionMode,
       onReact: onReact,
-      onLongPress: message.retracted ? null : () => onMenu(message.body),
+      // A long press still opens the context menu when nothing is selected;
+      // once a selection exists, long press adds to it, which is what a user
+      // picking five messages is actually doing.
+      onLongPress: message.retracted
+          ? null
+          : selectionMode
+              ? onToggleSelected
+              : () => onMenu(message.body),
+      onTap: selectionMode ? onToggleSelected : null,
     );
   }
 }

@@ -173,6 +173,70 @@ Future<MessageAction?> showMessageMenu(
   );
 }
 
+/// The action bar shown while messages are selected.
+///
+/// Replaces the input bar rather than sitting above it, for the same reason the
+/// edit composer does: two things that both accept input in one chat is
+/// ambiguous about where a keystroke goes.
+class SelectionBar extends StatelessWidget {
+  const SelectionBar({
+    super.key,
+    required this.count,
+    required this.onForward,
+    required this.onDelete,
+    required this.onCancel,
+  });
+
+  final int count;
+  final VoidCallback onForward;
+  final VoidCallback onDelete;
+  final VoidCallback onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.surfaceContainerHigh,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+          child: Row(
+            children: [
+              IconButton(
+                onPressed: onCancel,
+                icon: const Icon(Icons.close),
+                tooltip: 'Cancel',
+              ),
+              Expanded(
+                child: Text(
+                  count == 0
+                      ? 'Select messages'
+                      : '$count selected',
+                  style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+                ),
+              ),
+              IconButton(
+                onPressed: count == 0 ? null : onForward,
+                icon: const Icon(Icons.forward),
+                tooltip: 'Forward',
+              ),
+              IconButton(
+                // Delete-all only for our own messages, and only where it can
+                // actually work: XEP-0424 is per message, so a mixed selection
+                // deletes the subset we sent and says so.
+                onPressed: count == 0 ? null : onDelete,
+                icon: const Icon(Icons.delete_outline),
+                tooltip: 'Delete mine',
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// The quick reaction strip shown after "React".
 ///
 /// A strip rather than a full picker: the common reactions are the ones people

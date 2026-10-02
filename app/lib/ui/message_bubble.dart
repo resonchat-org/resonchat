@@ -97,6 +97,8 @@ class MessageBubble extends StatelessWidget {
     this.reactions = const [],
     this.retracted = false,
     this.edited = false,
+    this.selected = false,
+    this.selectionMode = false,
     this.mine = false,
     this.replyTo = '',
     this.replyBody = '',
@@ -133,6 +135,16 @@ class MessageBubble extends StatelessWidget {
   /// person who hit "delete" is the only one who can tell that it worked.
   final bool mine;
 
+  /// This message is part of the current selection.
+  final bool selected;
+
+  /// The chat is in selection mode.
+  ///
+  /// A tap means "select" rather than "open", which is the whole reason the
+  /// mode exists — and the reason a selected bubble still has to be drawn, since
+  /// the user needs to see what they picked.
+  final bool selectionMode;
+
   /// Origin-id of the message this one replies to, or empty.
   final String replyTo;
 
@@ -164,11 +176,13 @@ class MessageBubble extends StatelessWidget {
     final mine = this.mine || side == BubbleSide.outgoing;
     final color = mine ? tg.ownBubble : tg.peerBubble;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 8,
-        vertical: 1,
-      ),
+    return Container(
+      // The selection tint is on the row, not the bubble: tinting the bubble
+      // itself would hide the text it is tinting behind the highlight.
+      color: selected
+          ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.5)
+          : null,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
       child: Column(
         crossAxisAlignment:
             mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
@@ -190,7 +204,7 @@ class MessageBubble extends StatelessWidget {
               author: replyAuthor,
             ),
           GestureDetector(
-            onTap: onTap,
+            onTap: selectionMode ? onTap : onTap,
             onLongPress: onLongPress,
             child: CustomPaint(
               painter: _BubblePainter(
