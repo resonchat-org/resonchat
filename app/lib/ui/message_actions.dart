@@ -18,6 +18,7 @@ import 'theme.dart';
 class MessageActions {
   const MessageActions({
     required this.canReply,
+    required this.canForward,
     required this.canReact,
     required this.canCopy,
     required this.canEdit,
@@ -29,6 +30,11 @@ class MessageActions {
   /// replied to by reference — offering it would produce a reply whose
   /// `> ` quote is the only link to its target.
   final bool canReply;
+
+  /// Forwarding works on anything readable, including an undecryptable
+  /// message — but forwarding a placeholder would send the reader a sentence
+  /// about the app rather than the message.
+  final bool canForward;
 
   /// Reactions work on anything we can see, including a message we could not
   /// decrypt — that is exactly when the sender most wants to hear that we read
@@ -54,6 +60,7 @@ class MessageActions {
   }) {
     return MessageActions(
       canReply: !retracted && addressable,
+      canForward: !retracted && decrypted,
       canReact: !retracted,
       canCopy: decrypted && !retracted,
       canEdit: mine && !retracted && decrypted,
@@ -62,11 +69,16 @@ class MessageActions {
   }
 
   bool get isEmpty =>
-      !canReply && !canReact && !canCopy && !canEdit && !canRetract;
+      !canReply &&
+      !canReact &&
+      !canCopy &&
+      !canEdit &&
+      !canForward &&
+      !canRetract;
 }
 
 /// The result of the menu.
-enum MessageAction { reply, react, copy, edit, retract }
+enum MessageAction { reply, react, copy, edit, forward, retract }
 
 /// Shows the menu and returns what the user picked, or null.
 Future<MessageAction?> showMessageMenu(
@@ -98,6 +110,15 @@ Future<MessageAction?> showMessageMenu(
               leading: const Icon(Icons.copy),
               title: const Text('Copy text'),
               onTap: () => Navigator.of(context).pop(MessageAction.copy),
+            ),
+          if (actions.canForward)
+            ListTile(
+              leading: const Icon(Icons.forward),
+              title: const Text('Forward'),
+              subtitle: const Text(
+                'Sent again to someone else, encrypted for them.',
+              ),
+              onTap: () => Navigator.of(context).pop(MessageAction.forward),
             ),
           if (actions.canEdit)
             ListTile(

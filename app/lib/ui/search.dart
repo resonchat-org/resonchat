@@ -13,6 +13,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../state/providers.dart';
+import '../xmpp/forwarding.dart';
 import 'chat_page.dart';
 
 import 'theme.dart';
@@ -250,4 +251,84 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   }
 
   static void _unused(SearchHit hit) {}
+}
+
+/// Picks a conversation to forward into.
+///
+/// Only conversations that could actually receive the message are listed as
+/// targets — no, that is too clever: a conversation whose track is currently
+/// blocked is still a legitimate place to forward to, and hiding it would mean
+/// the user cannot find the conversation they wanted. Every conversation is
+/// listed; the refusal, if there is one, happens on send and is reported.
+class ForwardTargetSheet extends ConsumerWidget {
+  const ForwardTargetSheet({super.key, required this.items});
+
+  final List<ForwardItem> items;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tg = context.tg;
+    final chats = ref.watch(chatsProvider);
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.6,
+      builder: (context, controller) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+              child: Text(
+                items.length == 1
+                    ? 'Forward message'
+                    : 'Forward ${items.length} messages',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: Text(
+                'The message is sent again, encrypted for the person you '
+                'choose. The original is not re-shared.',
+                style: TextStyle(fontSize: 12, color: tg.textSecondary),
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: chats.when(
+                data: (list) => list.isEmpty
+                    ? const Center(child: Text('No conversations yet'))
+                    : ListView.builder(
+                        controller: controller,
+                        itemCount: list.length,
+                        itemBuilder: (context, i) {
+                          final chat = list[i];
+                          final title =
+                              chat.title.isEmpty ? chat.jid : chat.title;
+                          return ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor:
+                                  tg.accent.withValues(alpha: 0.18),
+                              child: Text(
+                                title.isEmpty ? '?' : title[0].toUpperCase(),
+                                style: TextStyle(color: tg.accent),
+                              ),
+                            ),
+                            title: Text(title),
+                            onTap: () =>
+                                Navigator.of(context).pop(chat.jid),
+                          );
+                        },
+                      ),
+                loading: () =>
+                    const Center(child: CircularProgressIndicator()),
+                error: (e, _) => Center(child: Text('$e')),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

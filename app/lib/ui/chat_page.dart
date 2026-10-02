@@ -19,6 +19,7 @@ import '../state/app_wiring.dart';
 import '../state/providers.dart';
 import '../store/database.dart';
 import '../xmpp/connection.dart';
+import '../xmpp/forwarding.dart';
 import '../xmpp/reactions.dart';
 import '../xmpp/retraction.dart';
 import '../xmpp/replies.dart';
@@ -421,6 +422,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
             );
           }),
         );
+      case MessageAction.forward:
+        await _forwardMessage(message, body);
       case MessageAction.edit:
         setState(() {
           _editingId = message.stanzaId;
@@ -452,6 +455,57 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     }
     await db.markRetracted(message.stanzaId);
     if (mounted) setState(() {});
+  }
+
+  /// Forwards [body] from this conversation into another one.
+  ///
+  /// Sent again as a new, re-encrypted message rather than reusing the
+  /// original stanza: a wrapped stanza carries encryption meant for somebody
+  /// else, so forwarding by reuse would either fail silently or hand the new
+  /// recipient the previous conversation's keys.
+  Future<void> _forwardMessage(Message message, String body) async {
+    if (!mounted) return;
+    final target = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => ForwardTargetSheet(
+        items: [
+          ForwardItem(body: body, chatJid: widget.chatJid),
+        ],
+      ),
+    );
+    if (target == null || !mounted) return;
+    // Refuse to forward into a blocked conversation: the user blocked them,
+    // and the act of forwarding is a message to them.
+    if (ref.read(isBlockedProvider(target))) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Unblock $target before forwarding to them.')),
+      );
+      return;
+    }
+
+    final track = await ref.read(chatTrackProvider(target).future);
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+    final outcome = await forwardMessages(
+      ref.read(xmppServiceProvider),
+      toJid: JID.fromString(target).toBare(),
+      items: [ForwardItem(body: body, chatJid: widget.chatJid)],
+      track: track,
+    );
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          outcome.ok
+              ? 'Forwarded to $target'
+              : 'Forwarded ${outcome.forwarded}, then stopped: the $target '
+                  'track cannot be used right now.',
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (outcome.ok) navigator.pop();
   }
 
   /// Sends a correction for [_editingId] and stores it.
