@@ -26,18 +26,32 @@ final capabilityServiceProvider = Provider<CapabilityService>((ref) {
     ourDeviceId: () async => ref.read(xmppServiceProvider).omemo?.getDeviceId(),
   );
   // Let the connection consult this when deciding whether to encrypt.
-  ref.read(xmppServiceProvider).attachCapabilities(service);
+  // Done in a side-effecting provider rather than inside the factory, so
+  // the factory itself stays pure (Riverpod may call it more than once).
   return service;
 });
 
+/// Wires the capability service into the connection exactly once.
+final Provider<void> _capabilityWiringProvider = Provider<void>((ref) {
+  final service = ref.watch(capabilityServiceProvider);
+  final xmpp = ref.watch(xmppServiceProvider);
+  xmpp.attachCapabilities(service);
+  final sub = xmpp.capabilityChanges.listen((jid) {
+    ref.read(capabilityServiceProvider).invalidate(jid);
+  });
+  ref.onDispose(sub.cancel);
+});
+
 /// The dual-track managers, available once the connection is up.
-final dualTrackManagerProvider = Provider<DualTrackManager?>((ref) {
-  final moxxOmemo = ref.watch(xmppServiceProvider).moxxOmemo;
-  if (moxxOmemo == null) return null;
-  final connection = ref.watch(xmppServiceProvider);
+final Provider<DualTrackManager?> dualTrackManagerProvider = Provider<DualTrackManager?>((ref) {
+  ref.watch(_capabilityWiringProvider);
+  final xmpp = ref.watch(xmppServiceProvider);
+  final moxxOmemo = xmpp.moxxOmemo;
+  final pubsub = xmpp.pubsub;
+  if (moxxOmemo == null || pubsub == null) return null;
   return DualTrackManager(
     aTrack: moxxOmemo,
-    pubsubOf: () => connection.pubsub!,
+    pubsubOf: () => pubsub,
   );
 });
 
