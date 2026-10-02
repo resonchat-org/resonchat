@@ -102,6 +102,15 @@ final chatsProvider = StreamProvider<List<Chat>>(
 );
 
 /// Last message preview for the chat list row.
+/// One chat row, or null while loading / unknown.
+final chatProvider = FutureProvider.family<Chat?, String>((ref, chatJid) {
+  return ref
+      .watch(databaseProvider)
+      .watchChats()
+      .first
+      .then((all) => all.where((c) => c.jid == chatJid).firstOrNull);
+});
+
 final lastMessageProvider = StreamProvider.family<String?, String>(
   (ref, chatJid) => ref.watch(databaseProvider).watchLastMessage(chatJid),
 );

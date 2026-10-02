@@ -189,9 +189,26 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         titleSpacing: 0,
         title: Row(
           children: [
-            const CircleAvatar(
-              radius: TgDimens.avatarChat / 2,
-              child: Icon(Icons.person, size: 20),
+            // Tapping the avatar opens the profile, as in every other
+            // messenger; an inert avatar is a dead end.
+            GestureDetector(
+              onTap: () =>
+                  Navigator.of(context).pushNamed('/profile', arguments: widget.chatJid),
+              child: Hero(
+                tag: 'avatar-${widget.chatJid}',
+                child: CircleAvatar(
+                  radius: TgDimens.avatarChat / 2,
+                  backgroundColor: tg.accent.withValues(alpha: 0.18),
+                  child: Text(
+                    widget.chatJid.isEmpty ? '?' : widget.chatJid[0].toUpperCase(),
+                    style: TextStyle(
+                      color: tg.accent,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ),
             ),
             const SizedBox(width: 10),
             Expanded(

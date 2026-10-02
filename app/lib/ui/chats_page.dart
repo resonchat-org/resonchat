@@ -190,15 +190,20 @@ class _ChatRow extends ConsumerWidget {
         ),
         child: Row(
           children: [
-            CircleAvatar(
-              radius: TgDimens.avatarChats / 2,
-              backgroundColor: tg.accent.withValues(alpha: 0.18),
-              child: Text(
-                title.isEmpty ? '?' : title[0].toUpperCase(),
-                style: TextStyle(
-                  color: tg.accent,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w500,
+            // Shared element with the chat page's avatar, so opening a
+            // conversation carries the avatar across instead of cutting.
+            Hero(
+              tag: 'avatar-${chat.jid}',
+              child: CircleAvatar(
+                radius: TgDimens.avatarChats / 2,
+                backgroundColor: tg.accent.withValues(alpha: 0.18),
+                child: Text(
+                  title.isEmpty ? '?' : title[0].toUpperCase(),
+                  style: TextStyle(
+                    color: tg.accent,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
             ),

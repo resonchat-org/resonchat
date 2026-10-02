@@ -239,6 +239,14 @@ class AppDatabase extends _$AppDatabase {
     });
   }
 
+  /// Removes every stored message of one conversation from this device.
+  ///
+  /// The server is untouched: the other side keeps its copy, and archived
+  /// messages will come back on the next MAM fetch. That distinction is why
+  /// the UI words this as "clear history on this device".
+  Future<int> clearChatMessages(String chatJid) =>
+      (delete(messages)..where((m) => m.chatJid.equals(chatJid))).go();
+
   /// Marks one of our outgoing messages as delivered (XEP-0184).
   /// Returns the number of rows updated (0 when the id is unknown).
   Future<int> markDelivered(String chatJid, String stanzaId) {

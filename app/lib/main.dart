@@ -13,6 +13,7 @@ import 'ui/chats_page.dart';
 import 'ui/login_page.dart';
 import 'ui/chat_page.dart';
 import 'ui/security_page.dart';
+import 'ui/profile_page.dart';
 import 'ui/settings_page.dart';
 import 'ui/theme.dart';
 
@@ -60,6 +61,8 @@ class App extends StatelessWidget {
         '/login': (_) => const LoginPage(),
         '/chats': (_) => const ChatsPage(),
         '/chat': (ctx) => ChatPage(
+            chatJid: ModalRoute.of(ctx)!.settings.arguments! as String),
+        '/profile': (ctx) => ProfilePage(
             chatJid: ModalRoute.of(ctx)!.settings.arguments! as String),
         '/encryption': (ctx) => SecurityPage(
             chatJid: ModalRoute.of(ctx)!.settings.arguments! as String),
