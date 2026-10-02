@@ -520,7 +520,7 @@ packages:
     source: hosted
     version: "2.1.0"
   moxlib:
-    dependency: "direct overridden"
+    dependency: "direct main"
     description:
       path: "../packages/moxlib"
       relative: true

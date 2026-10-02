@@ -19,6 +19,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../omemo/track.dart';
 import '../state/providers.dart';
 import '../store/database.dart';
+import 'contact_avatar.dart';
 import 'theme.dart';
 
 /// The two swipe gestures on a chat row.
@@ -88,20 +89,10 @@ class ChatRow extends ConsumerWidget {
           ),
           child: Row(
             children: [
-              Hero(
-                tag: 'avatar-${chat.jid}',
-                child: CircleAvatar(
-                  radius: TgDimens.avatarChats / 2,
-                  backgroundColor: tg.accent.withValues(alpha: 0.18),
-                  child: Text(
-                    title.isEmpty ? '?' : title[0].toUpperCase(),
-                    style: TextStyle(
-                      color: tg.accent,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
+              ContactAvatar(
+                jid: chat.jid,
+                title: title,
+                hero: true,
               ),
               const SizedBox(width: 12),
               Expanded(

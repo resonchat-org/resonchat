@@ -13,6 +13,9 @@
       "sdk": "flutter"
     },
 
+    "moxlib": {
+      "path": "../packages/moxlib"
+    },
     "moxxmpp": {
       "path": "../packages/moxxmpp/packages/moxxmpp"
     },
@@ -62,11 +65,11 @@
   },
 
   "dependency_overrides": {
-    "moxlib": {
-      "path": "../packages/moxlib"
-    },
     "omemo_dart": {
       "path": "../packages/omemo_dart"
+    },
+    "moxlib": {
+      "path": "../packages/moxlib"
     },
     "moxxmpp": {
       "path": "../packages/moxxmpp/packages/moxxmpp"

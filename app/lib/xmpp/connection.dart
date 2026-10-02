@@ -628,6 +628,10 @@ class XmppService {
   /// does not wrap (roster edits, presence, diagnostics).
   XmppConnection? get connection => _connection;
 
+  /// The XEP-0084 avatar manager, or null before connecting.
+  UserAvatarManager? get avatarManager => _connection
+      ?.getManagerById<UserAvatarManager>(userAvatarManager);
+
   /// Our own bare JID, or null when not connected.
   ///
   /// Taken from the live session rather than stored, so a reconnect to a
@@ -759,6 +763,9 @@ class XmppService {
       // track the sender used, so every encrypted message from another client
       // would be labelled as unencrypted.
       EmeManager(),
+      // XEP-0084 avatars. Needs the PubSub manager, which is why it is
+      // registered alongside everything else rather than lazily.
+      UserAvatarManager(),
       // XEP-0444 reactions, plus the stable-id manager they depend on: a
       // reaction addresses a message by its origin-id.
       StableIdManager(),

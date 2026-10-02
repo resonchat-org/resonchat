@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -11,6 +12,7 @@ import '../omemo/dual_track_manager.dart';
 import '../omemo/protocol.dart';
 import '../omemo/track.dart';
 import '../store/database.dart';
+import '../xmpp/avatar.dart';
 import '../xmpp/blocking.dart';
 import '../xmpp/reactions.dart';
 import '../store/omemo_device_store.dart';
@@ -214,6 +216,39 @@ final chatMessageSearchProvider =
   if (args.needle.trim().isEmpty) return Stream.value(const []);
   return ref.watch(databaseProvider).searchInChat(args.chatJid, args.needle);
 });
+
+/// One contact's avatar, fetched once and re-fetched only when its hash moves.
+///
+/// An [avatarRevision] is passed as `ref.watch`'s argument so an avatar push
+/// invalidates every avatar at once without the caller having to know which
+/// contacts changed.
+final contactAvatarProvider =
+    FutureProvider.family<Uint8List?, String>((ref, jid) async {
+  ref.watch(avatarRevisionProvider);
+  final xmpp = ref.watch(xmppServiceProvider);
+  final manager = xmpp.avatarManager;
+  if (manager == null) return null;
+  final db = ref.watch(databaseProvider);
+
+  final id = await latestAvatarId(manager, JID.fromString(jid).toBare());
+  if (id == null) return null;
+  // Same item id as last time means the bytes are the same, and the fetch is
+  // the expensive part.
+  if (await lastAvatarHash(db, jid) == id) {
+    return _avatarBlobCache[jid];
+  }
+  final avatar = await fetchAvatar(manager, JID.fromString(jid).toBare(), id: id);
+  if (avatar == null) return null;
+  await noteAvatarChanged(db, jid, id);
+  _avatarBlobCache[jid] = avatar.bytes;
+  return avatar.bytes;
+});
+
+/// Bumped when any contact republishes their avatar.
+final avatarRevisionProvider = StateProvider<int>((ref) => 0);
+
+/// Bytes already fetched this session, so a re-render never re-fetches.
+final _avatarBlobCache = <String, Uint8List>{};
 
 /// Archived conversations, most recent first.
 final archivedChatsProvider = StreamProvider<List<Chat>>(

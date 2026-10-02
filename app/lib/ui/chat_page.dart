@@ -23,6 +23,7 @@ import '../xmpp/forwarding.dart';
 import '../xmpp/reactions.dart';
 import '../xmpp/retraction.dart';
 import '../xmpp/replies.dart';
+import 'contact_avatar.dart';
 import 'message_actions.dart';
 import 'search.dart';
 import 'message_bubble.dart';
@@ -627,20 +628,11 @@ class _ChatPageState extends ConsumerState<ChatPage> {
             GestureDetector(
               onTap: () =>
                   Navigator.of(context).pushNamed('/profile', arguments: widget.chatJid),
-              child: Hero(
-                tag: 'avatar-${widget.chatJid}',
-                child: CircleAvatar(
-                  radius: TgDimens.avatarChat / 2,
-                  backgroundColor: tg.accent.withValues(alpha: 0.18),
-                  child: Text(
-                    widget.chatJid.isEmpty ? '?' : widget.chatJid[0].toUpperCase(),
-                    style: TextStyle(
-                      color: tg.accent,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
+              child: ContactAvatar(
+                jid: widget.chatJid,
+                title: widget.chatJid,
+                radius: TgDimens.avatarChat / 2,
+                hero: true,
               ),
             ),
             const SizedBox(width: 10),
