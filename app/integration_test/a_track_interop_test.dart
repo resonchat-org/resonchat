@@ -99,13 +99,68 @@ void main() {
       await a.requestSubscription(otherOfB);
       await b.requestSubscription(otherOfA);
 
-      // Both sides approve whatever arrives, so the relationship settles as
-      // mutual. Without that, conversations.im answers
-      // "auth/forbidden: Access denied by service policy" and nothing is
-      // ever delivered - which is easy to mistake for a crypto bug.
-      await Future<void>.delayed(const Duration(seconds: 8));
-      check('A approved a request from B', true);
-      check('B approved a request from A', true);
+      // Both sides approve explicitly. The client stopped auto-approving — a
+      // request is now the user's decision — so this test has to make the
+      // decision itself. It used to be able to assert `true` unconditionally
+      // because the client approved everything behind its back, which is
+      // precisely the behaviour that was wrong.
+      //
+      // Polled from the pending *set* rather than listened for on the stream:
+      // the request may well have arrived before anything was listening, and a
+      // broadcast stream delivers to whoever is there at the time.
+      var approvedA = false;
+      var approvedB = false;
+      final settleUntil = DateTime.now().add(const Duration(seconds: 25));
+      while (DateTime.now().isBefore(settleUntil)) {
+        if (!approvedA) {
+          final pending = a.pendingIncomingRequests;
+          if (pending.isNotEmpty) {
+            for (final jid in pending) {
+              await a.acceptSubscription(JID.fromString(jid));
+            }
+            approvedA = true;
+          }
+        }
+        if (!approvedB) {
+          final pending = b.pendingIncomingRequests;
+          if (pending.isNotEmpty) {
+            for (final jid in pending) {
+              await b.acceptSubscription(JID.fromString(jid));
+            }
+            approvedB = true;
+          }
+        }
+        if (approvedA && approvedB) break;
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+      }
+      // The invariant, stated as what is actually true: whatever arrived has
+      // been dealt with. Nothing is left holding a request the user never saw.
+      //
+      // Note that a request may legitimately not arrive at all — these accounts
+      // already have each other in their rosters from previous runs, and a
+      // server does not re-send a subscription it has already granted. So
+      // "approved something" is not assertable here; "left nothing pending" is,
+      // and delivery below is what proves the relationship actually works.
+      check(
+        'no request left unapproved on A',
+        a.pendingIncomingRequests.isEmpty,
+        'pending: ${a.pendingIncomingRequests}',
+      );
+      check(
+        'no request left unapproved on B',
+        b.pendingIncomingRequests.isEmpty,
+        'pending: ${b.pendingIncomingRequests}',
+      );
+      expect(a.pendingIncomingRequests, isEmpty);
+      expect(b.pendingIncomingRequests, isEmpty);
+      if (!approvedA || !approvedB) {
+        // ignore: avoid_print
+        print(
+          'NOTE: no subscription request arrived '
+          '(A approved=$approvedA, B approved=$approvedB) — the accounts are '
+          'almost certainly already mutual, so there is nothing to approve.',
+        );
+      }
 
       // --- devices and bundles ------------------------------------------
       final idA = await a.ensureOmemoDevice();
@@ -135,7 +190,7 @@ void main() {
       // --- listen on both ends -------------------------------------------
       final toB = <InboundMessage>[];
       final toA = <InboundMessage>[];
-      final subB = b.inbound.listen((m) {
+      final inboundB = b.inbound.listen((m) {
         toB.add(m);
         // ignore: avoid_print
         print('[B] from=${m.from} body="${m.body}" err=${m.encryptionError}');
@@ -186,7 +241,7 @@ void main() {
         }
       }
       await subA.cancel();
-      await subB.cancel();
+      await inboundB.cancel();
       await traceSub.cancel();
 
       check(

@@ -14,6 +14,7 @@ import '../xmpp/connection.dart';
 import '../state/providers.dart';
 import 'archive_page.dart';
 import 'chat_row.dart';
+import 'requests_page.dart';
 import 'room_sheet.dart';
 import 'search.dart';
 import 'theme.dart';
@@ -93,6 +94,13 @@ class _ChatsPageState extends ConsumerState<ChatsPage> {
             tooltip: 'Search messages',
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute<void>(builder: (_) => const SearchPage()),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.person_add_alt),
+            tooltip: 'Contact requests',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const RequestsPage()),
             ),
           ),
           IconButton(

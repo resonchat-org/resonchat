@@ -285,6 +285,12 @@ final archivedChatsProvider = StreamProvider<List<Chat>>(
   (ref) => ref.watch(databaseProvider).watchArchivedChats(),
 );
 
+/// Pending contact requests, newest first.
+final subscriptionRequestsProvider =
+    StreamProvider<List<SubscriptionRequest>>(
+  (ref) => ref.watch(databaseProvider).watchSubscriptionRequests(),
+);
+
 /// The unsent text in [chatJid], or null.
 final draftProvider = FutureProvider.family<String?, String>((ref, chatJid) {
   ref.watch(draftRevisionProvider);

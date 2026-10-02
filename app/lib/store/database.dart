@@ -168,6 +168,25 @@ class BlockedContacts extends Table {
   Set<Column> get primaryKey => {jid};
 }
 
+/// A subscription request awaiting a decision.
+///
+/// Both directions in one table, distinguished by [outgoing]: "somebody wants
+/// to see my presence" and "I am waiting for somebody to let me see theirs" are
+/// the same kind of row with opposite answers, and keeping them together means
+/// the list screen can show both without two queries that might disagree.
+class SubscriptionRequests extends Table {
+  TextColumn get jid => text()();
+
+  /// False for a request from somebody, true for one we sent.
+  BoolColumn get outgoing => boolean().withDefault(const Constant(false))();
+
+  DateTimeColumn get askedAt =>
+      dateTime().withDefault(currentDateAndTime)();
+
+  @override
+  Set<Column> get primaryKey => {jid, outgoing};
+}
+
 /// One message the user pinned inside a conversation.
 ///
 /// Pinned client-side: there is no standard way to tell a server "this message
@@ -261,6 +280,7 @@ class Meta extends Table {
       RosterEntries,
       BlockedContacts,
       PinnedMessages,
+      SubscriptionRequests,
       PendingCorrections,
       Reactions,
       Meta,
@@ -270,7 +290,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
   @override
-  int get schemaVersion => 13;
+  int get schemaVersion => 14;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -283,6 +303,15 @@ class AppDatabase extends _$AppDatabase {
             await customStatement(
               "ALTER TABLE messages ADD COLUMN delivery_error TEXT NOT NULL "
               "DEFAULT ''",
+            );
+          }
+          if (from < 14) {
+            await customStatement(
+              'CREATE TABLE IF NOT EXISTS subscription_requests ('
+              'jid TEXT NOT NULL, '
+              'outgoing INTEGER NOT NULL DEFAULT 0, '
+              'asked_at INTEGER NOT NULL DEFAULT 0, '
+              'PRIMARY KEY (jid, outgoing))',
             );
           }
           if (from < 13) {
@@ -787,6 +816,41 @@ class AppDatabase extends _$AppDatabase {
   /// ends up showing the whole chat list.
   Stream<List<Chat>> watchArchivedChats() =>
       watchChats(includeArchived: true, archivedOnly: true);
+
+  /// Every pending subscription request, newest first.
+  Stream<List<SubscriptionRequest>> watchSubscriptionRequests() => (select(
+        subscriptionRequests,
+      )
+            ..orderBy([(r) => OrderingTerm.desc(r.askedAt)]))
+          .watch();
+
+  /// Records that [jid] asked to subscribe.
+  ///
+  /// Idempotent: the server re-sends the request, and a second row would show
+  /// the user two requests from the same person to decide on.
+  Future<void> addIncomingRequest(String jid) async {
+    await into(subscriptionRequests).insert(
+      SubscriptionRequestsCompanion.insert(jid: jid),
+      mode: InsertMode.insertOrIgnore,
+    );
+  }
+
+  /// Records that we asked [jid] to let us see their presence.
+  Future<void> addOutgoingRequest(String jid) async {
+    await into(subscriptionRequests).insert(
+      SubscriptionRequestsCompanion.insert(jid: jid, outgoing: const Value(true)),
+      mode: InsertMode.insertOrIgnore,
+    );
+  }
+
+  /// Records that [jid]'s request was answered, in either direction.
+  Future<void> resolveRequest(String jid, {required bool outgoing}) async {
+    await (delete(subscriptionRequests)
+          ..where(
+            (r) => r.jid.equals(jid) & r.outgoing.equals(outgoing),
+          ))
+        .go();
+  }
 
   /// The draft for [chatJid], or null when the box is empty.
   ///

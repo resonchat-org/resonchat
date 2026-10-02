@@ -80,6 +80,29 @@ class _AppWiringState extends ConsumerState<AppWiring> {
             ),
       );
     }));
+    // Subscription requests are recorded rather than approved. The list lives
+    // in the store so it survives the process being killed between the request
+    // arriving and the user opening the app to look at it.
+    // Requests the server had already sent before this listener existed, and
+    // any it re-sends after a reconnect. Synced once at startup so the list is
+    // the truth rather than "whatever arrived while we happened to be
+    // listening".
+    unawaited(_syncPendingRequests(ref));
+    for (final jid in xmpp.pendingOutgoingRequests) {
+      unawaited(ref.read(databaseProvider).addOutgoingRequest(jid));
+    }
+
+    _subs.add(xmpp.outgoingRequests.listen((jid) async {
+      await ref
+          .read(databaseProvider)
+          .addOutgoingRequest(jid.toBare().toString());
+    }));
+
+    _subs.add(xmpp.incomingRequests.listen((jid) async {
+      final db = ref.read(databaseProvider);
+      await db.addIncomingRequest(jid.toBare().toString());
+    }));
+
     // XEP-0191: the blocked list lives on the server so another of our
     // devices enforcing it also takes effect here. Loaded once at startup and
     // pushed whenever the server sends a change.
@@ -201,6 +224,22 @@ Future<void> _acceptInbound(WidgetRef ref, InboundMessage msg) async {
     chatJid,
     arrivedAt: msg.archiveTimestamp ?? DateTime.now(),
   );
+}
+
+/// Copies the service's pending requests into the store.
+///
+/// Both directions, and done unconditionally: the point is that the store ends
+/// up holding everything the service knows about, including anything that
+/// arrived before this ran.
+Future<void> _syncPendingRequests(WidgetRef ref) async {
+  final db = ref.read(databaseProvider);
+  final xmpp = ref.read(xmppServiceProvider);
+  for (final jid in xmpp.pendingIncomingRequests) {
+    await db.addIncomingRequest(jid);
+  }
+  for (final jid in xmpp.pendingOutgoingRequests) {
+    await db.addOutgoingRequest(jid);
+  }
 }
 
 /// Reads the block list from the store into the service's in-memory copy.

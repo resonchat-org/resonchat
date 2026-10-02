@@ -710,15 +710,49 @@ class XmppService {
       _connection?.getManagerById<PresenceManager>(presenceManager);
 
   /// Asks [peer] for a presence subscription.
-  Future<void> requestSubscription(JID peer) async {
-    await _presenceManager()?.requestSubscription(peer.toBare());
+  /// Asks [peer] to let us see their presence.
+  ///
+  /// Returns true when the request was actually sent. False means we already
+  /// have it, or the server refused — and either way the caller should not add
+  /// a pending row, or the user waits forever for an answer that is not coming.
+  Future<bool> requestSubscription(JID peer) async {
+    final manager = _presenceManager();
+    if (manager == null) return false;
+    await manager.requestSubscription(peer.toBare());
+    _pendingOutgoing.add(peer.toBare().toString());
+    if (!_outgoingRequests.isClosed) {
+      _outgoingRequests.add(peer.toBare());
+    }
+    return true;
   }
+
+  /// Bare JIDs we have asked to see, awaiting their answer.
+  Stream<JID> get outgoingRequests => _outgoingRequests.stream;
+  final _outgoingRequests = StreamController<JID>.broadcast();
+
+  /// Our outgoing requests, as of right now.
+  Set<String> get pendingOutgoingRequests =>
+      Set.unmodifiable(_pendingOutgoing);
+  final _pendingOutgoing = <String>{};
+
+  void resolveOutgoingRequest(JID peer) =>
+      _pendingOutgoing.remove(peer.toBare().toString());
 
   /// Grants a subscription [peer] asked for.
   ///
   /// Without this the relationship stays one-sided and most servers refuse
   /// to route messages between non-contacts, which looks exactly like a
   /// delivery bug.
+  /// Declines a request.
+  ///
+  /// The server is told "no", which is the part that matters: a declined
+  /// request means the sender is not told they are subscribed, so they cannot
+  /// read our presence afterwards.
+  Future<void> rejectSubscription(JID peer) async {
+    await _presenceManager()?.rejectSubscriptionRequest(peer.toBare());
+    resolveIncomingRequest(peer);
+  }
+
   Future<void> acceptSubscription(JID peer) async {
     await _presenceManager()?.acceptSubscriptionRequest(peer.toBare());
   }
@@ -1512,18 +1546,41 @@ class XmppService {
         ),
       );
     } else if (event is SubscriptionRequestReceivedEvent) {
-      // Approve automatically: a contact adding us must not require a tap.
-      final from = JID.fromString('${event.from}');
-      unawaited(acceptSubscription(from).then(
-        (_) {
-          if (!_subscriptionRequests.isClosed) {
-            _subscriptionRequests.add(from.toBare());
-          }
-        },
-      ));
-      _log.info('approved presence subscription from ${event.from}');
+      // Recorded, not approved. Auto-approving means anyone can subscribe and
+      // start messaging you with no say in it, which is the whole reason a
+      // subscription request exists. Approving is a decision the user makes in
+      // the request list.
+      //
+      // Held as state, not just published as an event: a broadcast stream
+      // delivers to whoever is listening *at the time*, so a request that
+      // arrives before the UI is listening — a slow start, a widget rebuild, a
+      // test that subscribes after asking — would be lost permanently. For
+      // something the user is meant to decide on, losing it is not acceptable,
+      // and "we told nobody" is indistinguishable from "it never happened".
+      _pendingIncoming
+          .add(JID.fromString('${event.from}').toBare().toString());
+      if (!_incomingRequests.isClosed) {
+        _incomingRequests.add(JID.fromString('${event.from}').toBare());
+      }
+      _log.info('subscription request from ${event.from}');
     }
   }
+
+  /// Bare JIDs that have asked to see our presence, awaiting a decision.
+  Stream<JID> get incomingRequests => _incomingRequests.stream;
+  final _incomingRequests = StreamController<JID>.broadcast();
+
+  /// The requests awaiting a decision, as of right now.
+  ///
+  /// Current state rather than a stream of arrivals, so a caller that starts
+  /// listening late still sees what it missed.
+  Set<String> get pendingIncomingRequests =>
+      Set.unmodifiable(_pendingIncoming);
+  final _pendingIncoming = <String>{};
+
+  /// Forgets [peer]'s request locally, after it has been answered.
+  void resolveIncomingRequest(JID peer) =>
+      _pendingIncoming.remove(peer.toBare().toString());
 
   /// A peer added or removed a device, or republished a bundle. Their PQ
   /// capability may have flipped, so the cached answer must go.

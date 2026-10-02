@@ -2470,6 +2470,276 @@ class PinnedMessagesCompanion extends UpdateCompanion<PinnedMessage> {
   }
 }
 
+class $SubscriptionRequestsTable extends SubscriptionRequests
+    with TableInfo<$SubscriptionRequestsTable, SubscriptionRequest> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SubscriptionRequestsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _jidMeta = const VerificationMeta('jid');
+  @override
+  late final GeneratedColumn<String> jid = GeneratedColumn<String>(
+    'jid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _outgoingMeta = const VerificationMeta(
+    'outgoing',
+  );
+  @override
+  late final GeneratedColumn<bool> outgoing = GeneratedColumn<bool>(
+    'outgoing',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("outgoing" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _askedAtMeta = const VerificationMeta(
+    'askedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> askedAt = GeneratedColumn<DateTime>(
+    'asked_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [jid, outgoing, askedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'subscription_requests';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<SubscriptionRequest> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('jid')) {
+      context.handle(
+        _jidMeta,
+        jid.isAcceptableOrUnknown(data['jid']!, _jidMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_jidMeta);
+    }
+    if (data.containsKey('outgoing')) {
+      context.handle(
+        _outgoingMeta,
+        outgoing.isAcceptableOrUnknown(data['outgoing']!, _outgoingMeta),
+      );
+    }
+    if (data.containsKey('asked_at')) {
+      context.handle(
+        _askedAtMeta,
+        askedAt.isAcceptableOrUnknown(data['asked_at']!, _askedAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {jid, outgoing};
+  @override
+  SubscriptionRequest map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SubscriptionRequest(
+      jid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}jid'],
+      )!,
+      outgoing: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}outgoing'],
+      )!,
+      askedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}asked_at'],
+      )!,
+    );
+  }
+
+  @override
+  $SubscriptionRequestsTable createAlias(String alias) {
+    return $SubscriptionRequestsTable(attachedDatabase, alias);
+  }
+}
+
+class SubscriptionRequest extends DataClass
+    implements Insertable<SubscriptionRequest> {
+  final String jid;
+
+  /// False for a request from somebody, true for one we sent.
+  final bool outgoing;
+  final DateTime askedAt;
+  const SubscriptionRequest({
+    required this.jid,
+    required this.outgoing,
+    required this.askedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['jid'] = Variable<String>(jid);
+    map['outgoing'] = Variable<bool>(outgoing);
+    map['asked_at'] = Variable<DateTime>(askedAt);
+    return map;
+  }
+
+  SubscriptionRequestsCompanion toCompanion(bool nullToAbsent) {
+    return SubscriptionRequestsCompanion(
+      jid: Value(jid),
+      outgoing: Value(outgoing),
+      askedAt: Value(askedAt),
+    );
+  }
+
+  factory SubscriptionRequest.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SubscriptionRequest(
+      jid: serializer.fromJson<String>(json['jid']),
+      outgoing: serializer.fromJson<bool>(json['outgoing']),
+      askedAt: serializer.fromJson<DateTime>(json['askedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'jid': serializer.toJson<String>(jid),
+      'outgoing': serializer.toJson<bool>(outgoing),
+      'askedAt': serializer.toJson<DateTime>(askedAt),
+    };
+  }
+
+  SubscriptionRequest copyWith({
+    String? jid,
+    bool? outgoing,
+    DateTime? askedAt,
+  }) => SubscriptionRequest(
+    jid: jid ?? this.jid,
+    outgoing: outgoing ?? this.outgoing,
+    askedAt: askedAt ?? this.askedAt,
+  );
+  SubscriptionRequest copyWithCompanion(SubscriptionRequestsCompanion data) {
+    return SubscriptionRequest(
+      jid: data.jid.present ? data.jid.value : this.jid,
+      outgoing: data.outgoing.present ? data.outgoing.value : this.outgoing,
+      askedAt: data.askedAt.present ? data.askedAt.value : this.askedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SubscriptionRequest(')
+          ..write('jid: $jid, ')
+          ..write('outgoing: $outgoing, ')
+          ..write('askedAt: $askedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(jid, outgoing, askedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SubscriptionRequest &&
+          other.jid == this.jid &&
+          other.outgoing == this.outgoing &&
+          other.askedAt == this.askedAt);
+}
+
+class SubscriptionRequestsCompanion
+    extends UpdateCompanion<SubscriptionRequest> {
+  final Value<String> jid;
+  final Value<bool> outgoing;
+  final Value<DateTime> askedAt;
+  final Value<int> rowid;
+  const SubscriptionRequestsCompanion({
+    this.jid = const Value.absent(),
+    this.outgoing = const Value.absent(),
+    this.askedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  SubscriptionRequestsCompanion.insert({
+    required String jid,
+    this.outgoing = const Value.absent(),
+    this.askedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : jid = Value(jid);
+  static Insertable<SubscriptionRequest> custom({
+    Expression<String>? jid,
+    Expression<bool>? outgoing,
+    Expression<DateTime>? askedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (jid != null) 'jid': jid,
+      if (outgoing != null) 'outgoing': outgoing,
+      if (askedAt != null) 'asked_at': askedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  SubscriptionRequestsCompanion copyWith({
+    Value<String>? jid,
+    Value<bool>? outgoing,
+    Value<DateTime>? askedAt,
+    Value<int>? rowid,
+  }) {
+    return SubscriptionRequestsCompanion(
+      jid: jid ?? this.jid,
+      outgoing: outgoing ?? this.outgoing,
+      askedAt: askedAt ?? this.askedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (jid.present) {
+      map['jid'] = Variable<String>(jid.value);
+    }
+    if (outgoing.present) {
+      map['outgoing'] = Variable<bool>(outgoing.value);
+    }
+    if (askedAt.present) {
+      map['asked_at'] = Variable<DateTime>(askedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SubscriptionRequestsCompanion(')
+          ..write('jid: $jid, ')
+          ..write('outgoing: $outgoing, ')
+          ..write('askedAt: $askedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $PendingCorrectionsTable extends PendingCorrections
     with TableInfo<$PendingCorrectionsTable, PendingCorrection> {
   @override
@@ -3318,6 +3588,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     this,
   );
   late final $PinnedMessagesTable pinnedMessages = $PinnedMessagesTable(this);
+  late final $SubscriptionRequestsTable subscriptionRequests =
+      $SubscriptionRequestsTable(this);
   late final $PendingCorrectionsTable pendingCorrections =
       $PendingCorrectionsTable(this);
   late final $ReactionsTable reactions = $ReactionsTable(this);
@@ -3332,6 +3604,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     rosterEntries,
     blockedContacts,
     pinnedMessages,
+    subscriptionRequests,
     pendingCorrections,
     reactions,
     meta,
@@ -4815,6 +5088,195 @@ typedef $$PinnedMessagesTableProcessedTableManager =
       PinnedMessage,
       PrefetchHooks Function()
     >;
+typedef $$SubscriptionRequestsTableCreateCompanionBuilder =
+    SubscriptionRequestsCompanion Function({
+      required String jid,
+      Value<bool> outgoing,
+      Value<DateTime> askedAt,
+      Value<int> rowid,
+    });
+typedef $$SubscriptionRequestsTableUpdateCompanionBuilder =
+    SubscriptionRequestsCompanion Function({
+      Value<String> jid,
+      Value<bool> outgoing,
+      Value<DateTime> askedAt,
+      Value<int> rowid,
+    });
+
+class $$SubscriptionRequestsTableFilterComposer
+    extends Composer<_$AppDatabase, $SubscriptionRequestsTable> {
+  $$SubscriptionRequestsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get jid => $composableBuilder(
+    column: $table.jid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get outgoing => $composableBuilder(
+    column: $table.outgoing,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get askedAt => $composableBuilder(
+    column: $table.askedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$SubscriptionRequestsTableOrderingComposer
+    extends Composer<_$AppDatabase, $SubscriptionRequestsTable> {
+  $$SubscriptionRequestsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get jid => $composableBuilder(
+    column: $table.jid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get outgoing => $composableBuilder(
+    column: $table.outgoing,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get askedAt => $composableBuilder(
+    column: $table.askedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$SubscriptionRequestsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $SubscriptionRequestsTable> {
+  $$SubscriptionRequestsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get jid =>
+      $composableBuilder(column: $table.jid, builder: (column) => column);
+
+  GeneratedColumn<bool> get outgoing =>
+      $composableBuilder(column: $table.outgoing, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get askedAt =>
+      $composableBuilder(column: $table.askedAt, builder: (column) => column);
+}
+
+class $$SubscriptionRequestsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $SubscriptionRequestsTable,
+          SubscriptionRequest,
+          $$SubscriptionRequestsTableFilterComposer,
+          $$SubscriptionRequestsTableOrderingComposer,
+          $$SubscriptionRequestsTableAnnotationComposer,
+          $$SubscriptionRequestsTableCreateCompanionBuilder,
+          $$SubscriptionRequestsTableUpdateCompanionBuilder,
+          (
+            SubscriptionRequest,
+            BaseReferences<
+              _$AppDatabase,
+              $SubscriptionRequestsTable,
+              SubscriptionRequest
+            >,
+          ),
+          SubscriptionRequest,
+          PrefetchHooks Function()
+        > {
+  $$SubscriptionRequestsTableTableManager(
+    _$AppDatabase db,
+    $SubscriptionRequestsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SubscriptionRequestsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SubscriptionRequestsTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$SubscriptionRequestsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> jid = const Value.absent(),
+                Value<bool> outgoing = const Value.absent(),
+                Value<DateTime> askedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => SubscriptionRequestsCompanion(
+                jid: jid,
+                outgoing: outgoing,
+                askedAt: askedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String jid,
+                Value<bool> outgoing = const Value.absent(),
+                Value<DateTime> askedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => SubscriptionRequestsCompanion.insert(
+                jid: jid,
+                outgoing: outgoing,
+                askedAt: askedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$SubscriptionRequestsTable, SubscriptionRequest>(
+                    table,
+                  ),
+                  BaseReferences<
+                    _$AppDatabase,
+                    $SubscriptionRequestsTable,
+                    SubscriptionRequest
+                  >(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$SubscriptionRequestsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $SubscriptionRequestsTable,
+      SubscriptionRequest,
+      $$SubscriptionRequestsTableFilterComposer,
+      $$SubscriptionRequestsTableOrderingComposer,
+      $$SubscriptionRequestsTableAnnotationComposer,
+      $$SubscriptionRequestsTableCreateCompanionBuilder,
+      $$SubscriptionRequestsTableUpdateCompanionBuilder,
+      (
+        SubscriptionRequest,
+        BaseReferences<
+          _$AppDatabase,
+          $SubscriptionRequestsTable,
+          SubscriptionRequest
+        >,
+      ),
+      SubscriptionRequest,
+      PrefetchHooks Function()
+    >;
 typedef $$PendingCorrectionsTableCreateCompanionBuilder =
     PendingCorrectionsCompanion Function({
       required String targetId,
@@ -5350,6 +5812,8 @@ class $AppDatabaseManager {
       $$BlockedContactsTableTableManager(_db, _db.blockedContacts);
   $$PinnedMessagesTableTableManager get pinnedMessages =>
       $$PinnedMessagesTableTableManager(_db, _db.pinnedMessages);
+  $$SubscriptionRequestsTableTableManager get subscriptionRequests =>
+      $$SubscriptionRequestsTableTableManager(_db, _db.subscriptionRequests);
   $$PendingCorrectionsTableTableManager get pendingCorrections =>
       $$PendingCorrectionsTableTableManager(_db, _db.pendingCorrections);
   $$ReactionsTableTableManager get reactions =>
