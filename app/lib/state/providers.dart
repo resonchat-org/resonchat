@@ -11,6 +11,7 @@ import '../omemo/dual_track_manager.dart';
 import '../omemo/protocol.dart';
 import '../store/database.dart';
 import '../store/omemo_device_store.dart';
+import '../xmpp/b_track_manager.dart';
 import '../xmpp/capabilities.dart';
 import '../xmpp/connection.dart';
 
@@ -40,7 +41,9 @@ final dualTrackManagerProvider = Provider<DualTrackManager?>((ref) {
   );
 });
 
-final xmppServiceProvider = Provider<XmppService>((ref) {
+final Provider<XmppService> xmppServiceProvider = Provider<XmppService>((
+  ref,
+) {
   // Device keys are sealed under a Keystore-held key and the sealed blob
   // lives in the database (M5 groundwork).
   return XmppService(
@@ -56,8 +59,20 @@ final xmppServiceProvider = Provider<XmppService>((ref) {
       deleteSecret: () =>
           ref.read(databaseProvider).deleteMetaValue(_deviceBlobKey),
     ),
+    bTrack: ref.read(bTrackManagerProvider),
   );
 });
+
+/// Owns the local PQ device, its bundle publication and PQ messaging.
+///
+/// Resolved lazily through [ref] inside the callbacks, so this provider
+/// can be created before the connection exists without a dependency cycle.
+final Provider<BTrackManager> bTrackManagerProvider = Provider<BTrackManager>(
+  (ref) => BTrackManager(
+    tracks: () => ref.read(dualTrackManagerProvider)!,
+    pubsubOf: () => ref.read(xmppServiceProvider).pubsub,
+  ),
+);
 
 /// Database key holding the sealed OMEMO device blob.
 const _deviceBlobKey = 'omemo_device_blob';

@@ -101,6 +101,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       // Keep the one-time-prekey pool full so new inbound sessions keep
       // forward secrecy.
       await xmpp.replenishPrekeys();
+      // Publish our post-quantum bundle so peers can upgrade to the B track.
+      await xmpp.initialiseBTrack();
       if (mounted) Navigator.of(context).pushReplacementNamed('/chats');
     } catch (e) {
       setState(() => _error = '$e');

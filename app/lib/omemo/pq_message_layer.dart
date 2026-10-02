@@ -58,11 +58,12 @@ class PqMessageLayer {
   final PqDevice ownDevice;
   final PqSessionManager sessions;
 
-  /// Resolves a remote device's X25519 identity key from its published
-  /// bundle. Needed to bind the session to both identities; throws
-  /// [PqDecryptError] when the bundle cannot be fetched, rather than
-  /// proceeding with a weaker binding.
-  final List<int> Function(int deviceId) senderIkOf;
+  /// Resolves a remote device's X25519 identity public key, normally from
+  /// its published bundle (a network round-trip the first time).
+  ///
+  /// Throws [PqDecryptError] when it cannot be fetched, rather than
+  /// proceeding with a weaker session binding.
+  final Future<List<int>> Function(int deviceId) senderIkOf;
 
   final _cipher = AesGcm.with256bits();
 
@@ -175,7 +176,7 @@ class PqMessageLayer {
           senderJid: ownDevice.jid,
           senderDeviceId: message.senderDeviceId,
           kex: entry,
-          senderIkDh: senderIkOf(message.senderDeviceId),
+          senderIkDh: await senderIkOf(message.senderDeviceId),
         );
       } on PqSessionError catch (e) {
         throw PqDecryptError('handshake failed: ${e.message}');

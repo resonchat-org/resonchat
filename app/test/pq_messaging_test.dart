@@ -30,7 +30,7 @@ void main() {
     final bobSessions = PqSessionManager(kem: kem);
     // Bob resolves Alice's identity key from the bundle she published.
     final aliceIk = await alice.ikDh.pk.getBytes();
-    List<int> ikOf(int _) => aliceIk;
+    Future<List<int>> ikOf(int _) async => aliceIk;
 
     final aliceLayer = PqMessageLayer(
       ownDevice: alice,
@@ -78,7 +78,7 @@ void main() {
     final aliceSessions = PqSessionManager(kem: kem);
     final bobSessions = PqSessionManager(kem: kem);
     final aliceIk = await alice.ikDh.pk.getBytes();
-    List<int> ikOf(int _) => aliceIk;
+    Future<List<int>> ikOf(int _) async => aliceIk;
 
     final aliceLayer = PqMessageLayer(
       ownDevice: alice,
@@ -124,7 +124,7 @@ void main() {
 
     final aliceSessions = PqSessionManager(kem: kem);
     final aliceIk = await alice.ikDh.pk.getBytes();
-    List<int> ikOf(int _) => aliceIk;
+    Future<List<int>> ikOf(int _) async => aliceIk;
     final aliceLayer = PqMessageLayer(
       ownDevice: alice,
       sessions: aliceSessions,
@@ -153,12 +153,12 @@ void main() {
     final bob = await device('bob@example.org');
     final bobSessions = PqSessionManager(kem: kem);
     final aliceIk = await alice.ikDh.pk.getBytes();
-    List<int> ikOf(int _) => aliceIk;
+    Future<List<int>> ikOf(int _) async => aliceIk;
 
     final aliceLayer = PqMessageLayer(
       ownDevice: alice,
       sessions: PqSessionManager(kem: kem),
-      senderIkOf: (_) => aliceIk,
+      senderIkOf: (_) async => aliceIk,
       random: Random(7),
     );
     final bobLayer = PqMessageLayer(
@@ -209,7 +209,7 @@ void main() {
     final out = await PqMessageLayer(
       ownDevice: alice,
       sessions: aliceSessions,
-      senderIkOf: (_) => aliceIk,
+      senderIkOf: (_) async => aliceIk,
       random: Random(9),
     ).encrypt(plaintext: 'to all my devices', recipients: [bob, bob2]);
 
@@ -240,12 +240,12 @@ void main() {
     final bob = await device('bob@example.org');
     final bobSessions = PqSessionManager(kem: kem);
     final aliceIk = await alice.ikDh.pk.getBytes();
-    List<int> ikOf(int _) => aliceIk;
+    Future<List<int>> ikOf(int _) async => aliceIk;
 
     final layer = PqMessageLayer(
       ownDevice: alice,
       sessions: PqSessionManager(kem: kem),
-      senderIkOf: (_) => aliceIk,
+      senderIkOf: (_) async => aliceIk,
       random: Random(10),
     );
     final bobLayer = PqMessageLayer(

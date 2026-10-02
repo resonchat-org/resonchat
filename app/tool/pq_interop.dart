@@ -109,12 +109,12 @@ Future<void> main(List<String> args) async {
     final layerA = PqMessageLayer(
       ownDevice: a.device,
       sessions: sessionsA,
-      senderIkOf: (_) => bIk,
+      senderIkOf: (_) async => bIk,
     );
     final layerB = PqMessageLayer(
       ownDevice: b.device,
       sessions: sessionsB,
-      senderIkOf: (_) => aIk,
+      senderIkOf: (_) async => aIk,
     );
 
     const plaintext = 'PQ interop over XMPP 🔐';

@@ -14,7 +14,9 @@ import 'package:omemo_dart/omemo_dart.dart' as omemo_dart;
 
 import '../omemo/protocol.dart';
 import '../store/omemo_device_store.dart';
+import 'b_track_manager.dart';
 import 'capabilities.dart';
+import 'pq_stanza.dart';
 
 /// Decrypted inbound chat message, either track or plaintext.
 class InboundMessage {
@@ -85,6 +87,7 @@ class XmppService {
   XmppService({
     ShouldEncrypt? shouldEncrypt,
     this.deviceStore,
+    this.bTrack,
   }) : _shouldEncrypt = shouldEncrypt ?? ((_) async => false);
 
   final Logger _log = Logger('XmppService');
@@ -93,6 +96,10 @@ class XmppService {
   /// Where our OMEMO device keys are persisted. When null the device is
   /// generated fresh each launch (development fallback only).
   final OmemoDeviceStore? deviceStore;
+
+  /// B-track (PQ-OMEMO) support. Null disables the PQ track entirely and
+  /// leaves the app on standard OMEMO.
+  final BTrackManager? bTrack;
 
   XmppConnection? _connection;
   PubSubManager? _pubsub;
@@ -365,6 +372,20 @@ class XmppService {
     return (await om.getDevice()).opks.length;
   }
 
+  /// Creates and publishes our B-track (PQ) device.
+  ///
+  /// Safe to call when the B track is unavailable; returns false then.
+  Future<bool> initialiseBTrack() async {
+    final track = bTrack;
+    if (track == null) return false;
+    final bare = _connection?.connectionSettings.jid.toBare().toString();
+    if (bare == null) return false;
+    return track.initialise(bare);
+  }
+
+  /// Whether our PQ bundle is published and ready to use.
+  bool get bTrackReady => bTrack?.ready ?? false;
+
   /// Fetches the roster and returns the entries (also cached by drift).
   Future<List<XmppRosterItem>> requestRoster() async {
     final rm = _connection?.getManagerById<RosterManager>(rosterManager);
@@ -375,13 +396,58 @@ class XmppService {
         : const [];
   }
 
+  /// Encrypts and sends [body] on the PQ track when [to] is fully PQ-capable,
+  /// otherwise returns null so the caller can fall back to the A track.
+  ///
+  /// Never sends an encrypted message that a recipient cannot open: if the
+  /// peer has no PQ devices, or encryption fails for every device, we
+  /// return null instead of emitting unreadable ciphertext (invariant 1).
+  Future<String?> sendPqMessage(
+    JID to,
+    String body, {
+    bool requestReceipt = true,
+  }) async {
+    final track = bTrack;
+    if (track == null || !track.ready) return null;
+
+    final encrypted = await track.encryptIfPossible(
+      peerJid: to.toBare().toString(),
+      plaintext: body,
+    );
+    if (encrypted == null) return null;
+
+    final mm = _connection?.getManagerById<MessageManager>(messageManager);
+    if (mm == null) throw StateError('not connected');
+    final id = _nextStanzaId();
+
+    await mm.sendMessage(
+      to,
+      TypedMap<StanzaHandlerExtension>.fromList([
+        MessageBodyData(encryptedBodyFallback),
+        MessageIdData(id),
+        if (requestReceipt) const MessageDeliveryReceiptData(true),
+        PqEncryptedData(encrypted),
+      ]),
+      type: 'chat',
+    );
+    return id;
+  }
+
   /// Sends a chat message, requesting a delivery receipt (XEP-0184).
   /// Returns the stanza id used for the receipt, or null on failure.
   Future<String?> sendPlainText(
     JID to,
     String body, {
     bool requestReceipt = true,
+    bool preferPq = true,
   }) async {
+    // Try the B track first; it declines (returns null) unless every
+    // recipient device is PQ-capable, so a standard peer still gets the
+    // A track below.
+    if (preferPq) {
+      final pqId = await sendPqMessage(to, body, requestReceipt: requestReceipt);
+      if (pqId != null) return pqId;
+    }
     final mm = _connection?.getManagerById<MessageManager>(messageManager);
     if (mm == null) throw StateError('not connected');
     final id = _nextStanzaId();

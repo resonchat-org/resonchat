@@ -32,6 +32,19 @@ class DualTrackManager {
   final OmemoManager aTrack;
   final PubSubManager Function() pubsubOf;
 
+  /// X25519 identity public key of one B-track device, taken from its
+  /// bundle. Returns null when the device publishes no usable bundle.
+  ///
+  /// This is what binds a session to both identities (invariant 4: the
+  /// same key the A track fingerprints).
+  Future<List<int>?> deviceById(JID jid, int deviceId) async {
+    final bundle = await getPqBundle(jid, deviceId);
+    if (bundle == null) return null;
+    final device = await deviceFromBundle(bundle);
+    if (device == null) return null;
+    return await device.ikDh.pk.getBytes();
+  }
+
   /// Loads every B-track device of [jid] as a [PqDevice], ready to
   /// encrypt to.
   ///
