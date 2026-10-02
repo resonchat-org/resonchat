@@ -18,6 +18,7 @@ import '../state/app_wiring.dart';
 import '../state/providers.dart';
 import '../store/database.dart';
 import '../xmpp/connection.dart';
+import '../xmpp/reactions.dart';
 import 'message_bubble.dart';
 import 'track_dialogs.dart';
 import 'theme.dart';
@@ -268,6 +269,73 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     }
   }
 
+  /// Adds or withdraws [emoji] on the message addressed by [targetId].
+  ///
+  /// Withdrawing sends an *empty* set, not a set without that emoji: XEP-0444
+  /// broadcasts are complete lists, so anything else leaves the withdrawn row
+  /// on the sender's device forever.
+  ///
+  /// Optimistic in both directions, and rolled back if the send fails — a chip
+  /// that appears a second late feels broken, and one that stays after a
+  /// failure is a lie.
+  Future<void> _toggleReaction(String targetId, String emoji) async {
+    final db = ref.read(databaseProvider);
+    final myJid = ref.read(myBareJidProvider).value;
+    if (myJid == null || targetId.isEmpty) return;
+
+    final before = await reactionsFor(db, targetId, myJid);
+    final mine = before.where((g) => g.mine).toList();
+    final next = <String>{for (final g in mine) g.emoji};
+    if (next.remove(emoji)) {
+      // withdrawing
+    } else {
+      next.add(emoji);
+    }
+
+    final chatJid = widget.chatJid;
+    await storeReaction(
+      db,
+      ReactionUpdate(
+        targetId: targetId,
+        reactor: myJid,
+        emojis: next.toList(),
+      ),
+    );
+    _bumpReactions();
+
+    final sent = await sendReaction(
+      ref.read(xmppServiceProvider),
+      to: JID.fromString(chatJid).toBare(),
+      targetId: targetId,
+      emojis: next.toList(),
+    );
+    if (sent || !mounted) return;
+    if (!mounted) return;
+
+    // Put the chips back exactly as they were. Re-sending the whole previous
+    // set rather than just undoing this one emoji keeps the local state equal
+    // to what the last successful broadcast said.
+    final previous = <String>{for (final g in mine) g.emoji};
+    await storeReaction(
+      db,
+      ReactionUpdate(
+        targetId: targetId,
+        reactor: myJid,
+        emojis: previous.toList(),
+      ),
+    );
+    _bumpReactions();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Reaction could not be sent.')),
+    );
+  }
+
+  void _bumpReactions() {
+    final rev = ref.read(reactionRevisionProvider);
+    ref.read(reactionRevisionProvider.notifier).state = rev + 1;
+  }
+
   void _showUnsentNotice() {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -412,6 +480,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                   scroll: _scroll,
                   onRetryDecrypt: () =>
                       _loadHistory(),
+                  onReact: _toggleReaction,
                 ),
                 loading: () =>
                     const Center(child: CircularProgressIndicator()),
@@ -445,11 +514,16 @@ class _MessageList extends StatelessWidget {
     required this.messages,
     required this.scroll,
     required this.onRetryDecrypt,
+    required this.onReact,
   });
 
   final List<Message> messages;
   final ScrollController scroll;
   final VoidCallback onRetryDecrypt;
+
+  /// Toggling one emoji on one message. Takes the addressable id, because that
+  /// is what a reaction refers to.
+  final void Function(String targetId, String emoji) onReact;
 
   @override
   Widget build(BuildContext context) {
@@ -496,18 +570,10 @@ class _MessageList extends StatelessWidget {
         continue;
       }
       rows.add(
-        MessageBubble(
-          text: m.body,
-          time: m.timestamp,
-          side:
-              m.incoming ? BubbleSide.incoming : BubbleSide.outgoing,
-          delivered: m.delivered,
-          failed: m.deliveryError.isNotEmpty,
-          // What the message actually used, from what the sender declared —
-          // not what we would have chosen. For a message this client sent, the
-          // value written at send time is the one that counts, which is why it
-          // is read back from the row rather than recomputed.
-          track: EncModeToken.parse(m.encMode).track ?? Track.none,
+        _ReactionBubble(
+          message: m,
+          onReact: (emoji) =>
+              onReact(m.stanzaId, emoji),
         ),
       );
     }
@@ -663,6 +729,41 @@ class _SubscriptionBanner extends ConsumerWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// A bubble plus whatever reactions its message carries.
+///
+/// Split out so the chips can come from their own provider: they change
+/// whenever anyone reacts, which is independent of the message list rebuilding.
+class _ReactionBubble extends ConsumerWidget {
+  const _ReactionBubble({required this.message, required this.onReact});
+
+  final Message message;
+  final void Function(String emoji) onReact;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Keyed on the stored id, which is the origin-id when the sender published
+    // one. Empty means the message cannot be addressed, so it is drawn without
+    // chips rather than with chips nobody could add to.
+    final targetId = message.stanzaId;
+    final reactions = targetId.isEmpty
+        ? const <ReactionGroup>[]
+        : ref.watch(reactionGroupsProvider(targetId)).value ?? const [];
+    return MessageBubble(
+      text: message.body,
+      time: message.timestamp,
+      side: message.incoming ? BubbleSide.incoming : BubbleSide.outgoing,
+      delivered: message.delivered,
+      failed: message.deliveryError.isNotEmpty,
+      // What the message actually used, from what the sender declared — not
+      // what we would have chosen. Read back from the row rather than
+      // recomputed, so the label survives a change of mind afterwards.
+      track: EncModeToken.parse(message.encMode).track ?? Track.none,
+      reactions: reactions,
+      onReact: onReact,
     );
   }
 }

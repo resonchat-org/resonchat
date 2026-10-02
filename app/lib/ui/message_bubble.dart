@@ -9,6 +9,7 @@
 import 'package:flutter/material.dart';
 
 import '../omemo/track.dart';
+import '../xmpp/reactions.dart';
 import 'theme.dart';
 
 enum BubbleSide { incoming, outgoing }
@@ -92,6 +93,8 @@ class MessageBubble extends StatelessWidget {
     this.delivered = false,
     this.failed = false,
     this.track = Track.none,
+    this.reactions = const [],
+    this.onReact,
     this.onLongPress,
     this.onTap,
   });
@@ -106,6 +109,12 @@ class MessageBubble extends StatelessWidget {
   /// forgets to say so would then claim "no encryption" for a message that
   /// was encrypted, which is the one mistake this label must never make.
   final Track track;
+
+  /// Reaction chips to draw under the bubble (XEP-0444).
+  final List<ReactionGroup> reactions;
+
+  /// Tapping a chip toggles it; offered the whole quick set for a new one.
+  final void Function(String emoji)? onReact;
 
   /// Shown above the bubble in group chats, tinted per sender.
   final String? senderName;
@@ -189,7 +198,84 @@ class MessageBubble extends StatelessWidget {
               ),
             ),
           ),
+          if (reactions.isNotEmpty)
+            Padding(
+              padding: EdgeInsets.only(
+                top: 3,
+                left: mine ? 0 : 10,
+                right: mine ? 10 : 0,
+              ),
+              child: Wrap(
+                spacing: 4,
+                runSpacing: 4,
+                alignment: mine ? WrapAlignment.end : WrapAlignment.start,
+                children: [
+                  for (final reaction in reactions)
+                    ReactionChip(
+                      reaction: reaction,
+                      onTap: onReact == null
+                          ? null
+                          : () => onReact!(reaction.emoji),
+                    ),
+                ],
+              ),
+            ),
         ],
+      ),
+    );
+  }
+}
+
+/// One emoji's chip: the glyph, how many people, and whether we are among
+/// them.
+///
+/// The count is on the chip rather than hidden behind a long press because the
+/// question a reader asks first is "is this what I thought", not "who".
+class ReactionChip extends StatelessWidget {
+  const ReactionChip({
+    super.key,
+    required this.reaction,
+    this.onTap,
+  });
+
+  final ReactionGroup reaction;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      // Tinted rather than filled: our own reaction has to be readable at a
+      // glance across a list, without the chip competing with the message.
+      color: reaction.mine
+          ? theme.colorScheme.primaryContainer
+          : theme.colorScheme.surfaceContainerHighest,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(reaction.emoji, style: const TextStyle(fontSize: 14)),
+              if (reaction.count > 1) ...[
+                const SizedBox(width: 4),
+                Text(
+                  '${reaction.count}',
+                  style: TextStyle(
+                    fontSize: TgDimens.timeFontSize,
+                    fontWeight: FontWeight.w600,
+                    color: reaction.mine
+                        ? theme.colorScheme.onPrimaryContainer
+                        : theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }

@@ -15,6 +15,7 @@ import '../omemo/track_advice.dart';
 import '../store/database.dart';
 import '../xmpp/capabilities.dart';
 import '../xmpp/connection.dart';
+import '../xmpp/reactions.dart';
 
 /// Connects the connection's streams to persistent state for the app's
 /// lifetime: delivery receipts, delivery failures and capability
@@ -77,6 +78,15 @@ class _AppWiringState extends ConsumerState<AppWiring> {
             ),
       );
     }));
+    // XEP-0444: reactions are stored, never inserted as messages. A reaction
+    // arrives in its own stanza; storing it would put an empty bubble above
+    // the message it belongs to.
+    _subs.add(xmpp.reactions.listen((msg) {
+      final update = msg.reactions;
+      if (update == null) return;
+      unawaited(storeReaction(ref.read(databaseProvider), update));
+    }));
+
     // Persist inbound traffic. This used to live in the chat list, so a
     // message that arrived while the user was somewhere else in the app
     // was never written down — a silent data loss that only showed up as a
@@ -180,7 +190,11 @@ Future<void> storeInbound(AppDatabase db, InboundMessage msg) async {
     MessagesCompanion(
       chatJid: Value(chatJid),
       sender: Value(msg.from.toString()),
-      stanzaId: Value(stanzaId),
+      // The origin-id when the sender published one, because that is the id
+      // reactions, replies, edits and retractions address. The server's stanza
+      // id is a fallback and it changes across an archive round trip, so a
+      // message keyed on it becomes unaddressable after a MAM import.
+      stanzaId: Value(msg.originId ?? stanzaId),
       // Never store the ciphertext of something we could not open: the
       // placeholder carries the failure, not the payload.
       body: Value(msg.encryptionError != null ? '' : msg.body),

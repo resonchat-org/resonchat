@@ -23,6 +23,7 @@ import 'eme.dart';
 import 'capabilities.dart';
 import 'pq_incoming.dart';
 import 'pq_stanza.dart';
+import 'reactions.dart';
 
 /// Decrypted inbound chat message, either track or plaintext.
 class InboundMessage {
@@ -35,6 +36,8 @@ class InboundMessage {
     this.fromArchive = false,
     this.archiveTimestamp,
     this.track,
+    this.originId,
+    this.reactions,
   });
 
   final JID from;
@@ -57,6 +60,20 @@ class InboundMessage {
 
   /// Original send time for archived messages; live messages use now().
   final DateTime? archiveTimestamp;
+
+  /// The sender's own stable id for this message (XEP-0359 origin-id).
+  ///
+  /// Preferred over [stanzaId] for addressing the message, because the server's
+  /// id changes when the message is archived and replayed, while the origin-id
+  /// does not. Null when the sender published no stable id — which happens with
+  /// some clients, so callers must have a fallback rather than assume one.
+  final String? originId;
+
+  /// A reaction broadcast carried by this same stanza, if any.
+  ///
+  /// Reactions arrive in their own message, but a client may attach one to a
+  /// copy of the message. Kept here so the storage layer handles one shape.
+  final ReactionUpdate? reactions;
 
   /// Which track the sender used, read from its EME declaration.
   ///
@@ -214,6 +231,14 @@ class XmppService {
   final _capabilityChanges = StreamController<JID>.broadcast();
   Stream<JID> get capabilityChanges => _capabilityChanges.stream;
 
+  /// Stanzas that carried a reaction broadcast (XEP-0444).
+  ///
+  /// A separate stream from [inbound] because a reaction is not a message: it
+  /// must update a bubble somewhere else in the transcript and must never be
+  /// stored as one.
+  Stream<InboundMessage> get reactions => _reactions.stream;
+  final _reactions = StreamController<InboundMessage>.broadcast();
+
   XmppConnectionState _state = XmppConnectionState.disconnected;
 
   /// Overrides the automatic per-chat decision. Set by the settings UI.
@@ -318,6 +343,48 @@ class XmppService {
     return SendOutcome(stanzaId: stanzaId, track: track);
   }
 
+  /// Sends a reaction broadcast (XEP-0444).
+  ///
+  /// Built here rather than through MessageManager, for two reasons that both
+  /// come from reactions being metadata rather than content:
+  ///
+  ///   * `shouldEncrypt: false`. An OMEMO-wrapped reaction is invisible to
+  ///     every client that is not this one — including the sender's own other
+  ///     devices, and Conversations and Signal. A reaction nobody else can see
+  ///     is not a reaction.
+  ///   * The stanza id is minted locally rather than derived from a body. The
+  ///     server may echo it back, and echoing a message with a body would show
+  ///     an empty bubble in the recipient's history.
+  ///
+  /// [emojis] is the reactor's complete set. Passing an empty list is how a
+  /// reaction is withdrawn, which is why this never merges with what is stored.
+  Future<bool> setReactions(
+    JID to, {
+    required String targetId,
+    required List<String> emojis,
+  }) async {
+    final connection = _connection;
+    if (connection == null) return false;
+    try {
+      await connection.sendStanza(
+        StanzaDetails(
+          Stanza.message(
+            to: to.toString(),
+            id: _nextStanzaId(),
+            type: 'chat',
+            children: [MessageReactionsData(targetId, emojis).toXML()],
+          ),
+          awaitable: false,
+          shouldEncrypt: false,
+        ),
+      );
+      return true;
+    } catch (e) {
+      _log.warning('could not send reaction to $to: $e');
+      return false;
+    }
+  }
+
   /// Attaches the capability resolver so [autoShouldEncrypt] works.
   void attachCapabilities(CapabilityService service) =>
       _capabilities = service;
@@ -356,6 +423,13 @@ class XmppService {
   /// The underlying connection, for callers that need a manager this class
   /// does not wrap (roster edits, presence, diagnostics).
   XmppConnection? get connection => _connection;
+
+  /// Our own bare JID, or null when not connected.
+  ///
+  /// Taken from the live session rather than stored, so a reconnect to a
+  /// different account cannot leave reactions attributed to the previous one.
+  String? get myJid =>
+      _connection?.connectionSettings.jid.toBare().toString();
 
   /// Sends an "available" presence, announcing this resource to contacts.
   Future<void> sendAvailablePresence() async {
@@ -466,6 +540,10 @@ class XmppService {
       // track the sender used, so every encrypted message from another client
       // would be labelled as unencrypted.
       EmeManager(),
+      // XEP-0444 reactions, plus the stable-id manager they depend on: a
+      // reaction addresses a message by its origin-id.
+      StableIdManager(),
+      MessageReactionsManager(),
       // B-track inbound. moxxmpp has no handler for the PQ namespace, so
       // without this an incoming PQ message arrives as the literal fallback
       // body with no error: a silent, perfectly plausible-looking delivery.
@@ -821,6 +899,7 @@ class XmppService {
       TypedMap<StanzaHandlerExtension>.fromList([
         MessageBodyData(encryptedBodyFallback),
         MessageIdData(id),
+        StableIdData(id, const []),
         if (requestReceipt) const MessageDeliveryReceiptData(true),
         // XEP-0380: declare the track so the receiver can label the message
         // without decrypting it, and so a client that does not know this
@@ -890,6 +969,7 @@ class XmppService {
     // the only place this can be decided without a race.
     final children = <XMLNode>[
       MessageBodyData(body).toXML(),
+      StableIdData(id, const []).toOriginIdElement(),
       if (requestReceipt) MessageDeliveryReceiptData(true).toXML(),
     ];
     await connection.sendStanza(
@@ -992,19 +1072,33 @@ class XmppService {
       // plaintext, which is the only honest reading.
       final eme = event.get<ExplicitEncryptionType>();
       final foreign = Track.isForeignEncryption(eme);
-      _inbound.add(
-        InboundMessage(
-          from: event.from,
-          body:
-              error != null ? '' : (event.get<MessageBodyData>()?.body ?? ''),
-          stanzaId: event.id,
-          encryptionError: error,
-          isCarbonCopy: isCarbon,
-          fromArchive: mam != null,
-          archiveTimestamp: mam?.delay.timestamp,
-          track: foreign ? null : Track.fromEme(eme),
-        ),
+      // XEP-0444: a stanza may carry reactions and no body. It is still a
+      // message event, so without this it would land in the transcript as an
+      // empty bubble above the one it reacts to.
+      final reactionData = event.get<MessageReactionsData>();
+      final stable = event.get<StableIdData>();
+      final inbound = InboundMessage(
+        from: event.from,
+        body: error != null
+            ? ''
+            : (reactionData != null ? '' : (event.get<MessageBodyData>()?.body ?? '')),
+        stanzaId: event.id,
+        encryptionError: error,
+        isCarbonCopy: isCarbon,
+        fromArchive: mam != null,
+        archiveTimestamp: mam?.delay.timestamp,
+        track: foreign ? null : Track.fromEme(eme),
+        originId: stable?.originId,
+        reactions: reactionData == null
+            ? null
+            : ReactionUpdate(
+                targetId: reactionData.messageId,
+                reactor: event.from.toBare().toString(),
+                emojis: reactionData.emojis,
+              ),
       );
+      _inbound.add(inbound);
+      if (reactionData != null) _reactions.add(inbound);
     } else if (event is DeliveryReceiptReceivedEvent) {
       _deliveryReceipts.add(
         DeliveryReceipt(from: event.from, stanzaId: event.id),

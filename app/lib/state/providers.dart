@@ -11,6 +11,7 @@ import '../omemo/dual_track_manager.dart';
 import '../omemo/protocol.dart';
 import '../omemo/track.dart';
 import '../store/database.dart';
+import '../xmpp/reactions.dart';
 import '../store/omemo_device_store.dart';
 import '../xmpp/b_track_manager.dart';
 import '../xmpp/capabilities.dart';
@@ -192,6 +193,30 @@ final chatTrackProvider =
   final global = ref.watch(globalTrackProvider.future);
   final override = await ref.watch(databaseProvider).trackOverride(chatJid);
   return override ?? await global;
+});
+
+/// Reaction chips for the message whose addressable id is [targetId].
+///
+/// Keyed on the id rather than the message row because that is what a reaction
+/// refers to; a message we could not address is shown without chips rather than
+/// with chips nobody can add to.
+final reactionGroupsProvider =
+    FutureProvider.family<List<ReactionGroup>, String>((ref, targetId) async {
+  // Re-reads when the table changes, so a reaction arriving anywhere updates
+  // the bubble without this page having to know it happened.
+  ref.watch(reactionRevisionProvider);
+  final myJid = ref.watch(myBareJidProvider).value;
+  if (myJid == null) return const [];
+  return reactionsFor(ref.watch(databaseProvider), targetId, myJid);
+});
+
+/// Bumped whenever a reaction is stored, to invalidate every chip strip.
+final reactionRevisionProvider = StateProvider<int>((ref) => 0);
+
+/// Our own bare JID, or null before login.
+final myBareJidProvider = FutureProvider<String?>((ref) async {
+  final xmpp = ref.watch(xmppServiceProvider);
+  return xmpp.myJid;
 });
 
 /// The override set for [chatJid], or null when there is none.

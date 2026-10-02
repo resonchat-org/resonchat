@@ -87,6 +87,35 @@ class RosterEntries extends Table {
   Set<Column> get primaryKey => {jid};
 }
 
+/// One emoji reaction by one person on one message (XEP-0444).
+///
+/// Reactions are per-reactor, not per-message: two people reacting with the
+/// same emoji is one row each, and the count is the number of rows. Collapsing
+/// them into a message-level count would make "who reacted" unrecoverable,
+/// which is the only thing that lets someone take their own back.
+///
+/// [targetId] is the *origin-id* of the message being reacted to (XEP-0359),
+/// never the server's stanza id: the two differ once the message has been
+/// archived and replayed, and a reaction keyed on the server id stops matching
+/// after a MAM import.
+class Reactions extends Table {
+  TextColumn get targetId => text()();
+
+  /// The emoji. Not an icon or a code point: reactions cross clients, so the
+  /// value has to be something both ends render the same way.
+  TextColumn get emoji => text()();
+
+  /// Bare JID of the reactor.
+  TextColumn get reactor => text()();
+
+  /// When we first saw it; only used for ordering the chip strip.
+  DateTimeColumn get reactedAt =>
+      dateTime().withDefault(currentDateAndTime)();
+
+  @override
+  Set<Column> get primaryKey => {targetId, emoji, reactor};
+}
+
 /// Single-row table holding the last roster version we saw.
 class Meta extends Table {
   TextColumn get key => text()();
@@ -96,12 +125,12 @@ class Meta extends Table {
   Set<Column> get primaryKey => {key};
 }
 
-@DriftDatabase(tables: [Chats, Messages, RosterEntries, Meta])
+@DriftDatabase(tables: [Chats, Messages, RosterEntries, Reactions, Meta])
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -114,6 +143,23 @@ class AppDatabase extends _$AppDatabase {
             await customStatement(
               "ALTER TABLE messages ADD COLUMN delivery_error TEXT NOT NULL "
               "DEFAULT ''",
+            );
+          }
+          if (from < 4) {
+            // XEP-0444 reactions. Created empty and populated from live traffic:
+            // reactions are ephemeral by nature and there is nothing to
+            // migrate from an earlier build, because none of them existed.
+            await customStatement(
+              'CREATE TABLE IF NOT EXISTS reactions ('
+              'target_id TEXT NOT NULL, '
+              'emoji TEXT NOT NULL, '
+              'reactor TEXT NOT NULL, '
+              'reacted_at INTEGER NOT NULL DEFAULT 0, '
+              'PRIMARY KEY (target_id, emoji, reactor))',
+            );
+            await customStatement(
+              'CREATE INDEX IF NOT EXISTS reactions_target '
+              'ON reactions (target_id)',
             );
           }
           if (from < 3) {
@@ -145,6 +191,80 @@ class AppDatabase extends _$AppDatabase {
   ///
   /// Cleared when the conversation's track changes away from NO, so returning
   /// to plaintext asks again.
+  /// Records one reactor's full set of emojis on [targetId].
+  ///
+  /// A reaction broadcast is the *complete* list from that reactor, not a
+  /// delta — replacing the set rather than merging is what makes "I took my
+  /// reaction back" work. Merging would leave the old row behind forever and
+  /// the sender would keep showing a reaction its owner withdrew.
+  Future<void> setReactions({
+    required String targetId,
+    required String reactor,
+    required List<String> emojis,
+  }) async {
+    await transaction(() async {
+      await (delete(reactions)
+            ..where((r) =>
+                r.targetId.equals(targetId) & r.reactor.equals(reactor)))
+          .go();
+      // Two identical rows in one broadcast are a client bug or a replayed
+      // stanza; the primary key would throw, and one emoji is what it means.
+      for (final emoji in emojis.toSet()) {
+        await into(reactions).insert(
+          ReactionsCompanion.insert(
+            targetId: targetId,
+            emoji: emoji,
+            reactor: reactor,
+            // Passed explicitly because the ordering below depends on it, and
+            // a column with a SQL default is not filled in on insert.
+            reactedAt: Value(DateTime.now()),
+          ),
+          mode: InsertMode.insertOrIgnore,
+        );
+      }
+    });
+  }
+
+  /// One emoji's reactors, grouped for display.
+  ///
+  /// Sorted by count so the common reaction leads, which is the order every
+  /// other client uses and the one a user reads fastest.
+  Future<List<({String emoji, Set<String> reactors, bool mine})>> reactionGroups(
+    String targetId, {
+    required String myJid,
+  }) async {
+    final rows = await (select(reactions)
+          ..where((r) => r.targetId.equals(targetId))
+          ..orderBy([(r) => OrderingTerm.desc(r.reactedAt)]))
+        .get();
+    final byEmoji = <String, Set<String>>{};
+    final mine = <String>{};
+    for (final row in rows) {
+      (byEmoji[row.emoji] ??= {}).add(row.reactor);
+      if (row.reactor == myJid) mine.add(row.emoji);
+    }
+    final groups = byEmoji.entries
+        .map(
+          (e) => (
+            emoji: e.key,
+            reactors: e.value,
+            mine: mine.contains(e.key),
+          ),
+        )
+        .toList();
+    groups.sort((a, b) {
+      final byCount = b.reactors.length.compareTo(a.reactors.length);
+      // Ties break on the emoji itself so the order is stable across rebuilds
+      // rather than depending on which reaction arrived first.
+      return byCount != 0 ? byCount : a.emoji.compareTo(b.emoji);
+    });
+    return groups;
+  }
+
+  /// Every reaction on [targetId], for storage tests and diagnostics.
+  Future<List<Reaction>> allReactions(String targetId) =>
+      (select(reactions)..where((r) => r.targetId.equals(targetId))).get();
+
   Future<bool> plaintextAcknowledged(String chatJid) async {
     final value = await metaValue('plaintext_ack:$chatJid');
     return value == '1';
