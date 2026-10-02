@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logging/logging.dart';
 
+import 'state/capability_wiring.dart';
 import 'state/providers.dart';
 import 'store/database.dart';
 import 'ui/chats_page.dart';
@@ -48,6 +49,11 @@ class App extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: AppThemeTokens.light(),
       darkTheme: AppThemeTokens.dark(),
+      // Present for the whole app so the capability service stays attached
+      // to the connection without creating a provider cycle.
+      builder: (context, child) => CapabilityWiring(
+        child: child ?? const SizedBox.shrink(),
+      ),
       initialRoute: '/login',
       routes: {
         '/login': (_) => const LoginPage(),

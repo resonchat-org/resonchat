@@ -298,7 +298,13 @@ class XmppService {
     _moxxOmemo = OmemoManager(
       // Lazy: an OMEMO event can arrive before the device is created.
       () => _omemoOrCreate(),
-      (toJid, _) => _shouldEncrypt(toJid),
+      // Only chat messages are ever candidates for encryption. Letting the
+      // hook run for every outgoing stanza made capability resolution fire
+      // for each PubSub IQ, and each of those queries is itself a stanza
+      // that goes through this hook — an unbounded IQ cascade that starved
+      // the login sequence until the UI hung on "Connecting…".
+      (toJid, stanza) async =>
+          stanza.tag == 'message' && await _shouldEncrypt(toJid),
     );
     // Default to the capability-driven decision so encryption turns on by
     // itself once both sides support OMEMO.

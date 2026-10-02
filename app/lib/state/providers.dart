@@ -32,26 +32,11 @@ final capabilityServiceProvider = Provider<CapabilityService>((ref) {
       return (b?.ready ?? false) && id != null ? {id} : const <int>{};
     },
   );
-  // Let the connection consult this when deciding whether to encrypt.
-  // Done in a side-effecting provider rather than inside the factory, so
-  // the factory itself stays pure (Riverpod may call it more than once).
   return service;
-});
-
-/// Wires the capability service into the connection exactly once.
-final Provider<void> _capabilityWiringProvider = Provider<void>((ref) {
-  final service = ref.watch(capabilityServiceProvider);
-  final xmpp = ref.watch(xmppServiceProvider);
-  xmpp.attachCapabilities(service);
-  final sub = xmpp.capabilityChanges.listen((jid) {
-    ref.read(capabilityServiceProvider).invalidate(jid);
-  });
-  ref.onDispose(sub.cancel);
 });
 
 /// The dual-track managers, available once the connection is up.
 final Provider<DualTrackManager?> dualTrackManagerProvider = Provider<DualTrackManager?>((ref) {
-  ref.watch(_capabilityWiringProvider);
   final xmpp = ref.watch(xmppServiceProvider);
   final moxxOmemo = xmpp.moxxOmemo;
   final pubsub = xmpp.pubsub;
