@@ -57,6 +57,14 @@ void main() {
       expect(row.body, 'the original text');
     });
 
+    test('an un-retracted message has no retraction timestamp', () async {
+      // The column must be able to answer "was this retracted". A SQL default
+      // would fill it on every row and the answer would always be yes.
+      final row = await store(stanzaId: id);
+      expect(row.retracted, isFalse);
+      expect(row.retractedAt, isNull);
+    });
+
     test('is idempotent, and a replay does not un-retract', () async {
       await store(stanzaId: id);
       await db.markRetracted(id);

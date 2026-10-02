@@ -39,6 +39,71 @@ class $ChatsTable extends Chats with TableInfo<$ChatsTable, Chat> {
     requiredDuringInsert: false,
     defaultValue: currentDateAndTime,
   );
+  static const VerificationMeta _pinnedMeta = const VerificationMeta('pinned');
+  @override
+  late final GeneratedColumn<bool> pinned = GeneratedColumn<bool>(
+    'pinned',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("pinned" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _mutedMeta = const VerificationMeta('muted');
+  @override
+  late final GeneratedColumn<bool> muted = GeneratedColumn<bool>(
+    'muted',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("muted" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _archivedMeta = const VerificationMeta(
+    'archived',
+  );
+  @override
+  late final GeneratedColumn<bool> archived = GeneratedColumn<bool>(
+    'archived',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("archived" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _unreadCountMeta = const VerificationMeta(
+    'unreadCount',
+  );
+  @override
+  late final GeneratedColumn<int> unreadCount = GeneratedColumn<int>(
+    'unread_count',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _lastReadAtMeta = const VerificationMeta(
+    'lastReadAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> lastReadAt = GeneratedColumn<DateTime>(
+    'last_read_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
   static const VerificationMeta _trackOverrideMeta = const VerificationMeta(
     'trackOverride',
   );
@@ -56,6 +121,11 @@ class $ChatsTable extends Chats with TableInfo<$ChatsTable, Chat> {
     jid,
     title,
     lastActivity,
+    pinned,
+    muted,
+    archived,
+    unreadCount,
+    lastReadAt,
     trackOverride,
   ];
   @override
@@ -93,6 +163,42 @@ class $ChatsTable extends Chats with TableInfo<$ChatsTable, Chat> {
         ),
       );
     }
+    if (data.containsKey('pinned')) {
+      context.handle(
+        _pinnedMeta,
+        pinned.isAcceptableOrUnknown(data['pinned']!, _pinnedMeta),
+      );
+    }
+    if (data.containsKey('muted')) {
+      context.handle(
+        _mutedMeta,
+        muted.isAcceptableOrUnknown(data['muted']!, _mutedMeta),
+      );
+    }
+    if (data.containsKey('archived')) {
+      context.handle(
+        _archivedMeta,
+        archived.isAcceptableOrUnknown(data['archived']!, _archivedMeta),
+      );
+    }
+    if (data.containsKey('unread_count')) {
+      context.handle(
+        _unreadCountMeta,
+        unreadCount.isAcceptableOrUnknown(
+          data['unread_count']!,
+          _unreadCountMeta,
+        ),
+      );
+    }
+    if (data.containsKey('last_read_at')) {
+      context.handle(
+        _lastReadAtMeta,
+        lastReadAt.isAcceptableOrUnknown(
+          data['last_read_at']!,
+          _lastReadAtMeta,
+        ),
+      );
+    }
     if (data.containsKey('track_override')) {
       context.handle(
         _trackOverrideMeta,
@@ -123,6 +229,26 @@ class $ChatsTable extends Chats with TableInfo<$ChatsTable, Chat> {
         DriftSqlType.dateTime,
         data['${effectivePrefix}last_activity'],
       )!,
+      pinned: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}pinned'],
+      )!,
+      muted: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}muted'],
+      )!,
+      archived: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}archived'],
+      )!,
+      unreadCount: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}unread_count'],
+      )!,
+      lastReadAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}last_read_at'],
+      )!,
       trackOverride: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}track_override'],
@@ -141,6 +267,29 @@ class Chat extends DataClass implements Insertable<Chat> {
   final String title;
   final DateTime lastActivity;
 
+  /// Pinned to the top of the chat list.
+  final bool pinned;
+
+  /// Notifications suppressed for this conversation.
+  ///
+  /// A local decision, not a server one: there is no standard way to tell a
+  /// contact "stop notifying me about this", and pretending otherwise would
+  /// mean the setting silently does nothing on another device.
+  final bool muted;
+
+  /// Moved out of the main list into the archive.
+  final bool archived;
+
+  /// Unread inbound messages.
+  ///
+  /// Counted rather than derived, because "unread" has to survive the app
+  /// being closed: deriving it from the message table means every launch
+  /// re-reads the whole transcript to work out what was already read.
+  final int unreadCount;
+
+  /// Where the reader had got to, so a jump lands in the right place.
+  final DateTime lastReadAt;
+
   /// The track the user picked for this conversation, or empty for "use the
   /// global default" (docs/10 §3).
   ///
@@ -154,6 +303,11 @@ class Chat extends DataClass implements Insertable<Chat> {
     required this.jid,
     required this.title,
     required this.lastActivity,
+    required this.pinned,
+    required this.muted,
+    required this.archived,
+    required this.unreadCount,
+    required this.lastReadAt,
     required this.trackOverride,
   });
   @override
@@ -162,6 +316,11 @@ class Chat extends DataClass implements Insertable<Chat> {
     map['jid'] = Variable<String>(jid);
     map['title'] = Variable<String>(title);
     map['last_activity'] = Variable<DateTime>(lastActivity);
+    map['pinned'] = Variable<bool>(pinned);
+    map['muted'] = Variable<bool>(muted);
+    map['archived'] = Variable<bool>(archived);
+    map['unread_count'] = Variable<int>(unreadCount);
+    map['last_read_at'] = Variable<DateTime>(lastReadAt);
     map['track_override'] = Variable<String>(trackOverride);
     return map;
   }
@@ -171,6 +330,11 @@ class Chat extends DataClass implements Insertable<Chat> {
       jid: Value(jid),
       title: Value(title),
       lastActivity: Value(lastActivity),
+      pinned: Value(pinned),
+      muted: Value(muted),
+      archived: Value(archived),
+      unreadCount: Value(unreadCount),
+      lastReadAt: Value(lastReadAt),
       trackOverride: Value(trackOverride),
     );
   }
@@ -184,6 +348,11 @@ class Chat extends DataClass implements Insertable<Chat> {
       jid: serializer.fromJson<String>(json['jid']),
       title: serializer.fromJson<String>(json['title']),
       lastActivity: serializer.fromJson<DateTime>(json['lastActivity']),
+      pinned: serializer.fromJson<bool>(json['pinned']),
+      muted: serializer.fromJson<bool>(json['muted']),
+      archived: serializer.fromJson<bool>(json['archived']),
+      unreadCount: serializer.fromJson<int>(json['unreadCount']),
+      lastReadAt: serializer.fromJson<DateTime>(json['lastReadAt']),
       trackOverride: serializer.fromJson<String>(json['trackOverride']),
     );
   }
@@ -194,6 +363,11 @@ class Chat extends DataClass implements Insertable<Chat> {
       'jid': serializer.toJson<String>(jid),
       'title': serializer.toJson<String>(title),
       'lastActivity': serializer.toJson<DateTime>(lastActivity),
+      'pinned': serializer.toJson<bool>(pinned),
+      'muted': serializer.toJson<bool>(muted),
+      'archived': serializer.toJson<bool>(archived),
+      'unreadCount': serializer.toJson<int>(unreadCount),
+      'lastReadAt': serializer.toJson<DateTime>(lastReadAt),
       'trackOverride': serializer.toJson<String>(trackOverride),
     };
   }
@@ -202,11 +376,21 @@ class Chat extends DataClass implements Insertable<Chat> {
     String? jid,
     String? title,
     DateTime? lastActivity,
+    bool? pinned,
+    bool? muted,
+    bool? archived,
+    int? unreadCount,
+    DateTime? lastReadAt,
     String? trackOverride,
   }) => Chat(
     jid: jid ?? this.jid,
     title: title ?? this.title,
     lastActivity: lastActivity ?? this.lastActivity,
+    pinned: pinned ?? this.pinned,
+    muted: muted ?? this.muted,
+    archived: archived ?? this.archived,
+    unreadCount: unreadCount ?? this.unreadCount,
+    lastReadAt: lastReadAt ?? this.lastReadAt,
     trackOverride: trackOverride ?? this.trackOverride,
   );
   Chat copyWithCompanion(ChatsCompanion data) {
@@ -216,6 +400,15 @@ class Chat extends DataClass implements Insertable<Chat> {
       lastActivity: data.lastActivity.present
           ? data.lastActivity.value
           : this.lastActivity,
+      pinned: data.pinned.present ? data.pinned.value : this.pinned,
+      muted: data.muted.present ? data.muted.value : this.muted,
+      archived: data.archived.present ? data.archived.value : this.archived,
+      unreadCount: data.unreadCount.present
+          ? data.unreadCount.value
+          : this.unreadCount,
+      lastReadAt: data.lastReadAt.present
+          ? data.lastReadAt.value
+          : this.lastReadAt,
       trackOverride: data.trackOverride.present
           ? data.trackOverride.value
           : this.trackOverride,
@@ -228,13 +421,28 @@ class Chat extends DataClass implements Insertable<Chat> {
           ..write('jid: $jid, ')
           ..write('title: $title, ')
           ..write('lastActivity: $lastActivity, ')
+          ..write('pinned: $pinned, ')
+          ..write('muted: $muted, ')
+          ..write('archived: $archived, ')
+          ..write('unreadCount: $unreadCount, ')
+          ..write('lastReadAt: $lastReadAt, ')
           ..write('trackOverride: $trackOverride')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(jid, title, lastActivity, trackOverride);
+  int get hashCode => Object.hash(
+    jid,
+    title,
+    lastActivity,
+    pinned,
+    muted,
+    archived,
+    unreadCount,
+    lastReadAt,
+    trackOverride,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -242,6 +450,11 @@ class Chat extends DataClass implements Insertable<Chat> {
           other.jid == this.jid &&
           other.title == this.title &&
           other.lastActivity == this.lastActivity &&
+          other.pinned == this.pinned &&
+          other.muted == this.muted &&
+          other.archived == this.archived &&
+          other.unreadCount == this.unreadCount &&
+          other.lastReadAt == this.lastReadAt &&
           other.trackOverride == this.trackOverride);
 }
 
@@ -249,12 +462,22 @@ class ChatsCompanion extends UpdateCompanion<Chat> {
   final Value<String> jid;
   final Value<String> title;
   final Value<DateTime> lastActivity;
+  final Value<bool> pinned;
+  final Value<bool> muted;
+  final Value<bool> archived;
+  final Value<int> unreadCount;
+  final Value<DateTime> lastReadAt;
   final Value<String> trackOverride;
   final Value<int> rowid;
   const ChatsCompanion({
     this.jid = const Value.absent(),
     this.title = const Value.absent(),
     this.lastActivity = const Value.absent(),
+    this.pinned = const Value.absent(),
+    this.muted = const Value.absent(),
+    this.archived = const Value.absent(),
+    this.unreadCount = const Value.absent(),
+    this.lastReadAt = const Value.absent(),
     this.trackOverride = const Value.absent(),
     this.rowid = const Value.absent(),
   });
@@ -262,6 +485,11 @@ class ChatsCompanion extends UpdateCompanion<Chat> {
     required String jid,
     this.title = const Value.absent(),
     this.lastActivity = const Value.absent(),
+    this.pinned = const Value.absent(),
+    this.muted = const Value.absent(),
+    this.archived = const Value.absent(),
+    this.unreadCount = const Value.absent(),
+    this.lastReadAt = const Value.absent(),
     this.trackOverride = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : jid = Value(jid);
@@ -269,6 +497,11 @@ class ChatsCompanion extends UpdateCompanion<Chat> {
     Expression<String>? jid,
     Expression<String>? title,
     Expression<DateTime>? lastActivity,
+    Expression<bool>? pinned,
+    Expression<bool>? muted,
+    Expression<bool>? archived,
+    Expression<int>? unreadCount,
+    Expression<DateTime>? lastReadAt,
     Expression<String>? trackOverride,
     Expression<int>? rowid,
   }) {
@@ -276,6 +509,11 @@ class ChatsCompanion extends UpdateCompanion<Chat> {
       if (jid != null) 'jid': jid,
       if (title != null) 'title': title,
       if (lastActivity != null) 'last_activity': lastActivity,
+      if (pinned != null) 'pinned': pinned,
+      if (muted != null) 'muted': muted,
+      if (archived != null) 'archived': archived,
+      if (unreadCount != null) 'unread_count': unreadCount,
+      if (lastReadAt != null) 'last_read_at': lastReadAt,
       if (trackOverride != null) 'track_override': trackOverride,
       if (rowid != null) 'rowid': rowid,
     });
@@ -285,6 +523,11 @@ class ChatsCompanion extends UpdateCompanion<Chat> {
     Value<String>? jid,
     Value<String>? title,
     Value<DateTime>? lastActivity,
+    Value<bool>? pinned,
+    Value<bool>? muted,
+    Value<bool>? archived,
+    Value<int>? unreadCount,
+    Value<DateTime>? lastReadAt,
     Value<String>? trackOverride,
     Value<int>? rowid,
   }) {
@@ -292,6 +535,11 @@ class ChatsCompanion extends UpdateCompanion<Chat> {
       jid: jid ?? this.jid,
       title: title ?? this.title,
       lastActivity: lastActivity ?? this.lastActivity,
+      pinned: pinned ?? this.pinned,
+      muted: muted ?? this.muted,
+      archived: archived ?? this.archived,
+      unreadCount: unreadCount ?? this.unreadCount,
+      lastReadAt: lastReadAt ?? this.lastReadAt,
       trackOverride: trackOverride ?? this.trackOverride,
       rowid: rowid ?? this.rowid,
     );
@@ -309,6 +557,21 @@ class ChatsCompanion extends UpdateCompanion<Chat> {
     if (lastActivity.present) {
       map['last_activity'] = Variable<DateTime>(lastActivity.value);
     }
+    if (pinned.present) {
+      map['pinned'] = Variable<bool>(pinned.value);
+    }
+    if (muted.present) {
+      map['muted'] = Variable<bool>(muted.value);
+    }
+    if (archived.present) {
+      map['archived'] = Variable<bool>(archived.value);
+    }
+    if (unreadCount.present) {
+      map['unread_count'] = Variable<int>(unreadCount.value);
+    }
+    if (lastReadAt.present) {
+      map['last_read_at'] = Variable<DateTime>(lastReadAt.value);
+    }
     if (trackOverride.present) {
       map['track_override'] = Variable<String>(trackOverride.value);
     }
@@ -324,6 +587,11 @@ class ChatsCompanion extends UpdateCompanion<Chat> {
           ..write('jid: $jid, ')
           ..write('title: $title, ')
           ..write('lastActivity: $lastActivity, ')
+          ..write('pinned: $pinned, ')
+          ..write('muted: $muted, ')
+          ..write('archived: $archived, ')
+          ..write('unreadCount: $unreadCount, ')
+          ..write('lastReadAt: $lastReadAt, ')
           ..write('trackOverride: $trackOverride, ')
           ..write('rowid: $rowid')
           ..write(')'))
@@ -495,10 +763,9 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
   late final GeneratedColumn<DateTime> retractedAt = GeneratedColumn<DateTime>(
     'retracted_at',
     aliasedName,
-    false,
+    true,
     type: DriftSqlType.dateTime,
     requiredDuringInsert: false,
-    defaultValue: currentDateAndTime,
   );
   static const VerificationMeta _replyToMeta = const VerificationMeta(
     'replyTo',
@@ -755,7 +1022,7 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
       retractedAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}retracted_at'],
-      )!,
+      ),
       replyTo: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}reply_to'],
@@ -816,8 +1083,13 @@ class Message extends DataClass implements Insertable<Message> {
   /// for the person who sent it.
   final bool retracted;
 
-  /// When the retraction arrived, for ordering the "deleted" placeholder.
-  final DateTime retractedAt;
+  /// When the retraction arrived.
+  ///
+  /// Nullable with no default, deliberately: a SQL default would fill this on
+  /// every row, so `retractedAt != null` would be true of every message and the
+  /// column could not answer the only question anyone asks of it. This is the
+  /// same reasoning as [editedAt] below.
+  final DateTime? retractedAt;
 
   /// Origin-id of the message this one replies to (XEP-0461), or empty.
   final String replyTo;
@@ -853,7 +1125,7 @@ class Message extends DataClass implements Insertable<Message> {
     required this.isCarbon,
     required this.deliveryError,
     required this.retracted,
-    required this.retractedAt,
+    this.retractedAt,
     required this.replyTo,
     required this.replyBody,
     required this.replyAuthor,
@@ -874,7 +1146,9 @@ class Message extends DataClass implements Insertable<Message> {
     map['is_carbon'] = Variable<bool>(isCarbon);
     map['delivery_error'] = Variable<String>(deliveryError);
     map['retracted'] = Variable<bool>(retracted);
-    map['retracted_at'] = Variable<DateTime>(retractedAt);
+    if (!nullToAbsent || retractedAt != null) {
+      map['retracted_at'] = Variable<DateTime>(retractedAt);
+    }
     map['reply_to'] = Variable<String>(replyTo);
     map['reply_body'] = Variable<String>(replyBody);
     map['reply_author'] = Variable<String>(replyAuthor);
@@ -898,7 +1172,9 @@ class Message extends DataClass implements Insertable<Message> {
       isCarbon: Value(isCarbon),
       deliveryError: Value(deliveryError),
       retracted: Value(retracted),
-      retractedAt: Value(retractedAt),
+      retractedAt: retractedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(retractedAt),
       replyTo: Value(replyTo),
       replyBody: Value(replyBody),
       replyAuthor: Value(replyAuthor),
@@ -926,7 +1202,7 @@ class Message extends DataClass implements Insertable<Message> {
       isCarbon: serializer.fromJson<bool>(json['isCarbon']),
       deliveryError: serializer.fromJson<String>(json['deliveryError']),
       retracted: serializer.fromJson<bool>(json['retracted']),
-      retractedAt: serializer.fromJson<DateTime>(json['retractedAt']),
+      retractedAt: serializer.fromJson<DateTime?>(json['retractedAt']),
       replyTo: serializer.fromJson<String>(json['replyTo']),
       replyBody: serializer.fromJson<String>(json['replyBody']),
       replyAuthor: serializer.fromJson<String>(json['replyAuthor']),
@@ -949,7 +1225,7 @@ class Message extends DataClass implements Insertable<Message> {
       'isCarbon': serializer.toJson<bool>(isCarbon),
       'deliveryError': serializer.toJson<String>(deliveryError),
       'retracted': serializer.toJson<bool>(retracted),
-      'retractedAt': serializer.toJson<DateTime>(retractedAt),
+      'retractedAt': serializer.toJson<DateTime?>(retractedAt),
       'replyTo': serializer.toJson<String>(replyTo),
       'replyBody': serializer.toJson<String>(replyBody),
       'replyAuthor': serializer.toJson<String>(replyAuthor),
@@ -970,7 +1246,7 @@ class Message extends DataClass implements Insertable<Message> {
     bool? isCarbon,
     String? deliveryError,
     bool? retracted,
-    DateTime? retractedAt,
+    Value<DateTime?> retractedAt = const Value.absent(),
     String? replyTo,
     String? replyBody,
     String? replyAuthor,
@@ -988,7 +1264,7 @@ class Message extends DataClass implements Insertable<Message> {
     isCarbon: isCarbon ?? this.isCarbon,
     deliveryError: deliveryError ?? this.deliveryError,
     retracted: retracted ?? this.retracted,
-    retractedAt: retractedAt ?? this.retractedAt,
+    retractedAt: retractedAt.present ? retractedAt.value : this.retractedAt,
     replyTo: replyTo ?? this.replyTo,
     replyBody: replyBody ?? this.replyBody,
     replyAuthor: replyAuthor ?? this.replyAuthor,
@@ -1102,7 +1378,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
   final Value<bool> isCarbon;
   final Value<String> deliveryError;
   final Value<bool> retracted;
-  final Value<DateTime> retractedAt;
+  final Value<DateTime?> retractedAt;
   final Value<String> replyTo;
   final Value<String> replyBody;
   final Value<String> replyAuthor;
@@ -1201,7 +1477,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Value<bool>? isCarbon,
     Value<String>? deliveryError,
     Value<bool>? retracted,
-    Value<DateTime>? retractedAt,
+    Value<DateTime?>? retractedAt,
     Value<String>? replyTo,
     Value<String>? replyBody,
     Value<String>? replyAuthor,
@@ -1654,6 +1930,219 @@ class RosterEntriesCompanion extends UpdateCompanion<RosterEntry> {
           ..write('subscription: $subscription, ')
           ..write('ask: $ask, ')
           ..write('groups: $groups, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $BlockedContactsTable extends BlockedContacts
+    with TableInfo<$BlockedContactsTable, BlockedContact> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $BlockedContactsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _jidMeta = const VerificationMeta('jid');
+  @override
+  late final GeneratedColumn<String> jid = GeneratedColumn<String>(
+    'jid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _blockedAtMeta = const VerificationMeta(
+    'blockedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> blockedAt = GeneratedColumn<DateTime>(
+    'blocked_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [jid, blockedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'blocked_contacts';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<BlockedContact> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('jid')) {
+      context.handle(
+        _jidMeta,
+        jid.isAcceptableOrUnknown(data['jid']!, _jidMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_jidMeta);
+    }
+    if (data.containsKey('blocked_at')) {
+      context.handle(
+        _blockedAtMeta,
+        blockedAt.isAcceptableOrUnknown(data['blocked_at']!, _blockedAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {jid};
+  @override
+  BlockedContact map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return BlockedContact(
+      jid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}jid'],
+      )!,
+      blockedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}blocked_at'],
+      )!,
+    );
+  }
+
+  @override
+  $BlockedContactsTable createAlias(String alias) {
+    return $BlockedContactsTable(attachedDatabase, alias);
+  }
+}
+
+class BlockedContact extends DataClass implements Insertable<BlockedContact> {
+  final String jid;
+  final DateTime blockedAt;
+  const BlockedContact({required this.jid, required this.blockedAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['jid'] = Variable<String>(jid);
+    map['blocked_at'] = Variable<DateTime>(blockedAt);
+    return map;
+  }
+
+  BlockedContactsCompanion toCompanion(bool nullToAbsent) {
+    return BlockedContactsCompanion(
+      jid: Value(jid),
+      blockedAt: Value(blockedAt),
+    );
+  }
+
+  factory BlockedContact.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return BlockedContact(
+      jid: serializer.fromJson<String>(json['jid']),
+      blockedAt: serializer.fromJson<DateTime>(json['blockedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'jid': serializer.toJson<String>(jid),
+      'blockedAt': serializer.toJson<DateTime>(blockedAt),
+    };
+  }
+
+  BlockedContact copyWith({String? jid, DateTime? blockedAt}) => BlockedContact(
+    jid: jid ?? this.jid,
+    blockedAt: blockedAt ?? this.blockedAt,
+  );
+  BlockedContact copyWithCompanion(BlockedContactsCompanion data) {
+    return BlockedContact(
+      jid: data.jid.present ? data.jid.value : this.jid,
+      blockedAt: data.blockedAt.present ? data.blockedAt.value : this.blockedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('BlockedContact(')
+          ..write('jid: $jid, ')
+          ..write('blockedAt: $blockedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(jid, blockedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is BlockedContact &&
+          other.jid == this.jid &&
+          other.blockedAt == this.blockedAt);
+}
+
+class BlockedContactsCompanion extends UpdateCompanion<BlockedContact> {
+  final Value<String> jid;
+  final Value<DateTime> blockedAt;
+  final Value<int> rowid;
+  const BlockedContactsCompanion({
+    this.jid = const Value.absent(),
+    this.blockedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  BlockedContactsCompanion.insert({
+    required String jid,
+    this.blockedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : jid = Value(jid);
+  static Insertable<BlockedContact> custom({
+    Expression<String>? jid,
+    Expression<DateTime>? blockedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (jid != null) 'jid': jid,
+      if (blockedAt != null) 'blocked_at': blockedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  BlockedContactsCompanion copyWith({
+    Value<String>? jid,
+    Value<DateTime>? blockedAt,
+    Value<int>? rowid,
+  }) {
+    return BlockedContactsCompanion(
+      jid: jid ?? this.jid,
+      blockedAt: blockedAt ?? this.blockedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (jid.present) {
+      map['jid'] = Variable<String>(jid.value);
+    }
+    if (blockedAt.present) {
+      map['blocked_at'] = Variable<DateTime>(blockedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('BlockedContactsCompanion(')
+          ..write('jid: $jid, ')
+          ..write('blockedAt: $blockedAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -2504,6 +2993,9 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $ChatsTable chats = $ChatsTable(this);
   late final $MessagesTable messages = $MessagesTable(this);
   late final $RosterEntriesTable rosterEntries = $RosterEntriesTable(this);
+  late final $BlockedContactsTable blockedContacts = $BlockedContactsTable(
+    this,
+  );
   late final $PendingCorrectionsTable pendingCorrections =
       $PendingCorrectionsTable(this);
   late final $ReactionsTable reactions = $ReactionsTable(this);
@@ -2516,6 +3008,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     chats,
     messages,
     rosterEntries,
+    blockedContacts,
     pendingCorrections,
     reactions,
     meta,
@@ -2526,6 +3019,11 @@ typedef $$ChatsTableCreateCompanionBuilder = ChatsCompanion Function({
   required String jid,
   Value<String> title,
   Value<DateTime> lastActivity,
+  Value<bool> pinned,
+  Value<bool> muted,
+  Value<bool> archived,
+  Value<int> unreadCount,
+  Value<DateTime> lastReadAt,
   Value<String> trackOverride,
   Value<int> rowid,
 });
@@ -2533,6 +3031,11 @@ typedef $$ChatsTableUpdateCompanionBuilder = ChatsCompanion Function({
   Value<String> jid,
   Value<String> title,
   Value<DateTime> lastActivity,
+  Value<bool> pinned,
+  Value<bool> muted,
+  Value<bool> archived,
+  Value<int> unreadCount,
+  Value<DateTime> lastReadAt,
   Value<String> trackOverride,
   Value<int> rowid,
 });
@@ -2581,6 +3084,31 @@ class $$ChatsTableFilterComposer extends Composer<_$AppDatabase, $ChatsTable> {
 
   ColumnFilters<DateTime> get lastActivity => $composableBuilder(
     column: $table.lastActivity,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get pinned => $composableBuilder(
+    column: $table.pinned,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get muted => $composableBuilder(
+    column: $table.muted,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get archived => $composableBuilder(
+    column: $table.archived,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get unreadCount => $composableBuilder(
+    column: $table.unreadCount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get lastReadAt => $composableBuilder(
+    column: $table.lastReadAt,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -2639,6 +3167,31 @@ class $$ChatsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<bool> get pinned => $composableBuilder(
+    column: $table.pinned,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get muted => $composableBuilder(
+    column: $table.muted,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get archived => $composableBuilder(
+    column: $table.archived,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get unreadCount => $composableBuilder(
+    column: $table.unreadCount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get lastReadAt => $composableBuilder(
+    column: $table.lastReadAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get trackOverride => $composableBuilder(
     column: $table.trackOverride,
     builder: (column) => ColumnOrderings(column),
@@ -2662,6 +3215,25 @@ class $$ChatsTableAnnotationComposer
 
   GeneratedColumn<DateTime> get lastActivity => $composableBuilder(
     column: $table.lastActivity,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get pinned =>
+      $composableBuilder(column: $table.pinned, builder: (column) => column);
+
+  GeneratedColumn<bool> get muted =>
+      $composableBuilder(column: $table.muted, builder: (column) => column);
+
+  GeneratedColumn<bool> get archived =>
+      $composableBuilder(column: $table.archived, builder: (column) => column);
+
+  GeneratedColumn<int> get unreadCount => $composableBuilder(
+    column: $table.unreadCount,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get lastReadAt => $composableBuilder(
+    column: $table.lastReadAt,
     builder: (column) => column,
   );
 
@@ -2727,12 +3299,22 @@ class $$ChatsTableTableManager
                 Value<String> jid = const Value.absent(),
                 Value<String> title = const Value.absent(),
                 Value<DateTime> lastActivity = const Value.absent(),
+                Value<bool> pinned = const Value.absent(),
+                Value<bool> muted = const Value.absent(),
+                Value<bool> archived = const Value.absent(),
+                Value<int> unreadCount = const Value.absent(),
+                Value<DateTime> lastReadAt = const Value.absent(),
                 Value<String> trackOverride = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ChatsCompanion(
                 jid: jid,
                 title: title,
                 lastActivity: lastActivity,
+                pinned: pinned,
+                muted: muted,
+                archived: archived,
+                unreadCount: unreadCount,
+                lastReadAt: lastReadAt,
                 trackOverride: trackOverride,
                 rowid: rowid,
               ),
@@ -2741,12 +3323,22 @@ class $$ChatsTableTableManager
                 required String jid,
                 Value<String> title = const Value.absent(),
                 Value<DateTime> lastActivity = const Value.absent(),
+                Value<bool> pinned = const Value.absent(),
+                Value<bool> muted = const Value.absent(),
+                Value<bool> archived = const Value.absent(),
+                Value<int> unreadCount = const Value.absent(),
+                Value<DateTime> lastReadAt = const Value.absent(),
                 Value<String> trackOverride = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ChatsCompanion.insert(
                 jid: jid,
                 title: title,
                 lastActivity: lastActivity,
+                pinned: pinned,
+                muted: muted,
+                archived: archived,
+                unreadCount: unreadCount,
+                lastReadAt: lastReadAt,
                 trackOverride: trackOverride,
                 rowid: rowid,
               ),
@@ -2811,7 +3403,7 @@ typedef $$MessagesTableCreateCompanionBuilder = MessagesCompanion Function({
   Value<bool> isCarbon,
   Value<String> deliveryError,
   Value<bool> retracted,
-  Value<DateTime> retractedAt,
+  Value<DateTime?> retractedAt,
   Value<String> replyTo,
   Value<String> replyBody,
   Value<String> replyAuthor,
@@ -2830,7 +3422,7 @@ typedef $$MessagesTableUpdateCompanionBuilder = MessagesCompanion Function({
   Value<bool> isCarbon,
   Value<String> deliveryError,
   Value<bool> retracted,
-  Value<DateTime> retractedAt,
+  Value<DateTime?> retractedAt,
   Value<String> replyTo,
   Value<String> replyBody,
   Value<String> replyAuthor,
@@ -3212,7 +3804,7 @@ class $$MessagesTableTableManager
                 Value<bool> isCarbon = const Value.absent(),
                 Value<String> deliveryError = const Value.absent(),
                 Value<bool> retracted = const Value.absent(),
-                Value<DateTime> retractedAt = const Value.absent(),
+                Value<DateTime?> retractedAt = const Value.absent(),
                 Value<String> replyTo = const Value.absent(),
                 Value<String> replyBody = const Value.absent(),
                 Value<String> replyAuthor = const Value.absent(),
@@ -3250,7 +3842,7 @@ class $$MessagesTableTableManager
                 Value<bool> isCarbon = const Value.absent(),
                 Value<String> deliveryError = const Value.absent(),
                 Value<bool> retracted = const Value.absent(),
-                Value<DateTime> retractedAt = const Value.absent(),
+                Value<DateTime?> retractedAt = const Value.absent(),
                 Value<String> replyTo = const Value.absent(),
                 Value<String> replyBody = const Value.absent(),
                 Value<String> replyAuthor = const Value.absent(),
@@ -3548,6 +4140,164 @@ typedef $$RosterEntriesTableProcessedTableManager =
         BaseReferences<_$AppDatabase, $RosterEntriesTable, RosterEntry>,
       ),
       RosterEntry,
+      PrefetchHooks Function()
+    >;
+typedef $$BlockedContactsTableCreateCompanionBuilder =
+    BlockedContactsCompanion Function({
+      required String jid,
+      Value<DateTime> blockedAt,
+      Value<int> rowid,
+    });
+typedef $$BlockedContactsTableUpdateCompanionBuilder =
+    BlockedContactsCompanion Function({
+      Value<String> jid,
+      Value<DateTime> blockedAt,
+      Value<int> rowid,
+    });
+
+class $$BlockedContactsTableFilterComposer
+    extends Composer<_$AppDatabase, $BlockedContactsTable> {
+  $$BlockedContactsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get jid => $composableBuilder(
+    column: $table.jid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get blockedAt => $composableBuilder(
+    column: $table.blockedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$BlockedContactsTableOrderingComposer
+    extends Composer<_$AppDatabase, $BlockedContactsTable> {
+  $$BlockedContactsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get jid => $composableBuilder(
+    column: $table.jid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get blockedAt => $composableBuilder(
+    column: $table.blockedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$BlockedContactsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $BlockedContactsTable> {
+  $$BlockedContactsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get jid =>
+      $composableBuilder(column: $table.jid, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get blockedAt =>
+      $composableBuilder(column: $table.blockedAt, builder: (column) => column);
+}
+
+class $$BlockedContactsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $BlockedContactsTable,
+          BlockedContact,
+          $$BlockedContactsTableFilterComposer,
+          $$BlockedContactsTableOrderingComposer,
+          $$BlockedContactsTableAnnotationComposer,
+          $$BlockedContactsTableCreateCompanionBuilder,
+          $$BlockedContactsTableUpdateCompanionBuilder,
+          (
+            BlockedContact,
+            BaseReferences<
+              _$AppDatabase,
+              $BlockedContactsTable,
+              BlockedContact
+            >,
+          ),
+          BlockedContact,
+          PrefetchHooks Function()
+        > {
+  $$BlockedContactsTableTableManager(
+    _$AppDatabase db,
+    $BlockedContactsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$BlockedContactsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$BlockedContactsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$BlockedContactsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> jid = const Value.absent(),
+                Value<DateTime> blockedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => BlockedContactsCompanion(
+                jid: jid,
+                blockedAt: blockedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String jid,
+                Value<DateTime> blockedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => BlockedContactsCompanion.insert(
+                jid: jid,
+                blockedAt: blockedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$BlockedContactsTable, BlockedContact>(table),
+                  BaseReferences<
+                    _$AppDatabase,
+                    $BlockedContactsTable,
+                    BlockedContact
+                  >(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$BlockedContactsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $BlockedContactsTable,
+      BlockedContact,
+      $$BlockedContactsTableFilterComposer,
+      $$BlockedContactsTableOrderingComposer,
+      $$BlockedContactsTableAnnotationComposer,
+      $$BlockedContactsTableCreateCompanionBuilder,
+      $$BlockedContactsTableUpdateCompanionBuilder,
+      (
+        BlockedContact,
+        BaseReferences<_$AppDatabase, $BlockedContactsTable, BlockedContact>,
+      ),
+      BlockedContact,
       PrefetchHooks Function()
     >;
 typedef $$PendingCorrectionsTableCreateCompanionBuilder =
@@ -4081,6 +4831,8 @@ class $AppDatabaseManager {
       $$MessagesTableTableManager(_db, _db.messages);
   $$RosterEntriesTableTableManager get rosterEntries =>
       $$RosterEntriesTableTableManager(_db, _db.rosterEntries);
+  $$BlockedContactsTableTableManager get blockedContacts =>
+      $$BlockedContactsTableTableManager(_db, _db.blockedContacts);
   $$PendingCorrectionsTableTableManager get pendingCorrections =>
       $$PendingCorrectionsTableTableManager(_db, _db.pendingCorrections);
   $$ReactionsTableTableManager get reactions =>
