@@ -285,6 +285,36 @@ final archivedChatsProvider = StreamProvider<List<Chat>>(
   (ref) => ref.watch(databaseProvider).watchArchivedChats(),
 );
 
+/// The unsent text in [chatJid], or null.
+final draftProvider = FutureProvider.family<String?, String>((ref, chatJid) {
+  ref.watch(draftRevisionProvider);
+  return ref.watch(databaseProvider).draft(chatJid);
+});
+
+/// Bumped whenever a draft changes, so the input bar redraws.
+final draftRevisionProvider = StateProvider<int>((ref) => 0);
+
+/// Records or clears the draft for [chatJid].
+Future<void> saveDraft(WidgetRef ref, String chatJid, String? text) async {
+  await ref.read(databaseProvider).setDraft(chatJid, text);
+  ref.read(draftRevisionProvider.notifier).state =
+      ref.read(draftRevisionProvider) + 1;
+}
+
+/// Stanza ids pinned in [chatJid], most recent first.
+final pinnedIdsProvider = StreamProvider.family<List<String>, String>(
+  (ref, chatJid) => ref.watch(databaseProvider).watchPinned(chatJid),
+);
+
+/// Pins or unpins a message.
+Future<void> togglePinned(
+  WidgetRef ref,
+  String chatJid,
+  String stanzaId,
+) async {
+  await ref.read(databaseProvider).togglePinned(chatJid, stanzaId);
+}
+
 /// The bare JIDs currently blocked (XEP-0191).
 ///
 /// Read from the store rather than from the service's in-memory copy: this is

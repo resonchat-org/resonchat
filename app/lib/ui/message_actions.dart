@@ -23,6 +23,7 @@ class MessageActions {
     required this.canCopy,
     required this.canEdit,
     required this.canRetract,
+    required this.isPinned,
   });
 
   /// Replies address a message by its origin-id, so they need an addressable
@@ -52,11 +53,16 @@ class MessageActions {
   /// retracting "the last message" instead.
   final bool canRetract;
 
+  /// Whether this message is already pinned, so the entry can offer the
+  /// opposite action rather than a verb that does the wrong thing.
+  final bool isPinned;
+
   factory MessageActions.for_({
     required bool mine,
     required bool retracted,
     required bool decrypted,
     required bool addressable,
+    required bool pinned,
   }) {
     return MessageActions(
       canReply: !retracted && addressable,
@@ -65,6 +71,7 @@ class MessageActions {
       canCopy: decrypted && !retracted,
       canEdit: mine && !retracted && decrypted,
       canRetract: mine && !retracted && addressable,
+      isPinned: pinned,
     );
   }
 
@@ -78,7 +85,7 @@ class MessageActions {
 }
 
 /// The result of the menu.
-enum MessageAction { reply, react, copy, edit, forward, retract }
+enum MessageAction { reply, react, copy, edit, forward, pin, retract }
 
 /// Shows the menu and returns what the user picked, or null.
 Future<MessageAction?> showMessageMenu(
@@ -125,6 +132,12 @@ Future<MessageAction?> showMessageMenu(
               leading: const Icon(Icons.edit_outlined),
               title: const Text('Edit'),
               onTap: () => Navigator.of(context).pop(MessageAction.edit),
+            ),
+          if (actions.canEdit)
+            ListTile(
+              leading: const Icon(Icons.push_pin_outlined),
+              title: Text(actions.isPinned ? 'Unpin' : 'Pin'),
+              onTap: () => Navigator.of(context).pop(MessageAction.pin),
             ),
           if (actions.canRetract)
             ListTile(

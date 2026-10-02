@@ -2149,6 +2149,327 @@ class BlockedContactsCompanion extends UpdateCompanion<BlockedContact> {
   }
 }
 
+class $PinnedMessagesTable extends PinnedMessages
+    with TableInfo<$PinnedMessagesTable, PinnedMessage> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $PinnedMessagesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _chatJidMeta = const VerificationMeta(
+    'chatJid',
+  );
+  @override
+  late final GeneratedColumn<String> chatJid = GeneratedColumn<String>(
+    'chat_jid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _stanzaIdMeta = const VerificationMeta(
+    'stanzaId',
+  );
+  @override
+  late final GeneratedColumn<String> stanzaId = GeneratedColumn<String>(
+    'stanza_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _pinnedAtMeta = const VerificationMeta(
+    'pinnedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> pinnedAt = GeneratedColumn<DateTime>(
+    'pinned_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  static const VerificationMeta _sequenceMeta = const VerificationMeta(
+    'sequence',
+  );
+  @override
+  late final GeneratedColumn<int> sequence = GeneratedColumn<int>(
+    'sequence',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [chatJid, stanzaId, pinnedAt, sequence];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'pinned_messages';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<PinnedMessage> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('chat_jid')) {
+      context.handle(
+        _chatJidMeta,
+        chatJid.isAcceptableOrUnknown(data['chat_jid']!, _chatJidMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_chatJidMeta);
+    }
+    if (data.containsKey('stanza_id')) {
+      context.handle(
+        _stanzaIdMeta,
+        stanzaId.isAcceptableOrUnknown(data['stanza_id']!, _stanzaIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_stanzaIdMeta);
+    }
+    if (data.containsKey('pinned_at')) {
+      context.handle(
+        _pinnedAtMeta,
+        pinnedAt.isAcceptableOrUnknown(data['pinned_at']!, _pinnedAtMeta),
+      );
+    }
+    if (data.containsKey('sequence')) {
+      context.handle(
+        _sequenceMeta,
+        sequence.isAcceptableOrUnknown(data['sequence']!, _sequenceMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {chatJid, stanzaId};
+  @override
+  PinnedMessage map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return PinnedMessage(
+      chatJid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}chat_jid'],
+      )!,
+      stanzaId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}stanza_id'],
+      )!,
+      pinnedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}pinned_at'],
+      )!,
+      sequence: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}sequence'],
+      )!,
+    );
+  }
+
+  @override
+  $PinnedMessagesTable createAlias(String alias) {
+    return $PinnedMessagesTable(attachedDatabase, alias);
+  }
+}
+
+class PinnedMessage extends DataClass implements Insertable<PinnedMessage> {
+  final String chatJid;
+  final String stanzaId;
+
+  /// Highest first in the UI, so the most recently pinned is the one found.
+  final DateTime pinnedAt;
+
+  /// Tiebreaker for [pinnedAt], descending.
+  ///
+  /// Not decoration: drift stores a DateTime at second precision, so two pins
+  /// made within the same second have an identical timestamp and the order
+  /// between them is whatever the query planner happens to produce. A user who
+  /// pins two messages quickly would find the list reordering itself between
+  /// opens.
+  final int sequence;
+  const PinnedMessage({
+    required this.chatJid,
+    required this.stanzaId,
+    required this.pinnedAt,
+    required this.sequence,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['chat_jid'] = Variable<String>(chatJid);
+    map['stanza_id'] = Variable<String>(stanzaId);
+    map['pinned_at'] = Variable<DateTime>(pinnedAt);
+    map['sequence'] = Variable<int>(sequence);
+    return map;
+  }
+
+  PinnedMessagesCompanion toCompanion(bool nullToAbsent) {
+    return PinnedMessagesCompanion(
+      chatJid: Value(chatJid),
+      stanzaId: Value(stanzaId),
+      pinnedAt: Value(pinnedAt),
+      sequence: Value(sequence),
+    );
+  }
+
+  factory PinnedMessage.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return PinnedMessage(
+      chatJid: serializer.fromJson<String>(json['chatJid']),
+      stanzaId: serializer.fromJson<String>(json['stanzaId']),
+      pinnedAt: serializer.fromJson<DateTime>(json['pinnedAt']),
+      sequence: serializer.fromJson<int>(json['sequence']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'chatJid': serializer.toJson<String>(chatJid),
+      'stanzaId': serializer.toJson<String>(stanzaId),
+      'pinnedAt': serializer.toJson<DateTime>(pinnedAt),
+      'sequence': serializer.toJson<int>(sequence),
+    };
+  }
+
+  PinnedMessage copyWith({
+    String? chatJid,
+    String? stanzaId,
+    DateTime? pinnedAt,
+    int? sequence,
+  }) => PinnedMessage(
+    chatJid: chatJid ?? this.chatJid,
+    stanzaId: stanzaId ?? this.stanzaId,
+    pinnedAt: pinnedAt ?? this.pinnedAt,
+    sequence: sequence ?? this.sequence,
+  );
+  PinnedMessage copyWithCompanion(PinnedMessagesCompanion data) {
+    return PinnedMessage(
+      chatJid: data.chatJid.present ? data.chatJid.value : this.chatJid,
+      stanzaId: data.stanzaId.present ? data.stanzaId.value : this.stanzaId,
+      pinnedAt: data.pinnedAt.present ? data.pinnedAt.value : this.pinnedAt,
+      sequence: data.sequence.present ? data.sequence.value : this.sequence,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PinnedMessage(')
+          ..write('chatJid: $chatJid, ')
+          ..write('stanzaId: $stanzaId, ')
+          ..write('pinnedAt: $pinnedAt, ')
+          ..write('sequence: $sequence')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(chatJid, stanzaId, pinnedAt, sequence);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is PinnedMessage &&
+          other.chatJid == this.chatJid &&
+          other.stanzaId == this.stanzaId &&
+          other.pinnedAt == this.pinnedAt &&
+          other.sequence == this.sequence);
+}
+
+class PinnedMessagesCompanion extends UpdateCompanion<PinnedMessage> {
+  final Value<String> chatJid;
+  final Value<String> stanzaId;
+  final Value<DateTime> pinnedAt;
+  final Value<int> sequence;
+  final Value<int> rowid;
+  const PinnedMessagesCompanion({
+    this.chatJid = const Value.absent(),
+    this.stanzaId = const Value.absent(),
+    this.pinnedAt = const Value.absent(),
+    this.sequence = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  PinnedMessagesCompanion.insert({
+    required String chatJid,
+    required String stanzaId,
+    this.pinnedAt = const Value.absent(),
+    this.sequence = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : chatJid = Value(chatJid),
+       stanzaId = Value(stanzaId);
+  static Insertable<PinnedMessage> custom({
+    Expression<String>? chatJid,
+    Expression<String>? stanzaId,
+    Expression<DateTime>? pinnedAt,
+    Expression<int>? sequence,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (chatJid != null) 'chat_jid': chatJid,
+      if (stanzaId != null) 'stanza_id': stanzaId,
+      if (pinnedAt != null) 'pinned_at': pinnedAt,
+      if (sequence != null) 'sequence': sequence,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  PinnedMessagesCompanion copyWith({
+    Value<String>? chatJid,
+    Value<String>? stanzaId,
+    Value<DateTime>? pinnedAt,
+    Value<int>? sequence,
+    Value<int>? rowid,
+  }) {
+    return PinnedMessagesCompanion(
+      chatJid: chatJid ?? this.chatJid,
+      stanzaId: stanzaId ?? this.stanzaId,
+      pinnedAt: pinnedAt ?? this.pinnedAt,
+      sequence: sequence ?? this.sequence,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (chatJid.present) {
+      map['chat_jid'] = Variable<String>(chatJid.value);
+    }
+    if (stanzaId.present) {
+      map['stanza_id'] = Variable<String>(stanzaId.value);
+    }
+    if (pinnedAt.present) {
+      map['pinned_at'] = Variable<DateTime>(pinnedAt.value);
+    }
+    if (sequence.present) {
+      map['sequence'] = Variable<int>(sequence.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PinnedMessagesCompanion(')
+          ..write('chatJid: $chatJid, ')
+          ..write('stanzaId: $stanzaId, ')
+          ..write('pinnedAt: $pinnedAt, ')
+          ..write('sequence: $sequence, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $PendingCorrectionsTable extends PendingCorrections
     with TableInfo<$PendingCorrectionsTable, PendingCorrection> {
   @override
@@ -2996,6 +3317,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $BlockedContactsTable blockedContacts = $BlockedContactsTable(
     this,
   );
+  late final $PinnedMessagesTable pinnedMessages = $PinnedMessagesTable(this);
   late final $PendingCorrectionsTable pendingCorrections =
       $PendingCorrectionsTable(this);
   late final $ReactionsTable reactions = $ReactionsTable(this);
@@ -3009,6 +3331,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     messages,
     rosterEntries,
     blockedContacts,
+    pinnedMessages,
     pendingCorrections,
     reactions,
     meta,
@@ -4300,6 +4623,198 @@ typedef $$BlockedContactsTableProcessedTableManager =
       BlockedContact,
       PrefetchHooks Function()
     >;
+typedef $$PinnedMessagesTableCreateCompanionBuilder =
+    PinnedMessagesCompanion Function({
+      required String chatJid,
+      required String stanzaId,
+      Value<DateTime> pinnedAt,
+      Value<int> sequence,
+      Value<int> rowid,
+    });
+typedef $$PinnedMessagesTableUpdateCompanionBuilder =
+    PinnedMessagesCompanion Function({
+      Value<String> chatJid,
+      Value<String> stanzaId,
+      Value<DateTime> pinnedAt,
+      Value<int> sequence,
+      Value<int> rowid,
+    });
+
+class $$PinnedMessagesTableFilterComposer
+    extends Composer<_$AppDatabase, $PinnedMessagesTable> {
+  $$PinnedMessagesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get chatJid => $composableBuilder(
+    column: $table.chatJid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get stanzaId => $composableBuilder(
+    column: $table.stanzaId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get pinnedAt => $composableBuilder(
+    column: $table.pinnedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get sequence => $composableBuilder(
+    column: $table.sequence,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$PinnedMessagesTableOrderingComposer
+    extends Composer<_$AppDatabase, $PinnedMessagesTable> {
+  $$PinnedMessagesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get chatJid => $composableBuilder(
+    column: $table.chatJid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get stanzaId => $composableBuilder(
+    column: $table.stanzaId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get pinnedAt => $composableBuilder(
+    column: $table.pinnedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get sequence => $composableBuilder(
+    column: $table.sequence,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$PinnedMessagesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $PinnedMessagesTable> {
+  $$PinnedMessagesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get chatJid =>
+      $composableBuilder(column: $table.chatJid, builder: (column) => column);
+
+  GeneratedColumn<String> get stanzaId =>
+      $composableBuilder(column: $table.stanzaId, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get pinnedAt =>
+      $composableBuilder(column: $table.pinnedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get sequence =>
+      $composableBuilder(column: $table.sequence, builder: (column) => column);
+}
+
+class $$PinnedMessagesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $PinnedMessagesTable,
+          PinnedMessage,
+          $$PinnedMessagesTableFilterComposer,
+          $$PinnedMessagesTableOrderingComposer,
+          $$PinnedMessagesTableAnnotationComposer,
+          $$PinnedMessagesTableCreateCompanionBuilder,
+          $$PinnedMessagesTableUpdateCompanionBuilder,
+          (
+            PinnedMessage,
+            BaseReferences<_$AppDatabase, $PinnedMessagesTable, PinnedMessage>,
+          ),
+          PinnedMessage,
+          PrefetchHooks Function()
+        > {
+  $$PinnedMessagesTableTableManager(
+    _$AppDatabase db,
+    $PinnedMessagesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$PinnedMessagesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$PinnedMessagesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$PinnedMessagesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> chatJid = const Value.absent(),
+                Value<String> stanzaId = const Value.absent(),
+                Value<DateTime> pinnedAt = const Value.absent(),
+                Value<int> sequence = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => PinnedMessagesCompanion(
+                chatJid: chatJid,
+                stanzaId: stanzaId,
+                pinnedAt: pinnedAt,
+                sequence: sequence,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String chatJid,
+                required String stanzaId,
+                Value<DateTime> pinnedAt = const Value.absent(),
+                Value<int> sequence = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => PinnedMessagesCompanion.insert(
+                chatJid: chatJid,
+                stanzaId: stanzaId,
+                pinnedAt: pinnedAt,
+                sequence: sequence,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$PinnedMessagesTable, PinnedMessage>(table),
+                  BaseReferences<
+                    _$AppDatabase,
+                    $PinnedMessagesTable,
+                    PinnedMessage
+                  >(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$PinnedMessagesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $PinnedMessagesTable,
+      PinnedMessage,
+      $$PinnedMessagesTableFilterComposer,
+      $$PinnedMessagesTableOrderingComposer,
+      $$PinnedMessagesTableAnnotationComposer,
+      $$PinnedMessagesTableCreateCompanionBuilder,
+      $$PinnedMessagesTableUpdateCompanionBuilder,
+      (
+        PinnedMessage,
+        BaseReferences<_$AppDatabase, $PinnedMessagesTable, PinnedMessage>,
+      ),
+      PinnedMessage,
+      PrefetchHooks Function()
+    >;
 typedef $$PendingCorrectionsTableCreateCompanionBuilder =
     PendingCorrectionsCompanion Function({
       required String targetId,
@@ -4833,6 +5348,8 @@ class $AppDatabaseManager {
       $$RosterEntriesTableTableManager(_db, _db.rosterEntries);
   $$BlockedContactsTableTableManager get blockedContacts =>
       $$BlockedContactsTableTableManager(_db, _db.blockedContacts);
+  $$PinnedMessagesTableTableManager get pinnedMessages =>
+      $$PinnedMessagesTableTableManager(_db, _db.pinnedMessages);
   $$PendingCorrectionsTableTableManager get pendingCorrections =>
       $$PendingCorrectionsTableTableManager(_db, _db.pendingCorrections);
   $$ReactionsTableTableManager get reactions =>

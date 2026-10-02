@@ -284,3 +284,104 @@ class RoomSheetResult {
 
   bool get leaving => nick == null;
 }
+
+/// The pinned messages in a conversation.
+///
+/// Shows the text as it was when pinned rather than the live row: the pin is
+/// about "this is the one that matters", and if the message is edited or
+/// deleted afterwards the reader still needs to know which message was meant.
+class PinnedSheet extends ConsumerWidget {
+  const PinnedSheet({
+    super.key,
+    required this.chatJid,
+    required this.pinnedIds,
+    required this.bodies,
+  });
+
+  final String chatJid;
+
+  /// Stanza ids, most recently pinned first.
+  final List<String> pinnedIds;
+
+  /// Text for each pinned id, keyed the same way.
+  final Map<String, ({String body, String sender, DateTime at})> bodies;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tg = context.tg;
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.5,
+      builder: (context, controller) {
+        if (pinnedIds.isEmpty) {
+          return Center(
+            child: Text(
+              'Nothing pinned',
+              style: TextStyle(color: tg.textSecondary),
+            ),
+          );
+        }
+        return ListView(
+          controller: controller,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+              child: Text(
+                'Pinned (${pinnedIds.length})',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            for (final id in pinnedIds)
+              _pinnedTile(context, ref, tg, id),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _pinnedTile(
+    BuildContext context,
+    WidgetRef ref,
+    dynamic tg,
+    String id,
+  ) {
+    final entry = bodies[id];
+    return Dismissible(
+      key: ValueKey('pinned-$id'),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        color: tg.danger,
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: const Icon(Icons.push_pin, color: Colors.white),
+      ),
+      confirmDismiss: (_) async {
+        await togglePinned(ref, chatJid, id);
+        return false;
+      },
+      child: ListTile(
+        title: Text(
+          entry?.body ?? '(no longer available)',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Text(
+          entry == null
+              ? 'This message was deleted.'
+              : '${entry.sender} · ${_clock(entry.at)}',
+          style: TextStyle(color: tg.textSecondary),
+        ),
+        onTap: () {
+          Navigator.of(context).pop();
+          Navigator.of(context).pushNamed('/chat', arguments: chatJid);
+        },
+      ),
+    );
+  }
+
+  static String _clock(DateTime t) {
+    final h = t.hour.toString().padLeft(2, '0');
+    final m = t.minute.toString().padLeft(2, '0');
+    return '$h:$m';
+  }
+}

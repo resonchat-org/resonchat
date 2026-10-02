@@ -168,6 +168,33 @@ class BlockedContacts extends Table {
   Set<Column> get primaryKey => {jid};
 }
 
+/// One message the user pinned inside a conversation.
+///
+/// Pinned client-side: there is no standard way to tell a server "this message
+/// is the important one in this chat", and inventing one that only this app
+/// understands would make the feature invisible to every other client on the
+/// conversation.
+class PinnedMessages extends Table {
+  TextColumn get chatJid => text()();
+  TextColumn get stanzaId => text()();
+
+  /// Highest first in the UI, so the most recently pinned is the one found.
+  DateTimeColumn get pinnedAt =>
+      dateTime().withDefault(currentDateAndTime)();
+
+  /// Tiebreaker for [pinnedAt], descending.
+  ///
+  /// Not decoration: drift stores a DateTime at second precision, so two pins
+  /// made within the same second have an identical timestamp and the order
+  /// between them is whatever the query planner happens to produce. A user who
+  /// pins two messages quickly would find the list reordering itself between
+  /// opens.
+  IntColumn get sequence => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {chatJid, stanzaId};
+}
+
 /// A correction whose message has not arrived yet (XEP-0308).
 ///
 /// Order is not ours to choose: a correction can legitimately arrive before
@@ -233,6 +260,7 @@ class Meta extends Table {
       Messages,
       RosterEntries,
       BlockedContacts,
+      PinnedMessages,
       PendingCorrections,
       Reactions,
       Meta,
@@ -242,7 +270,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
   @override
-  int get schemaVersion => 11;
+  int get schemaVersion => 13;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -255,6 +283,21 @@ class AppDatabase extends _$AppDatabase {
             await customStatement(
               "ALTER TABLE messages ADD COLUMN delivery_error TEXT NOT NULL "
               "DEFAULT ''",
+            );
+          }
+          if (from < 13) {
+            await customStatement(
+              'ALTER TABLE pinned_messages ADD COLUMN sequence INTEGER NOT NULL '
+              'DEFAULT 0',
+            );
+          }
+          if (from < 12) {
+            await customStatement(
+              'CREATE TABLE IF NOT EXISTS pinned_messages ('
+              'chat_jid TEXT NOT NULL, '
+              'stanza_id TEXT NOT NULL, '
+              'pinned_at INTEGER NOT NULL DEFAULT 0, '
+              'PRIMARY KEY (chat_jid, stanza_id))',
             );
           }
           if (from < 11) {
@@ -744,6 +787,82 @@ class AppDatabase extends _$AppDatabase {
   /// ends up showing the whole chat list.
   Stream<List<Chat>> watchArchivedChats() =>
       watchChats(includeArchived: true, archivedOnly: true);
+
+  /// The draft for [chatJid], or null when the box is empty.
+  ///
+  /// Kept in the database rather than in the text field's controller: the field
+  /// dies with the page, and the whole point of a draft is that it survives
+  /// leaving and coming back.
+  Future<String?> draft(String chatJid) async {
+    final value = await metaValue('draft:$chatJid');
+    return value == null || value.isEmpty ? null : value;
+  }
+
+  Future<void> setDraft(String chatJid, String? text) async {
+    final trimmed = text?.trim() ?? '';
+    // Cleared rather than stored as empty: a row of empty strings is a list of
+    // conversations that once had a draft, which is not a thing.
+    await deleteMetaValue('draft:$chatJid');
+    if (trimmed.isEmpty) return;
+    await setMetaValue('draft:$chatJid', text!);
+  }
+
+  /// Pins a message, or unpins it when already pinned.
+  Future<void> togglePinned(String chatJid, String stanzaId) async {
+    if (stanzaId.isEmpty) return;
+    final existing = await (select(pinnedMessages)
+          ..where(
+            (p) =>
+                p.chatJid.equals(chatJid) & p.stanzaId.equals(stanzaId),
+          ))
+        .getSingleOrNull();
+    if (existing != null) {
+      await (delete(pinnedMessages)
+            ..where(
+              (p) =>
+                  p.chatJid.equals(chatJid) & p.stanzaId.equals(stanzaId),
+            ))
+          .go();
+      return;
+    }
+    // A monotonic counter rather than the clock, for the reason on the column:
+    // two pins inside one second must still have a defined order.
+    // The expression is what gets read, not the column: with `max()` the result
+    // set carries the aggregate, not a plain column.
+    final highestExpr = pinnedMessages.sequence.max();
+    final highest = await (selectOnly(pinnedMessages)
+          ..addColumns([highestExpr])
+          ..where(pinnedMessages.chatJid.equals(chatJid)))
+        .getSingle();
+    final next = (highest.read(highestExpr) ?? 0) + 1;
+    await into(pinnedMessages).insert(
+      PinnedMessagesCompanion.insert(
+        chatJid: chatJid,
+        stanzaId: stanzaId,
+        sequence: Value(next),
+      ),
+    );
+  }
+
+  Future<bool> isPinned(String chatJid, String stanzaId) async =>
+      (await (select(pinnedMessages)
+            ..where(
+              (p) =>
+                  p.chatJid.equals(chatJid) & p.stanzaId.equals(stanzaId),
+            ))
+          .getSingleOrNull()) !=
+      null;
+
+  /// Pinned messages in [chatJid], most recently pinned first.
+  Stream<List<String>> watchPinned(String chatJid) => (select(pinnedMessages)
+        ..where((p) => p.chatJid.equals(chatJid))
+        ..orderBy([
+          (p) => OrderingTerm.desc(p.sequence),
+          (p) => OrderingTerm.desc(p.pinnedAt),
+          (p) => OrderingTerm.desc(p.stanzaId),
+        ]))
+      .watch()
+      .map((rows) => rows.map((r) => r.stanzaId).toList());
 
   /// The JIDs currently blocked (XEP-0191).
   Future<Set<String>> blockedJids() async =>

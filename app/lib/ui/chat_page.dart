@@ -188,6 +188,11 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
   /// XEP-0085: notify once per typing burst, not per keystroke.
   void _onInputChanged(String value) {
+    // The draft is saved on every keystroke rather than on leaving the page,
+    // because "leaving" includes the app being killed and the conversation
+    // being switched from a notification — none of which give us a callback.
+    unawaited(saveDraft(ref, widget.chatJid, value));
+
     final composing = value.trim().isNotEmpty;
     if (composing == _typingNotified) return;
     _typingNotified = composing;
@@ -197,6 +202,29 @@ class _ChatPageState extends ConsumerState<ChatPage> {
           .read(xmppServiceProvider)
           .sendChatState(JID.fromString(widget.chatJid), TypingState.composing),
     );
+  }
+
+  /// Restores the saved draft into the input.
+  ///
+  /// Only once, and only if the field is still empty — otherwise a rebuild
+  /// arriving while the user is typing would overwrite what they just wrote
+  /// with the older stored copy.
+  bool _draftRestored = false;
+
+  void _restoreDraft() {
+    if (_draftRestored) return;
+    final draft = ref.read(draftProvider(widget.chatJid)).value;
+    if (draft == null || draft.isEmpty) {
+      _draftRestored = true;
+      return;
+    }
+    if (_input.text.isNotEmpty) {
+      _draftRestored = true;
+      return;
+    }
+    _draftRestored = true;
+    _input.text = draft;
+    _typingNotified = draft.trim().isNotEmpty;
   }
 
   /// Sends the input on [track], asking the user when it cannot be used.
@@ -322,6 +350,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final text = _input.text.trim();
     if (outcome?.sent ?? false) {
       _input.clear();
+      unawaited(saveDraft(ref, widget.chatJid, null));
       _typingNotified = false;
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
     } else if (text.isNotEmpty && mounted) {
@@ -409,6 +438,27 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     });
   }
 
+  Future<void> _showPinned() async {
+    if (!mounted) return;
+    final ids = await ref.read(pinnedIdsProvider(widget.chatJid).future);
+    final messages = await ref.read(databaseProvider).watchMessages(widget.chatJid).first;
+    final bodies = <String, ({String body, String sender, DateTime at})>{
+      for (final m in messages)
+        if (ids.contains(m.stanzaId))
+          m.stanzaId: (body: m.body, sender: m.sender, at: m.timestamp),
+    };
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => PinnedSheet(
+        chatJid: widget.chatJid,
+        pinnedIds: ids,
+        bodies: bodies,
+      ),
+    );
+  }
+
   Future<void> _showMembers() async {
     final chat = _room;
     if (chat == null) return;
@@ -432,6 +482,13 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   /// Long-press on a message: the context menu, then whatever it leads to.
   Future<void> _showMessageMenu(Message message, String body) async {
     if (!mounted) return;
+    // Read before the dialog opens: an await here would leave a frame where a
+    // tap lands on nothing, and the dialog is modal so the menu's own action
+    // handler is the only thing that should be doing async work.
+    final pinned = await ref
+        .read(databaseProvider)
+        .isPinned(widget.chatJid, message.stanzaId);
+    if (!mounted) return;
     final track = storedTrack(message.encMode);
     final actions = MessageActions.for_(
       mine: !message.incoming,
@@ -440,6 +497,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       // either would act on a placeholder.
       decrypted: message.encMode != EncModeToken.error.wire && !message.retracted,
       addressable: message.stanzaId.isNotEmpty,
+      pinned: pinned,
     );
     if (actions.isEmpty) return;
 
@@ -477,6 +535,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         );
       case MessageAction.forward:
         await _forwardMessage(message, body);
+      case MessageAction.pin:
+        await togglePinned(ref, widget.chatJid, message.stanzaId);
+        if (mounted) setState(() {});
       case MessageAction.edit:
         setState(() {
           _editingId = message.stanzaId;
@@ -669,6 +730,10 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     // explained there if not.
     final track = ref.watch(chatTrackProvider(widget.chatJid)).value ??
         Track.standard;
+    // Watched so a draft saved here is read back into the field; see
+    // _restoreDraft for why it only happens once.
+    ref.watch(draftProvider(widget.chatJid));
+    _restoreDraft();
 
     return Scaffold(
       appBar: AppBar(
@@ -731,6 +796,11 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                 builder: (_) => SearchPage(chatJid: widget.chatJid),
               ),
             ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.push_pin_outlined),
+            tooltip: 'Pinned messages',
+            onPressed: _showPinned,
           ),
           IconButton(
             icon: const Icon(Icons.history),
