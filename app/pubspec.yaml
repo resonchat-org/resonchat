@@ -27,6 +27,7 @@
     "pqcrypto": "^0.4.2",
     "xml": "^6.5.0",
     "hex": "^0.2.0",
+    "ffi": "^2.1.0",
     "path": "^1.9.0",
 
     "riverpod": "^2.6.1",
@@ -40,6 +41,9 @@
 
   "dev_dependencies": {
     "flutter_test": {
+      "sdk": "flutter"
+    },
+    "integration_test": {
       "sdk": "flutter"
     },
     "flutter_lints": "^6.0.0",
