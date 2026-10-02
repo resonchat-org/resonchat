@@ -34,15 +34,71 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
   bool _typingNotified = false;
   bool _atBottom = true;
+  StreamSubscription<DeliveryFailure>? _failureSub;
 
   @override
   void initState() {
     super.initState();
     _scroll.addListener(_onScroll);
+    // A message the server refused must stop looking sent.
+    _failureSub = ref
+        .read(xmppServiceProvider)
+        .deliveryFailures
+        .listen(_onDeliveryFailure);
+  }
+
+  Future<void> _onDeliveryFailure(DeliveryFailure failure) async {
+    if (failure.from.toBare().toString() != widget.chatJid) return;
+    await ref.read(databaseProvider).markDeliveryFailure(
+          failure.stanzaId,
+          failure.reason,
+        );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Not delivered: ${failure.reason}'),
+        action: SnackBarAction(
+          label: 'Details',
+          onPressed: () => _showRefusalHelp(failure.reason),
+        ),
+      ),
+    );
+  }
+
+  /// Turns the server's error into something actionable.
+  ///
+  /// `auth/forbidden` in practice means the server refuses stanzas outside a
+  /// mutual subscription, which is the single most common reason a fresh
+  /// contact sees every message silently vanish.
+  void _showRefusalHelp(String reason) {
+    final mutual =
+        ref.read(contactStateProvider(widget.chatJid)).value;
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Message not delivered'),
+        content: Text(
+          'The server refused this message:\n\n$reason\n\n'
+          '${(mutual?.isMutual ?? false) ? '' : 'This contact is not a '
+              'mutual subscription yet (currently ${mutual?.summary ?? 'unknown'}). '
+              'Many servers refuse messages until both sides have accepted '
+              'each other.\n\n'}'
+          'Ask them to accept your contact request, or wait for the other '
+          'side to accept yours.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   void dispose() {
+    _failureSub?.cancel();
     _scroll
       ..removeListener(_onScroll)
       ..dispose();
@@ -177,6 +233,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       ),
       body: Column(
         children: [
+          _SubscriptionBanner(chatJid: widget.chatJid),
           Expanded(
             child: Container(
               color: tg.pageBackground,
@@ -276,7 +333,7 @@ class _MessageList extends StatelessWidget {
           side:
               m.incoming ? BubbleSide.incoming : BubbleSide.outgoing,
           delivered: m.delivered,
-          failed: false,
+          failed: m.deliveryError.isNotEmpty,
         ),
       );
     }
@@ -378,3 +435,60 @@ class _InputBar extends StatelessWidget {
   }
 }
 
+
+
+/// Warns when the contact is not a mutual subscription.
+///
+/// Without this, a server that refuses stanzas outside a mutual
+/// subscription looks exactly like silent data loss: messages vanish and
+/// nothing in the interface explains why.
+class _SubscriptionBanner extends ConsumerWidget {
+  const _SubscriptionBanner({required this.chatJid});
+
+  final String chatJid;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tg = context.tg;
+    final state = ref.watch(contactStateProvider(chatJid)).value;
+    // Nothing to say before the roster has loaded, or when all is well.
+    if (state == null || state.isMutual) return const SizedBox.shrink();
+
+    final text = switch (state.subscription) {
+      'none' => 'Not a contact yet — the server may refuse messages.',
+      'to' => state.asked
+          ? 'They can see you. Waiting for them to accept.'
+          : 'They can see you, but you cannot see them.',
+      'from' => state.asked
+          ? 'You can see them. Waiting for them to accept your request.'
+          : 'You can see them, but they cannot see you.',
+      _ => 'Subscription state: ${state.subscription}',
+    };
+
+    return Material(
+      color: tg.danger.withValues(alpha: 0.12),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+        child: Row(
+          children: [
+            Icon(Icons.info_outline, size: 18, color: tg.danger),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                text,
+                style: TextStyle(fontSize: 13, color: tg.textPrimary),
+              ),
+            ),
+            if (state.subscription != 'both')
+              TextButton(
+                onPressed: () => ref
+                    .read(xmppServiceProvider)
+                    .requestSubscription(JID.fromString(chatJid)),
+                child: const Text('Ask again'),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}

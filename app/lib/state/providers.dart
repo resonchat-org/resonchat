@@ -125,6 +125,48 @@ final lastMessageProvider = StreamProvider.family<String?, String>(
 ///
 /// The encryption info page shows this so the user can see exactly which
 /// devices are counted as recipients.
+/// Subscription state of one contact, and whether it is mutual.
+///
+/// Delivery is not just crypto: servers commonly refuse stanzas that are not
+/// inside a mutual subscription, so the UI has to be able to say so instead
+/// of leaving the user wondering why nothing arrives.
+final contactStateProvider = FutureProvider.family<ContactState, String>((
+  ref,
+  chatJid,
+) async {
+  ref.watch(connectionStateProvider);
+  final row = await ref.read(databaseProvider).rosterEntry(chatJid);
+  return ContactState(
+    subscription: row?.subscription ?? 'none',
+    asked: (row?.ask ?? '').isNotEmpty,
+  );
+});
+
+/// The subset of RFC 6121 subscription state the UI acts on.
+class ContactState {
+  const ContactState({required this.subscription, required this.asked});
+
+  /// `none`, `to`, `from` or `both`.
+  final String subscription;
+
+  /// True when we have asked them and are waiting.
+  final bool asked;
+
+  bool get isMutual => subscription == 'both';
+
+  /// One-line description for the user.
+  String get summary => switch (subscription) {
+        'both' => 'mutual',
+        'to' => asked
+            ? 'they can see you; your request is pending'
+            : 'they can see you; you cannot see them',
+        'from' => asked
+            ? 'you can see them; your request is pending'
+            : 'you can see them; they cannot see you',
+        _ => 'not a contact',
+      };
+}
+
 final chatCapabilitiesProvider =
     FutureProvider.family<ChatCapabilities?, String>((ref, chatJid) async {
       ref.watch(connectionStateProvider);

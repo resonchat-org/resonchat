@@ -54,6 +54,27 @@ class InboundMessage {
   final DateTime? archiveTimestamp;
 }
 
+/// The server rejected one of our outgoing messages.
+class DeliveryFailure {
+  const DeliveryFailure({
+    required this.stanzaId,
+    required this.from,
+    required this.reason,
+  });
+
+  /// The id we sent with, so the stored row can be found.
+  final String stanzaId;
+
+  final JID from;
+
+  /// Human-readable cause, e.g. `auth/forbidden: Access denied by service
+  /// policy`.
+  final String reason;
+
+  @override
+  String toString() => 'DeliveryFailure($stanzaId from $from: $reason)';
+}
+
 /// What arrived for one inbound message, before the UI sees it.
 ///
 /// Diagnostic counterpart to [InboundMessage]: `encrypted` plus a null
@@ -199,6 +220,15 @@ class XmppService {
   /// decryption. Diagnostic counterpart to [inbound].
   Stream<MessageTrace> get rawMessages => _rawMessages.stream;
   final _rawMessages = StreamController<MessageTrace>.broadcast();
+
+  /// Messages the server refused, keyed by the stanza id we sent them with.
+  ///
+  /// A `<message type='error'/>` carrying our own id means the stanza never
+  /// left the server. The most common cause in practice is a service policy
+  /// that refuses anything outside mutual subscriptions, which is worth
+  /// telling the user about rather than showing a bubble that looks sent.
+  Stream<DeliveryFailure> get deliveryFailures => _deliveryFailures.stream;
+  final _deliveryFailures = StreamController<DeliveryFailure>.broadcast();
 
   OmemoManager? get moxxOmemo => _moxxOmemo;
   omemo_dart.OmemoManager? get omemo => _omemo;
@@ -708,6 +738,22 @@ class XmppService {
   void _onEvent(XmppEvent event) {
     if (event is MessageEvent) {
       final error = event.encryptionError;
+      // Our own message coming back as an error: it was refused, not
+      // delivered. Report it before anything else so the UI can correct the
+      // stored row instead of leaving a bubble that looks sent.
+      final stanzaError = event.error;
+      if (stanzaError != null && event.id != null && !event.encrypted) {
+        if (!_deliveryFailures.isClosed) {
+          _deliveryFailures.add(
+            DeliveryFailure(
+              stanzaId: event.id!,
+              from: event.from,
+              reason: describeStanzaError(stanzaError),
+            ),
+          );
+        }
+        return;
+      }
       // A carbon is our own message from another resource: it must not be
       // stored as an inbound bubble (docs/03 §4).
       final isCarbon = event.get<CarbonsData>()?.isCarbon ?? false;
@@ -800,4 +846,17 @@ class NeverReconnectPolicy extends ReconnectionPolicy {
 
   @override
   Future<void> onFailure() async {}
+}
+
+/// Renders a stanza error as something worth showing a user.
+///
+/// The server's own wording is kept verbatim: "Access denied by service
+/// policy" and "service-unavailable" call for completely different
+/// responses, and paraphrasing them into one generic string would hide that.
+String describeStanzaError(StanzaError error) {
+  if (error is GenericStanzaError) {
+    final text = error.text.isEmpty ? '' : ': ${error.text}';
+    return '${error.type}/${error.condition}$text';
+  }
+  return error.toString();
 }

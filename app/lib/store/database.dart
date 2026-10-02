@@ -52,6 +52,15 @@ class Messages extends Table {
   /// Set when this message came from another of our own devices
   /// (XEP-0280 carbon), so the UI can avoid a duplicate bubble.
   BoolColumn get isCarbon => boolean().withDefault(const Constant(false))();
+
+  /// Why the server refused this message, empty when nothing went wrong.
+  ///
+  /// A message that comes back as `<message type='error'/>` was never
+  /// delivered. Showing it as an ordinary outgoing bubble is a lie: the
+  /// usual causes are a server service policy, a non-mutual subscription, or
+  /// a blocked account, and each needs a different thing from the user.
+  TextColumn get deliveryError =>
+      text().withDefault(const Constant(''))();
 }
 
 /// Roster cache + RFC 6121 version, persisted for roster versioning.
@@ -80,10 +89,44 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+        onUpgrade: (m, from, to) async {
+          if (from < 2) {
+            // Only additive changes so far; drift still expects an explicit
+            // step per version so a future destructive change has a place to
+            // go. Raw SQL because addColumn's generic bound is
+            // GeneratedColumn<Object> and will not take a TextColumn.
+            await customStatement(
+              "ALTER TABLE messages ADD COLUMN delivery_error TEXT NOT NULL "
+              "DEFAULT ''",
+            );
+          }
+        },
+      );
 
   Future<List<RosterEntry>> allRosterEntries() =>
       (select(rosterEntries)).get();
+
+  /// Records that the server refused the message sent with [stanzaId].
+  ///
+  /// Returns true when a row was updated, so a caller can tell whether the
+  /// failure belonged to a message it still holds.
+  Future<bool> markDeliveryFailure(String stanzaId, String reason) async {
+    if (stanzaId.isEmpty) return false;
+    final changed = await (update(messages)
+          ..where((m) => m.stanzaId.equals(stanzaId)))
+        .write(MessagesCompanion(deliveryError: Value(reason)));
+    return changed > 0;
+  }
+
+  /// One contact's subscription state, for the "will this be delivered?"
+  /// hint.
+  Future<RosterEntry?> rosterEntry(String jid) =>
+      (select(rosterEntries)..where((r) => r.jid.equals(jid)))
+          .getSingleOrNull();
 
   Future<String?> metaValue(String key) async {
     final row = await (select(meta)..where((m) => m.key.equals(key)))

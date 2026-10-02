@@ -394,6 +394,18 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     ),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _deliveryErrorMeta = const VerificationMeta(
+    'deliveryError',
+  );
+  @override
+  late final GeneratedColumn<String> deliveryError = GeneratedColumn<String>(
+    'delivery_error',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -406,6 +418,7 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     incoming,
     delivered,
     isCarbon,
+    deliveryError,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -484,6 +497,15 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         isCarbon.isAcceptableOrUnknown(data['is_carbon']!, _isCarbonMeta),
       );
     }
+    if (data.containsKey('delivery_error')) {
+      context.handle(
+        _deliveryErrorMeta,
+        deliveryError.isAcceptableOrUnknown(
+          data['delivery_error']!,
+          _deliveryErrorMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -533,6 +555,10 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         DriftSqlType.bool,
         data['${effectivePrefix}is_carbon'],
       )!,
+      deliveryError: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}delivery_error'],
+      )!,
     );
   }
 
@@ -560,6 +586,14 @@ class Message extends DataClass implements Insertable<Message> {
   /// Set when this message came from another of our own devices
   /// (XEP-0280 carbon), so the UI can avoid a duplicate bubble.
   final bool isCarbon;
+
+  /// Why the server refused this message, empty when nothing went wrong.
+  ///
+  /// A message that comes back as `<message type='error'/>` was never
+  /// delivered. Showing it as an ordinary outgoing bubble is a lie: the
+  /// usual causes are a server service policy, a non-mutual subscription, or
+  /// a blocked account, and each needs a different thing from the user.
+  final String deliveryError;
   const Message({
     required this.id,
     required this.chatJid,
@@ -571,6 +605,7 @@ class Message extends DataClass implements Insertable<Message> {
     required this.incoming,
     required this.delivered,
     required this.isCarbon,
+    required this.deliveryError,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -585,6 +620,7 @@ class Message extends DataClass implements Insertable<Message> {
     map['incoming'] = Variable<bool>(incoming);
     map['delivered'] = Variable<bool>(delivered);
     map['is_carbon'] = Variable<bool>(isCarbon);
+    map['delivery_error'] = Variable<String>(deliveryError);
     return map;
   }
 
@@ -600,6 +636,7 @@ class Message extends DataClass implements Insertable<Message> {
       incoming: Value(incoming),
       delivered: Value(delivered),
       isCarbon: Value(isCarbon),
+      deliveryError: Value(deliveryError),
     );
   }
 
@@ -619,6 +656,7 @@ class Message extends DataClass implements Insertable<Message> {
       incoming: serializer.fromJson<bool>(json['incoming']),
       delivered: serializer.fromJson<bool>(json['delivered']),
       isCarbon: serializer.fromJson<bool>(json['isCarbon']),
+      deliveryError: serializer.fromJson<String>(json['deliveryError']),
     );
   }
   @override
@@ -635,6 +673,7 @@ class Message extends DataClass implements Insertable<Message> {
       'incoming': serializer.toJson<bool>(incoming),
       'delivered': serializer.toJson<bool>(delivered),
       'isCarbon': serializer.toJson<bool>(isCarbon),
+      'deliveryError': serializer.toJson<String>(deliveryError),
     };
   }
 
@@ -649,6 +688,7 @@ class Message extends DataClass implements Insertable<Message> {
     bool? incoming,
     bool? delivered,
     bool? isCarbon,
+    String? deliveryError,
   }) => Message(
     id: id ?? this.id,
     chatJid: chatJid ?? this.chatJid,
@@ -660,6 +700,7 @@ class Message extends DataClass implements Insertable<Message> {
     incoming: incoming ?? this.incoming,
     delivered: delivered ?? this.delivered,
     isCarbon: isCarbon ?? this.isCarbon,
+    deliveryError: deliveryError ?? this.deliveryError,
   );
   Message copyWithCompanion(MessagesCompanion data) {
     return Message(
@@ -673,6 +714,9 @@ class Message extends DataClass implements Insertable<Message> {
       incoming: data.incoming.present ? data.incoming.value : this.incoming,
       delivered: data.delivered.present ? data.delivered.value : this.delivered,
       isCarbon: data.isCarbon.present ? data.isCarbon.value : this.isCarbon,
+      deliveryError: data.deliveryError.present
+          ? data.deliveryError.value
+          : this.deliveryError,
     );
   }
 
@@ -688,7 +732,8 @@ class Message extends DataClass implements Insertable<Message> {
           ..write('encMode: $encMode, ')
           ..write('incoming: $incoming, ')
           ..write('delivered: $delivered, ')
-          ..write('isCarbon: $isCarbon')
+          ..write('isCarbon: $isCarbon, ')
+          ..write('deliveryError: $deliveryError')
           ..write(')'))
         .toString();
   }
@@ -705,6 +750,7 @@ class Message extends DataClass implements Insertable<Message> {
     incoming,
     delivered,
     isCarbon,
+    deliveryError,
   );
   @override
   bool operator ==(Object other) =>
@@ -719,7 +765,8 @@ class Message extends DataClass implements Insertable<Message> {
           other.encMode == this.encMode &&
           other.incoming == this.incoming &&
           other.delivered == this.delivered &&
-          other.isCarbon == this.isCarbon);
+          other.isCarbon == this.isCarbon &&
+          other.deliveryError == this.deliveryError);
 }
 
 class MessagesCompanion extends UpdateCompanion<Message> {
@@ -733,6 +780,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
   final Value<bool> incoming;
   final Value<bool> delivered;
   final Value<bool> isCarbon;
+  final Value<String> deliveryError;
   const MessagesCompanion({
     this.id = const Value.absent(),
     this.chatJid = const Value.absent(),
@@ -744,6 +792,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     this.incoming = const Value.absent(),
     this.delivered = const Value.absent(),
     this.isCarbon = const Value.absent(),
+    this.deliveryError = const Value.absent(),
   });
   MessagesCompanion.insert({
     this.id = const Value.absent(),
@@ -756,6 +805,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     required bool incoming,
     this.delivered = const Value.absent(),
     this.isCarbon = const Value.absent(),
+    this.deliveryError = const Value.absent(),
   }) : chatJid = Value(chatJid),
        sender = Value(sender),
        body = Value(body),
@@ -771,6 +821,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Expression<bool>? incoming,
     Expression<bool>? delivered,
     Expression<bool>? isCarbon,
+    Expression<String>? deliveryError,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -783,6 +834,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
       if (incoming != null) 'incoming': incoming,
       if (delivered != null) 'delivered': delivered,
       if (isCarbon != null) 'is_carbon': isCarbon,
+      if (deliveryError != null) 'delivery_error': deliveryError,
     });
   }
 
@@ -797,6 +849,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Value<bool>? incoming,
     Value<bool>? delivered,
     Value<bool>? isCarbon,
+    Value<String>? deliveryError,
   }) {
     return MessagesCompanion(
       id: id ?? this.id,
@@ -809,6 +862,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
       incoming: incoming ?? this.incoming,
       delivered: delivered ?? this.delivered,
       isCarbon: isCarbon ?? this.isCarbon,
+      deliveryError: deliveryError ?? this.deliveryError,
     );
   }
 
@@ -845,6 +899,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     if (isCarbon.present) {
       map['is_carbon'] = Variable<bool>(isCarbon.value);
     }
+    if (deliveryError.present) {
+      map['delivery_error'] = Variable<String>(deliveryError.value);
+    }
     return map;
   }
 
@@ -860,7 +917,8 @@ class MessagesCompanion extends UpdateCompanion<Message> {
           ..write('encMode: $encMode, ')
           ..write('incoming: $incoming, ')
           ..write('delivered: $delivered, ')
-          ..write('isCarbon: $isCarbon')
+          ..write('isCarbon: $isCarbon, ')
+          ..write('deliveryError: $deliveryError')
           ..write(')'))
         .toString();
   }
@@ -1706,6 +1764,7 @@ typedef $$MessagesTableCreateCompanionBuilder = MessagesCompanion Function({
   required bool incoming,
   Value<bool> delivered,
   Value<bool> isCarbon,
+  Value<String> deliveryError,
 });
 typedef $$MessagesTableUpdateCompanionBuilder = MessagesCompanion Function({
   Value<int> id,
@@ -1718,6 +1777,7 @@ typedef $$MessagesTableUpdateCompanionBuilder = MessagesCompanion Function({
   Value<bool> incoming,
   Value<bool> delivered,
   Value<bool> isCarbon,
+  Value<String> deliveryError,
 });
 
 final class $$MessagesTableReferences
@@ -1793,6 +1853,11 @@ class $$MessagesTableFilterComposer
 
   ColumnFilters<bool> get isCarbon => $composableBuilder(
     column: $table.isCarbon,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get deliveryError => $composableBuilder(
+    column: $table.deliveryError,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -1874,6 +1939,11 @@ class $$MessagesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get deliveryError => $composableBuilder(
+    column: $table.deliveryError,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$ChatsTableOrderingComposer get chatJid {
     final $$ChatsTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -1933,6 +2003,11 @@ class $$MessagesTableAnnotationComposer
 
   GeneratedColumn<bool> get isCarbon =>
       $composableBuilder(column: $table.isCarbon, builder: (column) => column);
+
+  GeneratedColumn<String> get deliveryError => $composableBuilder(
+    column: $table.deliveryError,
+    builder: (column) => column,
+  );
 
   $$ChatsTableAnnotationComposer get chatJid {
     final $$ChatsTableAnnotationComposer composer = $composerBuilder(
@@ -1996,6 +2071,7 @@ class $$MessagesTableTableManager
                 Value<bool> incoming = const Value.absent(),
                 Value<bool> delivered = const Value.absent(),
                 Value<bool> isCarbon = const Value.absent(),
+                Value<String> deliveryError = const Value.absent(),
               }) => MessagesCompanion(
                 id: id,
                 chatJid: chatJid,
@@ -2007,6 +2083,7 @@ class $$MessagesTableTableManager
                 incoming: incoming,
                 delivered: delivered,
                 isCarbon: isCarbon,
+                deliveryError: deliveryError,
               ),
           createCompanionCallback:
               ({
@@ -2020,6 +2097,7 @@ class $$MessagesTableTableManager
                 required bool incoming,
                 Value<bool> delivered = const Value.absent(),
                 Value<bool> isCarbon = const Value.absent(),
+                Value<String> deliveryError = const Value.absent(),
               }) => MessagesCompanion.insert(
                 id: id,
                 chatJid: chatJid,
@@ -2031,6 +2109,7 @@ class $$MessagesTableTableManager
                 incoming: incoming,
                 delivered: delivered,
                 isCarbon: isCarbon,
+                deliveryError: deliveryError,
               ),
           withReferenceMapper: (p0) => p0
               .map(
