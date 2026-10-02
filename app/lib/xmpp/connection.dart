@@ -104,6 +104,9 @@ class XmppService {
   XmppConnection? _connection;
   PubSubManager? _pubsub;
   omemo_dart.OmemoManager? _omemo;
+
+  /// In-flight device initialisation, shared by racing callers.
+  Future<omemo_dart.OmemoManager>? _omemoInit;
   OmemoManager? _moxxOmemo;
   CarbonsManager? _carbons;
   StreamSubscription<XmppEvent>? _eventsSub;
@@ -166,6 +169,16 @@ class XmppService {
   /// fetches its device list and bundles through it.
   PubSubManager? get pubsub => _pubsub;
 
+  /// The underlying connection, for callers that need a manager this class
+  /// does not wrap (roster edits, presence, diagnostics).
+  XmppConnection? get connection => _connection;
+
+  /// Sends an "available" presence, announcing this resource to contacts.
+  Future<void> sendAvailablePresence() async {
+    await _connection?.getManagerById<PresenceManager>(presenceManager)
+        ?.sendInitialPresence();
+  }
+
   /// True once the server accepted our Carbons enable request.
   bool get carbonsEnabled => _carbonsEnabled;
   bool _carbonsEnabled = false;
@@ -191,7 +204,8 @@ class XmppService {
     _state = XmppConnectionState.connecting;
 
     _moxxOmemo = OmemoManager(
-      () async => _omemo!,
+      // Lazy: an OMEMO event can arrive before the device is created.
+      () => _omemoOrCreate(),
       (toJid, _) => _shouldEncrypt(toJid),
     );
     // Default to the capability-driven decision so encryption turns on by
@@ -340,12 +354,30 @@ class XmppService {
     return result.isType<int>() ? result.get<int>() : null;
   }
 
-  /// Creates (or restores) our OMEMO device. Call after [connect].
+  /// Returns our omemo_dart manager, creating and restoring the device on
+  /// first use.
+  ///
+  /// This is called from moxxmpp's own event handler, so it *will* run
+  /// before the app has finished starting: an OMEMO device-list push or a
+  /// bundle fetch can arrive during [connect], long before anything has
+  /// called [ensureOmemoDevice]. Dereferencing a not-yet-created manager
+  /// there crashed the connection outright, so the device is built lazily
+  /// here instead.
   ///
   /// Restoring matters: a fresh device id on every start would keep
   /// appending to our own PEP device list and make peers encrypt to
   /// devices we no longer hold keys for.
-  Future<int> ensureOmemoDevice({int opkAmount = 20}) async {
+  Future<omemo_dart.OmemoManager> _omemoOrCreate({int opkAmount = 20}) async {
+    final existing = _omemo;
+    if (existing != null) return existing;
+    // Several events can race here; building twice would orphan the first
+    // device's keys, so the in-flight initialisation is shared.
+    return _omemoInit ??= _buildOmemo(opkAmount: opkAmount).whenComplete(() {
+      _omemoInit = null;
+    });
+  }
+
+  Future<omemo_dart.OmemoManager> _buildOmemo({required int opkAmount}) async {
     final bareJid =
         _connection!.connectionSettings.jid.toBare().toString();
 
@@ -362,7 +394,7 @@ class XmppService {
       _log.info('generated new OMEMO device ${device.id}');
     }
 
-    _omemo = omemo_dart.OmemoManager(
+    final manager = omemo_dart.OmemoManager(
       device,
       omemo_dart.BlindTrustBeforeVerificationTrustManager(),
       _moxxOmemo!.sendEmptyMessageImpl,
@@ -371,8 +403,18 @@ class XmppService {
       _moxxOmemo!.subscribeToDeviceListImpl,
       _moxxOmemo!.publishDeviceImpl,
     );
-    final id = await _omemo!.getDeviceId();
-    final bundle = await (await _omemo!.getDevice()).toBundle();
+    _omemo = manager;
+    return manager;
+  }
+
+  /// Creates (or restores) our OMEMO device and publishes its bundle.
+  ///
+  /// Safe to call before the device exists — see [_omemoOrCreate] for why
+  /// the creation cannot assume it is the first caller.
+  Future<int> ensureOmemoDevice({int opkAmount = 20}) async {
+    final manager = await _omemoOrCreate(opkAmount: opkAmount);
+    final id = await manager.getDeviceId();
+    final bundle = await (await manager.getDevice()).toBundle();
     final published = await _moxxOmemo!.publishBundle(bundle);
     // moxxmpp returns Result<bool> whose payload is
     // `deviceBundlePublish.isType<PubSubError>()` — **true means
@@ -386,7 +428,7 @@ class XmppService {
     // Persist only after a confirmed publish so we never store keys the
     // server does not know about.
     if (!failed) {
-      await deviceStore?.save(device);
+      await deviceStore?.save(await manager.getDevice());
     }
     return id;
   }

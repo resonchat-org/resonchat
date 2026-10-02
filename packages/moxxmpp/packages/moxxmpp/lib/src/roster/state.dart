@@ -97,7 +97,11 @@ abstract class BaseRosterStateManager {
     if (_currentRoster == null) {
       final result = await loadRosterCache();
 
-      _currentRoster = result.roster;
+      // Take a copy: a cache loader may hand back immutable or shared
+      // storage (TestingRosterStateManager returns the list it was
+      // constructed with, e.g. `const []`), while every later roster
+      // mutation — add, update, remove — edits this list in place.
+      _currentRoster = List<XmppRosterItem>.of(result.roster);
       _currentVersion = result.version;
     }
   }

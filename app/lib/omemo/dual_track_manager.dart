@@ -8,7 +8,8 @@ import 'dart:convert';
 
 import 'package:cryptography/cryptography.dart';
 import 'package:moxxmpp/moxxmpp.dart';
-import 'package:omemo_dart/omemo_dart.dart' hide OmemoManager;
+import 'package:omemo_dart/omemo_dart.dart' as omemo show OmemoBundle;
+import 'package:omemo_dart/omemo_dart.dart' hide OmemoManager, OmemoBundle;
 import 'package:xml/xml.dart';
 
 import '../pq/mlkem.dart';
@@ -124,6 +125,95 @@ class DualTrackManager {
       );
     } catch (_) {
       // A malformed bundle means "not usable", not a crash.
+      return null;
+    }
+  }
+
+  /// Device ids in [jid]'s standard OMEMO list whose bundle actually
+  /// fetches.
+  ///
+  /// This is the A-track half of [getPqCapableDevices], and it is the first
+  /// thing that reads a bundle another implementation wrote — so it is
+  /// also the first place our wire-format assumptions are tested against
+  /// reality. A device that lists itself but serves nothing usable is
+  /// excluded, because encrypting to it would produce a message nobody can
+  /// read.
+  Future<Set<int>> getOmemoCapableDevices(JID jid) async {
+    final pm = pubsubOf();
+    final items = await pm.getItems(jid, omemoDevicesXmlns);
+    if (!items.isType<List<PubSubItem>>()) return {};
+    final result = <int>{};
+    for (final item in items.get<List<PubSubItem>>()) {
+      for (final dev in item.payload.children
+          .where((c) => c.tag == 'device')) {
+        final id = int.tryParse('${dev.attributes['id']}');
+        if (id == null) continue;
+        if (await getOmemoBundle(jid, id) != null) result.add(id);
+      }
+    }
+    return result;
+  }
+
+  /// Parses an XEP-0384 §5.2 `<bundle/>`.
+///
+/// Throws [FormatException] on anything structurally wrong, so a caller can
+/// treat a broken bundle as "this device cannot be read" instead of
+/// crashing the encryption path.
+omemo.OmemoBundle parseOmemoBundle(
+  XmlElement el, {
+  required String jid,
+  required int deviceId,
+}) {
+  if (el.localName != 'bundle') {
+    throw FormatException('not a bundle element: ${el.localName}');
+  }
+
+  String text(String tag) {
+    final found = el.findElements(tag);
+    if (found.isEmpty) throw FormatException('bundle has no <$tag>');
+    return found.single.innerText;
+  }
+
+  final opks = <int, String>{};
+  for (final section in el.findElements('prekeys')) {
+    for (final pk in section.findElements('pk')) {
+      final id = int.tryParse('${pk.getAttribute('id')}');
+      if (id == null) continue;
+      opks[id] = pk.innerText;
+    }
+  }
+
+  return omemo.OmemoBundle(
+    jid,
+    deviceId,
+    text('spk'),
+    int.parse('${el.findElements('spk').single.getAttribute('id')}'),
+    text('spsk'),
+    text('ik'),
+    opks,
+  );
+}
+
+/// Fetches one device's standard OMEMO bundle, or null when
+  /// absent/malformed.
+  ///
+  /// omemo_dart has no bundle parser — it receives already-decoded bundles
+  /// through an injected fetch function — so this is our own reader for
+  /// XEP-0384 §5.2. It is the first code in the project to interpret a
+  /// bundle written by another implementation, which is exactly where a
+  /// wire-format assumption would surface.
+  Future<omemo.OmemoBundle?> getOmemoBundle(JID jid, int deviceId) async {
+    final pm = pubsubOf();
+    final res = await pm.getItem(jid, omemoBundlesXmlns, '$deviceId');
+    if (!res.isType<PubSubItem>()) return null;
+    try {
+      final doc = XmlDocument.parse(res.get<PubSubItem>().payload.toXml());
+      return parseOmemoBundle(
+        doc.rootElement,
+        jid: jid.toBare().toString(),
+        deviceId: deviceId,
+      );
+    } catch (_) {
       return null;
     }
   }
