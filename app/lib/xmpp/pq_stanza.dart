@@ -13,6 +13,7 @@ import 'package:xml/xml.dart';
 
 import '../omemo/message_codec.dart';
 import '../omemo/protocol.dart';
+import 'eme.dart';
 
 /// Stanza extension holding a B-track encrypted element.
 class PqEncryptedData implements StanzaHandlerExtension {
@@ -21,6 +22,32 @@ class PqEncryptedData implements StanzaHandlerExtension {
   final PqEncryptedMessage message;
 
   XMLNode toXml() => XMLNode.fromString(message.toXml().toXmlString());
+}
+
+/// Serialises the B track's ciphertext and its EME declaration into the
+/// outgoing `<message />`.
+///
+/// Registered with moxxmpp's MessageManager, which only knows how to
+/// serialise the extensions it ships with. Without this the ciphertext is
+/// dropped and the stanza leaves in plaintext wearing the "encrypted, use
+/// another client" body — the worst possible failure, because it looks like
+/// it worked.
+///
+/// Emits nothing when no B-track payload is attached, so A-track and
+/// plaintext messages are untouched: moxxmpp's OmemoManager declares their
+/// encryption itself.
+List<XMLNode> pqSendingCallback(
+  TypedMap<StanzaHandlerExtension> extensions,
+) {
+  final payload = extensions.get<PqEncryptedData>();
+  if (payload == null) return [];
+  final eme = extensions.get<EmeData>();
+  return <XMLNode>[
+    // Declaration first: a reader scanning the head of the message should
+    // learn the track before it hits a blob it cannot read.
+    if (eme != null) eme.toXML(),
+    payload.toXml(),
+  ];
 }
 
 /// Finds and parses the B-track `<encrypted>` element in a stanza's XML.

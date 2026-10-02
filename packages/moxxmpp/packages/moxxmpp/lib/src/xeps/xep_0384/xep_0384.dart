@@ -52,6 +52,15 @@ const _doNotEncryptList = [
   // XEP-0359
   DoNotEncrypt('origin-id', stableIdXmlns),
   DoNotEncrypt('stanza-id', stableIdXmlns),
+  // XEP-0380. The declaration is metadata *about* the message: it has to stay
+  // readable by anyone, including a client that cannot decrypt. Encrypting it
+  // would hide the very signal that tells a reader which track was used.
+  DoNotEncrypt('encryption', emeXmlns),
+  // resonchat's post-quantum track. This ciphertext is already encrypted, and
+  // already carries its own keys. Wrapping it in a second OMEMO payload would
+  // force the reader through OMEMO first, double the size, and make a
+  // PQ-only recipient unable to read anything at all.
+  DoNotEncrypt('encrypted', emePomemo0),
 ];
 
 class OmemoManager extends XmppManagerBase {

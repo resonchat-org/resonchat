@@ -81,18 +81,22 @@ void main() {
       );
 
       // --- roster + mutual subscription ----------------------------------
-      final peerOfA = JID.fromString(jidB);
-      final peerOfB = JID.fromString(jidA);
+      // Named for the side they belong to: `otherOfA` is who A talks to.
+      // Inverting this makes each client post to itself, where the only
+      // thing that comes back is its own carbon copy — which reads as a
+      // delivery failure rather than a setup mistake.
+      final otherOfA = JID.fromString(jidB);
+      final otherOfB = JID.fromString(jidA);
       final rosterA =
           a.connection!.getManagerById<RosterManager>(rosterManager)!;
       final rosterB =
           b.connection!.getManagerById<RosterManager>(rosterManager)!;
-      await rosterA.addToRoster(peerOfB.toBare().toString(), 'interop');
-      await rosterB.addToRoster(peerOfA.toBare().toString(), 'interop');
+      await rosterA.addToRoster(otherOfB.toBare().toString(), 'interop');
+      await rosterB.addToRoster(otherOfA.toBare().toString(), 'interop');
       await a.sendAvailablePresence();
       await b.sendAvailablePresence();
-      await a.requestSubscription(peerOfB);
-      await b.requestSubscription(peerOfA);
+      await a.requestSubscription(otherOfB);
+      await b.requestSubscription(otherOfA);
 
       // Both sides approve whatever arrives, so the relationship settles as
       // mutual. Without that, conversations.im answers
@@ -110,7 +114,7 @@ void main() {
       await a.replenishPrekeys();
       await b.replenishPrekeys();
 
-      final bundleB = await _fetchBundle(b, peerOfA, idB);
+      final bundleB = await _fetchBundle(b, otherOfA, idB);
       check(
         'A can read the bundle B published',
         bundleB != null && omemoBundleLooksSane(bundleB),
@@ -118,7 +122,7 @@ void main() {
             '${bundleB.opksEncoded.length} prekeys',
       );
       expect(bundleB, isNotNull);
-      final bundleA = await _fetchBundle(a, peerOfB, idA);
+      final bundleA = await _fetchBundle(a, otherOfB, idA);
       check(
         'B can read the bundle A published',
         bundleA != null && omemoBundleLooksSane(bundleA),
@@ -149,8 +153,8 @@ void main() {
       // fallback path exactly as a real user would.
       const fromA = 'hello A to B — plain ASCII';
       const fromB = '你好 B → A · emoji 🔐 · ünïcödé';
-      final idSentA = await a.sendPlainText(peerOfB, fromA);
-      final idSentB = await b.sendPlainText(peerOfA, fromB);
+      final idSentA = await a.sendPlainText(otherOfB, fromA);
+      final idSentB = await b.sendPlainText(otherOfA, fromB);
       check('A accepted a stanza for sending', idSentA != null);
       check('B accepted a stanza for sending', idSentB != null);
 
@@ -168,8 +172,8 @@ void main() {
         if (round % 20 == 0) {
           // ignore: avoid_print
           print('resending (round $round)');
-          await a.sendPlainText(peerOfB, fromA);
-          await b.sendPlainText(peerOfA, fromB);
+          await a.sendPlainText(otherOfB, fromA);
+          await b.sendPlainText(otherOfA, fromB);
         }
       }
       await subA.cancel();
@@ -218,6 +222,9 @@ void main() {
             ? 'ALL CHECKS PASSED (${results.length})'
             : '$failed of ${results.length} checks failed',
       );
+      // check() only records; without this the harness reports a green run
+      // for a test that failed every assertion inside it.
+      expect(failed, 0, reason: 'see FAILED lines above');
     }
   });
 }

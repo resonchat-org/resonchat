@@ -14,10 +14,13 @@ import 'package:omemo_dart/omemo_dart.dart' as omemo_dart;
 
 import '../omemo/defacto.dart';
 import '../omemo/dual_track_manager.dart';
+import '../omemo/track.dart';
 import '../omemo/protocol.dart';
 import '../store/omemo_device_store.dart';
 import 'b_track_manager.dart';
+import 'eme.dart';
 import 'capabilities.dart';
+import 'pq_incoming.dart';
 import 'pq_stanza.dart';
 
 /// Decrypted inbound chat message, either track or plaintext.
@@ -30,6 +33,7 @@ class InboundMessage {
     this.isCarbonCopy = false,
     this.fromArchive = false,
     this.archiveTimestamp,
+    this.track,
   });
 
   final JID from;
@@ -52,6 +56,14 @@ class InboundMessage {
 
   /// Original send time for archived messages; live messages use now().
   final DateTime? archiveTimestamp;
+
+  /// Which track the sender used, read from its EME declaration.
+  ///
+  /// Null when the sender declared an encryption scheme we do not
+  /// implement, or none at all. It is deliberately independent of whether
+  /// [body] decrypted: a message encrypted for someone else is still labelled
+  /// with the track that was used, because that is the informative part.
+  final Track? track;
 }
 
 /// The server rejected one of our outgoing messages.
@@ -154,6 +166,10 @@ class XmppService {
   /// B-track (PQ-OMEMO) support. Null disables the PQ track entirely and
   /// leaves the app on standard OMEMO.
   final BTrackManager? bTrack;
+
+  /// A B-track message we could not open, reported instead of swallowed.
+  Stream<PqDecryptFailure> get pqFailures => _pqFailures.stream;
+  final _pqFailures = StreamController<PqDecryptFailure>.broadcast();
 
   XmppConnection? _connection;
   PubSubManager? _pubsub;
@@ -326,6 +342,13 @@ class XmppService {
 
     _carbons = CarbonsManager();
     _pubsub = PubSubManager();
+    final messageManager = MessageManager();
+    // The B track rides along as a stanza extension, and moxxmpp only knows
+    // how to serialise the ones it ships with. Without this callback the PQ
+    // ciphertext is silently dropped and the stanza leaves in plaintext with
+    // the "encrypted, use another client" body - the worst possible outcome:
+    // it looks like it worked.
+    messageManager.registerMessageSendingCallback(pqSendingCallback);
     await connection.registerManagers([
       PresenceManager(),
       RosterManager(
@@ -333,12 +356,23 @@ class XmppService {
       ),
       DiscoManager(const []),
       _pubsub!,
-      MessageManager(),
+      messageManager,
       MessageDeliveryReceiptManager(),
       ChatStateManager(),
       MessageArchiveManagementManager(),
       _carbons!,
       _moxxOmemo!,
+      // XEP-0380. Without it the received message carries no record of which
+      // track the sender used, so every encrypted message from another client
+      // would be labelled as unencrypted.
+      EmeManager(),
+      // B-track inbound. moxxmpp has no handler for the PQ namespace, so
+      // without this an incoming PQ message arrives as the literal fallback
+      // body with no error: a silent, perfectly plausible-looking delivery.
+      PqIncomingManager(_decryptIncomingPq, (failure) {
+        _log.warning('inbound PQ message not opened: ${failure.reason}');
+        if (!_pqFailures.isClosed) _pqFailures.add(failure);
+      }),
     ]);
     await connection.registerFeatureNegotiators([
       StartTlsNegotiator(),
@@ -641,6 +675,23 @@ class XmppService {
   /// The roster store in use, so [requestRoster] can read the full list.
   BaseRosterStateManager? _rosterState;
 
+  /// Opens an inbound B-track message, if this device is a recipient.
+  Future<String?> _decryptIncomingPq(Stanza stanza) async {
+    final payload = extractPqPayload(stanza);
+    if (payload == null) return null;
+    final track = bTrack;
+    if (track == null || !track.ready) return null;
+    final plaintext = await track.decryptIfPossible(payload);
+    if (plaintext == null) return null;
+    // Each new inbound PQ session burns one one-time prekey; refilling keeps
+    // forward secrecy from quietly degrading to the signed prekey for the
+    // rest of this device's life.
+    unawaited(track.replenishPrekeys());
+    return plaintext;
+  }
+
+  /// Serialises the B track's ciphertext
+
   /// Encrypts and sends [body] on the PQ track when [to] is fully PQ-capable,
   /// otherwise returns null so the caller can fall back to the A track.
   ///
@@ -671,6 +722,10 @@ class XmppService {
         MessageBodyData(encryptedBodyFallback),
         MessageIdData(id),
         if (requestReceipt) const MessageDeliveryReceiptData(true),
+        // XEP-0380: declare the track so the receiver can label the message
+        // without decrypting it, and so a client that does not know this
+        // namespace shows our name rather than guessing.
+        const EmeData(Track.pq, name: 'OMEMO-PQ'),
         PqEncryptedData(encrypted),
       ]),
       type: 'chat',
@@ -696,13 +751,16 @@ class XmppService {
     final mm = _connection?.getManagerById<MessageManager>(messageManager);
     if (mm == null) throw StateError('not connected');
     final id = _nextStanzaId();
+    // No EME here on purpose. moxxmpp's OmemoManager adds the declaration
+    // itself, and only once it has actually encrypted the stanza — adding a
+    // second one from this side would either duplicate the element or, worse,
+    // claim encryption on a message that went out in plaintext.
     await mm.sendMessage(
       to,
       TypedMap<StanzaHandlerExtension>.fromList([
         MessageBodyData(body),
         MessageIdData(id),
-        if (requestReceipt)
-          const MessageDeliveryReceiptData(true),
+        if (requestReceipt) const MessageDeliveryReceiptData(true),
       ]),
       type: 'chat',
     );
@@ -790,6 +848,10 @@ class XmppService {
         // A chat-state-only message carries no body; nothing to store.
         return;
       }
+      // XEP-0380: the sender's declaration of what it used. Absent means
+      // plaintext, which is the only honest reading.
+      final eme = event.get<ExplicitEncryptionType>();
+      final foreign = Track.isForeignEncryption(eme);
       _inbound.add(
         InboundMessage(
           from: event.from,
@@ -800,6 +862,7 @@ class XmppService {
           isCarbonCopy: isCarbon,
           fromArchive: mam != null,
           archiveTimestamp: mam?.delay.timestamp,
+          track: foreign ? null : Track.fromEme(eme),
         ),
       );
     } else if (event is DeliveryReceiptReceivedEvent) {

@@ -121,6 +121,13 @@ const emeOmemo = 'eu.siacs.conversations.axolotl';
 const emeOmemo1 = 'urn:xmpp:omemo:1';
 const emeOmemo2 = 'urn:xmpp:omemo:2';
 
+/// Namespace of resonchat's post-quantum track (`urn:xmpp:pomemo:0`).
+///
+/// Not part of any XEP: it is this project's own extension, declared in
+/// EME so that a client which does not understand it still shows a sensible
+/// label instead of guessing.
+const emePomemo0 = 'urn:xmpp:pomemo:0';
+
 // XEP-0384
 const omemoXmlns = 'urn:xmpp:omemo:2';
 const omemoDevicesXmlns = 'urn:xmpp:omemo:2:devices';

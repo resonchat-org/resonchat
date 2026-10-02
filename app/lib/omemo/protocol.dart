@@ -3,8 +3,16 @@
 //
 // B-track (PQ-OMEMO) protocol constants. See docs/02-protocol-pqomemo.md.
 
+import 'package:moxxmpp/moxxmpp.dart' show emePomemo0;
+
 /// Namespace of the PQ track's `<encrypted>` element and EME declaration.
-const String pomemoXmlns = 'urn:xmpp:pomemo:0';
+///
+/// Aliased from the one place the value is written down — moxxmpp's
+/// namespace table, which is also what the EME mapping reads. Two
+/// independent declarations of one namespace is exactly how a client ends up
+/// writing `urn:xmpp:pomemo:0` on the wire and then refusing to recognise it
+/// on the way back in.
+const String pomemoXmlns = emePomemo0;
 
 /// PEP node carrying the B-track device list.
 const String pomemoDevicesXmlns = 'urn:xmpp:pomemo:0:devices';

@@ -13,7 +13,6 @@ import 'dart:math';
 
 import 'package:logging/logging.dart';
 import 'package:moxxmpp/moxxmpp.dart';
-import 'package:xml/xml.dart';
 
 import '../omemo/bundle_codec.dart';
 import '../omemo/dual_track_manager.dart';
@@ -175,13 +174,16 @@ class BTrackManager {
     return outgoing?.stanza;
   }
 
-  /// Decrypts an inbound PQ `<encrypted>` element; null when it is not for
-  /// us (a different device, or not a B-track message at all).
-  Future<String?> decryptIfPossible(XmlElement element) async {
+  /// Decrypts an inbound PQ message; null when it is not for us (a different
+  /// device, or not a B-track message at all).
+  ///
+  /// Takes the parsed message rather than raw XML so callers that already had
+  /// to parse it — to find the element in the first place — do not do so
+  /// twice and risk disagreeing about the result.
+  Future<String?> decryptIfPossible(PqEncryptedMessage message) async {
     final session = _session;
     if (session == null) return null;
 
-    final message = PqEncryptedMessage.fromXml(element);
     if (!message.keys.any((k) => k.recipientDeviceId == session.device.id)) {
       return null;
     }
