@@ -7,7 +7,7 @@
 | moxxmpp | **MIT** | ✅ | 仓库 LICENSE 为 MIT（Copyright 2022 Alexander "PapaTutuWawa"），非文档早期记录的 MPL-2.0；已按实测更正 |
 | omemo_dart | MIT | ✅ | 宽松 |
 | Telegram for Android（移植的 UI 代码） | **GPL-2.0-or-later** | ✅ | 「or later」使其可并入 GPLv3 |
-| moxlib | MIT | ✅ | moxxmpp 依赖的共享工具库 |
+| moxlib | **GPL-3.0** | ✅ | `packages/moxlib/LICENSE` 为 GPL-3.0 全文（早期文档记为 MIT，以实测为准）；与本项目许可证相同 |
 | liboqs | MIT | ✅ | |
 | `cryptography` (Dart) | Apache-2.0 | ✅ | 早期文档记为 BSD-3-Clause，以包内 LICENSE 为准 |
 | `pqcrypto` (Dart) | MIT | ✅ | 纯 Dart ML-KEM / ML-DSA，当前 B 轨 KEM 实现 |
@@ -22,12 +22,13 @@
 
 - [ ] 根目录 `LICENSE` = GPLv3 全文
 - [ ] 每个源文件头部含版权与许可证声明（本项目自有文件已加 `SPDX-License-Identifier: GPL-3.0-or-later`）
-- [ ] **fork 的上游文件保留原 license 头**：moxxmpp / omemo_dart / moxlib 均为 MIT，保留原版权声明并标注本地修改点
+- [ ] **fork 的上游文件保留原 license 头**：moxxmpp / omemo_dart 为 MIT，moxlib 为 GPL-3.0；均保留原版权声明并标注本地修改点
 - [ ] **移植自 Telegram Android 的文件**：
   - 保留原始版权声明
   - 显著标注「此文件修改自 Telegram for Android，GPL-2.0-or-later」及修改日期（GPLv2 §2a）
   - 不得移除原有 NOTICE
 - [ ] **MPL-2.0 文件（moxxmpp fork）**：~~不适用~~（实测为 MIT，保留 MIT 头即可）
+- [ ] **GPL-3.0 文件（moxlib）**：保留原 GPL-3.0 license 头与版权声明
 - [ ] 分发 APK 时**提供完整对应源码**（含构建脚本）
 - [ ] 不得对接收者施加额外限制（GPLv2 §6 / GPLv3 §10）
 - [ ] 若使用 OpenSSL，注意第三方许可声明文件
@@ -41,6 +42,16 @@
 | 官方表情/贴纸包 | 独立授权 | ❌ 不使用，改用开源表情集 |
 | 整体 UI「几乎一样」 | 可能构成混淆/trade dress | ⚠️ 布局可相似；品牌元素、图标、配色微调需差异化；商业发布前做法律评估 |
 | `telegram.org` 相关资源 | 版权 | ❌ 不打包 |
+
+### 上游地址对照（以各包 `pubspec.yaml` 的 `homepage` 为准）
+
+| 包 | 上游地址 |
+|---|---|
+| `moxxmpp` | https://codeberg.org/moxxy/moxxmpp |
+| `omemo_dart` | https://github.com/PapaTutuWawa/omemo_dart |
+| `moxlib` | https://codeberg.org/moxxy/moxlib |
+
+> 早期文档将 `omemo_dart` 的上游记为 Codeberg，实为 GitHub，已更正。
 
 **设计边界建议**：保留 Telegram 的**布局与交互范式**（这是行业通用的聊天 UI 语言），但：
 1. 替换所有品牌标识

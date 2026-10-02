@@ -42,15 +42,19 @@ xmppflutter/
 
 ### fork 说明
 
-三个上游库都从 Codeberg fork 并保留原 license：
+三个上游库均为 fork 并保留原 license：
 
 | 包 | 上游 | 许可证 | 本地改动 |
 |---|---|---|---|
-| `moxxmpp` | codeberg.org/moxxy/moxxmpp | MIT（文档写作 MPL-2.0，实为 MIT，以仓库为准） | 移除私有 registry（`publish_to`），改用 path 依赖；`moxxmpp_socket_tcp` SDK 约束提升到 Dart 3 |
-| `omemo_dart` | codeberg.org/PapaTutuWawa/omemo_dart | MIT | 仅移除 `publish_to` / 私有 registry |
-| `moxlib` | codeberg.org/moxxy/moxlib | MIT | SDK 约束提升到 Dart 3 |
+| `moxxmpp` | codeberg.org/moxxy/moxxmpp | MIT（Copyright 2022 Alexander "PapaTutuWawa"） | 移除私有 registry（`publish_to`），改用 path 依赖；`moxxmpp_socket_tcp` SDK 约束提升到 Dart 3 |
+| `omemo_dart` | **github.com/PapaTutuWawa/omemo_dart** | MIT | 仅移除 `publish_to` / 私有 registry |
+| `moxlib` | codeberg.org/moxxy/moxlib | **GPL-3.0** | SDK 约束提升到 Dart 3 |
 
-> 注意：docs/07 记录的 moxxmpp 许可证为 MPL-2.0，实际仓库 LICENSE 为 MIT，已按 MIT 处理（MIT 与 GPLv3 兼容）。
+> 两处与早期文档不一致，已按实测更正：
+>
+> - **moxxmpp 许可证**：`docs/07` 早期记为 MPL-2.0，实际仓库 `LICENSE` 为 MIT，已按 MIT 处理（MIT 与 GPLv3 兼容）。
+> - **moxlib 许可证**：早期记为 MIT，实际 `packages/moxlib/LICENSE` 为 GPL-3.0 全文。与本项目 GPL-3.0-or-later 一致，不构成冲突。
+> - **omemo_dart 上游地址**：以 `packages/omemo_dart/pubspec.yaml` 的 `homepage` 为准，是 GitHub 而非 Codeberg。
 
 `app/pubspec.yaml` 用 `dependency_overrides` 把私有 registry 依赖全部指向 `packages/`，因此 `flutter pub get` 不需要访问上游自建 Gitea。
 
@@ -90,20 +94,20 @@ flutter build apk --debug
 | `ShouldEncrypt` 回调 | moxxmpp 对**每个**出站 stanza 都问一次「要不要加密」 | 只对 `message` 回答；否则能力解析会为每个 PubSub IQ 再发 IQ，形成无界级联把登录饿死 |
 | RFC 6121 版本控制 | 服务器无变更时回不含 `<query/>` 的 `<iq/>`，moxxmpp 转成**空**增量 | 联系人列表必须从本地缓存读，不能直接用 IQ 返回值 |
 
-| 里程碑 | 状态 |
-|---|---|
-| M0 工程骨架 | ✅ 应用/包结构、fork 接线、CI、分析与测试全绿、Android debug APK 可构建 |
-| M1 通信基线 | ✅ 连接/SASL SCRAM-SHA-256、资源绑定、roster（drift 持久化 + RFC 6121 版本）、明文收发、XEP-0184 回执、XEP-0085 输入状态、XEP-0280 Carbons、**XEP-0313 MAM**（已从上游 `feat/mam` 并入）、drift 消息存储、最小 UI。剩余验证项：与真实服务端/客户端的双账号互发 |
-| M2 标准 OMEMO | ✅ **与真实 Conversations 2.20.4 互通验收通过**：我们加密的消息被第三方客户端解密并显示（唯一标记 + 抓第三方 view hierarchy 自动判定，见 `tool/m2_verify_conversations.sh`）。为此修掉 3 处「按规范实现但真实世界不认」的互不兼容：PEP 节点名、bundle 元素名、Signal 公钥类型字节 |
-| M3 PQ 内核 | ✅ PQXDH → Double Ratchet 接线完成；liboqs FFI 在设备实测（`backend: liboqs (native)`）且与纯 Dart 逐字节等价；**双账号跨服务器真实互测通过**（conversations.im ↔ jabber.fr，10/10 检查）；PQ bundle 已真实发布到服务器 |
-| M4 协商与回退 | ✅ `decideEncMode` 状态机（穷举测试）、B 轨 PEP 能力查询、`CapabilityService`（缓存 + 并发去重 + `reliable` 标记）接到发送路径：A 轨自动加密，B 轨优先、失败回落。**PEP 变更订阅已完成**：四个节点（两种方言 × 两轨）任一变化即失效缓存 |
-| M5 存储与保护 | ✅ OMEMO 设备密钥经 Keystore 封存落库；数据库用 SQLCipher 加密（口令在 Keystore，验收测试直接搜原始文件证明明文不外泄）。**密钥备份/恢复、「不保存明文」选项仍未做** |
-| M6 UI | 🟡 已按 docs/05 重做：TG 色板（真实采样自 ThemeColors.java）、CustomPainter 气泡带尾角、日期分隔、未读线、会话列表两行布局、滚动到底 FAB、输入栏（空输入变麦克风）。动画、平板适配、资料页未做 |
-| M7 发布 | ⬜ |
+| 里程碑 | 状态 | 要点 |
+|---|---|---|
+| M0 工程骨架 | 已完成 | 应用/包结构、fork 接线、CI、分析与测试全绿、Android debug APK 可构建 |
+| M1 通信基线 | 已完成 | 连接/SASL SCRAM-SHA-256、资源绑定、roster（drift 持久化 + RFC 6121 版本）、明文收发、XEP-0184 回执、XEP-0085 输入状态、XEP-0280 Carbons、**XEP-0313 MAM**（已从上游 `feat/mam` 并入）、drift 消息存储、最小 UI。剩余验证项：与真实服务端/客户端的双账号互发 |
+| M2 标准 OMEMO | 已完成 | **与真实 Conversations 2.20.4 互通验收通过**：我们加密的消息被第三方客户端解密并显示（唯一标记 + 抓第三方 view hierarchy 自动判定，见 `tool/m2_verify_conversations.sh`）。为此修掉 3 处「按规范实现但真实世界不认」的互不兼容：PEP 节点名、bundle 元素名、Signal 公钥类型字节 |
+| M3 PQ 内核 | 已完成 | PQXDH 到 Double Ratchet 接线完成；liboqs FFI 在设备实测（`backend: liboqs (native)`）且与纯 Dart 逐字节等价；**双账号跨服务器真实互测通过**（conversations.im 与 jabber.fr，10/10 检查）；PQ bundle 已真实发布到服务器 |
+| M4 协商与回退 | 已完成 | `decideEncMode` 状态机（穷举测试）、B 轨 PEP 能力查询、`CapabilityService`（缓存 + 并发去重 + `reliable` 标记）接到发送路径：A 轨自动加密，B 轨优先、失败回落。**PEP 变更订阅已完成**：四个节点（两种方言 × 两轨）任一变化即失效缓存 |
+| M5 存储与保护 | 已完成 | OMEMO 设备密钥经 Keystore 封存落库；数据库用 SQLCipher 加密（口令在 Keystore，验收测试直接搜原始文件证明明文不外泄）。**密钥备份/恢复、「不保存明文」选项仍未做** |
+| M6 UI | 进行中 | 已按 docs/05 重做：TG 色板（真实采样自 ThemeColors.java）、CustomPainter 气泡带尾角、日期分隔、未读线、会话列表两行布局、滚动到底 FAB、输入栏（空输入变麦克风）。动画、平板适配、资料页未做 |
+| M7 发布 | 未开始 | — |
 
 ## 关键待办（下一步优先级）
 
-1. **反向互通（Conversations → 我们）**：验收已证明我们发出去的消息能被真实
+1. **反向互通（Conversations 到本客户端）**：验收已证明我们发出去的消息能被真实
    客户端解密；反方向在本环境不可测，因为 conversations.im 对非双向订阅拒绝
    投递，且模拟器上前台切换会直接切断 TCP 连接。换成两台真实设备即可补齐。
 2. **密钥备份与恢复**：设备密钥目前只在本机 Keystore，换机即全部会话失效。
