@@ -1118,11 +1118,41 @@ class XmppService {
     if (!published) {
       _log.warning('OMEMO bundle publish reported failure');
     }
+    // Hoisted so it cannot be null-checked away across the await below: a
+    // nullable public field is not promoted, and the null check would be
+    // re-evaluated against a field something else can change.
+    final trackManager = tracks;
 
     // Persist only after a confirmed publish so we never store keys the
     // server does not know about.
     if (published) {
       await deviceStore?.save(device);
+      // Remember the id before pruning: the prune decides which ids are
+      // candidates by asking "did this installation publish it", and the id we
+      // just published is the one that has to be excluded from that set.
+      await trackManager?.notePublishedDevice(id);
+      // Now that our own id is on the list, drop the ones that are dead.
+      //
+      // Every reinstall adds an entry here and nothing ever removes one. Each
+      // dead entry makes *other people's* capability resolution fail — they
+      // cannot cover a device that never answers — so this is not cosmetic
+      // housekeeping: left alone, a user who reinstalls a few times stops being
+      // able to send to anyone at all, and nothing in the interface explains
+      // why.
+      if (trackManager != null) {
+        final removed = await trackManager.pruneOwnDeadDevices(bare, id);
+        if (removed.isNotEmpty) {
+          _log.info(
+            'removed ${removed.length} dead OMEMO device id(s) from our own '
+            'list: $removed',
+          );
+          // Our device list just changed, and every cached answer about every
+          // contact was derived from it. Dropping them all is cheaper than
+          // working out which ones could have depended on a dead id, and being
+          // wrong here means refusing to send for the rest of the TTL.
+          _capabilities?.invalidateAll();
+        }
+      }
     }
     return id;
   }

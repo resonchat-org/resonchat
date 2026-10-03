@@ -148,7 +148,11 @@ class CapabilityService {
       // unencrypted mail believing the peer was merely device-less.
       reliable: resolved.listReadable,
     );
-    _log.fine(
+    // Warning, not fine: an unreadable device list is the one failure a user
+    // experiences as "this app cannot send at all", with no error and no
+    // visible cause. The cost is one line per capability refresh, which is
+    // bounded by the TTL and happens a handful of times a session.
+    _log.warning(
       'caps($bare): ${caps.mode.name} devices=${caps.recipientDevices} '
       'pq=${caps.pqDevices} reliable=${caps.reliable}',
     );

@@ -20,6 +20,7 @@ import 'package:logging/logging.dart';
 import 'package:moxxmpp/moxxmpp.dart';
 import 'package:omemo_dart/omemo_dart.dart';
 import 'package:resonchat/omemo/track.dart';
+import 'package:resonchat/xmpp/capabilities.dart';
 import 'package:resonchat/omemo/defacto.dart';
 import 'package:resonchat/omemo/dual_track_manager.dart';
 import 'package:xml/xml.dart';
@@ -165,6 +166,30 @@ void main() {
       // --- devices and bundles ------------------------------------------
       final idA = await a.ensureOmemoDevice();
       final idB = await b.ensureOmemoDevice();
+
+      // Both sides need a capability resolver attached before anything can be
+      // sent. Without it `capabilitiesFor` returns null, and `resolveTrack`
+      // treats "we have not looked up anything" the same as "we could not read
+      // the device list" — both are `unknownPeers` — so `sendOnTrack` refuses
+      // and the test fails with a message about the peer's devices that has
+      // nothing to do with the peer's devices.
+      //
+      // The A-track test was missing this, and the failure it produced was
+      // previously misread as a problem with the accumulated device ids on the
+      // test accounts. Attaching the resolver is a one-line difference between
+      // this and the B-track test, which has always had it.
+      a.attachCapabilities(
+        CapabilityService(
+          tracks: () => a.tracks!,
+          ourDeviceId: () async => idA,
+        ),
+      );
+      b.attachCapabilities(
+        CapabilityService(
+          tracks: () => b.tracks!,
+          ourDeviceId: () async => idB,
+        ),
+      );
       check('A published its OMEMO device', idA > 0, 'id $idA');
       check('B published its OMEMO device', idB > 0, 'id $idB');
       await a.replenishPrekeys();

@@ -10,6 +10,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'providers.dart';
+import '../omemo/dual_track_manager.dart';
 import '../omemo/track.dart';
 import '../omemo/track_advice.dart';
 import '../store/database.dart';
@@ -60,6 +61,17 @@ class _AppWiringState extends ConsumerState<AppWiring> {
     super.initState();
     final xmpp = ref.read(xmppServiceProvider);
     xmpp.attachCapabilities(ref.read(capabilityServiceProvider));
+    // Remembered across restarts so a reinstall can clean up after itself: the
+    // stale device ids that stop this client sending at all are, in the
+    // overwhelming majority of cases, ids this installation published earlier.
+    final tracks = xmpp.tracks;
+    if (tracks != null) {
+      tracks.deviceMemory = PublishedDeviceMemory(
+        load: () => ref.read(databaseProvider).publishedDeviceIds(),
+        save: (ids) =>
+            ref.read(databaseProvider).savePublishedDeviceIds(ids),
+      );
+    }
     // A PEP change must drop the cached answer, not wait out the TTL.
     _subs.add(xmpp.capabilityChanges.listen((jid) {
       ref.read(capabilityServiceProvider).invalidate(jid);

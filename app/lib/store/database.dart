@@ -852,6 +852,31 @@ class AppDatabase extends _$AppDatabase {
         .go();
   }
 
+  /// Every OMEMO device id this installation has published.
+  ///
+  /// Stored so that a later publish can tell which ids on our own public
+  /// device list are superseded builds of ours. Without it there is no way to
+  /// tell our own history apart from a device we know nothing about, and the
+  /// safe answer — leave it alone — means the list grows forever.
+  Future<Set<int>> publishedDeviceIds() async {
+    final raw = await metaValue('omemo_published_ids');
+    if (raw == null || raw.isEmpty) return const {};
+    // Parsed defensively: a truncated or hand-edited row must not take the
+    // device-publishing path down with it.
+    try {
+      return raw
+          .split(',')
+          .map((s) => int.tryParse(s.trim()))
+          .whereType<int>()
+          .toSet();
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  Future<void> savePublishedDeviceIds(Set<int> ids) =>
+      setMetaValue('omemo_published_ids', ids.join(','));
+
   /// The draft for [chatJid], or null when the box is empty.
   ///
   /// Kept in the database rather than in the text field's controller: the field

@@ -18,6 +18,7 @@ import 'defacto.dart';
 import 'negotiation.dart';
 import 'pq_session.dart';
 import 'protocol.dart';
+import 'device_pruning.dart';
 
 /// Owns the B track's PEP state and the outbound-track decision.
 ///
@@ -199,6 +200,79 @@ class DualTrackManager {
   /// `current`, while moxxmpp uses the device id. Asking for one specific
   /// id and failing on the other would make every peer look incapable, so
   /// the whole node is fetched and whichever item parses is taken.
+  /// Persistence for the set of device ids this installation has published.
+  ///
+  /// Not secret — these ids are on a public node — and deliberately separate
+  /// from the sealed key material: a user who clears their keys should still
+  /// have the previous ids remembered, because that is exactly the case where
+  /// pruning them matters.
+  PublishedDeviceMemory? deviceMemory;
+
+  /// Every device id this installation has published, newest last.
+  Future<Set<int>> publishedDeviceIds() async {
+    final loader = deviceMemory?.load;
+    if (loader == null) return _published;
+    final stored = await loader();
+    // Union rather than replace: the in-memory set may already hold an id
+    // published a moment ago and not yet flushed.
+    return {..._published, ...stored};
+  }
+
+  /// Records [id] as published, both in memory and in the store.
+  Future<void> notePublishedDevice(int id) async {
+    _published.add(id);
+    await deviceMemory?.save({..._published});
+  }
+
+  final _published = <int>{};
+
+  /// Removes device ids from **our own** list that are our own superseded
+  /// builds and whose bundle no longer answers.
+  ///
+  /// [idsWePublished] is what makes this safe: only ids this installation put
+  /// on the list are candidates, so a peer we know nothing about is never
+  /// touched. See lib/omemo/device_pruning.dart for why the server cannot be
+  /// asked instead.
+  ///
+  /// Returns the ids removed, so the caller can say what happened.
+  Future<Set<int>> pruneOwnDeadDevices(JID bareJid, int ourDeviceId) async {
+    final idsWePublished = await publishedDeviceIds();
+    if (idsWePublished.isEmpty) return const {};
+    final pm = pubsubOf();
+    final listed = await fetchOmemoDeviceIds(bareJid);
+    if (listed.isEmpty) return const {};
+
+    // One round trip per candidate id, fetched up front so the decision below
+    // is pure arithmetic on answers we already have.
+    final candidates =
+        idsWePublished.difference({ourDeviceId}).intersection(listed);
+    final fetches = <int, bool>{};
+    for (final id in candidates) {
+      fetches[id] = await getOmemoBundle(bareJid, id) != null;
+    }
+
+    final kept = keepableDeviceIds(
+      listed: listed,
+      ourDeviceId: ourDeviceId,
+      idsWePublished: idsWePublished,
+      bundleFetches: (id) => fetches[id] ?? true,
+    );
+    final dead = deadDeviceIds(listed: listed, kept: kept);
+    if (dead.isEmpty) return const {};
+
+    // Both dialects: a client reading either one must not see the dead ids.
+    for (final node in [omemoDefactoDevicesNode, ...omemoSpecDevicesNodes]) {
+      await pm.publish(
+        bareJid,
+        node,
+        XMLNode.fromString(deviceListToDefactoXml(kept).toXmlString()),
+        id: 'current',
+        options: const PubSubPublishOptions(accessModel: 'open'),
+      );
+    }
+    return dead;
+  }
+
   Future<omemo.OmemoBundle?> getOmemoBundle(JID jid, int deviceId) async {
     final pm = pubsubOf();
     final nodes = [
@@ -377,4 +451,12 @@ class DualTrackManager {
       omemoCapable: omemoCapable,
     );
   }
+}
+
+/// Where the set of published device ids is kept across restarts.
+class PublishedDeviceMemory {
+  const PublishedDeviceMemory({required this.load, required this.save});
+
+  final Future<Set<int>> Function() load;
+  final Future<void> Function(Set<int>) save;
 }
