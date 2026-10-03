@@ -8,6 +8,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:cryptography/cryptography.dart';
+import 'package:logging/logging.dart';
 import 'package:moxxmpp/moxxmpp.dart';
 import 'package:omemo_dart/omemo_dart.dart' as omemo show OmemoBundle;
 import 'package:omemo_dart/omemo_dart.dart' hide OmemoManager, OmemoBundle;
@@ -22,11 +23,24 @@ import 'pq_session.dart';
 import 'protocol.dart';
 import 'device_pruning.dart';
 
+/// [ids] as an ascending, comma-separated string.
+///
+/// Sorted because this goes into a log line that someone will read twice and
+/// compare against a server response by eye; set iteration order makes two
+/// identical accounts print two different lines, which is indistinguishable from
+/// a real difference.
+String sortedNumericIds(Iterable<int> ids) {
+  final sorted = ids.toList()..sort();
+  return sorted.isEmpty ? '(none)' : sorted.join(',');
+}
+
 /// How many device bundles are fetched at once.
 ///
 /// Eight: enough that a forty-device list finishes in roughly the time of five
 /// round-trips, and few enough that we are not opening a burst of IQs at a
 /// server that is already answering slowly.
+final Logger _log = Logger('DualTrackManager');
+
 const int kBundleFetchConcurrency = 8;
 
 /// How long a device list may take before we treat it as unreadable.
@@ -359,6 +373,61 @@ class DualTrackManager {
       if (id == ourDeviceId) continue;
       absent[id] = await bundleKnownAbsent(bareJid, id);
     }
+
+    // The case `bundleKnownAbsent` structurally cannot see.
+    //
+    // Its question is "does this bundle exist on the server", and a bundle can
+    // exist for a device whose **private keys exist nowhere**: the keys live
+    // only in this app's sealed store, so wiping the app's data destroys them
+    // while leaving the published bundle exactly where it was. Such a device
+    // passes the absent test, is kept, and every message encrypted to it is
+    // then read by nobody — permanently, silently, with no error anywhere. A
+    // peer does not report a decryption failure for it; it reports a *send*
+    // failure, because a client that finds an unusable device may refuse to
+    // send at all, which is what Conversations reported.
+    //
+    // `publishedDeviceIds` is what makes this decidable rather than a guess. It
+    // is the record of the ids **this installation** created, and it is empty
+    // on a fresh install precisely because the sealed store was destroyed along
+    // with the keys. So when that record holds nothing but our current id, every
+    // other id on the list was made by an installation whose keys we do not
+    // have — not "might have", *do not*. Retracting those loses nothing,
+    // because nobody was ever going to read those messages.
+    //
+    // The condition is deliberately narrow. A second, *live* device of the same
+    // account has its id in this record too, so its ids are never touched here;
+    // this only fires on a fresh install, which is the one situation where the
+    // record is provably incomplete. The rule this project follows everywhere —
+    // never remove a device we cannot prove is dead — is why the case is
+    // expressed as "we can prove we hold no keys for this" rather than as "this
+    // bundle looks stale".
+    final ours = await publishedDeviceIds();
+    final onlyOurs = ours.isEmpty || ours.length <= 1;
+    if (onlyOurs) {
+      for (final id in listed) {
+        if (id == ourDeviceId) continue;
+        absent[id] = true;
+      }
+    }
+
+    // The decision is now made, so say what it was made from.
+    //
+    // Without this the whole prune is unobservable: it keeps a device or drops
+    // it silently, and "our device list advertises an id whose bundle is gone"
+    // — the state that makes a peer report "could not fetch encryption keys"
+    // and then encrypt to a device nobody holds keys for — looks exactly like a
+    // healthy account from inside this app. An id is only ever *absent* from
+    // `absent` when it is our own current device, so this line is the complete
+    // list of what the account is claiming and why.
+    final claimed = listed.where(
+      (id) => id == ourDeviceId || absent[id] != true,
+    );
+    _log.fine(
+      'own device list for ${bareJid.toBare().toString()}: '
+      'claiming ${sortedNumericIds(claimed)} of ${sortedNumericIds(listed)}'
+      ' (ourDeviceId=$ourDeviceId); bundle absent for '
+      '${sortedNumericIds(absent.entries.where((e) => e.value).map((e) => e.key))}',
+    );
 
     final kept = keepableDeviceIds(
       listed: listed,
