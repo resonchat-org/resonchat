@@ -43,10 +43,7 @@ const Duration kDeviceListDeadline = Duration(seconds: 12);
 /// parallel PEP nodes ([pomemoDevicesXmlns]/[pomemoBundlesXmlns]) so
 /// standard clients never see keys they cannot use.
 class DualTrackManager {
-  DualTrackManager({
-    required this.aTrack,
-    required this.pubsubOf,
-  });
+  DualTrackManager({required this.aTrack, required this.pubsubOf});
 
   final OmemoManager aTrack;
   final PubSubManager Function() pubsubOf;
@@ -147,19 +144,21 @@ class DualTrackManager {
     }
   }
 
-/// Device ids in [jid]'s standard OMEMO list whose bundle actually
+  /// Device ids in [jid]'s standard OMEMO list whose bundle actually
   /// fetches.
   ///
   /// The de-facto node is tried first, then the XEP-0384 spec node; a
   /// device that lists itself but serves nothing usable is excluded,
   /// because encrypting to it would produce a message nobody can read.
   Future<Set<int>> getOmemoCapableDevices(JID jid) async {
-    final ids = await fetchOmemoDeviceIds(jid);
-    final result = <int>{};
-    for (final id in ids) {
-      if (await getOmemoBundle(jid, id) != null) result.add(id);
-    }
-    return result;
+    // `resolveOmemoDevices` already returns exactly this set: the ids whose
+    // bundle actually fetched. This used to call `fetchOmemoDeviceIds`, which
+    // throws that answer away and returns the raw list, and then fetch every
+    // bundle again — serially. So the work the concurrency work had just
+    // parallelised was discarded and redone one round-trip at a time, and the
+    // result was the same set. `fetchOmemoDeviceIds` still exists for callers
+    // that genuinely want the raw list.
+    return (await resolveOmemoDevices(jid)).devices;
   }
 
   /// Raw device ids from [jid]'s OMEMO device list, whichever dialect it
@@ -203,8 +202,9 @@ class DualTrackManager {
     return _resolveOmemoDevicesUnbounded(jid).timeout(kDeviceListDeadline);
   }
 
-  Future<({Set<int> devices, bool listReadable})>
-      _resolveOmemoDevicesUnbounded(JID jid) async {
+  Future<({Set<int> devices, bool listReadable})> _resolveOmemoDevicesUnbounded(
+    JID jid,
+  ) async {
     final pm = pubsubOf();
     final listed = <int>{};
     var listReadable = false;
@@ -411,12 +411,10 @@ class DualTrackManager {
   /// The de-facto form is what real clients read; the spec form is what
   /// moxxmpp's own `publishBundle` writes and what a future client might
   /// adopt. Returns true when at least one form was accepted.
-  Future<bool> publishOmemoBundle(
-    JID bareJid,
-    omemo.OmemoBundle bundle,
-  ) async {
+  Future<bool> publishOmemoBundle(JID bareJid, omemo.OmemoBundle bundle) async {
     final pm = pubsubOf();
-    final ids = await fetchOmemoDeviceIds(bareJid)..add(bundle.id);
+    final ids = await fetchOmemoDeviceIds(bareJid)
+      ..add(bundle.id);
 
     final listResult = await pm.publish(
       bareJid,
@@ -456,15 +454,22 @@ class DualTrackManager {
     final items = await pm.getItems(jid, pomemoDevicesXmlns);
     if (!items.isType<List<PubSubItem>>()) return {};
     final result = <int>{};
+    final ids = <int>{};
     for (final item in items.get<List<PubSubItem>>()) {
-      for (final dev in item.payload.children
-          .where((c) => c.tag == 'device')) {
+      for (final dev in item.payload.children.where((c) => c.tag == 'device')) {
         final id = int.tryParse('${dev.attributes['id']}');
         if (id == null) continue;
-        final bundle = await getPqBundle(jid, id);
-        if (bundle != null && bundle.hasPqKeys) result.add(id);
+        ids.add(id);
       }
     }
+    // Concurrent for the same reason as the standard track's list, and it sits
+    // on the same capability path: `_resolve` calls this right after
+    // `resolveOmemoDevices`, so a serial loop here made the total cost of one
+    // capability lookup *twice* what the concurrency work had just reduced it to.
+    await forEachBounded(ids, kBundleFetchConcurrency, (id) async {
+      final bundle = await getPqBundle(jid, id);
+      if (bundle != null && bundle.hasPqKeys) result.add(id);
+    });
     return result;
   }
 
@@ -476,7 +481,10 @@ class DualTrackManager {
     if (!res.isType<PubSubItem>()) return null;
     try {
       final doc = XmlDocument.parse(res.get<PubSubItem>().payload.toXml());
-      return PqBundle.fromXml(doc.rootElement, jidOfBundle: jid.toBare().toString());
+      return PqBundle.fromXml(
+        doc.rootElement,
+        jidOfBundle: jid.toBare().toString(),
+      );
     } catch (_) {
       return null;
     }
@@ -496,8 +504,9 @@ class DualTrackManager {
     final ids = <int>{};
     if (existing.isType<List<PubSubItem>>()) {
       for (final item in existing.get<List<PubSubItem>>()) {
-        for (final dev in item.payload.children
-            .where((c) => c.tag == 'device')) {
+        for (final dev in item.payload.children.where(
+          (c) => c.tag == 'device',
+        )) {
           final id = int.tryParse('${dev.attributes['id']}');
           if (id != null) ids.add(id);
         }
@@ -508,8 +517,7 @@ class DualTrackManager {
       tag: 'devices',
       xmlns: pomemoDevicesXmlns,
       children: [
-        for (final id in ids)
-          XMLNode(tag: 'device', attributes: {'id': '$id'}),
+        for (final id in ids) XMLNode(tag: 'device', attributes: {'id': '$id'}),
       ],
     );
     final listResult = await pm.publish(
@@ -523,15 +531,13 @@ class DualTrackManager {
       return false;
     }
 
-    final bundleNode =
-        XMLNode.fromString(bundle.toXml().toXmlString());
+    final bundleNode = XMLNode.fromString(bundle.toXml().toXmlString());
     final bundleResult = await pm.publish(
       bareJid,
       pomemoBundlesXmlns,
       bundleNode,
       id: '${bundle.deviceId}',
-      options:
-          const PubSubPublishOptions(accessModel: 'open', maxItems: 'max'),
+      options: const PubSubPublishOptions(accessModel: 'open', maxItems: 'max'),
     );
     return bundleResult.isType<bool>() && bundleResult.get<bool>();
   }
@@ -548,11 +554,13 @@ class DualTrackManager {
       final owner = ownerOf(d).toBare().toString();
       (byOwner[owner] ??= []).add(d);
     }
-    for (final entry in byOwner.entries) {
-      pqCapable.addAll(
-        await getPqCapableDevices(JID.fromString(entry.key)),
-      );
-    }
+    // Concurrent across owners for the same reason: each call is itself a
+    // fan-out, and serialising the owners makes the total a sum of them.
+    await forEachBounded(byOwner.entries, kBundleFetchConcurrency, (
+      entry,
+    ) async {
+      pqCapable.addAll(await getPqCapableDevices(JID.fromString(entry.key)));
+    });
     return decideEncMode(
       allDevices: allDevices,
       pqCapable: pqCapable.intersection(allDevices),
