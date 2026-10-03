@@ -226,36 +226,84 @@ class DualTrackManager {
 
   final _published = <int>{};
 
-  /// Removes device ids from **our own** list that are our own superseded
-  /// builds and whose bundle no longer answers.
+  /// Whether [deviceId]'s bundle is **known to be absent**.
   ///
-  /// [idsWePublished] is what makes this safe: only ids this installation put
-  /// on the list are candidates, so a peer we know nothing about is never
-  /// touched. See lib/omemo/device_pruning.dart for why the server cannot be
-  /// asked instead.
+  /// The distinction is the whole point, and it is why the pubsub layer had to
+  /// learn the error conditions: a node that does not exist and a node we
+  /// failed to read both used to come back as `UnknownPubSubError`, and a
+  /// signal that cannot tell them apart cannot answer this question. It now
+  /// returns `item-not-found` / `node-not-found` as themselves, and only those
+  /// count as absence.
+  ///
+  /// Both the de-facto and the spec dialect are consulted: a peer may have
+  /// published a bundle in either, and "not in the first one" is not "gone"
+  /// until the second has been asked too.
+  Future<bool> bundleKnownAbsent(JID jid, int deviceId) async {
+    final pm = pubsubOf();
+    for (final node in [
+      '$omemoDefactoBundlesNode:$deviceId',
+      for (final n in omemoSpecBundlesNodes) '$n:$deviceId',
+    ]) {
+      final items = await pm.getItems(jid, node);
+      if (items.isType<List<PubSubItem>>()) {
+        for (final item in items.get<List<PubSubItem>>()) {
+          try {
+            final doc = XmlDocument.parse(item.payload.toXml());
+            parseOmemoBundle(
+              doc.rootElement,
+              jid: jid.toBare().toString(),
+              deviceId: deviceId,
+            );
+            // Present and usable.
+            return false;
+          } catch (_) {
+            // Present but unparseable. Not absence: removing it would remove a
+            // device that is really there.
+            return false;
+          }
+        }
+        // The node answered with nothing.
+        return true;
+      }
+      if (!pubSubErrorMeansAbsent(items.get<PubSubError>())) {
+        // We do not know, and "we do not know" is not permission to remove a
+        // device. Try the other dialect rather than concluding anything.
+        continue;
+      }
+      // This dialect positively says the item is not there. The other dialect
+      // might still have it, so keep going and only conclude once every node
+      // has said so.
+    }
+    // Every dialect said "not there", or said it for the one that exists.
+    return true;
+  }
+
+  /// Removes device ids from [bareJid]'s own published list whose bundle is
+  /// known to be gone.
+  ///
+  /// Only ever called for a JID we publish to ourselves, and only removes ids
+  /// that have been *positively* established as dead. Never touches a peer's
+  /// list: we have no rights there, and a client that pruned somebody else's
+  /// device list would be silently downgrading them.
   ///
   /// Returns the ids removed, so the caller can say what happened.
   Future<Set<int>> pruneOwnDeadDevices(JID bareJid, int ourDeviceId) async {
-    final idsWePublished = await publishedDeviceIds();
-    if (idsWePublished.isEmpty) return const {};
     final pm = pubsubOf();
     final listed = await fetchOmemoDeviceIds(bareJid);
     if (listed.isEmpty) return const {};
 
-    // One round trip per candidate id, fetched up front so the decision below
-    // is pure arithmetic on answers we already have.
-    final candidates =
-        idsWePublished.difference({ourDeviceId}).intersection(listed);
-    final fetches = <int, bool>{};
-    for (final id in candidates) {
-      fetches[id] = await getOmemoBundle(bareJid, id) != null;
+    // One round trip per id, fetched up front so the decision below is pure
+    // arithmetic on answers we already have.
+    final absent = <int, bool>{};
+    for (final id in listed) {
+      if (id == ourDeviceId) continue;
+      absent[id] = await bundleKnownAbsent(bareJid, id);
     }
 
     final kept = keepableDeviceIds(
       listed: listed,
       ourDeviceId: ourDeviceId,
-      idsWePublished: idsWePublished,
-      bundleFetches: (id) => fetches[id] ?? true,
+      bundleAbsent: (id) => absent[id] ?? false,
     );
     final dead = deadDeviceIds(listed: listed, kept: kept);
     if (dead.isEmpty) return const {};
