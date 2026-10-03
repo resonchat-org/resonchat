@@ -25,6 +25,7 @@ import '../xmpp/reactions.dart';
 import '../xmpp/retraction.dart';
 import '../xmpp/replies.dart';
 import 'contact_avatar.dart';
+import 'appearance.dart';
 import 'message_actions.dart';
 import 'room_sheet.dart';
 import 'search.dart';
@@ -907,6 +908,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     // explained there if not.
     final track = ref.watch(chatTrackProvider(widget.chatJid)).value ??
         Track.standard;
+    final appearance =
+        ref.watch(chatAppearanceProvider(widget.chatJid)).value ??
+            const ChatAppearance();
     // Watched so a draft saved here is read back into the field; see
     // _restoreDraft for why it only happens once.
     ref.watch(draftProvider(widget.chatJid));
@@ -975,6 +979,23 @@ class _ChatPageState extends ConsumerState<ChatPage> {
             ),
           ),
           IconButton(
+            icon: const Icon(Icons.palette_outlined),
+            tooltip: 'Appearance',
+            onPressed: () => showModalBottomSheet<void>(
+              context: context,
+              isScrollControlled: true,
+              builder: (sheetContext) => AppearancePicker(
+                initial: appearance,
+                // Written on every change rather than on dismissal: the swatches
+                // are the preview, and waiting for "done" would mean choosing
+                // blind.
+                onChanged: (next) => unawaited(
+                  setChatAppearance(ref, widget.chatJid, next),
+                ),
+              ),
+            ),
+          ),
+          IconButton(
             icon: const Icon(Icons.push_pin_outlined),
             tooltip: 'Pinned messages',
             onPressed: _showPinned,
@@ -998,23 +1019,40 @@ class _ChatPageState extends ConsumerState<ChatPage> {
           Expanded(
             child: Container(
               color: tg.pageBackground,
-              child: messages.when(
-                data: (list) => _MessageList(
-                  messages: list,
-                  scroll: _scroll,
-                  onRetryDecrypt: () =>
-                      _loadHistory(),
-                  onReact: _toggleReaction,
-                  onMenu: _showMessageMenu,
-                  onToggleSelected: _toggleSelected,
-                  selectionMode: _selectionMode,
-                  selectedIds: _selection,
-                  readAt: ref.watch(chatLastReadProvider(widget.chatJid)).value,
-                  unreadDividerKey: _unreadDividerKey,
+              // Painted inside the Expanded rather than behind the Scaffold,
+              // so the pattern does not also sit under the app bar and the input
+              // bar — Telegram draws it only behind the transcript.
+              child: CustomPaint(
+                painter: WallpaperPainter(
+                  wallpaper: appearance.wallpaper,
+                  base: tg.pageBackground,
+                  // A per-conversation accent tints the pattern; without one it
+                  // falls back to the theme's, so the pattern is never drawn in
+                  // a colour the app does not otherwise use.
+                  accent: appearance.accent ?? tg.accent,
+                  seed: widget.chatJid,
                 ),
-                loading: () =>
-                    const Center(child: CircularProgressIndicator()),
-                error: (e, _) => Center(child: Text('$e')),
+                child: messages.when(
+                  data: (list) => _MessageList(
+                    messages: list,
+                    scroll: _scroll,
+                    onRetryDecrypt: () =>
+                        _loadHistory(),
+                    onReact: _toggleReaction,
+                    onMenu: _showMessageMenu,
+                    onToggleSelected: _toggleSelected,
+                    selectionMode: _selectionMode,
+                    selectedIds: _selection,
+                    readAt: ref
+                        .watch(chatLastReadProvider(widget.chatJid))
+                        .value,
+                    unreadDividerKey: _unreadDividerKey,
+                    bubbleStyle: appearance.bubble,
+                  ),
+                  loading: () =>
+                      const Center(child: CircularProgressIndicator()),
+                  error: (e, _) => Center(child: Text('$e')),
+                ),
               ),
             ),
           ),
@@ -1107,6 +1145,7 @@ class _MessageList extends StatelessWidget {
     required this.selectedIds,
     required this.readAt,
     required this.unreadDividerKey,
+    required this.bubbleStyle,
   });
 
   final List<Message> messages;
@@ -1137,6 +1176,9 @@ class _MessageList extends StatelessWidget {
 
   /// Key the unread divider is built with, so the page can scroll to it.
   final GlobalKey unreadDividerKey;
+
+  /// Corner shape of the bubbles, from this conversation's appearance.
+  final BubbleStyle bubbleStyle;
 
   @override
   Widget build(BuildContext context) {
@@ -1197,6 +1239,7 @@ class _MessageList extends StatelessWidget {
           message: m,
           selectionMode: selectionMode,
           selected: selectedIds.contains(m.stanzaId),
+          bubbleStyle: bubbleStyle,
           onReact: (emoji) => onReact(m.stanzaId, emoji),
           onMenu: (body) => onMenu(m, body),
           onToggleSelected: () => onToggleSelected(m),
@@ -1368,6 +1411,7 @@ class _ReactionBubble extends ConsumerWidget {
     required this.message,
     required this.selectionMode,
     required this.selected,
+    required this.bubbleStyle,
     required this.onReact,
     required this.onMenu,
     required this.onToggleSelected,
@@ -1376,6 +1420,7 @@ class _ReactionBubble extends ConsumerWidget {
   final Message message;
   final bool selectionMode;
   final bool selected;
+  final BubbleStyle bubbleStyle;
   final void Function(String emoji) onReact;
   final void Function(String body) onMenu;
   final void Function() onToggleSelected;
@@ -1405,6 +1450,7 @@ class _ReactionBubble extends ConsumerWidget {
       mine: !message.incoming,
       selected: selected,
       selectionMode: selectionMode,
+      bubbleStyle: bubbleStyle,
       onReact: onReact,
       // A long press still opens the context menu when nothing is selected;
       // once a selection exists, long press adds to it, which is what a user

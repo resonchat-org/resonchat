@@ -39,6 +39,18 @@ class $ChatsTable extends Chats with TableInfo<$ChatsTable, Chat> {
     requiredDuringInsert: false,
     defaultValue: currentDateAndTime,
   );
+  static const VerificationMeta _appearanceMeta = const VerificationMeta(
+    'appearance',
+  );
+  @override
+  late final GeneratedColumn<String> appearance = GeneratedColumn<String>(
+    'appearance',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
   static const VerificationMeta _pinnedMeta = const VerificationMeta('pinned');
   @override
   late final GeneratedColumn<bool> pinned = GeneratedColumn<bool>(
@@ -121,6 +133,7 @@ class $ChatsTable extends Chats with TableInfo<$ChatsTable, Chat> {
     jid,
     title,
     lastActivity,
+    appearance,
     pinned,
     muted,
     archived,
@@ -161,6 +174,12 @@ class $ChatsTable extends Chats with TableInfo<$ChatsTable, Chat> {
           data['last_activity']!,
           _lastActivityMeta,
         ),
+      );
+    }
+    if (data.containsKey('appearance')) {
+      context.handle(
+        _appearanceMeta,
+        appearance.isAcceptableOrUnknown(data['appearance']!, _appearanceMeta),
       );
     }
     if (data.containsKey('pinned')) {
@@ -229,6 +248,10 @@ class $ChatsTable extends Chats with TableInfo<$ChatsTable, Chat> {
         DriftSqlType.dateTime,
         data['${effectivePrefix}last_activity'],
       )!,
+      appearance: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}appearance'],
+      )!,
       pinned: attachedDatabase.typeMapping.read(
         DriftSqlType.bool,
         data['${effectivePrefix}pinned'],
@@ -267,6 +290,14 @@ class Chat extends DataClass implements Insertable<Chat> {
   final String title;
   final DateTime lastActivity;
 
+  /// Serialised [ChatAppearance] for this conversation, or empty for the
+  /// default.
+  ///
+  /// Per conversation rather than global, because that is the setting people
+  /// actually use: one person whose bubbles you want to tell apart at a glance.
+  /// A single global setting would be a settings screen with nothing in it.
+  final String appearance;
+
   /// Pinned to the top of the chat list.
   final bool pinned;
 
@@ -303,6 +334,7 @@ class Chat extends DataClass implements Insertable<Chat> {
     required this.jid,
     required this.title,
     required this.lastActivity,
+    required this.appearance,
     required this.pinned,
     required this.muted,
     required this.archived,
@@ -316,6 +348,7 @@ class Chat extends DataClass implements Insertable<Chat> {
     map['jid'] = Variable<String>(jid);
     map['title'] = Variable<String>(title);
     map['last_activity'] = Variable<DateTime>(lastActivity);
+    map['appearance'] = Variable<String>(appearance);
     map['pinned'] = Variable<bool>(pinned);
     map['muted'] = Variable<bool>(muted);
     map['archived'] = Variable<bool>(archived);
@@ -330,6 +363,7 @@ class Chat extends DataClass implements Insertable<Chat> {
       jid: Value(jid),
       title: Value(title),
       lastActivity: Value(lastActivity),
+      appearance: Value(appearance),
       pinned: Value(pinned),
       muted: Value(muted),
       archived: Value(archived),
@@ -348,6 +382,7 @@ class Chat extends DataClass implements Insertable<Chat> {
       jid: serializer.fromJson<String>(json['jid']),
       title: serializer.fromJson<String>(json['title']),
       lastActivity: serializer.fromJson<DateTime>(json['lastActivity']),
+      appearance: serializer.fromJson<String>(json['appearance']),
       pinned: serializer.fromJson<bool>(json['pinned']),
       muted: serializer.fromJson<bool>(json['muted']),
       archived: serializer.fromJson<bool>(json['archived']),
@@ -363,6 +398,7 @@ class Chat extends DataClass implements Insertable<Chat> {
       'jid': serializer.toJson<String>(jid),
       'title': serializer.toJson<String>(title),
       'lastActivity': serializer.toJson<DateTime>(lastActivity),
+      'appearance': serializer.toJson<String>(appearance),
       'pinned': serializer.toJson<bool>(pinned),
       'muted': serializer.toJson<bool>(muted),
       'archived': serializer.toJson<bool>(archived),
@@ -376,6 +412,7 @@ class Chat extends DataClass implements Insertable<Chat> {
     String? jid,
     String? title,
     DateTime? lastActivity,
+    String? appearance,
     bool? pinned,
     bool? muted,
     bool? archived,
@@ -386,6 +423,7 @@ class Chat extends DataClass implements Insertable<Chat> {
     jid: jid ?? this.jid,
     title: title ?? this.title,
     lastActivity: lastActivity ?? this.lastActivity,
+    appearance: appearance ?? this.appearance,
     pinned: pinned ?? this.pinned,
     muted: muted ?? this.muted,
     archived: archived ?? this.archived,
@@ -400,6 +438,9 @@ class Chat extends DataClass implements Insertable<Chat> {
       lastActivity: data.lastActivity.present
           ? data.lastActivity.value
           : this.lastActivity,
+      appearance: data.appearance.present
+          ? data.appearance.value
+          : this.appearance,
       pinned: data.pinned.present ? data.pinned.value : this.pinned,
       muted: data.muted.present ? data.muted.value : this.muted,
       archived: data.archived.present ? data.archived.value : this.archived,
@@ -421,6 +462,7 @@ class Chat extends DataClass implements Insertable<Chat> {
           ..write('jid: $jid, ')
           ..write('title: $title, ')
           ..write('lastActivity: $lastActivity, ')
+          ..write('appearance: $appearance, ')
           ..write('pinned: $pinned, ')
           ..write('muted: $muted, ')
           ..write('archived: $archived, ')
@@ -436,6 +478,7 @@ class Chat extends DataClass implements Insertable<Chat> {
     jid,
     title,
     lastActivity,
+    appearance,
     pinned,
     muted,
     archived,
@@ -450,6 +493,7 @@ class Chat extends DataClass implements Insertable<Chat> {
           other.jid == this.jid &&
           other.title == this.title &&
           other.lastActivity == this.lastActivity &&
+          other.appearance == this.appearance &&
           other.pinned == this.pinned &&
           other.muted == this.muted &&
           other.archived == this.archived &&
@@ -462,6 +506,7 @@ class ChatsCompanion extends UpdateCompanion<Chat> {
   final Value<String> jid;
   final Value<String> title;
   final Value<DateTime> lastActivity;
+  final Value<String> appearance;
   final Value<bool> pinned;
   final Value<bool> muted;
   final Value<bool> archived;
@@ -473,6 +518,7 @@ class ChatsCompanion extends UpdateCompanion<Chat> {
     this.jid = const Value.absent(),
     this.title = const Value.absent(),
     this.lastActivity = const Value.absent(),
+    this.appearance = const Value.absent(),
     this.pinned = const Value.absent(),
     this.muted = const Value.absent(),
     this.archived = const Value.absent(),
@@ -485,6 +531,7 @@ class ChatsCompanion extends UpdateCompanion<Chat> {
     required String jid,
     this.title = const Value.absent(),
     this.lastActivity = const Value.absent(),
+    this.appearance = const Value.absent(),
     this.pinned = const Value.absent(),
     this.muted = const Value.absent(),
     this.archived = const Value.absent(),
@@ -497,6 +544,7 @@ class ChatsCompanion extends UpdateCompanion<Chat> {
     Expression<String>? jid,
     Expression<String>? title,
     Expression<DateTime>? lastActivity,
+    Expression<String>? appearance,
     Expression<bool>? pinned,
     Expression<bool>? muted,
     Expression<bool>? archived,
@@ -509,6 +557,7 @@ class ChatsCompanion extends UpdateCompanion<Chat> {
       if (jid != null) 'jid': jid,
       if (title != null) 'title': title,
       if (lastActivity != null) 'last_activity': lastActivity,
+      if (appearance != null) 'appearance': appearance,
       if (pinned != null) 'pinned': pinned,
       if (muted != null) 'muted': muted,
       if (archived != null) 'archived': archived,
@@ -523,6 +572,7 @@ class ChatsCompanion extends UpdateCompanion<Chat> {
     Value<String>? jid,
     Value<String>? title,
     Value<DateTime>? lastActivity,
+    Value<String>? appearance,
     Value<bool>? pinned,
     Value<bool>? muted,
     Value<bool>? archived,
@@ -535,6 +585,7 @@ class ChatsCompanion extends UpdateCompanion<Chat> {
       jid: jid ?? this.jid,
       title: title ?? this.title,
       lastActivity: lastActivity ?? this.lastActivity,
+      appearance: appearance ?? this.appearance,
       pinned: pinned ?? this.pinned,
       muted: muted ?? this.muted,
       archived: archived ?? this.archived,
@@ -556,6 +607,9 @@ class ChatsCompanion extends UpdateCompanion<Chat> {
     }
     if (lastActivity.present) {
       map['last_activity'] = Variable<DateTime>(lastActivity.value);
+    }
+    if (appearance.present) {
+      map['appearance'] = Variable<String>(appearance.value);
     }
     if (pinned.present) {
       map['pinned'] = Variable<bool>(pinned.value);
@@ -587,6 +641,7 @@ class ChatsCompanion extends UpdateCompanion<Chat> {
           ..write('jid: $jid, ')
           ..write('title: $title, ')
           ..write('lastActivity: $lastActivity, ')
+          ..write('appearance: $appearance, ')
           ..write('pinned: $pinned, ')
           ..write('muted: $muted, ')
           ..write('archived: $archived, ')
@@ -3615,6 +3670,7 @@ typedef $$ChatsTableCreateCompanionBuilder = ChatsCompanion Function({
   required String jid,
   Value<String> title,
   Value<DateTime> lastActivity,
+  Value<String> appearance,
   Value<bool> pinned,
   Value<bool> muted,
   Value<bool> archived,
@@ -3627,6 +3683,7 @@ typedef $$ChatsTableUpdateCompanionBuilder = ChatsCompanion Function({
   Value<String> jid,
   Value<String> title,
   Value<DateTime> lastActivity,
+  Value<String> appearance,
   Value<bool> pinned,
   Value<bool> muted,
   Value<bool> archived,
@@ -3680,6 +3737,11 @@ class $$ChatsTableFilterComposer extends Composer<_$AppDatabase, $ChatsTable> {
 
   ColumnFilters<DateTime> get lastActivity => $composableBuilder(
     column: $table.lastActivity,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get appearance => $composableBuilder(
+    column: $table.appearance,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -3763,6 +3825,11 @@ class $$ChatsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get appearance => $composableBuilder(
+    column: $table.appearance,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<bool> get pinned => $composableBuilder(
     column: $table.pinned,
     builder: (column) => ColumnOrderings(column),
@@ -3811,6 +3878,11 @@ class $$ChatsTableAnnotationComposer
 
   GeneratedColumn<DateTime> get lastActivity => $composableBuilder(
     column: $table.lastActivity,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get appearance => $composableBuilder(
+    column: $table.appearance,
     builder: (column) => column,
   );
 
@@ -3895,6 +3967,7 @@ class $$ChatsTableTableManager
                 Value<String> jid = const Value.absent(),
                 Value<String> title = const Value.absent(),
                 Value<DateTime> lastActivity = const Value.absent(),
+                Value<String> appearance = const Value.absent(),
                 Value<bool> pinned = const Value.absent(),
                 Value<bool> muted = const Value.absent(),
                 Value<bool> archived = const Value.absent(),
@@ -3906,6 +3979,7 @@ class $$ChatsTableTableManager
                 jid: jid,
                 title: title,
                 lastActivity: lastActivity,
+                appearance: appearance,
                 pinned: pinned,
                 muted: muted,
                 archived: archived,
@@ -3919,6 +3993,7 @@ class $$ChatsTableTableManager
                 required String jid,
                 Value<String> title = const Value.absent(),
                 Value<DateTime> lastActivity = const Value.absent(),
+                Value<String> appearance = const Value.absent(),
                 Value<bool> pinned = const Value.absent(),
                 Value<bool> muted = const Value.absent(),
                 Value<bool> archived = const Value.absent(),
@@ -3930,6 +4005,7 @@ class $$ChatsTableTableManager
                 jid: jid,
                 title: title,
                 lastActivity: lastActivity,
+                appearance: appearance,
                 pinned: pinned,
                 muted: muted,
                 archived: archived,

@@ -27,6 +27,14 @@ class Chats extends Table {
   DateTimeColumn get lastActivity =>
       dateTime().withDefault(currentDateAndTime)();
 
+  /// Serialised [ChatAppearance] for this conversation, or empty for the
+  /// default.
+  ///
+  /// Per conversation rather than global, because that is the setting people
+  /// actually use: one person whose bubbles you want to tell apart at a glance.
+  /// A single global setting would be a settings screen with nothing in it.
+  TextColumn get appearance => text().withDefault(const Constant(''))();
+
   /// Pinned to the top of the chat list.
   BoolColumn get pinned => boolean().withDefault(const Constant(false))();
 
@@ -290,7 +298,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
   @override
-  int get schemaVersion => 14;
+  int get schemaVersion => 15;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -303,6 +311,11 @@ class AppDatabase extends _$AppDatabase {
             await customStatement(
               "ALTER TABLE messages ADD COLUMN delivery_error TEXT NOT NULL "
               "DEFAULT ''",
+            );
+          }
+          if (from < 15) {
+            await customStatement(
+              "ALTER TABLE chats ADD COLUMN appearance TEXT NOT NULL DEFAULT ''",
             );
           }
           if (from < 14) {
@@ -876,6 +889,30 @@ class AppDatabase extends _$AppDatabase {
 
   Future<void> savePublishedDeviceIds(Set<int> ids) =>
       setMetaValue('omemo_published_ids', ids.join(','));
+
+  /// Stores [raw] as [chatJid]'s appearance, or clears it when null.
+  ///
+  /// Cleared rather than stored as the default encoding: a row of defaults is a
+  /// list of conversations that once had a setting, which is not a thing, and it
+  /// would stop a later change of the app's own defaults from reaching them.
+  Future<void> setChatAppearance(String chatJid, String? raw) async {
+    final value = raw?.trim() ?? '';
+    if (value.isEmpty) {
+      await (update(chats)..where((c) => c.jid.equals(chatJid))).write(
+        const ChatsCompanion(appearance: Value('')),
+      );
+      return;
+    }
+    final changed = await (update(chats)..where((c) => c.jid.equals(chatJid)))
+        .write(ChatsCompanion(appearance: Value(value)));
+    if (changed == 0) {
+      // Appearance set before the conversation has a row — the same case as
+      // pinning a chat that has never had a message.
+      await upsertChat(chatJid);
+      await (update(chats)..where((c) => c.jid.equals(chatJid)))
+          .write(ChatsCompanion(appearance: Value(value)));
+    }
+  }
 
   /// The draft for [chatJid], or null when the box is empty.
   ///

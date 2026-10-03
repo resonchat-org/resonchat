@@ -17,6 +17,7 @@ import '../xmpp/blocking.dart';
 import '../xmpp/muc.dart';
 import '../xmpp/reactions.dart';
 import '../store/omemo_device_store.dart';
+import '../ui/appearance.dart';
 import '../xmpp/b_track_manager.dart';
 import '../xmpp/capabilities.dart';
 import '../xmpp/connection.dart';
@@ -284,6 +285,32 @@ final roomOccupantsProvider =
 final archivedChatsProvider = StreamProvider<List<Chat>>(
   (ref) => ref.watch(databaseProvider).watchArchivedChats(),
 );
+
+/// How [chatJid] looks: wallpaper, bubble shape, accent.
+final chatAppearanceProvider = FutureProvider.family<ChatAppearance, String>((
+  ref,
+  chatJid,
+) async {
+  ref.watch(chatRowRevisionProvider);
+  final chat = await ref.watch(databaseProvider).watchChats().first;
+  for (final c in chat) {
+    if (c.jid == chatJid) return ChatAppearance.decode(c.appearance);
+  }
+  return const ChatAppearance();
+});
+
+/// Stores [appearance] for [chatJid], or clears it when null.
+Future<void> setChatAppearance(
+  WidgetRef ref,
+  String chatJid,
+  ChatAppearance? appearance,
+) async {
+  await ref
+      .read(databaseProvider)
+      .setChatAppearance(chatJid, appearance?.encode());
+  ref.read(chatRowRevisionProvider.notifier).state =
+      ref.read(chatRowRevisionProvider) + 1;
+}
 
 /// Unread count for [chatJid], or null while it is being read.
 ///

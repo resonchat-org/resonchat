@@ -56,3 +56,4 @@ third_party/liboqs/build/
 # UI previews (generated, see app/tool/previews/)
 app/build/ui-previews/
 app/third_party/liboqs/
+reference/

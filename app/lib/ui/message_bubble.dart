@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import '../omemo/track.dart';
 import '../xmpp/reactions.dart';
 import '../xmpp/retraction.dart';
+import 'appearance.dart';
 import 'theme.dart';
 
 enum BubbleSide { incoming, outgoing }
@@ -23,44 +24,54 @@ class _BubblePainter extends CustomPainter {
     required this.side,
     required this.radius,
     required this.tail,
+    required this.style,
   });
 
   final Color color;
   final BubbleSide side;
   final double radius;
   final double tail;
+  final BubbleStyle style;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final r = Radius.circular(radius);
-    final path = Path();
+    final mine = side == BubbleSide.outgoing;
+    // A square bubble has no tail: the point of that style is a flat, system-like
+    // row, and leaving a tail on it looks like a bug rather than a choice.
+    final tailSize = style == BubbleStyle.square ? 0.0 : tail;
+    final radii = bubbleRadii(style, mine);
 
-    if (side == BubbleSide.outgoing) {
-      // Tail at bottom-right.
+    final path = Path();
+    if (mine) {
+      // Tail at bottom-right. The two corners on the right take the "rounded"
+      // radius and the two on the left the "square" one, so the pointed corner
+      // is the one nearest the other party.
+      final rt = radii.topRight.x;
+      final lt = radii.topLeft.x;
       path
-        ..moveTo(radius, 0)
-        ..lineTo(size.width - radius, 0)
-        ..arcToPoint(
-          Offset(size.width, radius),
-          radius: r,
-        )
-        ..lineTo(size.width, size.height - tail)
-        ..lineTo(size.width - tail, size.height)
-        ..lineTo(0, size.height)
-        ..lineTo(0, radius)
-        ..arcToPoint(Offset(radius, 0), radius: r)
+        ..moveTo(lt, 0)
+        ..lineTo(size.width - rt, 0)
+        ..arcToPoint(Offset(size.width, rt), radius: Radius.circular(rt))
+        ..lineTo(size.width, size.height - tailSize)
+        ..lineTo(size.width - tailSize, size.height)
+        ..lineTo(radii.bottomLeft.x, size.height)
+        ..lineTo(0, radii.bottomLeft.x)
+        ..arcToPoint(Offset(lt, 0), radius: Radius.circular(lt))
         ..close();
     } else {
-      // Tail at bottom-left.
+      // Mirror image: tail at bottom-left, pointed corner on the right.
+      final rt = radii.topRight.x;
+      final lt = radii.topLeft.x;
       path
-        ..moveTo(radius, 0)
-        ..lineTo(size.width - radius, 0)
-        ..arcToPoint(Offset(size.width, radius), radius: r)
-        ..lineTo(size.width, size.height)
-        ..lineTo(tail, size.height)
-        ..lineTo(0, size.height - tail)
-        ..lineTo(0, radius)
-        ..arcToPoint(Offset(radius, 0), radius: r)
+        ..moveTo(lt, 0)
+        ..lineTo(size.width - rt, 0)
+        ..arcToPoint(Offset(size.width, rt), radius: Radius.circular(rt))
+        ..lineTo(size.width, radii.bottomRight.x)
+        ..lineTo(radii.bottomRight.x, size.height)
+        ..lineTo(tailSize, size.height)
+        ..lineTo(0, size.height - tailSize)
+        ..lineTo(0, lt)
+        ..arcToPoint(Offset(lt, 0), radius: Radius.circular(lt))
         ..close();
     }
 
@@ -78,7 +89,8 @@ class _BubblePainter extends CustomPainter {
       old.color != color ||
       old.side != side ||
       old.radius != radius ||
-      old.tail != tail;
+      old.tail != tail ||
+      old.style != style;
 }
 
 /// One message row: optional sender name (group chats), the bubble, and
@@ -99,6 +111,7 @@ class MessageBubble extends StatelessWidget {
     this.edited = false,
     this.selected = false,
     this.selectionMode = false,
+    this.bubbleStyle = BubbleStyle.rounded,
     this.mine = false,
     this.replyTo = '',
     this.replyBody = '',
@@ -137,6 +150,9 @@ class MessageBubble extends StatelessWidget {
 
   /// This message is part of the current selection.
   final bool selected;
+
+  /// Corner shape, from this conversation's appearance setting.
+  final BubbleStyle bubbleStyle;
 
   /// The chat is in selection mode.
   ///
@@ -204,7 +220,7 @@ class MessageBubble extends StatelessWidget {
               author: replyAuthor,
             ),
           GestureDetector(
-            onTap: selectionMode ? onTap : onTap,
+            onTap: onTap,
             onLongPress: onLongPress,
             child: CustomPaint(
               painter: _BubblePainter(
@@ -212,6 +228,7 @@ class MessageBubble extends StatelessWidget {
                 side: side,
                 radius: TgDimens.bubbleRadius,
                 tail: TgDimens.bubbleTailSize,
+                style: bubbleStyle,
               ),
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(
