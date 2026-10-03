@@ -36,9 +36,29 @@ List<int> generateRandomBytes(int length) {
   return bytes;
 }
 
-/// Generate a random number between 0 inclusive and 2**32 exclusive (2**32 - 1 inclusive).
-int generateRandom32BitNumber() {
-  return Random.secure().nextInt(4294967295 /*pow(2, 32) - 1*/);
+/// Generate a random OMEMO identifier: 0 inclusive, `2**31 - 1` exclusive.
+///
+/// **31 bits, not 32, and the distinction is the whole point of this
+/// function.** Every caller uses it for an identifier that travels on the wire
+/// and is parsed by the peer as a *signed* Java `int`:
+///
+///  * device ids in `<list><device id='…'/></list>`
+///  * `signedPreKeyId` and `preKeyId` in the bundle
+///
+/// Conversations reads a prekey id with `Integer.valueOf(attribute)`. A value
+/// at or above 2**31 is not out of range for a Dart `int` — it parses fine on
+/// our side and prints fine in our logs — so it looks correct everywhere we
+/// can see, and on the peer it throws `NumberFormatException` and the prekey
+/// is silently dropped. When enough ids land above 2**31 the prekey list comes
+/// back empty, the peer declares the device broken, and it can neither encrypt
+/// to us nor tell us why.
+///
+/// Signal generates these with `Math.abs(SecureRandom.getNextInt(
+/// Integer.MAX_VALUE))`, i.e. the signed-positive range. This used to return
+/// the full unsigned 32-bit range, which is how a client can be
+/// self-consistent and still be unreadable by every real one.
+int generateRandomOmemoId() {
+  return Random.secure().nextInt(0x7FFFFFFF);
 }
 
 /// Describes the differences between two lists in terms of its items.

@@ -487,8 +487,28 @@ class DualTrackManager {
   /// adopt. Returns true when at least one form was accepted.
   Future<bool> publishOmemoBundle(JID bareJid, omemo.OmemoBundle bundle) async {
     final pm = pubsubOf();
-    final ids = await fetchOmemoDeviceIds(bareJid)
-      ..add(bundle.id);
+
+    // Publish *only* the device we can actually service.
+    //
+    // The tempting thing is to read the server's existing list and re-publish
+    // it with our id added, which is what this used to do. That is how the
+    // list grows a device id per reinstall: the id survives on the server
+    // while the sealed key material does not (`pm clear`, a reinstall, a new
+    // database), and the next login faithfully re-advertises it. The result is
+    // a list of devices nobody can decrypt for.
+    //
+    // A peer fetches a bundle for *every* id in this list and treats any
+    // failure as "this contact is not encryptable" — Conversations says
+    // "Could not fetch encryption keys" and refuses the whole account. So one
+    // phantom id does not cost one device, it costs the contact.
+    //
+    // We hold the private key for exactly one device: the current one. (Ids
+    // previously published by *this* install live in `publishedDeviceIds`,
+    // but a new install starts empty, and keys deliberately do not travel
+    // between installs.) Multi-install support would have to intersect that
+    // set with the ids whose keys are still in this store; until then, one
+    // device is the honest answer.
+    final ids = <int>{bundle.id};
 
     final listResult = await pm.publish(
       bareJid,
@@ -507,6 +527,35 @@ class DualTrackManager {
       options: const PubSubPublishOptions(accessModel: 'open', maxItems: '1'),
     );
     final bundleOk = bundleResult.isType<bool>() && bundleResult.get<bool>();
+
+    // Publishing *states* publish-options; a server only applies them when it
+    // is creating the node. On a node that already exists they are a
+    // precondition, and a client that does not act on the resulting
+    // `precondition-not-met` leaves the node with whatever access model it was
+    // born with. On a PEP node the failure that matters is a node readable
+    // only by its owner: every check we can run on ourselves passes — we *are*
+    // the owner — while the peer fetches nothing and reports it as missing
+    // encryption keys. So push the configuration explicitly rather than hope
+    // for the precondition. Conversations does the same thing after the server
+    // reports one; doing it unconditionally costs two IQs per node on a path
+    // that runs at login.
+    //
+    // Best-effort on purpose: a configuration push that fails must not undo a
+    // publish that succeeded.
+    for (final node in <String>[
+      omemoDefactoDevicesNode,
+      '$omemoDefactoBundlesNode:${bundle.id}',
+    ]) {
+      try {
+        await pm.configure(
+          bareJid,
+          node,
+          const PubSubPublishOptions(accessModel: 'open'),
+        );
+      } catch (_) {
+        // Ignore: this only tightens the node's configuration.
+      }
+    }
 
     // Also the XEP-0384 spec dialect, through moxxmpp. Its payload bool is
     // `deviceBundlePublish.isType<PubSubError>()` - true means failure.

@@ -1048,9 +1048,9 @@ class OmemoManager {
   /// current pool works, because replacing a nonexistent key simply adds
   /// one.
   int _nextFreeOpkId(OmemoDevice device) {
-    var id = generateRandom32BitNumber();
+    var id = generateRandomOmemoId();
     while (device.opks.containsKey(id)) {
-      id = generateRandom32BitNumber();
+      id = generateRandomOmemoId();
     }
     return id;
   }

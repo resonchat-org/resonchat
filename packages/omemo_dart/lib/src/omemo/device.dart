@@ -27,17 +27,17 @@ class OmemoDevice {
     String jid, {
     int opkAmount = 100,
   }) async {
-    final id = generateRandom32BitNumber();
+    final id = generateRandomOmemoId();
     final ik = await OmemoKeyPair.generateNewPair(KeyPairType.ed25519);
     final spk = await OmemoKeyPair.generateNewPair(KeyPairType.x25519);
-    final spkId = generateRandom32BitNumber();
+    final spkId = generateRandomOmemoId();
     final signature = await sig(ik, await spk.pk.getBytes());
 
     final opks = <int, OmemoKeyPair>{};
     for (var i = 0; i < opkAmount; i++) {
       // Generate unique ids for each key
       while (true) {
-        final opkId = generateRandom32BitNumber();
+        final opkId = generateRandomOmemoId();
         if (opks.containsKey(opkId)) {
           continue;
         }
@@ -85,7 +85,7 @@ class OmemoDevice {
 
     // Generate a new unique id for the OPK.
     while (true) {
-      final newId = generateRandom32BitNumber();
+      final newId = generateRandomOmemoId();
       if (opks.containsKey(newId)) {
         continue;
       }
@@ -112,7 +112,7 @@ class OmemoDevice {
   @internal
   Future<OmemoDevice> replaceSignedPrekey() async {
     final newSpk = await OmemoKeyPair.generateNewPair(KeyPairType.x25519);
-    final newSpkId = generateRandom32BitNumber();
+    final newSpkId = generateRandomOmemoId();
     final newSignature = await sig(ik, await newSpk.pk.getBytes());
 
     return OmemoDevice(
@@ -134,7 +134,7 @@ class OmemoDevice {
   OmemoDevice withNewId() {
     return OmemoDevice(
       jid,
-      generateRandom32BitNumber(),
+      generateRandomOmemoId(),
       ik,
       spk,
       spkId,
