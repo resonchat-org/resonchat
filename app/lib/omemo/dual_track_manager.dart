@@ -34,14 +34,19 @@ String sortedNumericIds(Iterable<int> ids) {
   return sorted.isEmpty ? '(none)' : sorted.join(',');
 }
 
-/// How many device bundles are fetched at once.
-///
-/// Eight: enough that a forty-device list finishes in roughly the time of five
-/// round-trips, and few enough that we are not opening a burst of IQs at a
-/// server that is already answering slowly.
 final Logger _log = Logger('DualTrackManager');
 
-const int kBundleFetchConcurrency = 8;
+/// How many device bundles are fetched at once.
+///
+/// **Three, and the number was found the hard way.** Eight was the first value,
+/// on the reasoning that eight concurrent IQs is unremarkable. Against a real
+/// server under real load it was not: the socket was aborted mid-resolution
+/// (`SocketException ... abort, errno = 103`). A dropped socket turns every
+/// in-flight capability read into a failure, so the cost of a burst was not
+/// latency — it was `caps.reliable == false` and the standard track resolving to
+/// something weaker. Three keeps the round-trips few enough to finish before a
+/// busy server gives up on us.
+const int kBundleFetchConcurrency = 3;
 
 /// How long a device list may take before we treat it as unreadable.
 ///

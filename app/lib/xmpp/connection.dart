@@ -939,9 +939,23 @@ class XmppService {
   /// The de-facto node is what real clients announce on, so subscribing
   /// only to the XEP-0384 spec node means we would never see a peer add a
   /// device.
+  ///
+  /// The `+notify` variants are the de-facto scheme's *push* nodes — a
+  /// Conversations install subscribes to `eu.siacs.conversations.axolotl.devicelist+notify`
+  /// (AxolotlService.PEP_DEVICE_LIST_NOTIFY) rather than to the bare node, and
+  /// so does every other Signal-protocol client. Subscribing to the bare node
+  /// still fetches, but it does not *tell* us: we then keep acting on a device
+  /// list we already know is stale, which shows up as a peer gaining or losing a
+  /// device and our app not noticing until something else happens to re-resolve.
+  /// Both are subscribed because they cost one IQ each and only one of them
+  /// answers on any given server.
   static const List<String> _subscribedPepNodes = <String>[
     omemoDefactoDevicesNode,
-    ...omemoSpecDevicesNodes,
+    '${omemoDefactoDevicesNode}+notify',
+    for (final node in omemoSpecDevicesNodes) ...<String>[
+      node,
+      '$node+notify',
+    ],
     pomemoDevicesXmlns,
     pomemoBundlesXmlns,
   ];

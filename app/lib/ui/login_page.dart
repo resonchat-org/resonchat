@@ -13,6 +13,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../state/providers.dart';
+import '../store/account_store.dart';
 import '../store/roster_state.dart';
 import '../xmpp/connection.dart';
 import 'theme.dart';
@@ -43,6 +44,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   final _host = TextEditingController();
   bool _busy = false;
   bool _smokeRan = false;
+  bool _restoredRan = false;
   String? _error;
 
   @override
@@ -58,7 +60,29 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         _smokeRan = true;
         _connect();
       });
+      return;
     }
+    // Restore the last account and log in without being asked.
+    //
+    // A messenger that greets you with a password box every time the socket
+    // drops is not a client you can leave running, and the drops are normal:
+    // servers close idle connections, radios switch, laptops sleep. So the
+    // keystore copy of the credential is spent here to reconnect by itself.
+    //
+    // The fields are filled first, before the attempt, so that a *failed*
+    // auto-login still leaves the form usable instead of blank — the user sees
+    // their own account and the real error, rather than an empty page and a
+    // button.
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted || _restoredRan) return;
+      _restoredRan = true;
+      final stored = await AccountStore().load();
+      if (stored == null || !mounted) return;
+      _jid.text = stored.jid;
+      _password.text = stored.password;
+      if (stored.hasHost) _host.text = stored.host!;
+      await _connect();
+    });
   }
 
   @override
@@ -86,8 +110,22 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         setState(
           () => _error = xmpp.lastError ?? 'Authentication failed',
         );
+        // A stored password that the server no longer accepts must not be
+        // retried on every launch: the user would watch the app fail the same
+        // way forever and never reach the field they could fix it in.
+        await AccountStore().clear();
         return;
       }
+
+      // Saved only after the server has accepted it, so a wrong password is
+      // never remembered — which is what makes "log in once" safe.
+      await AccountStore().save(
+        StoredAccount(
+          jid: _jid.text.trim(),
+          password: _password.text,
+          host: _host.text.trim().isEmpty ? null : _host.text.trim(),
+        ),
+      );
       ref.read(connectionStateProvider.notifier).state =
           XmppConnectionState.connected;
       final items = await xmpp.requestRoster();
