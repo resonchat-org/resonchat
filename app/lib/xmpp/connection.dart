@@ -949,7 +949,10 @@ class XmppService {
   /// device and our app not noticing until something else happens to re-resolve.
   /// Both are subscribed because they cost one IQ each and only one of them
   /// answers on any given server.
-  static const List<String> _subscribedPepNodes = <String>[
+  // `final`, not `const`: the `+notify` variants are built by interpolation
+  // over a spread, and a const list cannot hold either. The list is created
+  // once when the class is first touched and read on every connect.
+  static final List<String> _subscribedPepNodes = <String>[
     omemoDefactoDevicesNode,
     '${omemoDefactoDevicesNode}+notify',
     for (final node in omemoSpecDevicesNodes) ...<String>[
