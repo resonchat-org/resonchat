@@ -386,12 +386,19 @@ class OmemoManager extends XmppManagerBase {
     logger.finest('Encryption done');
 
     if (!result.canSend) {
+      // Null-safe on purpose. `canSend` is decided per device, so it can be false
+      // because of a failure recorded against one of the *other* recipient JIDs
+      // (the carbons copy of our own bare JID is in that list) while this JID has
+      // no entry at all. The unwrapped `!` that used to be here turned that into a
+      // null-check crash inside the stanza handler, which surfaces as the send
+      // hanging rather than as the refusal it is.
+      final ownErrors = result.deviceEncryptionErrors[toJid.toString()];
       return state
         ..cancel = true
         // If we have no device list for toJid, then the contact most likely does not
         // support OMEMO:2
-        ..cancelReason = result.deviceEncryptionErrors[toJid.toString()]!.first
-                .error is omemo.NoKeyMaterialAvailableError
+        ..cancelReason = ownErrors != null &&
+                ownErrors.first.error is omemo.NoKeyMaterialAvailableError
             ? OmemoNotSupportedForContactException()
             : UnknownOmemoError()
         ..encryptionError = OmemoEncryptionError(

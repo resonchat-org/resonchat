@@ -854,7 +854,13 @@ class OmemoManager {
       encryptionErrors,
       newRatchets,
       replacedRatchets,
-      successfulEncryptions.values.every((n) => n > 0),
+      // Per *device*, not per JID. See [canSendAllDevicesReached] for the rule and
+      // for the failure it prevents: a partial result is not a partial message.
+      canSendAllDevicesReached(
+        stanza.recipientJids,
+        successfulEncryptions,
+        encryptionErrors,
+      ),
     );
   }
 
