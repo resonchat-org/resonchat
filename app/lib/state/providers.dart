@@ -285,6 +285,41 @@ final archivedChatsProvider = StreamProvider<List<Chat>>(
   (ref) => ref.watch(databaseProvider).watchArchivedChats(),
 );
 
+/// Unread count for [chatJid], or null while it is being read.
+///
+/// Read by the chat page as well as the list, because the jump-to-unread button
+/// needs it and the chat page is not rebuilt by the list.
+final chatUnreadProvider = FutureProvider.family<int?, String>(
+  (ref, chatJid) async {
+    ref.watch(chatRowRevisionProvider);
+    final chat = await ref.watch(databaseProvider).watchChats().first;
+    for (final c in chat) {
+      if (c.jid == chatJid) return c.unreadCount;
+    }
+    return null;
+  },
+);
+
+/// When the user last read [chatJid], or null before they ever have.
+///
+/// Watched by the chat page to place the unread boundary. Re-reads whenever the
+/// row changes, so reading on another device moves the divider without a
+/// restart.
+final chatLastReadProvider = FutureProvider.family<DateTime?, String>(
+  (ref, chatJid) async {
+    ref.watch(chatRowRevisionProvider);
+    final chat = await ref.watch(databaseProvider).watchChats().first;
+    for (final c in chat) {
+      if (c.jid == chatJid) return c.lastReadAt;
+    }
+    return null;
+  },
+);
+
+/// Bumped whenever a conversation row changes, so anything derived from it
+/// (the unread badge, the read marker) re-reads.
+final chatRowRevisionProvider = StateProvider<int>((ref) => 0);
+
 /// Pending contact requests, newest first.
 final subscriptionRequestsProvider =
     StreamProvider<List<SubscriptionRequest>>(

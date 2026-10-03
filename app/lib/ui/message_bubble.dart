@@ -545,33 +545,3 @@ class DateSeparator extends StatelessWidget {
     );
   }
 }
-
-/// Thin labelled line marking where the unread messages start.
-class UnreadDivider extends StatelessWidget {
-  const UnreadDivider({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final tg = context.tg;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
-      child: Row(
-        children: [
-          Expanded(child: Divider(color: tg.accent, thickness: 1)),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Text(
-              'Unread messages',
-              style: TextStyle(
-                fontSize: TgDimens.timeFontSize,
-                color: tg.accent,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          Expanded(child: Divider(color: tg.accent, thickness: 1)),
-        ],
-      ),
-    );
-  }
-}

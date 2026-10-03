@@ -31,6 +31,7 @@ import 'search.dart';
 import 'message_bubble.dart';
 import 'track_dialogs.dart';
 import 'theme.dart';
+import 'unread.dart';
 
 class ChatPage extends ConsumerStatefulWidget {
   const ChatPage({super.key, required this.chatJid});
@@ -48,6 +49,43 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
   bool _typingNotified = false;
   bool _atBottom = true;
+
+  /// Unread count for this conversation, or null while it is being read.
+  ///
+  /// Watched here rather than only in the chat list because the jump-to-unread
+  /// button has to know about it, and the chat page is not rebuilt by the list.
+  int? get _unreadCountHere =>
+      ref.watch(chatUnreadProvider(widget.chatJid)).value;
+
+  /// Key on the unread divider, so the jump button can scroll to exactly it.
+  ///
+  /// On the divider rather than on the first unread message: the divider is
+  /// already in the right place, it exists exactly once, and scrolling to a row
+  /// by index means guessing a pixel offset from a row height that depends on
+  /// the text inside every row.
+  final _unreadDividerKey = GlobalKey();
+
+  /// Scrolls to the unread boundary.
+  ///
+  /// No-op when there is nothing unread, or when the divider is not currently
+  /// built — which happens when the read marker is newer than everything we
+  /// hold, and is exactly the case where jumping would land on nothing.
+  void _jumpToUnread() {
+    final context = _unreadDividerKey.currentContext;
+    if (context == null) return;
+    unawaited(
+      Scrollable.ensureVisible(
+        context,
+        // A third of the way down rather than centred: the usual reason to jump
+        // is to compare what is new against what was just read, and centring
+        // the target hides the messages above it.
+        alignment: 0.33,
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOut,
+      ),
+    );
+  }
+
   /// Guards against a double tap sending twice while the first send awaits.
   bool _sending = false;
 
@@ -94,11 +132,15 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         .deliveryFailures
         .listen(_onDeliveryFailure);
     _adviceSub = trackAdvice.listen(_onAdvice);
-    // Opening a conversation is what "read" means. Done here rather than when a
-    // message scrolls past, because a conversation opened at the bottom is read
-    // from where it is scrolled to, and a message the user scrolled past
-    // deliberately is not unread.
-    unawaited(ref.read(databaseProvider).markChatRead(widget.chatJid));
+    // Deliberately *not* marked read here. Marking on arrival would clear the
+    // unread badge before the user has read anything, and the boundary in the
+    // transcript would vanish before it had been seen. The marker advances when
+    // the page goes away, which is also the moment the badge in the chat list
+    // should stop counting these messages.
+    //
+    // Marking on "a message scrolled past" would be worse: a message the user
+    // scrolled past deliberately, on purpose, is not unread.
+
 
     final parsed = GroupChat.parseAddress(widget.chatJid);
     if (parsed != null) {
@@ -169,6 +211,16 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
   @override
   void dispose() {
+    // Leaving is what "read" means. Done here rather than on arrival so the
+    // unread boundary stays on screen while it is actually being read, and so
+    // the list badge survives a user who opened a chat and left it again
+    // without scrolling.
+    unawaited(
+      ref.read(databaseProvider).markChatRead(widget.chatJid).then((_) {
+        ref.read(chatRowRevisionProvider.notifier).state =
+            ref.read(chatRowRevisionProvider) + 1;
+      }),
+    );
     _failureSub?.cancel();
     _adviceSub?.cancel();
     _scroll
@@ -957,6 +1009,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                   onToggleSelected: _toggleSelected,
                   selectionMode: _selectionMode,
                   selectedIds: _selection,
+                  readAt: ref.watch(chatLastReadProvider(widget.chatJid)).value,
+                  unreadDividerKey: _unreadDividerKey,
                 ),
                 loading: () =>
                     const Center(child: CircularProgressIndicator()),
@@ -1008,14 +1062,34 @@ class _ChatPageState extends ConsumerState<ChatPage> {
             ),
         ],
       ),
+      // Two different destinations, so two different affordances. Scrolling to
+      // the bottom is "show me what just happened"; jumping to the first unread
+      // is "show me what I missed". Collapsing them means the user who scrolled
+      // up to find an older message cannot get back to the new ones in one tap.
       floatingActionButton: _atBottom
           ? null
-          : FloatingActionButton.small(
-              backgroundColor: tg.peerBubble,
-              foregroundColor: tg.accent,
-              onPressed: _scrollToBottom,
-              child: const Icon(Icons.keyboard_arrow_down),
-            ),
+          : _scrollButton(tg),
+    );
+  }
+
+  /// The scroll button, which is one of two things depending on whether there is
+  /// anything unread.
+  Widget _scrollButton(TgColors tg) {
+    final unread = _unreadCountHere ?? 0;
+    final hasUnread = unread > 0;
+    return FloatingActionButton.small(
+      backgroundColor: hasUnread ? tg.accent : tg.peerBubble,
+      // White on the accent, and the accent on the pale bubble: both pairs are
+      // legible, and the colour difference is what tells the two states apart
+      // without reading the icon.
+      foregroundColor: hasUnread ? Colors.white : tg.accent,
+      tooltip: hasUnread
+          ? 'Jump to the first unread message'
+          : 'Scroll to the latest',
+      onPressed: hasUnread ? _jumpToUnread : _scrollToBottom,
+      child: Icon(
+        hasUnread ? Icons.keyboard_double_arrow_up : Icons.keyboard_arrow_down,
+      ),
     );
   }
 }
@@ -1031,6 +1105,8 @@ class _MessageList extends StatelessWidget {
     required this.onToggleSelected,
     required this.selectionMode,
     required this.selectedIds,
+    required this.readAt,
+    required this.unreadDividerKey,
   });
 
   final List<Message> messages;
@@ -1055,6 +1131,13 @@ class _MessageList extends StatelessWidget {
   /// The stanza ids currently selected, in the order they were picked.
   final List<String> selectedIds;
 
+  /// When the user last read this conversation, which is where the unread
+  /// boundary goes.
+  final DateTime? readAt;
+
+  /// Key the unread divider is built with, so the page can scroll to it.
+  final GlobalKey unreadDividerKey;
+
   @override
   Widget build(BuildContext context) {
     if (messages.isEmpty) {
@@ -1063,17 +1146,27 @@ class _MessageList extends StatelessWidget {
 
     final rows = <Widget>[];
     DateTime? lastDay;
-    bool unreadMarked = false;
+    // The first message the user had not read when they last read this chat.
+    // Null when everything here has been read, or when the marker is newer than
+    // everything we hold (a chat read on another device) — in which case no
+    // divider is drawn at all, because a divider with nothing above it is a
+    // line across the top of an empty conversation.
+    final firstUnread = firstUnreadId(messages, readAt);
+    bool unreadMarked = firstUnread == null;
 
     for (final m in messages) {
       final day = DateTime(m.timestamp.year, m.timestamp.month, m.timestamp.day);
       if (lastDay == null || day != lastDay) {
         rows.add(DateSeparator(date: m.timestamp));
         lastDay = day;
-        if (!unreadMarked) {
-          // Mark the boundary once: everything above is history.
-          unreadMarked = true;
-        }
+      }
+      // Drawn before the message, so it separates "read" from "not read" rather
+      // than sitting under the last read one. The comparison is on the row's
+      // own id rather than on a flag, because a MAM import can insert messages
+      // in the middle and a one-shot flag would end up in the wrong place.
+      if (!unreadMarked && m.stanzaId == firstUnread) {
+        rows.add(UnreadDivider(key: unreadDividerKey));
+        unreadMarked = true;
       }
       if (EncModeToken.parse(m.encMode) == EncModeToken.error) {
         rows.add(
