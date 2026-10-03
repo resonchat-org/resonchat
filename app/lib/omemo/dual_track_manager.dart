@@ -4,6 +4,7 @@
 // Dual-track manager: A track (standard OMEMO via moxxmpp) plus B track
 // (PQ-OMEMO via our own PEP nodes). See docs/02 and docs/03.
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:cryptography/cryptography.dart';
@@ -13,12 +14,27 @@ import 'package:omemo_dart/omemo_dart.dart' hide OmemoManager, OmemoBundle;
 import 'package:xml/xml.dart';
 
 import '../pq/mlkem.dart';
+import 'bounded.dart';
 import 'bundle_codec.dart';
 import 'defacto.dart';
 import 'negotiation.dart';
 import 'pq_session.dart';
 import 'protocol.dart';
 import 'device_pruning.dart';
+
+/// How many device bundles are fetched at once.
+///
+/// Eight: enough that a forty-device list finishes in roughly the time of five
+/// round-trips, and few enough that we are not opening a burst of IQs at a
+/// server that is already answering slowly.
+const int kBundleFetchConcurrency = 8;
+
+/// How long a device list may take before we treat it as unreadable.
+///
+/// Twelve seconds. Long enough that a server answering slowly still gets to
+/// finish a large list, short enough that a stalled connection produces a refusal
+/// the user can read and retry rather than a spinner they have to trust.
+const Duration kDeviceListDeadline = Duration(seconds: 12);
 
 /// Owns the B track's PEP state and the outbound-track decision.
 ///
@@ -160,6 +176,35 @@ class DualTrackManager {
   Future<({Set<int> devices, bool listReadable})> resolveOmemoDevices(
     JID jid,
   ) async {
+    try {
+      return await _resolveOmemoDevices(jid);
+    } on TimeoutException {
+      // "We could not read it in time" is the same answer as "we could not read
+      // it", and it has to be, because the caller can only act on one of those.
+      // Returning the ids we happened to collect instead would be the dangerous
+      // version: a partial list looks exactly like a complete one, so every
+      // device that had not answered yet would read as "this contact has no such
+      // device", and the send would go out encrypted to a subset — which is the
+      // failure this project refuses to have, arrived at from the other
+      // direction.
+      //
+      // So a timeout yields "we know nothing", the track blocks, and the user is
+      // told the truth rather than handed a message addressed to a guess.
+      return (devices: const <int>{}, listReadable: false);
+    }
+  }
+
+  Future<({Set<int> devices, bool listReadable})> _resolveOmemoDevices(
+    JID jid,
+  ) {
+    // The deadline is on the whole resolution, list reads included. Generous
+    // enough that a slow server on a large account still answers, and short
+    // enough that "Connecting…" is never what the user is looking at.
+    return _resolveOmemoDevicesUnbounded(jid).timeout(kDeviceListDeadline);
+  }
+
+  Future<({Set<int> devices, bool listReadable})>
+      _resolveOmemoDevicesUnbounded(JID jid) async {
     final pm = pubsubOf();
     final listed = <int>{};
     var listReadable = false;
@@ -180,10 +225,25 @@ class DualTrackManager {
     }
     if (!listReadable) return (devices: const <int>{}, listReadable: false);
 
+    // One round-trip per device, and *concurrently* rather than one after
+    // another.
+    //
+    // The sequential version cost one network wait per published device id. A
+    // contact whose account has accumulated forty of them — which is what a test
+    // account does, and what any account does across years of reinstalls — took
+    // around seventy seconds to resolve, and because the chat page resolves on
+    // every rebuild the cost was re-paid continuously rather than once. That is
+    // the whole of the "Connecting…" that looks like a hang, and of the idle
+    // one-request-per-second trickle seen with nothing happening on screen.
+    //
+    // Bounded rather than unbounded: forty simultaneous IQs is its own kind of
+    // bad manners, and a contact with four hundred devices would otherwise open
+    // four hundred. The cap is high enough that a normal account finishes in one
+    // round-trip's time and low enough to stay a polite client.
     final devices = <int>{};
-    for (final id in listed) {
+    await forEachBounded(listed, kBundleFetchConcurrency, (id) async {
       if (await getOmemoBundle(jid, id) != null) devices.add(id);
-    }
+    });
     return (devices: devices, listReadable: true);
   }
 
