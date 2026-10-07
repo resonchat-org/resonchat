@@ -3,9 +3,11 @@
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logging/logging.dart';
 
+import 'l10n/l10n.dart';
 import 'state/app_wiring.dart';
 import 'state/providers.dart';
 import 'store/database.dart';
@@ -40,16 +42,35 @@ Future<void> main() async {
   );
 }
 
-class App extends StatelessWidget {
+class App extends ConsumerWidget {
   const App({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final localeOverride = ref.watch(localeOverrideProvider);
     return MaterialApp(
-      title: 'resonchat',
+      onGenerateTitle: (context) => context.l10n.appName,
       debugShowCheckedModeBanner: false,
       theme: AppThemeTokens.light(),
       darkTheme: AppThemeTokens.dark(),
+      locale: localeOverride,
+      supportedLocales: supportedAppLocales,
+      localizationsDelegates: const [
+        AppLocalizations.delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      localeResolutionCallback: (device, supported) {
+        if (localeOverride != null) return localeOverride;
+        if (device == null) return const Locale('en');
+        for (final locale in supported) {
+          if (locale.languageCode == device.languageCode) {
+            return locale;
+          }
+        }
+        return const Locale('en');
+      },
       // Present for the whole app so connection bookkeeping (capabilities,
       // delivery receipts) follows the connection rather than whichever
       // page happens to be on screen.

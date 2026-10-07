@@ -2,41 +2,41 @@
 
 本文档定义本客户端使用的两套端到端加密轨道。
 
-- **A 轨：标准 OMEMO**（命名空间 `urn:xmpp:omemo:2`，XEP-0384 v0.8.3）——用于与外部客户端互通。
-- **B 轨：PQ-OMEMO / pomemo**（命名空间 `urn:xmpp:pomemo:0`）——本项目私有，后量子混合。
+- **A 轨：Conversations 互通 OMEMO**（XEP-0384 **0.3.0** / axolotl，命名空间 `eu.siacs.conversations.axolotl`；AES-128-GCM + libsignal）——与 Conversations 等主流客户端互通。实现见 `omemo_dart_axolotl.dart`。
+- **B 轨：PQ-OMEMO / pomemo**（命名空间 `urn:xmpp:pomemo:0`）——本项目私有，后量子混合。底层经典 Double Ratchet 对齐 XEP-0384 **0.9.1**（`omemo_dart.dart`：AES-256-CBC+HMAC / OMEMO protobuf）。
 
-两轨共享同一套密钥管理、设备模型与信任模型；差异仅在**握手算法**与**命名空间**。
+两轨差异在**握手算法**、**消息命名空间**与 **A 轨身份密钥线格式**（A：Curve25519/libsignal；B：复用经典 Ed25519+X25519 材料 + ML-KEM）。
 
 ---
 
 ## 1. 命名空间与 PEP 节点
 
-| 用途 | A 轨（标准） | B 轨（PQ） |
+| 用途 | A 轨（Conversations / 0.3.0） | B 轨（PQ） |
 |---|---|---|
-| 加密消息元素 | `urn:xmpp:omemo:2` | `urn:xmpp:pomemo:0` |
-| 设备列表节点 | `urn:xmpp:omemo:2:devices` | `urn:xmpp:pomemo:0:devices` |
-| Bundle 节点 | `urn:xmpp:omemo:2:bundles` | `urn:xmpp:pomemo:0:bundles` |
-| EME 声明 | `namespace='urn:xmpp:omemo:2'` | `namespace='urn:xmpp:pomemo:0'` |
+| 加密消息元素 | `eu.siacs.conversations.axolotl` | `urn:xmpp:pomemo:0` |
+| 设备列表节点 | `eu.siacs.conversations.axolotl.devicelist`（主）+ `urn:xmpp:omemo:2:devices`（辅） | `urn:xmpp:pomemo:0:devices` |
+| Bundle 节点 | `eu.siacs.conversations.axolotl.bundles:<id>`（主）+ `urn:xmpp:omemo:2:bundles`（辅） | `urn:xmpp:pomemo:0:bundles` |
+| EME 声明 | `namespace='eu.siacs.conversations.axolotl'` | `namespace='urn:xmpp:pomemo:0'` |
 
 > B 轨使用独立节点，避免污染 A 轨的设备列表（否则标准客户端会尝试给我们的 PQ bundle 发消息并失败）。
 
 ## 2. 密钥体系
 
-### 2.1 标识（两轨共用）
+### 2.1 标识
 
-| 密钥 | 算法 | 用途 |
-|---|---|---|
-| IK_dh | X25519 | 身份 DH 密钥（与标准 OMEMO 一致，指纹基于此） |
-| IK_sig | Ed25519 | 身份签名密钥 |
+| 密钥 | A 轨 | B 轨 | 用途 |
+|---|---|---|---|
+| IK | Curve25519（libsignal，指纹为 66 hex） | IK_dh X25519 + IK_sig Ed25519 | 身份 |
+| 指纹 | `hex(serialize(IK))`（含 `0x05`） | SHA-256(IK_dh) 分组 hex | UI 核对 |
 
-**指纹** = SHA-256(IK_dh 公钥) 的十六进制，按标准 OMEMO 的方式分组展示。用户可跨客户端核对，保证 A/B 轨身份一致。
+A/B 轨身份密钥**不强制同一私钥**（A 为 axolotl 设备，B 为 PQ 设备）；跨客户端核对指纹时以 A 轨 Conversations 指纹为准。
 
-### 2.2 A 轨（标准 OMEMO）
+### 2.2 A 轨（OMEMO 0.3.0 / Conversations）
 
-- SPK：X25519 签名预密钥，Ed25519 签名
-- OPK：X25519 一次性预密钥（批量上传）
-- 握手：X3DH（4 个 DH）
-- 棘轮：Double Ratchet（X25519 DH ratchet + HKDF chain）
+- IK：Curve25519（libsignal，线格式 33 字节含 `0x05`）
+- SPK / OPK：X25519，经 XEdDSA 风格签名（libsignal）
+- 握手 / 棘轮：libsignal SessionBuilder / SessionCipher（`PreKeySignalMessage` / `SignalMessage`）
+- 载荷：AES-128-GCM，auth-tag 拼入 per-device key（Conversations `PUT_AUTH_TAG_INTO_KEY`）
 
 ### 2.3 B 轨（PQ-OMEMO）
 

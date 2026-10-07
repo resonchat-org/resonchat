@@ -11,6 +11,7 @@ import 'package:moxxmpp/moxxmpp.dart'
     show JID, RosterManager, rosterManager;
 import '../xmpp/connection.dart';
 
+import '../l10n/l10n.dart';
 import '../state/providers.dart';
 import 'archive_page.dart';
 import 'chat_row.dart';
@@ -48,7 +49,7 @@ class _ChatsPageState extends ConsumerState<ChatsPage> {
     if (jid == null) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('That does not look like a JID')),
+        SnackBar(content: Text(context.l10n.invalidJid)),
       );
       return;
     }
@@ -67,13 +68,11 @@ class _ChatsPageState extends ConsumerState<ChatsPage> {
         await xmpp.subscribePeerPep(JID.fromString(jid));
       }
       if (!mounted) return;
+      final l10n = context.l10n;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            added
-                ? 'Contact request sent. Messages stay on this device '
-                    'until they accept.'
-                : 'Could not add the contact on the server.',
+            added ? l10n.contactRequestSent : l10n.contactAddFailed,
           ),
         ),
       );
@@ -85,27 +84,28 @@ class _ChatsPageState extends ConsumerState<ChatsPage> {
   @override
   Widget build(BuildContext context) {
     final chats = ref.watch(chatsProvider);
+    final l10n = context.l10n;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('resonchat'),
+        title: Text(l10n.appName),
         actions: [
           IconButton(
             icon: const Icon(Icons.search),
-            tooltip: 'Search messages',
+            tooltip: l10n.searchMessages,
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute<void>(builder: (_) => const SearchPage()),
             ),
           ),
           IconButton(
             icon: const Icon(Icons.person_add_alt),
-            tooltip: 'Contact requests',
+            tooltip: l10n.contactRequests,
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute<void>(builder: (_) => const RequestsPage()),
             ),
           ),
           IconButton(
             icon: const Icon(Icons.group_add_outlined),
-            tooltip: 'Join a group',
+            tooltip: l10n.joinGroup,
             onPressed: () => showModalBottomSheet<void>(
               context: context,
               isScrollControlled: true,
@@ -114,13 +114,14 @@ class _ChatsPageState extends ConsumerState<ChatsPage> {
           ),
           IconButton(
             icon: const Icon(Icons.archive_outlined),
-            tooltip: 'Archived',
+            tooltip: l10n.archived,
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute<void>(builder: (_) => const ArchivePage()),
             ),
           ),
           IconButton(
             icon: const Icon(Icons.settings),
+            tooltip: l10n.settings,
             onPressed: () => Navigator.of(context).pushNamed('/settings'),
           ),
         ],
@@ -131,7 +132,7 @@ class _ChatsPageState extends ConsumerState<ChatsPage> {
           Expanded(
             child: chats.when(
               data: (list) => list.isEmpty
-                  ? const Center(child: Text('No conversations yet'))
+                  ? Center(child: Text(l10n.noConversationsYet))
                   : ListView.separated(
                       itemCount: list.length,
                       separatorBuilder: (_, _) => Padding(
@@ -166,6 +167,7 @@ class _OpenChatBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tg = context.tg;
+    final l10n = context.l10n;
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         TgDimens.chatsHorizontalPadding,
@@ -179,7 +181,7 @@ class _OpenChatBar extends StatelessWidget {
         style: TextStyle(fontSize: TgDimens.chatSubtitleFontSize),
         decoration: InputDecoration(
           isDense: true,
-          hintText: 'Open chat (JID)',
+          hintText: l10n.openChatHint,
           hintStyle: TextStyle(color: tg.textSecondary),
           prefixIcon: Icon(Icons.search, size: 18, color: tg.textSecondary),
           filled: true,

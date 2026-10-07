@@ -93,6 +93,14 @@ class Messages extends Table {
   /// False until a delivery receipt arrives (XEP-0184).
   BoolColumn get delivered => boolean().withDefault(const Constant(false))();
 
+  /// True once a chat marker `<displayed/>` arrives (XEP-0333) — read.
+  BoolColumn get displayed => boolean().withDefault(const Constant(false))();
+
+  /// True when the sender attached `<markable/>` (XEP-0333).
+  ///
+  /// Conversations only sends a displayed marker for markable messages.
+  BoolColumn get markable => boolean().withDefault(const Constant(false))();
+
   /// Set when this message came from another of our own devices
   /// (XEP-0280 carbon), so the UI can avoid a duplicate bubble.
   BoolColumn get isCarbon => boolean().withDefault(const Constant(false))();
@@ -298,11 +306,21 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
   @override
-  int get schemaVersion => 15;
+  int get schemaVersion => 16;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
         onUpgrade: (m, from, to) async {
+          if (from < 16) {
+            await customStatement(
+              'ALTER TABLE messages ADD COLUMN displayed INTEGER NOT NULL '
+              'DEFAULT 0',
+            );
+            await customStatement(
+              'ALTER TABLE messages ADD COLUMN markable INTEGER NOT NULL '
+              'DEFAULT 0',
+            );
+          }
           if (from < 2) {
             // Only additive changes so far; drift still expects an explicit
             // step per version so a future destructive change has a place to
@@ -1257,6 +1275,76 @@ class AppDatabase extends _$AppDatabase {
               m.stanzaId.equals(stanzaId) &
               m.incoming.equals(false)))
         .write(const MessagesCompanion(delivered: Value(true)));
+  }
+
+  /// Marks an outgoing message (and older delivered ones) as read (XEP-0333).
+  ///
+  /// Conversations `DisplayedManager.processDisplayed`: the named message and
+  /// every preceding `STATUS_SEND_RECEIVED` become `STATUS_SEND_DISPLAYED`.
+  Future<int> markDisplayed(String chatJid, String stanzaId) async {
+    if (stanzaId.isEmpty) return 0;
+    final target = await (select(messages)
+          ..where((m) =>
+              m.chatJid.equals(chatJid) &
+              m.stanzaId.equals(stanzaId) &
+              m.incoming.equals(false)))
+        .getSingleOrNull();
+    if (target == null) return 0;
+    return (update(messages)
+          ..where((m) =>
+              m.chatJid.equals(chatJid) &
+              m.incoming.equals(false) &
+              m.timestamp.isSmallerOrEqualValue(target.timestamp)))
+        .write(
+      const MessagesCompanion(
+        delivered: Value(true),
+        displayed: Value(true),
+      ),
+    );
+  }
+
+  /// Newest incoming markable message in [chatJid], for sending `<displayed/>`.
+  Future<Message?> lastIncomingMarkable(String chatJid) {
+    return (select(messages)
+          ..where((m) =>
+              m.chatJid.equals(chatJid) &
+              m.incoming.equals(true) &
+              m.markable.equals(true) &
+              m.stanzaId.isNotValue(''))
+          ..orderBy([
+            (m) => OrderingTerm.desc(m.timestamp),
+            (m) => OrderingTerm.desc(m.id),
+          ])
+          ..limit(1))
+        .getSingleOrNull();
+  }
+
+  /// Privacy prefs (Conversations `confirm_messages` / `chat_states`).
+  Future<bool> sendReadReceiptsEnabled() async =>
+      (await metaValue('pref_read_receipts')) != '0';
+
+  Future<bool> sendChatStatesEnabled() async =>
+      (await metaValue('pref_chat_states')) != '0';
+
+  Future<void> setSendReadReceipts(bool enabled) =>
+      setMetaValue('pref_read_receipts', enabled ? '1' : '0');
+
+  Future<void> setSendChatStates(bool enabled) =>
+      setMetaValue('pref_chat_states', enabled ? '1' : '0');
+
+  /// Newest message timestamp across all chats.
+  ///
+  /// Conversations `getLastMessageReceived` — used as the MAM catch-up
+  /// `start` when no archive id cursor is stored yet.
+  Future<DateTime?> latestMessageTimestamp() async {
+    final row = await (select(messages)
+          ..orderBy([
+            (m) => OrderingTerm.desc(m.timestamp),
+            (m) => OrderingTerm.desc(m.id),
+          ])
+          ..limit(1))
+        .getSingleOrNull();
+    return row?.timestamp;
   }
 
   /// Preview line for the chat list: the newest message body, prefixed

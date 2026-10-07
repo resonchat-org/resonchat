@@ -107,9 +107,9 @@ flutter build apk --debug
 
 ## 关键待办（下一步优先级）
 
-1. **反向互通（Conversations 到本客户端）**：验收已证明我们发出去的消息能被真实
-   客户端解密；反方向在本环境不可测，因为 conversations.im 对非双向订阅拒绝
-   投递，且模拟器上前台切换会直接切断 TCP 连接。换成两台真实设备即可补齐。
+1. **反向互通（Conversations 到本客户端）**：A 轨已改为完整 OMEMO 0.3.0/axolotl
+   （`omemo_dart_axolotl` + `eu.siacs.conversations.axolotl` 消息路径）。出站曾通过
+   M2 验收；入站需两台真实设备补齐（conversations.im 非双向订阅会拒投递）。
 2. **密钥备份与恢复**：设备密钥目前只在本机 Keystore，换机即全部会话失效。
 3. **liboqs on iOS**：当前只编译了 arm64-v8a 与 x86_64 两个 Android ABI。
 4. **「不保存明文」选项**与消息删除：目前消息一律落库（虽已加密）。

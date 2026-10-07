@@ -4,6 +4,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../l10n/l10n.dart';
 import '../pq/liboqs_mlkem.dart';
 import '../omemo/track.dart';
 import '../state/providers.dart';
@@ -13,25 +14,46 @@ import 'theme.dart';
 
 /// App settings. Deliberately free of branding that would suggest any
 /// affiliation with other messengers (docs/05 §6).
-class SettingsPage extends ConsumerWidget {
+class SettingsPage extends ConsumerStatefulWidget {
   const SettingsPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SettingsPage> createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends ConsumerState<SettingsPage> {
+  bool? _readReceipts;
+  bool? _chatStates;
+
+  @override
+  void initState() {
+    super.initState();
+    final xmpp = ref.read(xmppServiceProvider);
+    _readReceipts = xmpp.sendReadReceipts;
+    _chatStates = xmpp.sendTypingNotifications;
+    ref.read(databaseProvider).sendReadReceiptsEnabled().then((v) {
+      if (mounted) setState(() => _readReceipts = v);
+    });
+    ref.read(databaseProvider).sendChatStatesEnabled().then((v) {
+      if (mounted) setState(() => _chatStates = v);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final tg = context.tg;
+    final l10n = context.l10n;
     final xmpp = ref.watch(xmppServiceProvider);
     final native = MlKem768Provider.instance.isNative;
+    final readReceipts = _readReceipts ?? xmpp.sendReadReceipts;
+    final chatStates = _chatStates ?? xmpp.sendTypingNotifications;
+    final localeOverride = ref.watch(localeOverrideProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Settings')),
+      appBar: AppBar(title: Text(l10n.settings)),
       body: ListView(
         children: [
-          _header(tg, 'Default encryption'),
-          // The global default is a real decision, so it gets the same
-          // three-option choice as a conversation does rather than a switch
-          // whose "off" state means something different from every other
-          // track. Changing it never touches a conversation that has its own
-          // choice — only the ones that were following along.
+          _header(tg, l10n.defaultEncryption),
           Consumer(
             builder: (context, ref, _) {
               final current =
@@ -61,18 +83,48 @@ class SettingsPage extends ConsumerWidget {
           ),
           ListTile(
             leading: const Icon(Icons.archive_outlined),
-            title: const Text('Archived conversations'),
+            title: Text(l10n.archivedConversations),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute<void>(builder: (_) => const ArchivePage()),
             ),
           ),
 
-          _header(tg, 'Connection'),
+          _header(tg, l10n.privacy),
+          SwitchListTile(
+            secondary: const Icon(Icons.done_all),
+            title: Text(l10n.readReceipts),
+            subtitle: Text(l10n.readReceiptsSummary),
+            value: readReceipts,
+            onChanged: (v) async {
+              setState(() => _readReceipts = v);
+              xmpp.sendReadReceipts = v;
+              await ref.read(databaseProvider).setSendReadReceipts(v);
+            },
+          ),
+          SwitchListTile(
+            secondary: const Icon(Icons.edit_outlined),
+            title: Text(l10n.typingNotifications),
+            subtitle: Text(l10n.typingNotificationsSummary),
+            value: chatStates,
+            onChanged: (v) async {
+              setState(() => _chatStates = v);
+              xmpp.sendTypingNotifications = v;
+              await ref.read(databaseProvider).setSendChatStates(v);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.language),
+            title: Text(l10n.language),
+            subtitle: Text(_languageLabel(l10n, localeOverride)),
+            onTap: () => _pickLanguage(context, localeOverride),
+          ),
+
+          _header(tg, l10n.connection),
           ListTile(
             leading: const Icon(Icons.cloud_outlined),
-            title: const Text('Status'),
-            subtitle: Text(_status(xmpp)),
+            title: Text(l10n.status),
+            subtitle: Text(_status(l10n, xmpp)),
             trailing: Icon(
               xmpp.state == XmppConnectionState.connected
                   ? Icons.check_circle
@@ -85,43 +137,41 @@ class SettingsPage extends ConsumerWidget {
           ),
           ListTile(
             leading: const Icon(Icons.sync),
-            title: const Text('Message carbons'),
+            title: Text(l10n.messageCarbons),
             subtitle: Text(
               xmpp.carbonsEnabled
-                  ? 'Enabled — messages sync across your devices'
-                  : 'Not enabled by this server',
+                  ? l10n.messageCarbonsEnabled
+                  : l10n.messageCarbonsDisabled,
             ),
           ),
           ListTile(
             leading: const Icon(Icons.archive_outlined),
-            title: const Text('Message archive (MAM)'),
+            title: Text(l10n.messageArchiveMam),
             subtitle: Text(
               xmpp.mamAvailable
-                  ? 'Server keeps history for this account'
-                  : 'Server does not advertise a MAM archive',
+                  ? l10n.messageArchiveAvailable
+                  : l10n.messageArchiveUnavailable,
             ),
           ),
 
-          _header(tg, 'Encryption'),
+          _header(tg, l10n.encryption),
           ListTile(
             leading: Icon(
               Icons.bolt,
               color: xmpp.bTrackReady ? tg.accent : tg.textSecondary,
             ),
-            title: const Text('Post-quantum track'),
+            title: Text(l10n.postQuantumTrack),
             subtitle: Text(
               xmpp.bTrackReady
-                  ? 'Bundle published; chats upgrade automatically'
-                  : 'Not published — chats use standard OMEMO',
+                  ? l10n.postQuantumReady
+                  : l10n.postQuantumNotReady,
             ),
           ),
           ListTile(
             leading: const Icon(Icons.memory),
-            title: const Text('Post-quantum backend'),
+            title: Text(l10n.postQuantumBackend),
             subtitle: Text(
-              native
-                  ? 'liboqs (native, hardware accelerated)'
-                  : 'pqcrypto (pure Dart)',
+              native ? l10n.backendNative : l10n.backendDart,
             ),
             trailing: Text(
               native ? 'native' : 'dart',
@@ -129,22 +179,60 @@ class SettingsPage extends ConsumerWidget {
             ),
           ),
 
-          _header(tg, 'About'),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 0, 16, 24),
+          _header(tg, l10n.about),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
             child: Text(
-              'resonchat — a dual-track OMEMO client for XMPP.\n'
-              'Licensed GPL-3.0-or-later.\n\n'
-              'Independent project. Not affiliated with, endorsed by, or '
-              'derived from any other messaging product.\n\n'
-              'The post-quantum track is a custom extension and has not been '
-              'independently audited. Use at your own risk.',
-              style: TextStyle(fontSize: 13, height: 1.5),
+              l10n.aboutBody,
+              style: const TextStyle(fontSize: 13, height: 1.5),
             ),
           ),
         ],
       ),
     );
+  }
+
+  String _languageLabel(AppLocalizations l10n, Locale? override) {
+    if (override == null) return l10n.languageSystem;
+    if (override.languageCode == 'zh') return l10n.languageChineseSimplified;
+    return l10n.languageEnglish;
+  }
+
+  Future<void> _pickLanguage(BuildContext context, Locale? current) async {
+    final l10n = context.l10n;
+    final chosen = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              title: Text(l10n.languageSystem),
+              trailing: current == null ? const Icon(Icons.check) : null,
+              onTap: () => Navigator.pop(ctx, ''),
+            ),
+            ListTile(
+              title: Text(l10n.languageEnglish),
+              trailing: current?.languageCode == 'en'
+                  ? const Icon(Icons.check)
+                  : null,
+              onTap: () => Navigator.pop(ctx, 'en'),
+            ),
+            ListTile(
+              title: Text(l10n.languageChineseSimplified),
+              trailing: current?.languageCode == 'zh'
+                  ? const Icon(Icons.check)
+                  : null,
+              onTap: () => Navigator.pop(ctx, 'zh'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (chosen == null || !mounted) return;
+    await ref.read(localeOverrideProvider.notifier).setOverride(
+          localeFromPref(chosen.isEmpty ? null : chosen),
+        );
   }
 
   static Widget _header(TgColors tg, String title) => Padding(
@@ -159,10 +247,11 @@ class SettingsPage extends ConsumerWidget {
         ),
       );
 
-  static String _status(XmppService xmpp) => switch (xmpp.state) {
-        XmppConnectionState.connected => 'Connected',
-        XmppConnectionState.connecting => 'Connecting…',
+  static String _status(AppLocalizations l10n, XmppService xmpp) =>
+      switch (xmpp.state) {
+        XmppConnectionState.connected => l10n.statusConnected,
+        XmppConnectionState.connecting => l10n.statusConnecting,
         XmppConnectionState.disconnected =>
-          xmpp.lastError ?? 'Not connected',
+          xmpp.lastError ?? l10n.statusDisconnected,
       };
 }

@@ -16,6 +16,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../l10n/l10n.dart';
 import '../omemo/track.dart';
 import '../state/providers.dart';
 import '../store/database.dart';
@@ -61,12 +62,12 @@ class ChatRow extends ConsumerWidget {
       background: SwipeBackground(
         alignment: Alignment.centerLeft,
         icon: chat.muted ? Icons.notifications_active : Icons.notifications_off,
-        label: chat.muted ? 'Unmute' : 'Mute',
+        label: chat.muted ? context.l10n.unmute : context.l10n.mute,
       ),
       secondaryBackground: SwipeBackground(
         alignment: Alignment.centerRight,
         icon: chat.pinned ? Icons.push_pin_outlined : Icons.push_pin,
-        label: chat.pinned ? 'Unpin' : 'Pin',
+        label: chat.pinned ? context.l10n.unpin : context.l10n.pin,
         color: tg.accent,
       ),
       confirmDismiss: (direction) async {

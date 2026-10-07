@@ -51,7 +51,7 @@
 6. 发布 B 轨设备列表
 7. 发布 B 轨 bundle（含 PQSPK/PQOPK/hybrid sig）
 8. 订阅联系人的 4 个 PEP 节点，接收变更通知
-9. 拉取 roster 与 MAM 历史
+9. 拉取 roster，并对账户 MAM 归档做 catch-up（XEP-0313：本端 bare JID + RSM `after`，首登无游标时用近 5 天 `start`，页大小 50 / 最多约 750 条，对齐 Conversations）
 10. 初始化数据库中的会话状态
 ```
 

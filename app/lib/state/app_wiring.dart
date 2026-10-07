@@ -83,10 +83,21 @@ class _AppWiringState extends ConsumerState<AppWiring> {
       // which is the only place a change should be interpreted.
       unawaited(_noticeCapabilityChange(ref, jid));
     }));
+    // Privacy prefs (Conversations confirm_messages / chat_states).
+    unawaited(_loadPrivacyPrefs(ref));
     // XEP-0184: flip our outgoing messages to "delivered".
     _subs.add(xmpp.deliveryReceipts.listen((receipt) {
       unawaited(
         ref.read(databaseProvider).markDelivered(
+              receipt.from.toBare().toString(),
+              receipt.stanzaId,
+            ),
+      );
+    }));
+    // XEP-0333 <displayed/>: two ticks / accent = read.
+    _subs.add(xmpp.readReceipts.listen((receipt) {
+      unawaited(
+        ref.read(databaseProvider).markDisplayed(
               receipt.from.toBare().toString(),
               receipt.stanzaId,
             ),
@@ -215,11 +226,17 @@ Future<void> _noticeCapabilityChange(WidgetRef ref, JID jid) async {
 /// read when a message was sitting there the whole time.
 Future<void> _acceptInbound(WidgetRef ref, InboundMessage msg) async {
   final db = ref.read(databaseProvider);
-  await storeInbound(db, msg);
-  final chatJid = msg.from.toBare().toString();
+  final ownBare = ref.read(xmppServiceProvider).myJid;
+  await storeInbound(db, msg, ownBare: ownBare);
+  final chatJid = _chatJidFor(msg, ownBare);
   // A carbon is a copy of one of our own messages. Counting it would show an
   // unread badge for something the user wrote.
   if (msg.isCarbonCopy) return;
+  // Archived copies of messages we sent are outgoing, not unread.
+  if (_isOwnArchive(msg, ownBare)) return;
+  // Catch-up history is already-seen mail; marking every replayed message
+  // unread would paint the chat list red after every login.
+  if (msg.fromArchive) return;
   final chat = (await db.watchChats().first)
       .where((c) => c.jid == chatJid)
       .firstOrNull;
@@ -236,6 +253,26 @@ Future<void> _acceptInbound(WidgetRef ref, InboundMessage msg) async {
     chatJid,
     arrivedAt: msg.archiveTimestamp ?? DateTime.now(),
   );
+}
+
+/// Conversation bare JID for [msg], accounting for our own archived outbound.
+String _chatJidFor(InboundMessage msg, String? ownBare) {
+  if (_isOwnArchive(msg, ownBare) && msg.to != null) {
+    return msg.to!.toBare().toString();
+  }
+  return msg.from.toBare().toString();
+}
+
+bool _isOwnArchive(InboundMessage msg, String? ownBare) {
+  if (!msg.fromArchive || ownBare == null) return false;
+  return msg.from.toBare().toString() == ownBare;
+}
+
+Future<void> _loadPrivacyPrefs(WidgetRef ref) async {
+  final db = ref.read(databaseProvider);
+  final xmpp = ref.read(xmppServiceProvider);
+  xmpp.sendReadReceipts = await db.sendReadReceiptsEnabled();
+  xmpp.sendTypingNotifications = await db.sendChatStatesEnabled();
 }
 
 /// Copies the service's pending requests into the store.
@@ -291,12 +328,22 @@ void forgetCapabilityHistory() => _lastCapabilities.clear();
 ///
 /// Idempotent by stanza id, so a carbon that arrives twice, or a message
 /// that is also replayed from the archive, cannot duplicate a bubble.
-Future<void> storeInbound(AppDatabase db, InboundMessage msg) async {
+///
+/// [ownBare] is our account bare JID. When set, archived messages we sent
+/// are stored as outgoing under the peer (`to`), matching Conversations.
+Future<void> storeInbound(
+  AppDatabase db,
+  InboundMessage msg, {
+  String? ownBare,
+}) async {
   // In a room the sender is the *nick*, not the address. Storing the room as
   // the conversation and the nick as the sender is what makes `room@server`
   // and `room@server/nick` the same conversation in the chat list, and what
   // puts the right name on the bubble.
-  final chatJid = msg.from.toBare().toString();
+  final own = _isOwnArchive(msg, ownBare);
+  // Own archived outbound without a peer address cannot be placed in a chat.
+  if (own && msg.to == null) return;
+  final chatJid = _chatJidFor(msg, ownBare);
   final sender = msg.from.toString();
   await db.upsertChat(chatJid);
 
@@ -359,7 +406,8 @@ Future<void> storeInbound(AppDatabase db, InboundMessage msg) async {
             ? EncModeToken.error.wire
             : EncModeToken.of(msg.track ?? Track.none).wire,
       ),
-      incoming: const Value(true),
+      incoming: Value(!own),
+      markable: Value(msg.markable),
     ),
   );
 }

@@ -1,9 +1,0 @@
-name: moxxmpp
-
-packages:
-  - packages/*
-  - example
-
-command:
-  bootstrap:
-    usePubspecOverrides: true

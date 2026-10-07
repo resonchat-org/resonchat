@@ -12,6 +12,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../l10n/l10n.dart';
 import '../state/providers.dart';
 import '../store/account_store.dart';
 import '../store/roster_state.dart';
@@ -108,7 +109,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       );
       if (!ok) {
         setState(
-          () => _error = xmpp.lastError ?? 'Authentication failed',
+          () => _error =
+              xmpp.lastError ?? context.l10n.authenticationFailed,
         );
         // A stored password that the server no longer accepts must not be
         // retried on every launch: the user would watch the app fail the same
@@ -141,6 +143,41 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       await xmpp.replenishPrekeys();
       // Publish our post-quantum bundle so peers can upgrade to the B track.
       await xmpp.initialiseBTrack();
+      // Pull missed messages from the account archive (XEP-0313).
+      // Conversations MessageArchiveManager.catchup(): RSM after archive id
+      // when known, otherwise start from last local message timestamp
+      // (getLastMessageReceived), capped to MAM_MAX_CATCHUP (5 days).
+      final db = ref.read(databaseProvider);
+      final afterId = await db.metaValue(XmppService.mamCatchupIdKey);
+      final startRaw = await db.metaValue(XmppService.mamCatchupTsKey);
+      final metaTs =
+          startRaw != null ? DateTime.tryParse(startRaw) : null;
+      final dbTs = await db.latestMessageTimestamp();
+      // Prefer the later of meta cursor and last stored message — same idea
+      // as Conversations MamReference.max(...).
+      DateTime? start;
+      if (afterId == null || afterId.isEmpty) {
+        if (metaTs != null && dbTs != null) {
+          start = metaTs.isAfter(dbTs) ? metaTs : dbTs;
+        } else {
+          start = metaTs ?? dbTs;
+        }
+      }
+      await xmpp.catchUpHistory(
+        afterId: afterId,
+        start: start,
+        saveCursor: (id, ts) async {
+          if (id != null && id.isNotEmpty) {
+            await db.setMetaValue(XmppService.mamCatchupIdKey, id);
+          }
+          if (ts != null) {
+            await db.setMetaValue(
+              XmppService.mamCatchupTsKey,
+              ts.toUtc().toIso8601String(),
+            );
+          }
+        },
+      );
       if (mounted) Navigator.of(context).pushReplacementNamed('/chats');
     } catch (e) {
       setState(() => _error = '$e');
@@ -152,8 +189,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   @override
   Widget build(BuildContext context) {
     final tg = context.tg;
+    final l10n = context.l10n;
     return Scaffold(
-      appBar: AppBar(title: const Text('resonchat')),
+      appBar: AppBar(title: Text(l10n.appName)),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
@@ -163,21 +201,21 @@ class _LoginPageState extends ConsumerState<LoginPage> {
             children: [
               TextField(
                 controller: _jid,
-                decoration: const InputDecoration(labelText: 'JID'),
+                decoration: InputDecoration(labelText: l10n.jid),
                 textInputAction: TextInputAction.next,
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: _password,
-                decoration: const InputDecoration(labelText: 'Password'),
+                decoration: InputDecoration(labelText: l10n.password),
                 obscureText: true,
                 textInputAction: TextInputAction.next,
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: _host,
-                decoration: const InputDecoration(
-                  labelText: 'Host (optional)',
+                decoration: InputDecoration(
+                  labelText: l10n.hostOptional,
                 ),
                 textInputAction: TextInputAction.done,
                 onSubmitted: (_) => _connect(),
@@ -199,7 +237,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
-                child: Text(_busy ? 'Connecting…' : 'Connect'),
+                child: Text(_busy ? l10n.connecting : l10n.connect),
               ),
             ],
           ),

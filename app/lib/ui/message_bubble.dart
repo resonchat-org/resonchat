@@ -104,6 +104,7 @@ class MessageBubble extends StatelessWidget {
     this.senderName,
     this.senderColor,
     this.delivered = false,
+    this.displayed = false,
     this.failed = false,
     this.track = Track.none,
     this.reactions = const [],
@@ -181,6 +182,10 @@ class MessageBubble extends StatelessWidget {
 
   /// True once a delivery receipt arrived (XEP-0184).
   final bool delivered;
+
+  /// True once a read marker arrived (XEP-0333 `<displayed/>`).
+  final bool displayed;
+
   final bool failed;
 
   final VoidCallback? onLongPress;
@@ -279,6 +284,7 @@ class MessageBubble extends StatelessWidget {
                     _MetaRow(
                       time: time,
                       delivered: delivered,
+                      displayed: displayed,
                       failed: failed,
                       mine: mine,
                       track: track,
@@ -446,6 +452,7 @@ class _MetaRow extends StatelessWidget {
   const _MetaRow({
     required this.time,
     required this.delivered,
+    required this.displayed,
     required this.failed,
     required this.mine,
     required this.track,
@@ -453,6 +460,7 @@ class _MetaRow extends StatelessWidget {
 
   final DateTime time;
   final bool delivered;
+  final bool displayed;
   final bool failed;
   final bool mine;
   final Track track;
@@ -466,13 +474,22 @@ class _MetaRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tg = context.tg;
+    // Sent = one tick; delivered (0184) or read (0333) = two.
+    // Accent colour only for read, so the second tick visibly changes when
+    // the peer opens the chat (Telegram-style; Conversations uses the same
+    // icon for both received and displayed).
     final ticks = !mine
         ? null
         : failed
             ? Icons.error_outline
-            : delivered
+            : (delivered || displayed)
                 ? Icons.done_all
                 : Icons.done;
+    final tickColor = failed
+        ? tg.danger
+        : displayed
+            ? tg.accent
+            : tg.textSecondary;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -488,11 +505,7 @@ class _MetaRow extends StatelessWidget {
           Icon(
             ticks,
             size: 14,
-            color: failed
-                ? tg.danger
-                : delivered
-                    ? tg.accent
-                    : tg.textSecondary,
+            color: tickColor,
           ),
         ],
         // Before the ticks on outgoing messages, after on incoming ones, so

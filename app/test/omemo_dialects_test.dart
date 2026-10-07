@@ -12,7 +12,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:omemo_dart/omemo_dart.dart' show OmemoBundle;
+import 'package:omemo_dart/omemo_dart_axolotl.dart' show AxolotlBundle;
 import 'package:resonchat/omemo/defacto.dart';
 import 'package:xml/xml.dart';
 
@@ -59,14 +59,14 @@ const String specBundle =
 const String specDeviceList =
     '<devices xmlns="urn:xmpp:omemo:2:devices"><device id="1"/><device id="2"/></devices>';
 
-OmemoBundle _bundle() => OmemoBundle(
-  'peer@example.org',
-  889064890,
-  base64Encode(List<int>.generate(32, (i) => i)),
-  1,
-  base64Encode(List<int>.generate(64, (i) => i)),
-  base64Encode(List<int>.generate(32, (i) => 200 - i)),
-  {88: base64Encode(List<int>.generate(32, (i) => 7))},
+AxolotlBundle _bundle() => AxolotlBundle(
+  jid: 'peer@example.org',
+  deviceId: 889064890,
+  signedPreKeyId: 1,
+  signedPreKeyPublicEncoded: base64Encode(List<int>.generate(32, (i) => i)),
+  signedPreKeySignatureEncoded: base64Encode(List<int>.generate(64, (i) => i)),
+  identityKeyEncoded: base64Encode(List<int>.generate(32, (i) => 200 - i)),
+  preKeysEncoded: {88: base64Encode(List<int>.generate(32, (i) => 7))},
 );
 
 void main() {
@@ -78,12 +78,12 @@ void main() {
         deviceId: 889064890,
       );
 
-      expect(parsed.id, 889064890);
-      expect(parsed.spkId, 1);
-      expect(parsed.spkEncoded, _k32);
-      expect(parsed.spkSignatureEncoded, _k64);
-      expect(parsed.ikEncoded, _ik32);
-      expect(parsed.opksEncoded.keys.toSet(), {88, 89});
+      expect(parsed.deviceId, 889064890);
+      expect(parsed.signedPreKeyId, 1);
+      expect(parsed.signedPreKeyPublicEncoded, ensureKeyTypeByte(_k32));
+      expect(parsed.signedPreKeySignatureEncoded, _k64);
+      expect(parsed.identityKeyEncoded, ensureKeyTypeByte(_ik32));
+      expect(parsed.preKeysEncoded.keys.toSet(), {88, 89});
       // Real keys must pass our sanity check, or we would refuse a peer who
       // is in fact perfectly capable.
       expect(omemoBundleLooksSane(parsed), isTrue);
@@ -98,9 +98,9 @@ void main() {
       // spkId 7 is this fixture's own value: it proves the id is read from
       // `spk/@id` here and from `signedPreKeyPublic/@signedPreKeyId` above,
       // rather than being hard-coded to one spelling.
-      expect(parsed.spkId, 7);
-      expect(parsed.opksEncoded.keys.toSet(), {88});
-      expect(parsed.ikEncoded, _ik32);
+      expect(parsed.signedPreKeyId, 7);
+      expect(parsed.preKeysEncoded.keys.toSet(), {88});
+      expect(parsed.identityKeyEncoded, ensureKeyTypeByte(_ik32));
     });
   });
 
@@ -131,13 +131,26 @@ void main() {
       final back = parseOmemoBundle(
         xml,
         jid: original.jid,
-        deviceId: original.id,
+        deviceId: original.deviceId,
       );
-      expect(back.spkEncoded, original.spkEncoded);
-      expect(back.spkId, original.spkId);
-      expect(back.spkSignatureEncoded, original.spkSignatureEncoded);
-      expect(back.ikEncoded, original.ikEncoded);
-      expect(back.opksEncoded, original.opksEncoded);
+      // Publish path adds 0x05; parse keeps it.
+      expect(
+        back.signedPreKeyPublicEncoded,
+        ensureKeyTypeByte(original.signedPreKeyPublicEncoded),
+      );
+      expect(back.signedPreKeyId, original.signedPreKeyId);
+      expect(
+        back.signedPreKeySignatureEncoded,
+        original.signedPreKeySignatureEncoded,
+      );
+      expect(
+        back.identityKeyEncoded,
+        ensureKeyTypeByte(original.identityKeyEncoded),
+      );
+      expect(
+        back.preKeysEncoded[88],
+        ensureKeyTypeByte(original.preKeysEncoded[88]!),
+      );
     });
 
     test('device list output re-parses to an identical set', () {
@@ -209,14 +222,16 @@ void main() {
     test('sanity check rejects wrong key sizes', () {
       expect(
         omemoBundleLooksSane(
-          OmemoBundle(
-            'a@b',
-            1,
-            base64Encode(List<int>.filled(31, 0)), // too short
-            1,
-            base64Encode(List<int>.filled(64, 0)),
-            base64Encode(List<int>.filled(32, 0)),
-            {1: base64Encode(List<int>.filled(32, 0))},
+          AxolotlBundle(
+            jid: 'a@b',
+            deviceId: 1,
+            signedPreKeyId: 1,
+            signedPreKeyPublicEncoded:
+                base64Encode(List<int>.filled(31, 0)), // too short
+            signedPreKeySignatureEncoded:
+                base64Encode(List<int>.filled(64, 0)),
+            identityKeyEncoded: base64Encode(List<int>.filled(32, 0)),
+            preKeysEncoded: {1: base64Encode(List<int>.filled(32, 0))},
           ),
         ),
         isFalse,
@@ -226,14 +241,15 @@ void main() {
     test('sanity check rejects an empty prekey pool', () {
       expect(
         omemoBundleLooksSane(
-          OmemoBundle(
-            'a@b',
-            1,
-            base64Encode(List<int>.filled(32, 0)),
-            1,
-            base64Encode(List<int>.filled(64, 0)),
-            base64Encode(List<int>.filled(32, 0)),
-            const {},
+          AxolotlBundle(
+            jid: 'a@b',
+            deviceId: 1,
+            signedPreKeyId: 1,
+            signedPreKeyPublicEncoded: base64Encode(List<int>.filled(32, 0)),
+            signedPreKeySignatureEncoded:
+                base64Encode(List<int>.filled(64, 0)),
+            identityKeyEncoded: base64Encode(List<int>.filled(32, 0)),
+            preKeysEncoded: const {},
           ),
         ),
         isFalse,
@@ -303,7 +319,7 @@ void main() {
       expect(realLookedLike.startsWith('BVhVOpx6E+gYaizTXS2p74jz'), isTrue);
     });
 
-    test('a real-shaped bundle parses down to bare 32-byte keys', () {
+    test('a real-shaped bundle keeps 33-byte Signal-serialized keys', () {
       final real =
           '''
 <bundle xmlns="eu.siacs.conversations.axolotl">
@@ -320,11 +336,12 @@ void main() {
         jid: 'a@b',
         deviceId: 1,
       );
-      expect(parsed.spkEncoded, _k32);
-      expect(parsed.ikEncoded, _ik32);
-      expect(parsed.opksEncoded[88], _pk88);
-      // And it survives our own sanity check, which is the whole point:
-      // without the strip, every real peer would look incapable.
+      expect(
+        parsed.signedPreKeyPublicEncoded,
+        ensureKeyTypeByte(_k32),
+      );
+      expect(parsed.identityKeyEncoded, ensureKeyTypeByte(_ik32));
+      expect(parsed.preKeysEncoded[88], ensureKeyTypeByte(_pk88));
       expect(omemoBundleLooksSane(parsed), isTrue);
     });
   });

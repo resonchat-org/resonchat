@@ -6,6 +6,17 @@
 build/
 .flutter-plugins
 .flutter-plugins-dependencies
+**/doc/api/
+**/ios/Flutter/.last_build_id
+coverage/
+.widget_preview/
+
+# Codegen (drift / build_runner / flutter gen-l10n / freezed / mockito)
+*.g.dart
+*.freezed.dart
+*.mocks.dart
+**/generated/
+**/l10n/generated/
 
 # Android
 android/.gradle/
@@ -14,9 +25,16 @@ android/local.properties
 android/app/debug/
 android/app/profile/
 android/app/release/
+app/android/.gradle/
+app/android/local.properties
+app/android/app/debug/
+app/android/app/profile/
+app/android/app/release/
 *.jks
 *.keystore
 key.properties
+app.*.symbols
+app.*.map.json
 
 # iOS / macOS
 ios/Pods/
@@ -40,9 +58,19 @@ windows/flutter/ephemeral/
 *.ipr
 *.iws
 .ATP/
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
 
 # Misc
+*.class
 *.log
+*.pyc
+*.swp
 .DS_Store
 Thumbs.db
 .env

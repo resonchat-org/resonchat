@@ -10,8 +10,8 @@ import 'dart:convert';
 import 'package:cryptography/cryptography.dart';
 import 'package:logging/logging.dart';
 import 'package:moxxmpp/moxxmpp.dart';
-import 'package:omemo_dart/omemo_dart.dart' as omemo show OmemoBundle;
-import 'package:omemo_dart/omemo_dart.dart' hide OmemoManager, OmemoBundle;
+import 'package:omemo_dart/omemo_dart.dart' hide OmemoManager;
+import 'package:omemo_dart/omemo_dart_axolotl.dart' show AxolotlBundle;
 import 'package:xml/xml.dart';
 
 import '../pq/mlkem.dart';
@@ -455,7 +455,7 @@ class DualTrackManager {
     return dead;
   }
 
-  Future<omemo.OmemoBundle?> getOmemoBundle(JID jid, int deviceId) async {
+  Future<AxolotlBundle?> getOmemoBundle(JID jid, int deviceId) async {
     final pm = pubsubOf();
     final nodes = [
       '$omemoDefactoBundlesNode:$deviceId',
@@ -485,30 +485,12 @@ class DualTrackManager {
   /// The de-facto form is what real clients read; the spec form is what
   /// moxxmpp's own `publishBundle` writes and what a future client might
   /// adopt. Returns true when at least one form was accepted.
-  Future<bool> publishOmemoBundle(JID bareJid, omemo.OmemoBundle bundle) async {
+  Future<bool> publishOmemoBundle(JID bareJid, AxolotlBundle bundle) async {
     final pm = pubsubOf();
 
-    // Publish *only* the device we can actually service.
-    //
-    // The tempting thing is to read the server's existing list and re-publish
-    // it with our id added, which is what this used to do. That is how the
-    // list grows a device id per reinstall: the id survives on the server
-    // while the sealed key material does not (`pm clear`, a reinstall, a new
-    // database), and the next login faithfully re-advertises it. The result is
-    // a list of devices nobody can decrypt for.
-    //
-    // A peer fetches a bundle for *every* id in this list and treats any
-    // failure as "this contact is not encryptable" — Conversations says
-    // "Could not fetch encryption keys" and refuses the whole account. So one
-    // phantom id does not cost one device, it costs the contact.
-    //
-    // We hold the private key for exactly one device: the current one. (Ids
-    // previously published by *this* install live in `publishedDeviceIds`,
-    // but a new install starts empty, and keys deliberately do not travel
-    // between installs.) Multi-install support would have to intersect that
-    // set with the ids whose keys are still in this store; until then, one
-    // device is the honest answer.
-    final ids = <int>{bundle.id};
+    // Publish *only* the device we can actually service. See prior comments:
+    // re-publishing the server's full list grows phantom device ids.
+    final ids = <int>{bundle.deviceId};
 
     final listResult = await pm.publish(
       bareJid,
@@ -521,30 +503,16 @@ class DualTrackManager {
 
     final bundleResult = await pm.publish(
       bareJid,
-      '$omemoDefactoBundlesNode:${bundle.id}',
+      '$omemoDefactoBundlesNode:${bundle.deviceId}',
       XMLNode.fromString(bundleToDefactoXml(bundle).toXmlString()),
       id: 'current',
       options: const PubSubPublishOptions(accessModel: 'open', maxItems: '1'),
     );
     final bundleOk = bundleResult.isType<bool>() && bundleResult.get<bool>();
 
-    // Publishing *states* publish-options; a server only applies them when it
-    // is creating the node. On a node that already exists they are a
-    // precondition, and a client that does not act on the resulting
-    // `precondition-not-met` leaves the node with whatever access model it was
-    // born with. On a PEP node the failure that matters is a node readable
-    // only by its owner: every check we can run on ourselves passes — we *are*
-    // the owner — while the peer fetches nothing and reports it as missing
-    // encryption keys. So push the configuration explicitly rather than hope
-    // for the precondition. Conversations does the same thing after the server
-    // reports one; doing it unconditionally costs two IQs per node on a path
-    // that runs at login.
-    //
-    // Best-effort on purpose: a configuration push that fails must not undo a
-    // publish that succeeded.
     for (final node in <String>[
       omemoDefactoDevicesNode,
-      '$omemoDefactoBundlesNode:${bundle.id}',
+      '$omemoDefactoBundlesNode:${bundle.deviceId}',
     ]) {
       try {
         await pm.configure(
@@ -553,12 +521,11 @@ class DualTrackManager {
           const PubSubPublishOptions(accessModel: 'open'),
         );
       } catch (_) {
-        // Ignore: this only tightens the node's configuration.
+        // Best-effort access-model tighten.
       }
     }
 
-    // Also the XEP-0384 spec dialect, through moxxmpp. Its payload bool is
-    // `deviceBundlePublish.isType<PubSubError>()` - true means failure.
+    // Spec dialect via moxxmpp (bool true == failure).
     bool specOk = false;
     try {
       final spec = await aTrack.publishBundle(bundle);

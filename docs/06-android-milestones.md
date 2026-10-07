@@ -23,8 +23,8 @@
 - [ ] 连接、SASL SCRAM-SHA-256、资源绑定、断线重连
 - [ ] roster 获取与展示
 - [ ] 1:1 明文消息收发
-- [ ] XEP-0184 回执、XEP-0085 输入状态
-- [ ] MAM（XEP-0313）历史拉取
+- [x] XEP-0184 送达回执、XEP-0085 输入状态、XEP-0333 已读回执
+- [x] MAM（XEP-0313）历史拉取（上线 catch-up + 会话内翻页，对齐 Conversations）
 - [ ] Carbons（XEP-0280）
 - [ ] SQLite（未加密）消息持久化
 - [ ] 最小可用 UI：会话列表 + 聊天页

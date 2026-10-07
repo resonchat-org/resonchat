@@ -1,85 +1,68 @@
-{
-  "name": "resonchat",
-  "description": "Flutter XMPP client with dual-track OMEMO (standard + post-quantum).",
-  "publish_to": "none",
-  "version": "0.0.1+1",
+name: resonchat
+description: Flutter XMPP client with dual-track OMEMO (standard + post-quantum).
+publish_to: none
+version: 0.0.1+1
 
-  "environment": {
-    "sdk": "^3.13.4"
-  },
+environment:
+  sdk: ^3.13.4
 
-  "dependencies": {
-    "flutter": {
-      "sdk": "flutter"
-    },
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  intl: any
 
-    "moxlib": {
-      "path": "../packages/moxlib"
-    },
-    "moxxmpp": {
-      "path": "../packages/moxxmpp/packages/moxxmpp"
-    },
-    "moxxmpp_socket_tcp": {
-      "path": "../packages/moxxmpp/packages/moxxmpp_socket_tcp"
-    },
-    "omemo_dart": {
-      "path": "../packages/omemo_dart"
-    },
+  moxlib:
+    path: ../packages/moxlib
+  moxxmpp:
+    path: ../packages/moxxmpp/packages/moxxmpp
+  moxxmpp_socket_tcp:
+    path: ../packages/moxxmpp/packages/moxxmpp_socket_tcp
+  omemo_dart:
+    path: ../packages/omemo_dart
 
-    "cryptography": "^2.9.0",
-    "pqcrypto": "^0.4.2",
-    "xml": "^6.5.0",
-    "hex": "^0.2.0",
-    "ffi": "^2.1.0",
-    "path": "^1.9.0",
+  cryptography: ^2.9.0
+  pqcrypto: ^0.4.2
+  xml: ^6.5.0
+  hex: ^0.2.0
+  ffi: ^2.1.0
+  path: ^1.9.0
 
-    "riverpod": "^2.6.1",
-    "flutter_riverpod": "^2.6.1",
-    "drift": ^2.35.1,
-    "sqlite3_flutter_libs": "^0.5.24",
-    "flutter_secure_storage": "^9.2.2",
-    "path_provider": "^2.1.0",
-    "logging": "^1.2.0",
-    "sqlite3": "^3.5.2"
-  },
+  riverpod: ^2.6.1
+  flutter_riverpod: ^2.6.1
+  drift: ^2.35.1
+  sqlite3_flutter_libs: ^0.5.24
+  flutter_secure_storage: ^9.2.2
+  path_provider: ^2.1.0
+  logging: ^1.2.0
+  sqlite3: ^3.5.2
 
-  "hooks": {
-    "user_defines": {
-      "sqlite3": {
-        "source": "sqlcipher"
-      }
-    }
-  },
+hooks:
+  user_defines:
+    sqlite3:
+      source: sqlcipher
 
-  "dev_dependencies": {
-    "flutter_test": {
-      "sdk": "flutter"
-    },
-    "integration_test": {
-      "sdk": "flutter"
-    },
-    "flutter_lints": "^6.0.0",
-    "test": "^1.25.8",
-    "drift_dev": "^2.20.0",
-    "build_runner": "^2.4.12"
-  },
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  test: ^1.25.8
+  drift_dev: ^2.20.0
+  build_runner: ^2.4.12
 
-  "dependency_overrides": {
-    "omemo_dart": {
-      "path": "../packages/omemo_dart"
-    },
-    "moxlib": {
-      "path": "../packages/moxlib"
-    },
-    "moxxmpp": {
-      "path": "../packages/moxxmpp/packages/moxxmpp"
-    },
-    "moxxmpp_socket_tcp": {
-      "path": "../packages/moxxmpp/packages/moxxmpp_socket_tcp"
-    }
-  },
+dependency_overrides:
+  omemo_dart:
+    path: ../packages/omemo_dart
+  moxlib:
+    path: ../packages/moxlib
+  moxxmpp:
+    path: ../packages/moxxmpp/packages/moxxmpp
+  moxxmpp_socket_tcp:
+    path: ../packages/moxxmpp/packages/moxxmpp_socket_tcp
 
-  "flutter": {
-    "uses-material-design": true
-  }
-}
+flutter:
+  generate: true
+  uses-material-design: true

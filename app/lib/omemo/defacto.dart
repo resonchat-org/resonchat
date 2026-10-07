@@ -1,35 +1,14 @@
 // Copyright (C) 2026 resonchat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// The two OMEMO wire dialects.
+// The two OMEMO wire dialects for PEP discovery.
 //
-// XEP-0384 v2 specifies node names `urn:xmpp:omemo:2:devices` /
-// `:bundles` and elements `<spk>`, `<spks>`, `<ik>`, `<prekeys><pk/>`.
-// No mainstream client ever implemented those. Conversations, Signal and
-// everything else ship the "Secret Omemo Device List" from the Signal
-// iOS/Android fork, renamed:
-//
-//   node  eu.siacs.conversations.axolotl.devicelist
-//   node  eu.siacs.conversations.axolotl.bundles:<deviceId>
-//   xmlns eu.siacs.conversations.axolotl
-//   <list><device id/></list>
-//   <bundle><signedPreKeyPublic signedPreKeyId/>
-//           <signedPreKeySignature/><identityKey/>
-//           <prekeys><preKeyPublic preKeyId/></prekeys></bundle>
-//
-// This was measured against a live server while installing the real
-// Conversations 2.20.4 (see integration_test/m2_interop_test.dart): asking
-// for `urn:xmpp:omemo:2:bundles:<id>` returns `<item-not-found/>`, while
-// the axolotl node returns a perfectly good bundle.
-//
-// Being spec-correct and being interoperable are different things. We
-// therefore *speak both*: publishing writes the de-facto dialect so real
-// clients can read us, plus the spec dialect for any client that ever
-// adopts it; reading accepts either.
+// A-track crypto is Conversations axolotl (OMEMO 0.3.0). Bundle key material
+// is libsignal serialize() output (33-byte public keys with 0x05 prefix).
 
 import 'dart:convert';
 
-import 'package:omemo_dart/omemo_dart.dart' show OmemoBundle;
+import 'package:omemo_dart/omemo_dart_axolotl.dart';
 import 'package:xml/xml.dart';
 
 /// PEP node carrying Conversations' OMEMO device list.
@@ -53,8 +32,21 @@ const List<String> omemoSpecBundlesNodes = <String>[
   'urn:xmpp:omemo:2:bundles',
 ];
 
-/// Serialises [bundle] in the de-facto dialect.
-XmlElement bundleToDefactoXml(OmemoBundle bundle) {
+/// Signal public-key type byte (Curve25519).
+const int keyTypePrefix = 0x05;
+
+/// Ensures [b64] carries the 0x05 type prefix (idempotent).
+String ensureKeyTypeByte(String b64) {
+  final bytes = base64Decode(b64);
+  if (bytes.length == 33 && bytes.first == keyTypePrefix) return b64;
+  if (bytes.length == 32) {
+    return base64Encode([keyTypePrefix, ...bytes]);
+  }
+  return b64;
+}
+
+/// Serialises [bundle] in the de-facto Conversations dialect.
+XmlElement bundleToDefactoXml(AxolotlBundle bundle) {
   final builder = XmlBuilder();
   builder.element(
     'bundle',
@@ -62,53 +54,29 @@ XmlElement bundleToDefactoXml(OmemoBundle bundle) {
     nest: () {
       builder.element(
         'signedPreKeyPublic',
-        attributes: {'signedPreKeyId': '${bundle.spkId}'},
-        nest: addKeyTypeByte(bundle.spkEncoded),
+        attributes: {'signedPreKeyId': '${bundle.signedPreKeyId}'},
+        nest: ensureKeyTypeByte(bundle.signedPreKeyPublicEncoded),
       );
       builder.element(
         'signedPreKeySignature',
-        nest: bundle.spkSignatureEncoded,
+        nest: bundle.signedPreKeySignatureEncoded,
       );
-      builder.element('identityKey', nest: addKeyTypeByte(bundle.ikEncoded));
+      builder.element(
+        'identityKey',
+        nest: ensureKeyTypeByte(bundle.identityKeyEncoded),
+      );
       builder.element('prekeys', nest: () {
-        for (final e in bundle.opksEncoded.entries) {
+        for (final e in bundle.preKeysEncoded.entries) {
           builder.element(
             'preKeyPublic',
             attributes: {'preKeyId': '${e.key}'},
-            nest: addKeyTypeByte(e.value),
+            nest: ensureKeyTypeByte(e.value),
           );
         }
       });
     },
   );
   return builder.buildDocument().rootElement;
-}
-
-/// Signal serialises a public key as a one-byte type prefix followed by the
-/// 32-byte key. omemo_dart stores and expects the bare 32 bytes, so the two
-/// representations must be translated at this boundary.
-///
-/// Measured against Conversations 2.20.4: its bundle carried 33-byte spk,
-/// ik and every prekey, with a 64-byte signature. Feeding those 33 bytes to
-/// the ratchet as-is would mix the type byte into the key material and
-/// break the DH silently; publishing ours without the prefix makes every
-/// real client reject the bundle outright.
-const int keyTypePrefix = 0x05;
-
-/// Removes Signal's key-type prefix when present.
-String stripKeyTypeByte(String b64) {
-  final bytes = base64Decode(b64);
-  if (bytes.length == 33 && bytes.first == keyTypePrefix) {
-    return base64Encode(bytes.sublist(1));
-  }
-  return b64;
-}
-
-/// Adds Signal's key-type prefix unless it is already present.
-String addKeyTypeByte(String b64) {
-  final bytes = base64Decode(b64);
-  if (bytes.length == 33) return b64;
-  return base64Encode([keyTypePrefix, ...bytes]);
 }
 
 /// Serialises the device list payload in the de-facto dialect.
@@ -126,11 +94,11 @@ XmlElement deviceListToDefactoXml(Iterable<int> deviceIds) {
   return builder.buildDocument().rootElement;
 }
 
-/// Parses a bundle in either dialect.
+/// Parses a bundle in either dialect into an [AxolotlBundle].
 ///
-/// Throws [FormatException] when a required element is absent, so callers
-/// can treat the result as "this device cannot be read" instead of crashing.
-OmemoBundle parseOmemoBundle(
+/// Keys keep the Signal type byte when present; bare 32-byte keys are
+/// accepted and prefixed so libsignal can decode them.
+AxolotlBundle parseOmemoBundle(
   XmlElement el, {
   required String jid,
   required int deviceId,
@@ -139,8 +107,6 @@ OmemoBundle parseOmemoBundle(
     throw FormatException('not a bundle element: ${el.localName}');
   }
 
-  // The two dialects disagree on every element name, so look each one up
-  // under both spellings.
   String text(List<String> names) {
     for (final name in names) {
       final found = el.findElements(name);
@@ -164,11 +130,10 @@ OmemoBundle parseOmemoBundle(
   final opks = <int, String>{};
   for (final section in el.findElements('prekeys')) {
     for (final child in section.childElements) {
-      // `pk` with `id`, or `preKeyPublic` with `preKeyId`.
       final idText = child.getAttribute('id') ?? child.getAttribute('preKeyId');
       final id = int.tryParse(idText ?? '');
       if (id == null) continue;
-      opks[id] = child.innerText;
+      opks[id] = ensureKeyTypeByte(child.innerText);
     }
   }
 
@@ -180,27 +145,23 @@ OmemoBundle parseOmemoBundle(
     throw const FormatException('signed prekey has no id');
   }
 
-  return OmemoBundle(
-    jid,
-    deviceId,
-    stripKeyTypeByte(text(const ['spk', 'signedPreKeyPublic'])),
-    int.parse(spkIdText),
-    // The signature is raw Ed25519 and carries no prefix.
-    text(const ['spks', 'spsk', 'signedPreKeySignature']),
-    stripKeyTypeByte(text(const ['ik', 'identityKey'])),
-    {
-      for (final e in opks.entries) e.key: stripKeyTypeByte(e.value),
-    },
+  return AxolotlBundle(
+    jid: jid,
+    deviceId: deviceId,
+    signedPreKeyId: int.parse(spkIdText),
+    signedPreKeyPublicEncoded:
+        ensureKeyTypeByte(text(const ['spk', 'signedPreKeyPublic'])),
+    signedPreKeySignatureEncoded:
+        text(const ['spks', 'spsk', 'signedPreKeySignature']),
+    identityKeyEncoded:
+        ensureKeyTypeByte(text(const ['ik', 'identityKey'])),
+    preKeysEncoded: opks,
+    registrationId: deviceId,
   );
 }
 
 /// Parses a device list payload in either dialect.
-///
-/// Returns null when the element carries no `<device>` children, which the
-/// server uses for "no devices".
 Set<int>? parseOmemoDeviceList(XmlElement el) {
-  // `devices` (spec) or `list` (de-facto); children are `<device id/>` in
-  // both.
   if (el.localName != 'devices' && el.localName != 'list') return null;
   final ids = <int>{};
   for (final child in el.findElements('device')) {
@@ -210,18 +171,33 @@ Set<int>? parseOmemoDeviceList(XmlElement el) {
   return ids;
 }
 
-/// Structural sanity check shared by tests and the interop probe.
-bool omemoBundleLooksSane(OmemoBundle b) {
+/// Structural sanity check for an axolotl bundle.
+bool omemoBundleLooksSane(AxolotlBundle b) {
   try {
-    if (base64Decode(b.spkEncoded).length != 32) return false;
-    if (base64Decode(b.spkSignatureEncoded).length != 64) return false;
-    if (base64Decode(b.ikEncoded).length != 32) return false;
-    if (b.opksEncoded.isEmpty) return false;
-    for (final pk in b.opksEncoded.values) {
-      if (base64Decode(pk).length != 32) return false;
+    final spk = base64Decode(b.signedPreKeyPublicEncoded);
+    final ik = base64Decode(b.identityKeyEncoded);
+    final sig = base64Decode(b.signedPreKeySignatureEncoded);
+    if (spk.length != 33 && spk.length != 32) return false;
+    if (ik.length != 33 && ik.length != 32) return false;
+    if (sig.length != 64) return false;
+    if (b.preKeysEncoded.isEmpty) return false;
+    for (final pk in b.preKeysEncoded.values) {
+      final len = base64Decode(pk).length;
+      if (len != 33 && len != 32) return false;
     }
     return true;
   } catch (_) {
     return false;
   }
 }
+
+/// Legacy aliases kept for call sites that still use the old names.
+String stripKeyTypeByte(String b64) {
+  final bytes = base64Decode(b64);
+  if (bytes.length == 33 && bytes.first == keyTypePrefix) {
+    return base64Encode(bytes.sublist(1));
+  }
+  return b64;
+}
+
+String addKeyTypeByte(String b64) => ensureKeyTypeByte(b64);

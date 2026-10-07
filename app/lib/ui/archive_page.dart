@@ -11,6 +11,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../l10n/l10n.dart';
 import '../state/providers.dart';
 import 'chat_row.dart';
 import 'theme.dart';
@@ -21,16 +22,17 @@ class ArchivePage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tg = context.tg;
+    final l10n = context.l10n;
     final archived = ref.watch(archivedChatsProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Archived')),
+      appBar: AppBar(title: Text(l10n.archived)),
       body: archived.when(
         data: (list) {
           if (list.isEmpty) {
             return Center(
               child: Text(
-                'Nothing archived',
+                l10n.noArchivedConversations,
                 style: TextStyle(color: tg.textSecondary),
               ),
             );
@@ -50,7 +52,7 @@ class ArchivePage extends ConsumerWidget {
               background: SwipeBackground(
                 alignment: Alignment.centerRight,
                 icon: Icons.unarchive_outlined,
-                label: 'Restore',
+                label: l10n.restore,
                 color: tg.accent,
               ),
               confirmDismiss: (_) async {

@@ -12,6 +12,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:moxxmpp/moxxmpp.dart' show JID;
 
+import '../l10n/l10n.dart';
 import '../omemo/track.dart';
 import '../xmpp/muc.dart';
 import '../omemo/track_advice.dart';
@@ -48,7 +49,19 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   final _scroll = ScrollController();
   final _focus = FocusNode();
 
+  /// True while we have announced `composing` and not yet `paused`/`active`
+  /// (Conversations EditMessage.isUserTyping).
   bool _typingNotified = false;
+
+  /// Peer chat state for this conversation (Conversations ChatStateManager.incoming).
+  TypingState _peerTyping = TypingState.inactive;
+
+  /// Clears composing → paused after Config.TYPING_TIMEOUT (8s).
+  Timer? _typingTimeout;
+
+  StreamSubscription<TypingNotification>? _typingSub;
+  StreamSubscription<InboundMessage>? _inboundReadSub;
+
   bool _atBottom = true;
 
   /// Unread count for this conversation, or null while it is being read.
@@ -133,6 +146,23 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         .deliveryFailures
         .listen(_onDeliveryFailure);
     _adviceSub = trackAdvice.listen(_onAdvice);
+    _typingSub = ref
+        .read(xmppServiceProvider)
+        .typingStates
+        .listen(_onPeerTyping);
+    // While this chat is open, a new inbound markable message is already
+    // being read — send <displayed/> like Conversations markRead on open.
+    _inboundReadSub = ref.read(xmppServiceProvider).inbound.listen((msg) {
+      if (msg.from.toBare().toString() != widget.chatJid) return;
+      if (!msg.markable || msg.fromArchive) return;
+      final id = msg.originId ?? msg.stanzaId;
+      if (id == null || id.isEmpty) return;
+      unawaited(
+        ref
+            .read(xmppServiceProvider)
+            .sendDisplayedMarker(JID.fromString(widget.chatJid), id),
+      );
+    });
     // Deliberately *not* marked read here. Marking on arrival would clear the
     // unread badge before the user has read anything, and the boundary in the
     // transcript would vanish before it had been seen. The marker advances when
@@ -142,12 +172,30 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     // Marking on "a message scrolled past" would be worse: a message the user
     // scrolled past deliberately, on purpose, is not unread.
 
-
     final parsed = GroupChat.parseAddress(widget.chatJid);
     if (parsed != null) {
       _roomJid = parsed.roomJid;
       unawaited(_loadRoom());
     }
+    // Conversations sends <displayed/> when the conversation is marked read
+    // (opening / viewing). Fire once the first frame is up so unread inbound
+    // messages get a read receipt without waiting until the user leaves.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(_sendDisplayedForLatest());
+    });
+  }
+
+  /// Sends XEP-0333 displayed for the newest markable inbound message.
+  Future<void> _sendDisplayedForLatest() async {
+    final db = ref.read(databaseProvider);
+    final xmpp = ref.read(xmppServiceProvider);
+    final last = await db.lastIncomingMarkable(widget.chatJid);
+    if (last == null || last.stanzaId.isEmpty) return;
+    await xmpp.sendDisplayedMarker(
+      JID.fromString(widget.chatJid),
+      last.stanzaId,
+    );
   }
 
   @override
@@ -216,20 +264,103 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     // unread boundary stays on screen while it is actually being read, and so
     // the list badge survives a user who opened a chat and left it again
     // without scrolling.
-    unawaited(
-      ref.read(databaseProvider).markChatRead(widget.chatJid).then((_) {
-        ref.read(chatRowRevisionProvider.notifier).state =
-            ref.read(chatRowRevisionProvider) + 1;
-      }),
-    );
+    unawaited(_markReadAndSendDisplayed());
+    // Conversations updateChatState on leave: paused if draft remains, else active.
+    _typingTimeout?.cancel();
+    unawaited(_publishComposerChatState());
     _failureSub?.cancel();
     _adviceSub?.cancel();
+    _typingSub?.cancel();
+    _inboundReadSub?.cancel();
     _scroll
       ..removeListener(_onScroll)
       ..dispose();
     _input.dispose();
     _focus.dispose();
     super.dispose();
+  }
+
+  void _onPeerTyping(TypingNotification n) {
+    if (n.from.toBare().toString() != widget.chatJid) return;
+    if (!mounted) return;
+    if (n.state == _peerTyping) return;
+    setState(() => _peerTyping = n.state);
+  }
+
+  /// AppBar subtitle: peer typing (Conversations contact_is_typing) or track.
+  String _peerStatusSubtitle(BuildContext context, Track track) {
+    // Prefer a short local name when the JID is long.
+    final name = widget.chatJid.split('@').first;
+    final l10n = context.l10n;
+    return switch (_peerTyping) {
+      TypingState.composing => l10n.contactIsTyping(name),
+      TypingState.paused => l10n.contactStoppedTyping(name),
+      TypingState.inactive => track.description.split(' — ').first,
+    };
+  }
+
+  /// Conversations Config.TYPING_TIMEOUT — seconds of idle before `paused`.
+  static const int _typingTimeoutSecs = 8;
+
+  /// XEP-0085 send path aligned with Conversations EditMessage:
+  /// composing on first non-empty keystroke, paused after idle timeout,
+  /// active when the box is cleared.
+  void _onInputChanged(String value) {
+    // The draft is saved on every keystroke rather than on leaving the page,
+    // because "leaving" includes the app being killed and the conversation
+    // being switched from a notification — none of which give us a callback.
+    unawaited(saveDraft(ref, widget.chatJid, value));
+
+    _typingTimeout?.cancel();
+    final length = value.trim().length;
+    final xmpp = ref.read(xmppServiceProvider);
+    final peer = JID.fromString(widget.chatJid);
+
+    if (length == 0) {
+      // onTextDeleted → DEFAULT_CHAT_STATE (active).
+      _typingNotified = false;
+      unawaited(xmpp.sendChatState(peer, TypingState.inactive));
+      return;
+    }
+
+    _typingTimeout = Timer(const Duration(seconds: _typingTimeoutSecs), () {
+      if (!_typingNotified) return;
+      // onTypingStopped → paused; next keystroke re-sends composing.
+      _typingNotified = false;
+      unawaited(
+        ref
+            .read(xmppServiceProvider)
+            .sendChatState(peer, TypingState.paused),
+      );
+    });
+
+    if (!_typingNotified) {
+      _typingNotified = true;
+      unawaited(xmpp.sendChatState(peer, TypingState.composing));
+    }
+  }
+
+  /// Publishes leave chat state (Conversations `updateChatState`).
+  Future<void> _publishComposerChatState() async {
+    final xmpp = ref.read(xmppServiceProvider);
+    final peer = JID.fromString(widget.chatJid);
+    final empty = _input.text.trim().isEmpty;
+    _typingNotified = false;
+    // Empty → active (DEFAULT); non-empty draft → paused.
+    await xmpp.sendChatState(
+      peer,
+      empty ? TypingState.inactive : TypingState.paused,
+    );
+  }
+
+  /// Marks the chat read locally and sends XEP-0333 `<displayed/>`
+  /// (Conversations `markRead` → `DisplayedManager.displayed`).
+  Future<void> _markReadAndSendDisplayed() async {
+    final db = ref.read(databaseProvider);
+    await db.markChatRead(widget.chatJid);
+    ref.read(chatRowRevisionProvider.notifier).state =
+        ref.read(chatRowRevisionProvider) + 1;
+    await _sendDisplayedForLatest();
   }
 
   void _onScroll() {
@@ -245,24 +376,6 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       _scroll.position.maxScrollExtent,
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeOut,
-    );
-  }
-
-  /// XEP-0085: notify once per typing burst, not per keystroke.
-  void _onInputChanged(String value) {
-    // The draft is saved on every keystroke rather than on leaving the page,
-    // because "leaving" includes the app being killed and the conversation
-    // being switched from a notification — none of which give us a callback.
-    unawaited(saveDraft(ref, widget.chatJid, value));
-
-    final composing = value.trim().isNotEmpty;
-    if (composing == _typingNotified) return;
-    _typingNotified = composing;
-    if (!composing) return;
-    unawaited(
-      ref
-          .read(xmppServiceProvider)
-          .sendChatState(JID.fromString(widget.chatJid), TypingState.composing),
     );
   }
 
@@ -411,9 +524,19 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
     final text = _input.text.trim();
     if (outcome?.sent ?? false) {
+      _typingTimeout?.cancel();
       _input.clear();
       unawaited(saveDraft(ref, widget.chatJid, null));
+      // Composer emptied → active (same as onTextDeleted).
       _typingNotified = false;
+      unawaited(
+        ref
+            .read(xmppServiceProvider)
+            .sendChatState(
+              JID.fromString(widget.chatJid),
+              TypingState.inactive,
+            ),
+      );
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
     } else if (text.isNotEmpty && mounted) {
       // Put the text back. It was never sent, and a user who typed a message
@@ -945,11 +1068,15 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                     overflow: TextOverflow.ellipsis,
                   ),
                   Text(
-                    track.description.split(' — ').first,
+                    _peerStatusSubtitle(context, track),
                     style: TextStyle(
                       fontSize: TgDimens.timeFontSize,
                       fontWeight: FontWeight.w400,
                       color: Colors.white70,
+                      fontStyle: _peerTyping == TypingState.composing ||
+                              _peerTyping == TypingState.paused
+                          ? FontStyle.italic
+                          : FontStyle.normal,
                     ),
                   ),
                 ],
@@ -1439,6 +1566,7 @@ class _ReactionBubble extends ConsumerWidget {
       time: message.timestamp,
       side: message.incoming ? BubbleSide.incoming : BubbleSide.outgoing,
       delivered: message.delivered,
+      displayed: message.displayed,
       failed: message.deliveryError.isNotEmpty,
       // What the message actually used, from what the sender declared — not
       // what we would have chosen. Read back from the row rather than

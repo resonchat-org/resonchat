@@ -98,6 +98,27 @@ void main() {
       expect(chats.map((c) => c.jid), contains('peer@example.org'));
     });
 
+    test('own archived outbound lands in the peer chat as outgoing', () async {
+      await storeInbound(
+        db,
+        InboundMessage(
+          from: JID.fromString('me@example.org/phone'),
+          to: JID.fromString('peer@example.org'),
+          body: 'sent while offline',
+          stanzaId: 'out1',
+          fromArchive: true,
+          archiveTimestamp: DateTime.utc(2024, 1, 2),
+        ),
+        ownBare: 'me@example.org',
+      );
+      final rows = await db.watchMessages('peer@example.org').first;
+      expect(rows.length, 1);
+      expect(rows.single.body, 'sent while offline');
+      expect(rows.single.incoming, isFalse);
+      final self = await db.watchMessages('me@example.org').first;
+      expect(self, isEmpty);
+    });
+
     test('an undecryptable message stores a placeholder, never ciphertext',
         () async {
       await storeInbound(

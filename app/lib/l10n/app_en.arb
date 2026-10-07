@@ -1,0 +1,102 @@
+{
+  "@@locale": "en",
+  "appName": "resonchat",
+  "settings": "Settings",
+  "privacy": "Privacy",
+  "connection": "Connection",
+  "encryption": "Encryption",
+  "about": "About",
+  "defaultEncryption": "Default encryption",
+  "archivedConversations": "Archived conversations",
+  "archived": "Archived",
+  "restore": "Restore",
+  "noArchivedConversations": "No archived conversations",
+  "readReceipts": "Read receipts",
+  "readReceiptsSummary": "When enabled, contacts see when you have read their messages",
+  "typingNotifications": "Typing notifications",
+  "typingNotificationsSummary": "Let contacts know when you are writing a message",
+  "language": "Language",
+  "languageSystem": "System default",
+  "languageEnglish": "English",
+  "languageChineseSimplified": "简体中文",
+  "status": "Status",
+  "statusConnected": "Connected",
+  "statusConnecting": "Connecting…",
+  "statusDisconnected": "Not connected",
+  "messageCarbons": "Message carbons",
+  "messageCarbonsEnabled": "Enabled — messages sync across your devices",
+  "messageCarbonsDisabled": "Not enabled by this server",
+  "messageArchiveMam": "Message archive (MAM)",
+  "messageArchiveAvailable": "Server keeps history for this account",
+  "messageArchiveUnavailable": "Server does not advertise a MAM archive",
+  "postQuantumTrack": "Post-quantum track",
+  "postQuantumReady": "Bundle published; chats upgrade automatically",
+  "postQuantumNotReady": "Not published — chats use standard OMEMO",
+  "postQuantumBackend": "Post-quantum backend",
+  "backendNative": "liboqs (native, hardware accelerated)",
+  "backendDart": "pqcrypto (pure Dart)",
+  "aboutBody": "resonchat — a dual-track OMEMO client for XMPP.\nLicensed GPL-3.0-or-later.\n\nIndependent project. Not affiliated with, endorsed by, or derived from any other messaging product.\n\nThe post-quantum track is a custom extension and has not been independently audited. Use at your own risk.",
+  "jid": "JID",
+  "password": "Password",
+  "hostOptional": "Host (optional)",
+  "connect": "Connect",
+  "connecting": "Connecting…",
+  "authenticationFailed": "Authentication failed",
+  "searchMessages": "Search messages",
+  "contactRequests": "Contact requests",
+  "joinGroup": "Join a group",
+  "noConversationsYet": "No conversations yet",
+  "openChatHint": "JID to open",
+  "open": "Open",
+  "invalidJid": "That does not look like a JID",
+  "contactRequestSent": "Contact request sent. Messages stay on this device until they accept.",
+  "contactAddFailed": "Could not add the contact on the server.",
+  "mute": "Mute",
+  "unmute": "Unmute",
+  "pin": "Pin",
+  "unpin": "Unpin",
+  "reply": "Reply",
+  "react": "React",
+  "copyText": "Copy text",
+  "forward": "Forward",
+  "edit": "Edit",
+  "deleteForEveryone": "Delete for everyone",
+  "cancel": "Cancel",
+  "close": "Close",
+  "save": "Save",
+  "details": "Details",
+  "members": "Members",
+  "searchInChat": "Search in this chat",
+  "appearance": "Appearance",
+  "pinnedMessages": "Pinned messages",
+  "loadHistoryMam": "Load history (MAM)",
+  "messageNotDelivered": "Message not delivered",
+  "notDeliveredReason": "Not delivered: {reason}",
+  "@notDeliveredReason": {
+    "placeholders": {
+      "reason": { "type": "String" }
+    }
+  },
+  "messageNotSentSnack": "Message not sent. It is still in the box.",
+  "couldNotLoadHistory": "Could not load history (server may not support MAM)",
+  "loadedArchivedMessages": "Loaded {count} archived message(s)",
+  "@loadedArchivedMessages": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "contactIsTyping": "{name} is typing…",
+  "@contactIsTyping": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "contactStoppedTyping": "{name} has stopped typing",
+  "@contactStoppedTyping": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "edited": "edited",
+  "youPrefix": "You: "
+}

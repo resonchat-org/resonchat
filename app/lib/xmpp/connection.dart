@@ -11,7 +11,7 @@ import 'package:logging/logging.dart';
 import 'package:moxlib/moxlib.dart';
 import 'package:moxxmpp/moxxmpp.dart';
 import 'package:moxxmpp_socket_tcp/moxxmpp_socket_tcp.dart';
-import 'package:omemo_dart/omemo_dart.dart' as omemo_dart;
+import 'package:omemo_dart/omemo_dart_axolotl.dart' as axolotl;
 
 import '../omemo/defacto.dart';
 import '../omemo/dual_track_manager.dart';
@@ -36,10 +36,13 @@ class InboundMessage {
     required this.from,
     required this.body,
     required this.stanzaId,
+    this.to,
     this.encryptionError,
     this.isCarbonCopy = false,
     this.fromArchive = false,
     this.archiveTimestamp,
+    this.archiveId,
+    this.markable = false,
     this.track,
     this.originId,
     this.reactions,
@@ -49,6 +52,13 @@ class InboundMessage {
   });
 
   final JID from;
+
+  /// The original `to` of the stanza, when present.
+  ///
+  /// Needed for archived copies of our own outbound messages: [from] is us,
+  /// so the conversation is [to], not [from].
+  final JID? to;
+
   final String body;
 
   /// The stanza id, needed to acknowledge delivery (XEP-0184).
@@ -68,6 +78,12 @@ class InboundMessage {
 
   /// Original send time for archived messages; live messages use now().
   final DateTime? archiveTimestamp;
+
+  /// MAM `<result id='…'/>` — the RSM cursor id for catch-up paging.
+  final String? archiveId;
+
+  /// True when the stanza carried XEP-0333 `<markable/>`.
+  final bool markable;
 
   /// The sender's own stable id for this message (XEP-0359 origin-id).
   ///
@@ -176,6 +192,14 @@ class DeliveryReceipt {
   final String stanzaId;
 }
 
+/// A chat marker for a message we sent (XEP-0333 displayed = read).
+class ReadReceipt {
+  const ReadReceipt({required this.from, required this.stanzaId});
+
+  final JID from;
+  final String stanzaId;
+}
+
 /// The peer's typing state within one chat (XEP-0085).
 class TypingNotification {
   const TypingNotification({required this.from, required this.state});
@@ -239,16 +263,34 @@ class XmppService {
 
   XmppConnection? _connection;
   PubSubManager? _pubsub;
-  omemo_dart.OmemoManager? _omemo;
+  axolotl.AxolotlOmemoManager? _omemo;
 
   /// In-flight device initialisation, shared by racing callers.
-  Future<omemo_dart.OmemoManager>? _omemoInit;
+  Future<axolotl.AxolotlOmemoManager>? _omemoInit;
   OmemoManager? _moxxOmemo;
   CarbonsManager? _carbons;
   StreamSubscription<XmppEvent>? _eventsSub;
   final _inbound = StreamController<InboundMessage>.broadcast();
   final _deliveryReceipts = StreamController<DeliveryReceipt>.broadcast();
+  final _readReceipts = StreamController<ReadReceipt>.broadcast();
   final _typingStates = StreamController<TypingNotification>.broadcast();
+
+  /// Last chat state we sent per bare JID (Conversations ChatStateManager.outgoing).
+  final _outgoingChatState = <String, TypingState>{};
+
+  /// Conversations `confirm_messages` — send XEP-0333 `<displayed/>`.
+  bool sendReadReceipts = true;
+
+  /// Conversations `chat_states` — send XEP-0085 typing notifications.
+  bool sendTypingNotifications = true;
+
+  /// Receipt requests deferred while a MAM catch-up is in flight
+  /// (Conversations MessageArchiveManager.processPostponed).
+  final _pendingReceiptRequests = <({JID to, String id})>[];
+
+  /// True while [catchUpHistory] is paging; live receipts go out immediately,
+  /// archived ones are queued until the catch-up finishes.
+  bool _mamCatchingUp = false;
 
   /// Fires when a PEP node we care about changes, so cached capabilities
   /// can be dropped instead of waiting out the TTL.
@@ -658,6 +700,9 @@ class XmppService {
   /// Receipts for messages we sent (XEP-0184).
   Stream<DeliveryReceipt> get deliveryReceipts => _deliveryReceipts.stream;
 
+  /// Read markers for messages we sent (XEP-0333 `<displayed/>`).
+  Stream<ReadReceipt> get readReceipts => _readReceipts.stream;
+
   /// Peer typing/composing notifications (XEP-0085).
   Stream<TypingNotification> get typingStates => _typingStates.stream;
 
@@ -676,7 +721,7 @@ class XmppService {
   final _deliveryFailures = StreamController<DeliveryFailure>.broadcast();
 
   OmemoManager? get moxxOmemo => _moxxOmemo;
-  omemo_dart.OmemoManager? get omemo => _omemo;
+  axolotl.AxolotlOmemoManager? get omemo => _omemo;
 
   /// PubSub/PEP manager; null until connected. The B track publishes and
   /// fetches its device list and bundles through it.
@@ -791,13 +836,18 @@ class XmppService {
     _moxxOmemo = OmemoManager(
       // Lazy: an OMEMO event can arrive before the device is created.
       () => _omemoOrCreate(),
-      // Only chat messages are ever candidates for encryption. Letting the
-      // hook run for every outgoing stanza made capability resolution fire
-      // for each PubSub IQ, and each of those queries is itself a stanza
-      // that goes through this hook — an unbounded IQ cascade that starved
-      // the login sequence until the UI hung on "Connecting…".
+      // Only chat *bodies* are encrypted. Typing notifications (XEP-0085),
+      // receipt requests alone, etc. must stay clear: wrapping them as
+      // empty OMEMO key-transport makes Conversations show a second
+      // "could not decrypt" bubble beside the real message.
+      //
+      // Also ignore non-message stanzas: letting the hook run for every
+      // outgoing IQ made capability resolution cascade unbounded and starve
+      // login.
       (toJid, stanza) async =>
-          stanza.tag == 'message' && await _shouldEncrypt(toJid),
+          stanza.tag == 'message' &&
+          stanza.firstTag('body') != null &&
+          await _shouldEncrypt(toJid),
     );
     // Default to the capability-driven decision so encryption turns on by
     // itself once both sides support OMEMO.
@@ -851,6 +901,11 @@ class XmppService {
       messageManager,
       MessageDeliveryReceiptManager(),
       ChatStateManager(),
+      // XEP-0333 chat markers (Conversations DisplayedManager / markable).
+      ChatMarkerManager(),
+      // XEP-0334 hints: chat states use no-store; receipts use store
+      // (Conversations DeliveryReceiptManager / ChatStateManager).
+      MessageProcessingHintManager(),
       MessageArchiveManagementManager(),
       _carbons!,
       _moxxOmemo!,
@@ -1003,28 +1058,165 @@ class XmppService {
     }
   }
 
+  /// Page size for MAM catch-up and per-chat history (Conversations uses 50).
+  static const int mamPageSize = 50;
+
+  /// Hard cap on catch-up pages (Conversations: MAM_MAX_MESSAGES / PAGE_SIZE).
+  static const int mamCatchupMaxPages = 15;
+
+  /// How far back a first catch-up reaches when we have no local cursor
+  /// (Conversations: MAM_MAX_CATCHUP = 5 days).
+  static const Duration mamCatchupInitialWindow = Duration(days: 5);
+
+  /// Meta key for the last MAM archive id we have caught up through.
+  static const String mamCatchupIdKey = 'mam_catchup_id';
+
+  /// Meta key for the timestamp of the last caught-up archive page.
+  static const String mamCatchupTsKey = 'mam_catchup_ts';
+
   /// Pulls archived messages for one chat (XEP-0313).
   ///
-  /// Returned messages are replayed through the normal inbound pipeline
-  /// (with `fromArchive` set), so they are decrypted and stored exactly
-  /// like live traffic. [beforeId] pages backwards through history;
-  /// returns the number of messages the server sent, or null on error.
+  /// Queries the **account** archive (our bare JID) with a `with` filter for
+  /// [chatJid], matching Conversations. Results are replayed through the
+  /// normal inbound pipeline. [beforeId] is an RSM `before` cursor for paging
+  /// older history; returns the number of messages the server sent, or null
+  /// on error.
   Future<int?> fetchHistory(
     JID chatJid, {
     String? beforeId,
-    int? pageSize = 50,
+    int? pageSize = mamPageSize,
   }) async {
     final mm =
         _connection?.getManagerById<MessageArchiveManagementManager>(
               mamManager,
             );
-    if (mm == null) return null;
+    final own = _connection?.connectionSettings.jid.toBare();
+    if (mm == null || own == null || !_mamAvailable) return null;
     final result = await mm.requestMessages(
-      chatJid,
-      beforeId: beforeId,
+      own,
+      withJid: chatJid.toBare(),
+      rsmBefore: beforeId ?? '',
       pageSize: pageSize,
     );
-    return result.isType<int>() ? result.get<int>() : null;
+    if (!result.isType<MamQueryResult>()) return null;
+    return result.get<MamQueryResult>().count;
+  }
+
+  /// Catch up the account message archive after login.
+  ///
+  /// Aligned with Conversations `MessageArchiveManager.catchup()`:
+  /// account bare JID, RSM `after` when [afterId] is known, otherwise `start`
+  /// from [start] (capped to [mamCatchupInitialWindow]), page size 50, abort
+  /// after [mamCatchupMaxPages] × page size (~[Config.MAM_MAX_MESSAGES]).
+  ///
+  /// Receipt requests seen during catch-up are postponed and flushed when the
+  /// query finishes (`processPostponed`).
+  Future<int?> catchUpHistory({
+    String? afterId,
+    DateTime? start,
+    Future<void> Function(String? archiveId, DateTime? timestamp)? saveCursor,
+    int pageSize = mamPageSize,
+    int maxPages = mamCatchupMaxPages,
+  }) async {
+    final mm =
+        _connection?.getManagerById<MessageArchiveManagementManager>(
+              mamManager,
+            );
+    final own = _connection?.connectionSettings.jid.toBare();
+    if (mm == null || own == null || !_mamAvailable) return null;
+
+    // Conversations: either RSM after(reference) *or* form start(timestamp).
+    var cursor = (afterId != null && afterId.isNotEmpty) ? afterId : null;
+    final now = DateTime.now().toUtc();
+    final windowStart = now.subtract(mamCatchupInitialWindow);
+    DateTime? pageStart;
+    if (cursor == null) {
+      final raw = start?.toUtc();
+      if (raw == null) {
+        pageStart = windowStart;
+      } else if (now.difference(raw) >= mamCatchupInitialWindow) {
+        // Gap larger than MAM_MAX_CATCHUP → only pull the last window.
+        pageStart = windowStart;
+      } else {
+        pageStart = raw;
+      }
+    }
+
+    _mamCatchingUp = true;
+    _pendingReceiptRequests.clear();
+    var total = 0;
+    String? lastId = cursor;
+    try {
+      for (var page = 0; page < maxPages; page++) {
+        final result = await mm.requestMessages(
+          own,
+          start: pageStart,
+          rsmAfter: cursor,
+          pageSize: pageSize,
+        );
+        if (!result.isType<MamQueryResult>()) {
+          _log.warning('MAM catch-up failed on page $page');
+          return total == 0 ? null : total;
+        }
+        final pageResult = result.get<MamQueryResult>();
+        total += pageResult.count;
+        if (pageResult.last != null && pageResult.last!.isNotEmpty) {
+          lastId = pageResult.last;
+        }
+        // After the first page, continue only with RSM after.
+        pageStart = null;
+        cursor = pageResult.last;
+        _log.info(
+          'MAM catch-up page $page: ${pageResult.count} msg(s), '
+          'complete=${pageResult.complete}, last=$cursor',
+        );
+        if (pageResult.complete ||
+            pageResult.count == 0 ||
+            cursor == null ||
+            cursor.isEmpty) {
+          break;
+        }
+        // Conversations aborts at MAM_MAX_MESSAGES.
+        if (total >= pageSize * maxPages) break;
+      }
+    } finally {
+      _mamCatchingUp = false;
+      await _flushPendingReceipts();
+    }
+
+    if (saveCursor != null) {
+      await saveCursor(lastId, now);
+    }
+    return total;
+  }
+
+  /// Sends postponed XEP-0184 receipts after MAM catch-up
+  /// (Conversations `MessageArchiveManager.processPostponed`).
+  Future<void> _flushPendingReceipts() async {
+    if (_pendingReceiptRequests.isEmpty) return;
+    final pending = List<({JID to, String id})>.of(_pendingReceiptRequests);
+    _pendingReceiptRequests.clear();
+    _log.info('flushing ${pending.length} deferred delivery receipt(s)');
+    for (final rr in pending) {
+      await sendDeliveryReceipt(rr.to, rr.id);
+    }
+  }
+
+  /// Answers a peer's XEP-0184 `<request/>` with `<received id='…'/>`.
+  ///
+  /// Matches Conversations `DeliveryReceiptManager.received`: same chat type
+  /// and a `store` hint so the receipt is archived.
+  Future<void> sendDeliveryReceipt(JID to, String id) async {
+    final mm = _connection?.getManagerById<MessageManager>(messageManager);
+    if (mm == null || id.isEmpty) return;
+    await mm.sendMessage(
+      to,
+      TypedMap<StanzaHandlerExtension>.fromList([
+        MessageDeliveryReceivedData(id),
+        const MessageProcessingHintData([MessageProcessingHint.store]),
+      ]),
+      type: 'chat',
+    );
   }
 
   /// Returns our omemo_dart manager, creating and restoring the device on
@@ -1040,7 +1232,7 @@ class XmppService {
   /// Restoring matters: a fresh device id on every start would keep
   /// appending to our own PEP device list and make peers encrypt to
   /// devices we no longer hold keys for.
-  Future<omemo_dart.OmemoManager> _omemoOrCreate({int opkAmount = 20}) async {
+  Future<axolotl.AxolotlOmemoManager> _omemoOrCreate({int opkAmount = 20}) async {
     final existing = _omemo;
     if (existing != null) return existing;
     // Several events can race here; building twice would orphan the first
@@ -1050,36 +1242,32 @@ class XmppService {
     });
   }
 
-  Future<omemo_dart.OmemoManager> _buildOmemo({required int opkAmount}) async {
+  Future<axolotl.AxolotlOmemoManager> _buildOmemo({required int opkAmount}) async {
     final bareJid =
         _connection!.connectionSettings.jid.toBare().toString();
 
-    omemo_dart.OmemoDevice device;
+    axolotl.AxolotlDevice device;
     final restored = await deviceStore?.load();
     if (restored != null && restored.jid == bareJid) {
       device = restored;
-      _log.info('restored OMEMO device ${device.id}');
+      _log.info('restored OMEMO device ${await device.deviceId}');
     } else {
-      device = await omemo_dart.OmemoDevice.generateNewDevice(
+      device = await axolotl.AxolotlDevice.generateNewDevice(
         bareJid,
-        opkAmount: opkAmount,
+        preKeyCount: opkAmount,
       );
-      _log.info('generated new OMEMO device ${device.id}');
+      _log.info('generated new OMEMO device ${await device.deviceId}');
     }
 
-    final manager = omemo_dart.OmemoManager(
+    final manager = axolotl.AxolotlOmemoManager(
       device,
-      omemo_dart.BlindTrustBeforeVerificationTrustManager(),
-      _moxxOmemo!.sendEmptyMessageImpl,
-      // The inbound path must use the same dual-dialect readers as the
-      // outbound one. moxxmpp's fetchDeviceList only knows the XEP-0384 spec
-      // node, so it reported an empty list for every real peer and
-      // decryption aborted with "not tracked in device list".
-      _fetchDeviceListDialectAware,
-      _fetchDeviceBundleDialectAware,
-      _subscribeToDeviceListDialectAware,
-      _publishDeviceDialectAware,
+      fetchDeviceList: _fetchDeviceListDialectAware,
+      fetchBundle: _fetchDeviceBundleDialectAware,
+      commitDevice: (d) async {
+        await deviceStore?.save(d);
+      },
     );
+    manager.trackPreKeyIds(device.store.preKeyStore.store.keys);
     _omemo = manager;
     return manager;
   }
@@ -1094,20 +1282,12 @@ class XmppService {
   }
 
   /// Bundle for one device across both OMEMO wire dialects.
-  Future<omemo_dart.OmemoBundle?> _fetchDeviceBundleDialectAware(
+  Future<axolotl.AxolotlBundle?> _fetchDeviceBundleDialectAware(
     String jid,
     int deviceId,
   ) async {
     return tracks?.getOmemoBundle(JID.fromString(jid), deviceId);
   }
-
-  Future<void> _subscribeToDeviceListDialectAware(String jid) =>
-      _moxxOmemo!.subscribeToDeviceListImpl(jid);
-
-  Future<void> _publishDeviceDialectAware(
-    omemo_dart.OmemoDevice device,
-  ) =>
-      _moxxOmemo!.publishDeviceImpl(device);
 
   /// Creates (or restores) our OMEMO device and publishes its bundle.
   ///
@@ -1117,7 +1297,7 @@ class XmppService {
     final manager = await _omemoOrCreate(opkAmount: opkAmount);
     final id = await manager.getDeviceId();
     final device = await manager.getDevice();
-    final bundle = await device.toBundle();
+    final bundle = await manager.getLocalBundle();
     final bare = JID.fromString(_connection!.connectionSettings.jid.toBare().toString());
 
     // Publish through the dual-track manager so the bundle lands in both
@@ -1189,7 +1369,8 @@ class XmppService {
   Future<int> replenishPrekeys({int target = 20}) async {
     final om = _omemo;
     if (om == null) return 0;
-    final added = await om.replenishOnetimePrekeys(target);
+    final ids = await om.replenishPreKeys(target);
+    final added = ids.length;
     if (added > 0) {
       // Keep the local copy in sync with what peers can now fetch.
       await deviceStore?.save(await om.getDevice());
@@ -1201,7 +1382,7 @@ class XmppService {
   Future<int> availablePrekeyCount() async {
     final om = _omemo;
     if (om == null) return 0;
-    return (await om.getDevice()).opks.length;
+    return (await om.getDevice()).store.preKeyStore.store.length;
   }
 
   /// Creates and publishes our B-track (PQ) device.
@@ -1295,6 +1476,8 @@ class XmppService {
             end: replyFallback?.end,
           ),
         if (requestReceipt) const MessageDeliveryReceiptData(true),
+        // XEP-0333: peers may answer with <displayed/> (Conversations markable).
+        const MarkableData(true),
         // XEP-0380: declare the track so the receiver can label the message
         // without decrypting it, and so a client that does not know this
         // namespace shows our name rather than guessing.
@@ -1340,6 +1523,7 @@ class XmppService {
             end: replyFallback?.end,
           ),
         if (requestReceipt) const MessageDeliveryReceiptData(true),
+        const MarkableData(true),
       ]),
       type: 'chat',
     );
@@ -1385,6 +1569,7 @@ class XmppService {
         ),
 
       if (requestReceipt) MessageDeliveryReceiptData(true).toXML(),
+      const MarkableData(true).toXML(),
     ];
     await connection.sendStanza(
       StanzaDetails(
@@ -1402,17 +1587,49 @@ class XmppService {
   }
 
   /// Publishes our typing state to [to] (XEP-0085).
+  ///
+  /// Aligned with Conversations `ChatStateManager`:
+  /// - gated by [sendTypingNotifications] (`chat_states` pref)
+  /// - only send when the state actually changes
+  /// - empty composer → `active` (DEFAULT_CHAT_STATE)
+  /// - idle after typing → `paused`
+  /// - `no-store` hint so the notification is not archived
   Future<void> sendChatState(JID to, TypingState state) async {
+    if (!sendTypingNotifications) return;
     final mm = _connection?.getManagerById<MessageManager>(messageManager);
-    if (mm == null) throw StateError('not connected');
+    if (mm == null) return;
+    final bare = to.toBare().toString();
+    if (_outgoingChatState[bare] == state) return;
+    _outgoingChatState[bare] = state;
     final xmppState = switch (state) {
       TypingState.composing => ChatState.composing,
       TypingState.paused => ChatState.paused,
+      // Conversations Config.DEFAULT_CHAT_STATE = Active.
       TypingState.inactive => ChatState.active,
     };
     await mm.sendMessage(
       to,
-      TypedMap<StanzaHandlerExtension>.fromList([xmppState]),
+      TypedMap<StanzaHandlerExtension>.fromList([
+        xmppState,
+        const MessageProcessingHintData([MessageProcessingHint.noStore]),
+      ]),
+      type: 'chat',
+    );
+  }
+
+  /// Sends XEP-0333 `<displayed id='…'/>` for a message we have read.
+  ///
+  /// Conversations `DisplayedManager.displayed` — gated by [sendReadReceipts].
+  Future<void> sendDisplayedMarker(JID to, String messageId) async {
+    if (!sendReadReceipts) return;
+    final mm = _connection?.getManagerById<MessageManager>(messageManager);
+    if (mm == null || messageId.isEmpty) return;
+    await mm.sendMessage(
+      to,
+      TypedMap<StanzaHandlerExtension>.fromList([
+        ChatMarkerData(ChatMarker.displayed, messageId),
+        const MessageProcessingHintData([MessageProcessingHint.store]),
+      ]),
       type: 'chat',
     );
   }
@@ -1500,20 +1717,21 @@ class XmppService {
         return;
       }
       final mam = event.get<MAMData>();
-      final state = event.get<ChatState>();
-      if (state != null) {
+      final chatState = event.get<ChatState>();
+      if (chatState != null && !isCarbon) {
+        // Conversations ChatStateManager.process: update UI on change.
+        // A body message often carries `active` too — that clears the
+        // "is typing" indicator rather than being ignored.
         _typingStates.add(
           TypingNotification(
             from: event.from,
-            state: switch (state) {
+            state: switch (chatState) {
               ChatState.composing => TypingState.composing,
               ChatState.paused => TypingState.paused,
               _ => TypingState.inactive,
             },
           ),
         );
-        // A chat-state-only message carries no body; nothing to store.
-        return;
       }
       // XEP-0380: the sender's declaration of what it used. Absent means
       // plaintext, which is the only honest reading.
@@ -1527,16 +1745,51 @@ class XmppService {
       final replyData = event.get<ReplyData>();
       final retraction = event.get<MessageRetractionData>();
       final correction = event.get<LastMessageCorrectionData>();
+      final body = error != null
+          ? ''
+          : (reactionData != null
+              ? ''
+              : (event.get<MessageBodyData>()?.body ?? ''));
+      final hasContent = body.isNotEmpty ||
+          error != null ||
+          reactionData != null ||
+          retraction != null ||
+          correction != null;
+      // Chat-state-only stanzas are not stored (Conversations treats them as
+      // presence-like notifications).
+      if (chatState != null && !hasContent) {
+        return;
+      }
+
+      // XEP-0184: answer `<request/>` like Conversations DeliveryReceiptManager.
+      // Live → send immediately; catch-up → postpone until processPostponed.
+      final receiptRequested =
+          event.get<MessageDeliveryReceiptData>()?.receiptRequested ?? false;
+      if (receiptRequested &&
+          event.id != null &&
+          event.id!.isNotEmpty &&
+          !isCarbon &&
+          hasContent) {
+        if (mam != null || _mamCatchingUp) {
+          _pendingReceiptRequests.add((to: event.from, id: event.id!));
+        } else {
+          unawaited(sendDeliveryReceipt(event.from, event.id!));
+        }
+      }
+
+      if (!hasContent) return;
+
       final inbound = InboundMessage(
         from: event.from,
-        body: error != null
-            ? ''
-            : (reactionData != null ? '' : (event.get<MessageBodyData>()?.body ?? '')),
+        to: event.to,
+        body: body,
         stanzaId: event.id,
         encryptionError: error,
         isCarbonCopy: isCarbon,
         fromArchive: mam != null,
         archiveTimestamp: mam?.delay.timestamp,
+        archiveId: mam?.archiveId,
+        markable: event.get<MarkableData>()?.isMarkable ?? false,
         track: foreign ? null : Track.fromEme(eme),
         originId: stable?.originId,
         retracts: retraction?.id,
@@ -1557,6 +1810,22 @@ class XmppService {
       );
       _inbound.add(inbound);
       if (reactionData != null) _reactions.add(inbound);
+    } else if (event is ChatMarkerEvent) {
+      // XEP-0333: <received/> is delivery; <displayed/> is read
+      // (Conversations DisplayedManager / delivery path).
+      if (event.type == ChatMarker.displayed) {
+        if (!_readReceipts.isClosed) {
+          _readReceipts.add(
+            ReadReceipt(from: event.from, stanzaId: event.id),
+          );
+        }
+      } else if (event.type == ChatMarker.received) {
+        if (!_deliveryReceipts.isClosed) {
+          _deliveryReceipts.add(
+            DeliveryReceipt(from: event.from, stanzaId: event.id),
+          );
+        }
+      }
     } else if (event is DeliveryReceiptReceivedEvent) {
       _deliveryReceipts.add(
         DeliveryReceipt(from: event.from, stanzaId: event.id),

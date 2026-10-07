@@ -54,7 +54,7 @@ class _SecurityPageState extends ConsumerState<SecurityPage> {
     final om = ref.read(xmppServiceProvider).omemo;
     if (om == null) return;
     final id = await om.getDeviceId();
-    final fp = await (await om.getDevice()).getFingerprint();
+    final fp = await (await om.getDevice()).fingerprint;
     if (!mounted) return;
     setState(() {
       _deviceId = id;
