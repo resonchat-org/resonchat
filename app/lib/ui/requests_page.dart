@@ -15,6 +15,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:moxxmpp/moxxmpp.dart' show JID;
 
+import '../l10n/l10n.dart';
 import '../state/providers.dart';
 import '../store/database.dart';
 import 'contact_avatar.dart';
@@ -26,10 +27,11 @@ class RequestsPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tg = context.tg;
+    final l10n = context.l10n;
     final requests = ref.watch(subscriptionRequestsProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Contact requests')),
+      appBar: AppBar(title: Text(l10n.contactRequests)),
       body: requests.when(
         data: (rows) {
           final incoming =
@@ -39,7 +41,7 @@ class RequestsPage extends ConsumerWidget {
           if (rows.isEmpty) {
             return Center(
               child: Text(
-                'Nothing waiting',
+                l10n.nothingWaiting,
                 style: TextStyle(color: tg.textSecondary),
               ),
             );
@@ -47,17 +49,16 @@ class RequestsPage extends ConsumerWidget {
           return ListView(
             children: [
               if (incoming.isNotEmpty) ...[
-                _header(tg, 'Want to see you'),
-                for (final r in incoming)
-                  _IncomingRow(request: r),
+                _header(tg, l10n.wantToSeeYou),
+                for (final r in incoming) _IncomingRow(request: r),
               ],
               if (outgoing.isNotEmpty) ...[
-                _header(tg, 'Waiting for them'),
+                _header(tg, l10n.waitingForThem),
                 for (final r in outgoing)
                   ListTile(
                     leading: ContactAvatar(jid: r.jid, title: r.jid),
                     title: Text(r.jid),
-                    subtitle: const Text('They have not answered yet.'),
+                    subtitle: Text(l10n.theyHaveNotAnswered),
                     trailing: TextButton(
                       onPressed: () {
                         ref
@@ -67,7 +68,7 @@ class RequestsPage extends ConsumerWidget {
                             .read(databaseProvider)
                             .resolveRequest(r.jid, outgoing: true);
                       },
-                      child: const Text('Cancel'),
+                      child: Text(l10n.cancel),
                     ),
                   ),
               ],
@@ -115,8 +116,6 @@ class _IncomingRowState extends ConsumerState<_IncomingRow> {
     } else {
       await xmpp.rejectSubscription(jid);
     }
-    // Resolved last, and unconditionally: the user made the decision, and a
-    // server that refused to carry it out is not a reason to ask them again.
     ref
         .read(xmppServiceProvider)
         .resolveIncomingRequest(JID.fromString(widget.request.jid));
@@ -130,11 +129,12 @@ class _IncomingRowState extends ConsumerState<_IncomingRow> {
   @override
   Widget build(BuildContext context) {
     final tg = context.tg;
+    final l10n = context.l10n;
     return ListTile(
       leading: ContactAvatar(jid: widget.request.jid, title: widget.request.jid),
       title: Text(widget.request.jid),
       subtitle: Text(
-        'They want to see when you are online and to send you messages.',
+        l10n.incomingRequestSubtitle,
         style: TextStyle(color: tg.textSecondary, fontSize: 12),
       ),
       trailing: _busy
@@ -149,13 +149,13 @@ class _IncomingRowState extends ConsumerState<_IncomingRow> {
                 IconButton(
                   onPressed: () => _answer(false),
                   icon: const Icon(Icons.close),
-                  tooltip: 'Decline',
+                  tooltip: l10n.decline,
                   color: tg.danger,
                 ),
                 IconButton(
                   onPressed: () => _answer(true),
                   icon: const Icon(Icons.check),
-                  tooltip: 'Accept',
+                  tooltip: l10n.accept,
                   color: tg.accent,
                 ),
               ],

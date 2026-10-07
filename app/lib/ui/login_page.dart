@@ -143,11 +143,16 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       await xmpp.replenishPrekeys();
       // Publish our post-quantum bundle so peers can upgrade to the B track.
       await xmpp.initialiseBTrack();
+      final db = ref.read(databaseProvider);
+      // Conversations connectMultiModeConversations: rejoin stored rooms.
+      final rooms = await db.groupChatsForJoin();
+      await xmpp.rejoinGroupChats([
+        for (final c in rooms) (roomJid: c.jid, nick: c.mucNick),
+      ]);
       // Pull missed messages from the account archive (XEP-0313).
       // Conversations MessageArchiveManager.catchup(): RSM after archive id
       // when known, otherwise start from last local message timestamp
       // (getLastMessageReceived), capped to MAM_MAX_CATCHUP (5 days).
-      final db = ref.read(databaseProvider);
       final afterId = await db.metaValue(XmppService.mamCatchupIdKey);
       final startRaw = await db.metaValue(XmppService.mamCatchupTsKey);
       final metaTs =

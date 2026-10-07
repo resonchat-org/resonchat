@@ -30,7 +30,7 @@ void main() {
     final bobSessions = PqSessionManager(kem: kem);
     // Bob resolves Alice's identity key from the bundle she published.
     final aliceIk = await alice.ikDh.pk.getBytes();
-    Future<List<int>> ikOf(int _) async => aliceIk;
+    Future<List<int>> ikOf(String _, int __) async => aliceIk;
 
     final aliceLayer = PqMessageLayer(
       ownDevice: alice,
@@ -68,7 +68,7 @@ void main() {
 
     // Round-trip through XML, as it would travel.
     final onWire = PqEncryptedMessage.fromXml(stanza.toXml());
-    final recovered = await bobLayer.decrypt(onWire);
+    final recovered = await bobLayer.decrypt(onWire, senderBareJid: 'alice@example.org');
     expect(recovered, plaintext);
   });
 
@@ -78,7 +78,7 @@ void main() {
     final aliceSessions = PqSessionManager(kem: kem);
     final bobSessions = PqSessionManager(kem: kem);
     final aliceIk = await alice.ikDh.pk.getBytes();
-    Future<List<int>> ikOf(int _) async => aliceIk;
+    Future<List<int>> ikOf(String _, int __) async => aliceIk;
 
     final aliceLayer = PqMessageLayer(
       ownDevice: alice,
@@ -111,6 +111,7 @@ void main() {
       );
       final back = await bobLayer.decrypt(
         PqEncryptedMessage.fromXml(out.stanza.toXml()),
+        senderBareJid: 'alice@example.org',
       );
       expect(back, 'message $i');
     }
@@ -124,7 +125,7 @@ void main() {
 
     final aliceSessions = PqSessionManager(kem: kem);
     final aliceIk = await alice.ikDh.pk.getBytes();
-    Future<List<int>> ikOf(int _) async => aliceIk;
+    Future<List<int>> ikOf(String _, int __) async => aliceIk;
     final aliceLayer = PqMessageLayer(
       ownDevice: alice,
       sessions: aliceSessions,
@@ -134,7 +135,7 @@ void main() {
     final eveLayer = PqMessageLayer(
       ownDevice: eve,
       sessions: PqSessionManager(kem: kem),
-      senderIkOf: (_) => throw UnimplementedError(),
+      senderIkOf: (_, __) => throw UnimplementedError(),
       random: Random(6),
     );
 
@@ -143,7 +144,7 @@ void main() {
       recipients: [bob],
     );
     expect(
-      () => eveLayer.decrypt(out!.stanza),
+      () => eveLayer.decrypt(out!.stanza, senderBareJid: 'alice@example.org'),
       throwsA(isA<PqDecryptError>()),
     );
   });
@@ -153,12 +154,12 @@ void main() {
     final bob = await device('bob@example.org');
     final bobSessions = PqSessionManager(kem: kem);
     final aliceIk = await alice.ikDh.pk.getBytes();
-    Future<List<int>> ikOf(int _) async => aliceIk;
+    Future<List<int>> ikOf(String _, int __) async => aliceIk;
 
     final aliceLayer = PqMessageLayer(
       ownDevice: alice,
       sessions: PqSessionManager(kem: kem),
-      senderIkOf: (_) async => aliceIk,
+      senderIkOf: (_, __) async => aliceIk,
       random: Random(7),
     );
     final bobLayer = PqMessageLayer(
@@ -185,7 +186,7 @@ void main() {
     );
 
     expect(
-      () => bobLayer.decrypt(tampered),
+      () => bobLayer.decrypt(tampered, senderBareJid: 'alice@example.org'),
       throwsA(
         isA<PqDecryptError>().having(
           (e) => e.reason,
@@ -196,7 +197,7 @@ void main() {
     );
 
     // The untampered copy still works, so the failure above was specific.
-    expect(await bobLayer.decrypt(good), 'authentic');
+    expect(await bobLayer.decrypt(good, senderBareJid: 'alice@example.org'), 'authentic');
   });
 
   test('fan-out: one payload, a wrap per device', () async {
@@ -209,7 +210,7 @@ void main() {
     final out = await PqMessageLayer(
       ownDevice: alice,
       sessions: aliceSessions,
-      senderIkOf: (_) async => aliceIk,
+      senderIkOf: (_, __) async => aliceIk,
       random: Random(9),
     ).encrypt(plaintext: 'to all my devices', recipients: [bob, bob2]);
 
@@ -227,7 +228,7 @@ void main() {
     final layer = PqMessageLayer(
       ownDevice: alice,
       sessions: PqSessionManager(kem: kem),
-      senderIkOf: (_) => throw UnimplementedError(),
+      senderIkOf: (_, __) => throw UnimplementedError(),
     );
     expect(
       await layer.encrypt(plaintext: 'nobody', recipients: const []),
@@ -240,12 +241,12 @@ void main() {
     final bob = await device('bob@example.org');
     final bobSessions = PqSessionManager(kem: kem);
     final aliceIk = await alice.ikDh.pk.getBytes();
-    Future<List<int>> ikOf(int _) async => aliceIk;
+    Future<List<int>> ikOf(String _, int __) async => aliceIk;
 
     final layer = PqMessageLayer(
       ownDevice: alice,
       sessions: PqSessionManager(kem: kem),
-      senderIkOf: (_) async => aliceIk,
+      senderIkOf: (_, __) async => aliceIk,
       random: Random(10),
     );
     final bobLayer = PqMessageLayer(
@@ -259,6 +260,7 @@ void main() {
     final out = await layer.encrypt(plaintext: text, recipients: [bob]);
     final back = await bobLayer.decrypt(
       PqEncryptedMessage.fromXml(out!.stanza.toXml()),
+      senderBareJid: 'alice@example.org',
     );
     expect(back, text);
   });

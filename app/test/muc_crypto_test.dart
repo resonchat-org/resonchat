@@ -231,28 +231,35 @@ void main() {
   });
 
   group('the track a room message uses', () {
-    test('post-quantum is blocked, and stays post-quantum in the report', () {
-      // A room's recipient set is "whoever is in it when the message leaves",
-      // which cannot be established at send time. Reporting this as standard
-      // instead would make the dialog undecidable and the bubble label a lie;
-      // the caller has to be told PO is what was asked for and refused.
+    test('post-quantum is allowed when the room roster is readable', () {
+      // Affiliation members (incl. offline) are known for private non-anon
+      // rooms; per-member PQ capability is checked at send time.
       final r = send(
         requested: Track.pq,
         snapshot: room([dev('me'), dev('alice')]),
       );
-      expect(r.canSend, isFalse);
-      expect(r.blocked, TrackBlocked.pqUnavailable);
+      expect(r.canSend, isTrue);
+      expect(r.blocked, isNull);
       expect(r.track, Track.pq);
     });
 
-    test('post-quantum is blocked even in a room that supports everything', () {
-      // The refusal is a property of rooms, not of the room we happen to be
-      // in. A snapshot that would satisfy every other check must not change it.
+    test('post-quantum still needs a joined readable room', () {
       final r = send(
         requested: Track.pq,
-        snapshot: room([dev('me'), dev('alice'), dev('bob')]),
+        snapshot: room([dev('me'), dev('alice')], joined: false),
       );
-      expect(r.blocked, TrackBlocked.pqUnavailable);
+      expect(r.canSend, isFalse);
+      expect(r.blocked, TrackBlocked.unknownPeers);
+      expect(r.track, Track.pq);
+    });
+
+    test('post-quantum blocks on an incomplete roster like standard', () {
+      final r = send(
+        requested: Track.pq,
+        snapshot: room([dev('me'), dev('alice')], complete: false),
+      );
+      expect(r.canSend, isFalse);
+      expect(r.blocked, TrackBlocked.unknownPeers);
     });
 
     test('plaintext is honoured, because the user asked for it', () {
@@ -536,15 +543,15 @@ void main() {
       expect(p.resolution.blocked, TrackBlocked.unknownPeers);
     });
 
-    test('post-quantum is refused here too', () {
+    test('post-quantum private PM is allowed when the occupant is known', () {
       final p = priv(
         snapshot: room([dev('me'), dev('alice')]),
         requested: Track.pq,
       );
-      expect(p.canSend, isFalse);
-      expect(p.resolution.blocked, TrackBlocked.pqUnavailable);
+      expect(p.canSend, isTrue);
+      expect(p.resolution.blocked, isNull);
       expect(p.resolution.track, Track.pq);
-      expect(p.address, isNull);
+      expect(p.address, isNotNull);
     });
 
     test('a room JID that is not bare is refused as malformed', () {

@@ -9,23 +9,158 @@
 // one of its occupants stored as two conversations shows half the messages in
 // one and half in the other.
 
+import 'package:moxxmpp/moxxmpp.dart';
 import 'package:test/test.dart';
 import 'package:resonchat/omemo/track.dart';
 import 'package:resonchat/omemo/track_resolver.dart';
 import 'package:resonchat/xmpp/muc.dart';
 
 void main() {
+  group('private non-anonymous (Conversations)', () {
+    test('both muc_membersonly and muc_nonanonymous are required', () {
+      expect(
+        isPrivateAndNonAnonymous(['muc_membersonly', 'muc_nonanonymous']),
+        isTrue,
+      );
+      expect(isPrivateAndNonAnonymous(['muc_membersonly']), isFalse);
+      expect(isPrivateAndNonAnonymous(['muc_nonanonymous']), isFalse);
+      expect(isPrivateAndNonAnonymous([]), isFalse);
+    });
+
+    test('crypto targets are member real JIDs, excluding ourselves', () {
+      final targets = mucCryptoTargets(
+        ourBareJid: 'me@example.org',
+        occupants: const [
+          Occupant(
+            nick: 'me',
+            affiliation: 'member',
+            role: 'participant',
+            realJid: 'me@example.org',
+          ),
+          Occupant(
+            nick: 'alice',
+            affiliation: 'member',
+            role: 'participant',
+            realJid: 'alice@example.org',
+          ),
+          Occupant(
+            nick: 'visitor',
+            affiliation: 'none',
+            role: 'visitor',
+            realJid: 'v@example.org',
+          ),
+          Occupant(
+            nick: 'anon',
+            affiliation: 'member',
+            role: 'participant',
+          ),
+        ],
+      );
+      expect(targets, ['alice@example.org']);
+    });
+
+    test('private non-anon display includes offline affiliation members', () {
+      // Conversations getUsers: affiliation stubs + online presence.
+      const offline = Occupant(
+        nick: 'bob',
+        affiliation: 'member',
+        role: 'none',
+        realJid: 'bob@example.org',
+      );
+      const online = Occupant(
+        nick: 'alice',
+        affiliation: 'member',
+        role: 'participant',
+        realJid: 'alice@example.org',
+      );
+      final display = roomMembersForDisplay(
+        privateNonAnonymous: true,
+        affiliation: const [offline, online],
+        online: const [online],
+      );
+      expect(display.map((o) => o.realJid).toSet(), {
+        'bob@example.org',
+        'alice@example.org',
+      });
+      final targets = mucCryptoTargets(
+        occupants: display,
+        ourBareJid: 'me@example.org',
+      );
+      expect(targets.toSet(), {'bob@example.org', 'alice@example.org'});
+    });
+
+    test('other rooms display only online occupants', () {
+      // Conversations getOnlineUsers — no affiliation fetch.
+      const offline = Occupant(
+        nick: 'bob',
+        affiliation: 'member',
+        role: 'none',
+        realJid: 'bob@example.org',
+      );
+      const online = Occupant(
+        nick: 'alice',
+        affiliation: 'none',
+        role: 'participant',
+        realJid: 'alice@example.org',
+      );
+      final display = roomMembersForDisplay(
+        privateNonAnonymous: false,
+        affiliation: const [offline],
+        online: const [online],
+      );
+      expect(display, [online]);
+    });
+
+    test('online presence overlays affiliation stub for the same real JID', () {
+      const stub = Occupant(
+        nick: 'alice',
+        affiliation: 'member',
+        role: 'none',
+        realJid: 'alice@example.org',
+      );
+      const live = Occupant(
+        nick: 'AliceNick',
+        affiliation: 'member',
+        role: 'moderator',
+        realJid: 'alice@example.org',
+      );
+      final merged = mergeRoomMembers(
+        affiliation: const [stub],
+        online: const [live],
+      );
+      expect(merged, [live]);
+    });
+
+    test('muc#admin item parses to an offline member stub', () {
+      final item = XMLNode(
+        tag: 'item',
+        attributes: {
+          'affiliation': 'member',
+          'jid': 'bob@example.org/phone',
+          'nick': 'Bob',
+        },
+      );
+      final o = occupantFromAdminItem(item);
+      expect(o?.realJid, 'bob@example.org');
+      expect(o?.nick, 'Bob');
+      expect(o?.affiliation, 'member');
+      expect(o?.role, 'none');
+      expect(o?.isOnline, isFalse);
+    });
+  });
+
   group('addresses', () {
-    test('a room message goes to room@server/nick, never to the bare room',
+    test('presence and PMs use room@server/nick; groupchat uses the bare room',
         () {
-      // The single most common MUC bug, and it fails silently: the server
-      // accepts a stanza addressed to the room and delivers it to nobody.
+      // Join presence is full JID; group messages are type=groupchat to bare
+      // (XEP-0045 / Conversations). myAddress is the occupant address only.
       const chat = GroupChat(
         roomJid: 'room@conference.example.org',
         nick: 'me',
         occupants: [],
       );
       expect(chat.myAddress, 'room@conference.example.org/me');
+      expect(chat.roomJid, 'room@conference.example.org');
     });
 
     test('the room JID and the occupant address are the same conversation', () {

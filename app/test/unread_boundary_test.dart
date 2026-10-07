@@ -124,7 +124,18 @@ void main() {
       final list = await messages();
       // The undecryptable row's id is whatever was stored, so assert on the
       // position rather than a hard-coded id.
-      expect(firstUnreadId(list, at(4)), list.single.stanzaId);
+      expect(firstUnreadId(list, at(4)), unreadAnchorOf(list.single));
+    });
+
+    test('unread count places a boundary when the marker finds none', () async {
+      // Same-second race: last_read_at equals the message timestamp so
+      // isAfter finds nothing, but the badge still says unread.
+      await seed('m1', 1);
+      await seed('m2', 2);
+      await seed('m3', 3);
+      final list = await messages();
+      expect(firstUnreadId(list, at(3), unreadCount: 0), isNull);
+      expect(firstUnreadId(list, at(3), unreadCount: 2), 'm2');
     });
   });
 }

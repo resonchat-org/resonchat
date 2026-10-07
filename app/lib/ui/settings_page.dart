@@ -69,7 +69,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                       onChanged: (value) {
                         if (value != null) setGlobalTrack(ref, value);
                       },
-                      title: Text('${track.label}  ${track.description}'),
+                      title: Text(
+                        '${track.label}  ${track.localizedDescription(l10n)}',
+                      ),
                       secondary: Icon(
                         track.icon,
                         color: track == Track.none

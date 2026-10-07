@@ -5,9 +5,12 @@
 // `ChatActivity` (GPL-2.0-or-later), translated to Flutter.
 
 import 'dart:async';
+import 'dart:io';
 
 import 'package:drift/drift.dart' hide Column;
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:moxxmpp/moxxmpp.dart' show JID;
@@ -22,6 +25,7 @@ import '../state/providers.dart';
 import '../store/database.dart';
 import '../xmpp/connection.dart';
 import '../xmpp/forwarding.dart';
+import '../xmpp/local_nickname.dart';
 import '../xmpp/reactions.dart';
 import '../xmpp/retraction.dart';
 import '../xmpp/replies.dart';
@@ -36,9 +40,17 @@ import 'theme.dart';
 import 'unread.dart';
 
 class ChatPage extends ConsumerStatefulWidget {
-  const ChatPage({super.key, required this.chatJid});
+  const ChatPage({
+    super.key,
+    required this.chatJid,
+    this.focusMessageAnchor,
+  });
 
   final String chatJid;
+
+  /// When set (e.g. from search), open scrolled to this message instead of
+  /// unread / bottom. Same encoding as [unreadAnchorOf].
+  final String? focusMessageAnchor;
 
   @override
   ConsumerState<ChatPage> createState() => _ChatPageState();
@@ -79,29 +91,89 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   /// the text inside every row.
   final _unreadDividerKey = GlobalKey();
 
-  /// Scrolls to the unread boundary.
+  /// Key attached to the search-focus message row.
+  final _focusMessageKey = GlobalKey();
+
+  /// Override from in-chat search; [ChatPage.focusMessageAnchor] for deep links.
+  String? _focusMessageAnchor;
+
+  String? get _activeFocusAnchor =>
+      _focusMessageAnchor ?? widget.focusMessageAnchor;
+
+  /// Scrolls so [key]'s render object sits near [alignment] in the viewport.
   ///
-  /// No-op when there is nothing unread, or when the divider is not currently
-  /// built — which happens when the read marker is newer than everything we
-  /// hold, and is exactly the case where jumping would land on nothing.
-  void _jumpToUnread() {
-    final context = _unreadDividerKey.currentContext;
-    if (context == null) return;
-    unawaited(
-      Scrollable.ensureVisible(
-        context,
-        // A third of the way down rather than centred: the usual reason to jump
-        // is to compare what is new against what was just read, and centring
-        // the target hides the messages above it.
-        alignment: 0.33,
-        duration: const Duration(milliseconds: 280),
-        curve: Curves.easeOut,
+  /// Uses [RenderAbstractViewport.getOffsetToReveal] rather than
+  /// [Scrollable.ensureVisible]: the transcript sits under a [CustomPaint]
+  /// wallpaper, and ensureVisible has been a silent no-op there.
+  void _jumpToKeyedWidget(
+    GlobalKey key, {
+    bool animate = true,
+    double alignment = 0.33,
+  }) {
+    final target = key.currentContext;
+    if (target == null || !_scroll.hasClients) return;
+    final renderObject = target.findRenderObject();
+    if (renderObject == null || !renderObject.attached) return;
+    final viewport = RenderAbstractViewport.maybeOf(renderObject);
+    if (viewport == null) return;
+    final revealed = viewport.getOffsetToReveal(renderObject, alignment).offset;
+    final offset = revealed.clamp(
+      _scroll.position.minScrollExtent,
+      _scroll.position.maxScrollExtent,
+    );
+    if (animate) {
+      unawaited(
+        _scroll.animateTo(
+          offset,
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeOut,
+        ),
+      );
+    } else {
+      _scroll.jumpTo(offset);
+    }
+  }
+
+  void _jumpToUnread({bool animate = true}) =>
+      _jumpToKeyedWidget(_unreadDividerKey, animate: animate);
+
+  void _jumpToFocusMessage({bool animate = true}) =>
+      _jumpToKeyedWidget(_focusMessageKey, animate: animate, alignment: 0.35);
+
+  Future<void> _openInChatSearch() async {
+    final hit = await Navigator.of(context).push<SearchHit>(
+      MaterialPageRoute(
+        builder: (_) => SearchPage(chatJid: widget.chatJid),
       ),
     );
+    if (!mounted || hit == null) return;
+    setState(() => _focusMessageAnchor = hit.messageAnchor);
+    void jump({required int attempt}) {
+      if (!mounted) return;
+      if (_focusMessageKey.currentContext != null && _scroll.hasClients) {
+        _jumpToFocusMessage();
+        return;
+      }
+      if (attempt < 12) {
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => jump(attempt: attempt + 1),
+        );
+      }
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) => jump(attempt: 0));
   }
 
   /// Guards against a double tap sending twice while the first send awaits.
   bool _sending = false;
+
+  /// True while the system file picker is open — freezes the chat behind it.
+  bool _pickingFile = false;
+
+  /// True after the first open has positioned the transcript.
+  ///
+  /// Priority: search focus → unread divider → latest message.
+  bool _didInitialScroll = false;
 
   /// The message being corrected, or null. Held as an id rather than a row so
   /// an edit survives the list rebuilding underneath it.
@@ -135,6 +207,13 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   /// user is typing into — every time somebody joins is not acceptable.
   GroupChat? _room;
   String? _roomJid;
+
+  /// Conversations MODE_MULTI — from the chat row, never from parsing the JID.
+  bool _isGroup = false;
+  String _mucNick = '';
+
+  /// Conversations `isPrivateAndNonAnonymous` — OMEMO allowed only then.
+  bool _mucEncryptable = false;
 
   @override
   void initState() {
@@ -172,18 +251,57 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     // Marking on "a message scrolled past" would be worse: a message the user
     // scrolled past deliberately, on purpose, is not unread.
 
-    final parsed = GroupChat.parseAddress(widget.chatJid);
-    if (parsed != null) {
-      _roomJid = parsed.roomJid;
-      unawaited(_loadRoom());
-    }
+    unawaited(_bootstrapRoom());
     // Conversations sends <displayed/> when the conversation is marked read
     // (opening / viewing). Fire once the first frame is up so unread inbound
     // messages get a read receipt without waiting until the user leaves.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      unawaited(_sendDisplayedForLatest());
+      // Groupchat does not use 1:1 displayed markers the same way.
+      if (!_isGroup) unawaited(_sendDisplayedForLatest());
     });
+  }
+
+  /// Loads MODE_MULTI state from the chat row (bare room JID + nick).
+  Future<void> _bootstrapRoom() async {
+    final row = await ref.read(databaseProvider).getChat(widget.chatJid);
+    if (!mounted || row == null || !row.isGroup) return;
+    setState(() {
+      _isGroup = true;
+      _mucNick = row.mucNick;
+      _mucEncryptable = row.mucPrivateNonAnonymous;
+      _roomJid = widget.chatJid;
+    });
+    await _loadRoom();
+    await _refreshRoomEncryptable();
+  }
+
+  /// Re-query disco so OMEMO availability matches Conversations after join.
+  Future<void> _refreshRoomEncryptable() async {
+    final jid = _roomJid;
+    if (jid == null) return;
+    final xmpp = ref.read(xmppServiceProvider);
+    final features = await xmpp.queryRoomFeatures(jid);
+    final encryptable = isPrivateAndNonAnonymous(features);
+    // Conversations fetchMembers when private+non-anonymous.
+    await xmpp.refreshRoomMembership(
+      jid,
+      privateNonAnonymous: encryptable,
+    );
+    await ref.read(databaseProvider).upsertChat(
+          jid,
+          isGroup: true,
+          mucPrivateNonAnonymous: encryptable,
+        );
+    if (!mounted) return;
+    if (encryptable != _mucEncryptable) {
+      setState(() => _mucEncryptable = encryptable);
+    }
+    // Affiliation fetch may have added offline members — reload the list.
+    ref.invalidate(roomStateProvider(jid));
+    final chat = await ref.read(roomStateProvider(jid).future);
+    if (!mounted || chat == null) return;
+    setState(() => _room = chat);
   }
 
   /// Sends XEP-0333 displayed for the newest markable inbound message.
@@ -306,6 +424,11 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   /// composing on first non-empty keystroke, paused after idle timeout,
   /// active when the box is cleared.
   void _onInputChanged(String value) {
+    if (_isGroup) {
+      // Groupchat chat-states are not the 1:1 typing model.
+      unawaited(saveDraft(ref, widget.chatJid, value));
+      return;
+    }
     // The draft is saved on every keystroke rather than on leaving the page,
     // because "leaving" includes the app being killed and the conversation
     // being switched from a notification — none of which give us a callback.
@@ -379,6 +502,55 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     );
   }
 
+  /// Instant jump used on first open (and after layout settles).
+  void _jumpToBottom() {
+    if (!_scroll.hasClients) return;
+    _scroll.jumpTo(_scroll.position.maxScrollExtent);
+    if (!_atBottom) setState(() => _atBottom = true);
+  }
+
+  /// Open position: search hit, else unread divider, else the latest message.
+  ///
+  /// Search focus waits until the keyed row has laid out (several frames if
+  /// needed). Marking done only after a successful jump stops a race where the
+  /// first layout still has no key and the fallback would land on unread /
+  /// bottom instead of the hit.
+  void _ensureInitialScroll() {
+    if (_didInitialScroll) return;
+    void place({required int attempt}) {
+      if (!mounted || _didInitialScroll) return;
+      final focus = _activeFocusAnchor;
+      if (focus != null) {
+        if (_focusMessageKey.currentContext != null && _scroll.hasClients) {
+          _didInitialScroll = true;
+          _jumpToFocusMessage(animate: false);
+          if (_atBottom) setState(() => _atBottom = false);
+          // Layout extents often settle one frame later — re-snap once.
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _jumpToFocusMessage(animate: false);
+          });
+          return;
+        }
+        if (attempt < 12) {
+          WidgetsBinding.instance.addPostFrameCallback(
+            (_) => place(attempt: attempt + 1),
+          );
+          return;
+        }
+        // Hit not in the loaded transcript — fall through.
+      }
+      _didInitialScroll = true;
+      if (_unreadDividerKey.currentContext != null) {
+        _jumpToUnread(animate: false);
+        if (_atBottom) setState(() => _atBottom = false);
+      } else {
+        _jumpToBottom();
+      }
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) => place(attempt: 0));
+  }
+
   /// Restores the saved draft into the input.
   ///
   /// Only once, and only if the field is still empty — otherwise a rebuild
@@ -415,60 +587,24 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final xmpp = ref.read(xmppServiceProvider);
     final peer = JID.fromString(widget.chatJid).toBare();
 
-    final caps = await xmpp.capabilitiesFor(peer);
-    final resolution = resolveTrack(requested: chosen, capabilities: caps);
-
-    // Choosing plaintext always asks, whatever the peer supports. The
-    // confirmation is about the act, not about the capability check.
-    if (chosen == Track.none) {
-      final alternative = resolution.alternative ?? Track.standard;
-      if (!mounted) return null;
-      // Asked once per conversation, not once per message. A warning that
-      // fires on every send is a warning nobody reads, and the message it
-      // would have covered is exactly the one that goes out in the clear
-      // unread.
-      final db = ref.read(databaseProvider);
-      final acknowledged = await db.plaintextAcknowledged(widget.chatJid);
-      if (!mounted) return null;
-      if (!acknowledged) {
-        final agreed = await confirmPlaintext(
-          context,
-          contact: widget.chatJid,
-          alternative: alternative,
-        );
-        if (!agreed || !mounted) return null;
-        await db.acknowledgePlaintext(widget.chatJid);
-      }
-    } else if (!resolution.canSend) {
-      // Refuse and explain. Nothing is sent here, and nothing is sent on
-      // another track without a separate decision from the user.
-      final alternative = resolution.alternative ?? Track.standard;
-      if (!mounted) return null;
-      final substituted = await askTrackSubstitute(
-        context,
-        blocked: resolution.blocked!,
-        alternative: alternative,
-      );
-      if (substituted == null || !mounted) return null;
-      if (substituted == Track.none) {
-        if (!mounted) return null;
-        // Deliberate downgrade to plaintext, reached from a dialog rather than
-        // from the picker: worth confirming even in a conversation that has
-        // already acknowledged plaintext, because the user did not choose this
-        // one — they were offered it as the only way the message gets through.
-        final agreed = await confirmPlaintext(
-          context,
-          contact: widget.chatJid,
-          alternative: Track.standard,
-        );
-        if (!agreed || !mounted) return null;
-      }
-      chosen = substituted;
+    // Public / anonymous rooms: plaintext only (Conversations).
+    if (_isGroup && !_mucEncryptable) {
+      chosen = Track.none;
     }
 
+    final resolved = await _resolveTrackForSend(chosen);
+    if (resolved == null) return null;
+    chosen = resolved;
+
     final reply = _replyingTo;
+    final messageType = _isGroup ? 'groupchat' : 'chat';
     final outcome = reply == null
-        ? await xmpp.sendOnTrack(peer, text, track: chosen)
+        ? await xmpp.sendOnTrack(
+            peer,
+            text,
+            track: chosen,
+            messageType: messageType,
+          )
         : await sendReply(
             xmpp,
             to: peer,
@@ -476,6 +612,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
             targetId: reply.id,
             track: chosen,
             quoteBody: reply.body,
+            messageType: messageType,
           );
     if (!outcome.sent) {
       // It was sendable a moment ago and is not now — a bundle went stale, or
@@ -515,6 +652,175 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     return outcome;
   }
 
+  Future<void> _attachFile() async {
+    if (_sending || _pickingFile) return;
+    final xmpp = ref.read(xmppServiceProvider);
+    // Button is disabled when upload is unavailable; keep this as a guard.
+    if (!await xmpp.httpFiles.isAvailable()) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.httpUploadUnavailable)),
+      );
+      return;
+    }
+    setState(() => _pickingFile = true);
+    // Paint the barrier before the native picker steals the next frame.
+    await WidgetsBinding.instance.endOfFrame;
+    FilePickerResult? picked;
+    try {
+      picked = await FilePicker.platform.pickFiles(withData: false);
+    } finally {
+      if (mounted) setState(() => _pickingFile = false);
+    }
+    if (!mounted || picked == null || picked.files.isEmpty) return;
+    final path = picked.files.single.path;
+    if (path == null || path.isEmpty) return;
+
+    final track = _isGroup && !_mucEncryptable
+        ? Track.none
+        : await ref.read(chatTrackProvider(widget.chatJid).future);
+    final peer = JID.fromString(widget.chatJid);
+    _sending = true;
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.uploadingFile)),
+      );
+    }
+    try {
+      // Same resolve / substitute dialog as text (incl. MUC PQ → standard).
+      final Track? outcomeTrack;
+      if (_isGroup && !_mucEncryptable) {
+        outcomeTrack = await _resolveTrackForSend(Track.none);
+      } else {
+        outcomeTrack = await _resolveTrackForSend(track);
+      }
+      if (outcomeTrack == null) return;
+
+      final uploaded = await xmpp.httpFiles.uploadFile(
+        File(path),
+        encrypt: outcomeTrack != Track.none,
+      );
+      final cached = await xmpp.httpFiles.cacheLocalCopy(
+        File(path),
+        preferredName: uploaded.fileName,
+      );
+      final outcome = await xmpp.sendOnTrack(
+        peer,
+        uploaded.shareUrl,
+        track: outcomeTrack,
+        oobUrl: uploaded.shareUrl,
+        messageType: _isGroup ? 'groupchat' : 'chat',
+      );
+      if (!outcome.sent) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Not sent: ${outcome.blocked?.title ?? 'unknown reason'}',
+              ),
+            ),
+          );
+        }
+        return;
+      }
+      await ref.read(databaseProvider).insertMessage(
+            MessagesCompanion(
+              chatJid: Value(widget.chatJid),
+              sender: const Value('me'),
+              stanzaId: Value(outcome.stanzaId ?? ''),
+              body: Value(uploaded.shareUrl),
+              timestamp: Value(DateTime.now()),
+              encMode: Value(EncModeToken.of(outcome.track).wire),
+              incoming: const Value(false),
+              mediaUrl: Value(uploaded.shareUrl),
+              mediaMime: Value(uploaded.mime),
+              mediaName: Value(uploaded.fileName),
+              localPath: Value(cached.path),
+            ),
+          );
+      if (mounted) {
+        WidgetsBinding.instance
+            .addPostFrameCallback((_) => _scrollToBottom());
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(context.l10n.uploadFailed('$e'))),
+        );
+      }
+    } finally {
+      _sending = false;
+    }
+  }
+
+  /// Track resolution / plaintext confirm — shared by 1:1 and MUC.
+  ///
+  /// When the chosen track cannot be used, shows [askTrackSubstitute]
+  /// (e.g. PQ unavailable → offer standard), never silently downgrades.
+  Future<Track?> _resolveTrackForSend(Track track) async {
+    var chosen = track;
+    final xmpp = ref.read(xmppServiceProvider);
+    final peer = JID.fromString(widget.chatJid).toBare();
+
+    final TrackResolution resolution;
+    if (_isGroup) {
+      if (!_mucEncryptable) {
+        // Already forced to none by the caller for public/anonymous rooms.
+        resolution = const TrackResolution(track: Track.none, blocked: null);
+        chosen = Track.none;
+      } else {
+        resolution = await xmpp.resolveGroupchatTrack(
+          roomJid: peer.toString(),
+          requested: chosen,
+        );
+      }
+    } else {
+      final caps = await xmpp.capabilitiesFor(peer);
+      resolution = resolveTrack(requested: chosen, capabilities: caps);
+    }
+
+    if (chosen == Track.none) {
+      final alternative = resolution.alternative ??
+          (_mucEncryptable || !_isGroup ? Track.standard : Track.none);
+      if (!mounted) return null;
+      // Asked once per conversation, not once per message.
+      final db = ref.read(databaseProvider);
+      final acknowledged = await db.plaintextAcknowledged(widget.chatJid);
+      if (!mounted) return null;
+      if (!acknowledged) {
+        final agreed = await confirmPlaintext(
+          context,
+          contact: widget.chatJid,
+          alternative: alternative,
+        );
+        if (!agreed || !mounted) return null;
+        await db.acknowledgePlaintext(widget.chatJid);
+      }
+    } else if (!resolution.canSend) {
+      // Refuse and explain. Nothing is sent here, and nothing is sent on
+      // another track without a separate decision from the user.
+      final alternative = resolution.alternative ?? Track.standard;
+      if (!mounted || resolution.blocked == null) return null;
+      final substituted = await askTrackSubstitute(
+        context,
+        blocked: resolution.blocked!,
+        alternative: alternative,
+      );
+      if (substituted == null || !mounted) return null;
+      if (substituted == Track.none) {
+        // Deliberate downgrade to plaintext from the substitute dialog.
+        final agreed = await confirmPlaintext(
+          context,
+          contact: widget.chatJid,
+          alternative: Track.standard,
+        );
+        if (!agreed || !mounted) return null;
+      }
+      chosen = substituted;
+    }
+    return chosen;
+  }
+
   Future<void> _send() async {
     if (_sending) return;
     final track = await ref.read(chatTrackProvider(widget.chatJid).future);
@@ -529,14 +835,16 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       unawaited(saveDraft(ref, widget.chatJid, null));
       // Composer emptied → active (same as onTextDeleted).
       _typingNotified = false;
-      unawaited(
-        ref
-            .read(xmppServiceProvider)
-            .sendChatState(
-              JID.fromString(widget.chatJid),
-              TypingState.inactive,
-            ),
-      );
+      if (!_isGroup) {
+        unawaited(
+          ref
+              .read(xmppServiceProvider)
+              .sendChatState(
+                JID.fromString(widget.chatJid),
+                TypingState.inactive,
+              ),
+        );
+      }
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
     } else if (text.isNotEmpty && mounted) {
       // Put the text back. It was never sent, and a user who typed a message
@@ -610,17 +918,31 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   Future<void> _loadRoom() async {
     final jid = _roomJid;
     if (jid == null) return;
-    final chat = await ref.read(roomStateProvider(jid).future);
-    if (!mounted || chat == null) return;
-    setState(() {
-      _room = chat;
-      // Join on first open. Doing it here rather than from a button means the
-      // conversation the user tapped is one they can talk in, which is what
-      // they were asking for by tapping it.
-      if (!chat.joined) {
-        unawaited(ref.read(xmppServiceProvider).joinGroupChat(chat.roomJid, chat.nick));
+    var nick = _mucNick;
+    if (nick.isEmpty) {
+      final row = await ref.read(databaseProvider).getChat(jid);
+      nick = row?.mucNick ?? '';
+      if (nick.isNotEmpty && mounted) {
+        setState(() => _mucNick = nick);
       }
-    });
+    }
+    var chat = await ref.read(roomStateProvider(jid).future);
+    // Join with the stored nick when the MUC cache has nothing yet
+    // (Conversations joinMuc on open / connect).
+    if ((chat == null || !chat.joined) && nick.isNotEmpty) {
+      final err =
+          await ref.read(xmppServiceProvider).joinGroupChat(jid, nick);
+      if (!mounted) return;
+      if (err != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$err')),
+        );
+      }
+      ref.invalidate(roomStateProvider(jid));
+      chat = await ref.read(roomStateProvider(jid).future);
+    }
+    if (!mounted || chat == null) return;
+    setState(() => _room = chat);
   }
 
   Future<void> _showPinned() async {
@@ -651,6 +973,13 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     if (!mounted || result == null) return;
     if (result.leaving) {
       await ref.read(xmppServiceProvider).leaveGroupChat(chat.roomJid);
+      // Keep isGroup; clear nick so connect does not auto-rejoin until they
+      // join again (bookmark autojoin can restore nick later).
+      await ref.read(databaseProvider).upsertChat(
+            chat.roomJid,
+            isGroup: true,
+            mucNick: '',
+          );
       if (mounted) Navigator.of(context).maybePop();
       return;
     }
@@ -714,7 +1043,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
           Clipboard.setData(ClipboardData(text: body)).then((_) {
             if (!mounted) return;
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Copied')),
+              SnackBar(content: Text(context.l10n.copied)),
             );
           }),
         );
@@ -971,9 +1300,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
   void _showUnsentNotice() {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Message not sent. It is still in the box.'),
-        duration: Duration(seconds: 4),
+      SnackBar(
+        content: Text(context.l10n.messageNotSentSnack),
+        duration: const Duration(seconds: 4),
       ),
     );
   }
@@ -983,12 +1312,13 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         .read(xmppServiceProvider)
         .fetchHistory(JID.fromString(widget.chatJid));
     if (!mounted) return;
+    final l10n = context.l10n;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
           count == null
-              ? 'Could not load history (server may not support MAM)'
-              : 'Loaded $count archived message(s)',
+              ? l10n.couldNotLoadHistory
+              : l10n.loadedArchivedMessages(count),
         ),
       ),
     );
@@ -1025,36 +1355,60 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   @override
   Widget build(BuildContext context) {
     final tg = context.tg;
+    final l10n = context.l10n;
     final messages = ref.watch(messagesProvider(widget.chatJid));
     // The chosen track, not the negotiated one. The header says what the user
     // picked; whether it can actually be used is decided at send time and
     // explained there if not.
-    final track = ref.watch(chatTrackProvider(widget.chatJid)).value ??
-        Track.standard;
+    final track = _isGroup && !_mucEncryptable
+        ? Track.none
+        : ref.watch(chatTrackProvider(widget.chatJid)).value ?? Track.standard;
     final appearance =
         ref.watch(chatAppearanceProvider(widget.chatJid)).value ??
             const ChatAppearance();
+    final attachEnabled =
+        ref.watch(httpUploadAvailableProvider).value ?? false;
+    final chatRow = ref.watch(chatProvider(widget.chatJid)).value;
+    final title = displayName(
+      localNickname: null,
+      rosterTitle: chatRow?.title ?? '',
+      jid: widget.chatJid,
+      isRoom: _isGroup,
+    );
     // Watched so a draft saved here is read back into the field; see
     // _restoreDraft for why it only happens once.
     ref.watch(draftProvider(widget.chatJid));
     _restoreDraft();
 
-    return Scaffold(
+    return Stack(
+      children: [
+        Scaffold(
       appBar: AppBar(
         titleSpacing: 0,
         title: Row(
           children: [
-            // Tapping the avatar opens the profile, as in every other
-            // messenger; an inert avatar is a dead end.
+            // Rooms open the member list; contacts open the profile.
             GestureDetector(
-              onTap: () =>
-                  Navigator.of(context).pushNamed('/profile', arguments: widget.chatJid),
-              child: ContactAvatar(
-                jid: widget.chatJid,
-                title: widget.chatJid,
-                radius: TgDimens.avatarChat / 2,
-                hero: true,
-              ),
+              onTap: _isGroup
+                  ? _showMembers
+                  : () => Navigator.of(context)
+                      .pushNamed('/profile', arguments: widget.chatJid),
+              child: _isGroup
+                  ? CircleAvatar(
+                      radius: TgDimens.avatarChat / 2,
+                      backgroundColor: tg.accent.withValues(alpha: 0.18),
+                      child: Icon(
+                        Icons.groups_outlined,
+                        color: tg.accent,
+                        size: TgDimens.avatarChat * 0.55,
+                      ),
+                    )
+                  : ContactAvatar(
+                      jid: widget.chatJid,
+                      title: title,
+                      radius: TgDimens.avatarChat / 2,
+                      hero: true,
+                    ),
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -1063,18 +1417,23 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
-                    widget.chatJid,
+                    title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                   Text(
-                    _peerStatusSubtitle(context, track),
+                    _isGroup
+                        ? (_room == null
+                            ? l10n.joining
+                            : l10n.membersInRoom(_room!.occupants.length))
+                        : _peerStatusSubtitle(context, track),
                     style: TextStyle(
                       fontSize: TgDimens.timeFontSize,
                       fontWeight: FontWeight.w400,
                       color: Colors.white70,
-                      fontStyle: _peerTyping == TypingState.composing ||
-                              _peerTyping == TypingState.paused
+                      fontStyle: !_isGroup &&
+                              (_peerTyping == TypingState.composing ||
+                                  _peerTyping == TypingState.paused)
                           ? FontStyle.italic
                           : FontStyle.normal,
                     ),
@@ -1085,29 +1444,26 @@ class _ChatPageState extends ConsumerState<ChatPage> {
           ],
         ),
         actions: [
-          EncBadge(
-            label: track.label,
-            locked: track != Track.none,
-            onTap: () => showTrackPicker(context, ref, widget.chatJid),
-          ),
-          if (_room != null)
+          if (!_isGroup || _mucEncryptable)
+            EncBadge(
+              label: track.label,
+              locked: track != Track.none,
+              onTap: () => showTrackPicker(context, ref, widget.chatJid),
+            ),
+          if (_isGroup)
             IconButton(
               icon: const Icon(Icons.group_outlined),
-              tooltip: 'Members',
+              tooltip: l10n.members,
               onPressed: _showMembers,
             ),
           IconButton(
             icon: const Icon(Icons.search),
-            tooltip: 'Search in this chat',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => SearchPage(chatJid: widget.chatJid),
-              ),
-            ),
+            tooltip: l10n.searchInChat,
+            onPressed: _openInChatSearch,
           ),
           IconButton(
             icon: const Icon(Icons.palette_outlined),
-            tooltip: 'Appearance',
+            tooltip: l10n.appearance,
             onPressed: () => showModalBottomSheet<void>(
               context: context,
               isScrollControlled: true,
@@ -1124,19 +1480,20 @@ class _ChatPageState extends ConsumerState<ChatPage> {
           ),
           IconButton(
             icon: const Icon(Icons.push_pin_outlined),
-            tooltip: 'Pinned messages',
+            tooltip: l10n.pinnedMessages,
             onPressed: _showPinned,
           ),
           IconButton(
             icon: const Icon(Icons.history),
-            tooltip: 'Load history (MAM)',
+            tooltip: l10n.loadHistoryMam,
             onPressed: _loadHistory,
           ),
         ],
       ),
       body: Column(
         children: [
-          _SubscriptionBanner(chatJid: widget.chatJid),
+          // Rooms are not roster contacts — no subscription banner.
+          if (!_isGroup) _SubscriptionBanner(chatJid: widget.chatJid),
           if (_advice != null)
             TrackAdviceBanner(
               advice: _advice!,
@@ -1160,22 +1517,29 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                   seed: widget.chatJid,
                 ),
                 child: messages.when(
-                  data: (list) => _MessageList(
-                    messages: list,
-                    scroll: _scroll,
-                    onRetryDecrypt: () =>
-                        _loadHistory(),
-                    onReact: _toggleReaction,
-                    onMenu: _showMessageMenu,
-                    onToggleSelected: _toggleSelected,
-                    selectionMode: _selectionMode,
-                    selectedIds: _selection,
-                    readAt: ref
-                        .watch(chatLastReadProvider(widget.chatJid))
-                        .value,
-                    unreadDividerKey: _unreadDividerKey,
-                    bubbleStyle: appearance.bubble,
-                  ),
+                  data: (list) {
+                    if (list.isNotEmpty) _ensureInitialScroll();
+                    return _MessageList(
+                      messages: list,
+                      scroll: _scroll,
+                      onRetryDecrypt: () =>
+                          _loadHistory(),
+                      onReact: _toggleReaction,
+                      onMenu: _showMessageMenu,
+                      onToggleSelected: _toggleSelected,
+                      selectionMode: _selectionMode,
+                      selectedIds: _selection,
+                      readAt: ref
+                          .watch(chatLastReadProvider(widget.chatJid))
+                          .value,
+                      unreadCount: _unreadCountHere ?? 0,
+                      unreadDividerKey: _unreadDividerKey,
+                      focusMessageAnchor: _activeFocusAnchor,
+                      focusMessageKey: _focusMessageKey,
+                      bubbleStyle: appearance.bubble,
+                      isGroup: _isGroup,
+                    );
+                  },
                   loading: () =>
                       const Center(child: CircularProgressIndicator()),
                   error: (e, _) => Center(child: Text('$e')),
@@ -1214,6 +1578,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
               focusNode: _focus,
               onChanged: _onInputChanged,
               onSend: _send,
+              onAttach: _attachFile,
+              attachEnabled: attachEnabled,
             ),
           if (_reactingToId != null)
             QuickReactionBar(
@@ -1234,26 +1600,41 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       floatingActionButton: _atBottom
           ? null
           : _scrollButton(tg),
+        ),
+        // Covers app bar, transcript, FAB, and input while the OS picker is up
+        // so nothing behind it can be tapped or scrolled.
+        if (_pickingFile)
+          const ModalBarrier(
+            dismissible: false,
+            color: Color(0x66000000),
+          ),
+      ],
     );
   }
 
   /// The scroll button, which is one of two things depending on whether there is
   /// anything unread.
   Widget _scrollButton(TgColors tg) {
+    final l10n = context.l10n;
     final unread = _unreadCountHere ?? 0;
-    final hasUnread = unread > 0;
+    final hasUnreadDivider = unread > 0 &&
+        _unreadDividerKey.currentContext != null;
     return FloatingActionButton.small(
-      backgroundColor: hasUnread ? tg.accent : tg.peerBubble,
+      backgroundColor: hasUnreadDivider ? tg.accent : tg.peerBubble,
       // White on the accent, and the accent on the pale bubble: both pairs are
       // legible, and the colour difference is what tells the two states apart
       // without reading the icon.
-      foregroundColor: hasUnread ? Colors.white : tg.accent,
-      tooltip: hasUnread
-          ? 'Jump to the first unread message'
-          : 'Scroll to the latest',
-      onPressed: hasUnread ? _jumpToUnread : _scrollToBottom,
+      foregroundColor: hasUnreadDivider ? Colors.white : tg.accent,
+      tooltip: hasUnreadDivider
+          ? l10n.jumpToFirstUnread
+          : l10n.scrollToLatest,
+      onPressed: hasUnreadDivider
+          ? () => _jumpToUnread()
+          : _scrollToBottom,
       child: Icon(
-        hasUnread ? Icons.keyboard_double_arrow_up : Icons.keyboard_arrow_down,
+        hasUnreadDivider
+            ? Icons.keyboard_double_arrow_up
+            : Icons.keyboard_arrow_down,
       ),
     );
   }
@@ -1271,8 +1652,12 @@ class _MessageList extends StatelessWidget {
     required this.selectionMode,
     required this.selectedIds,
     required this.readAt,
+    required this.unreadCount,
     required this.unreadDividerKey,
+    required this.focusMessageAnchor,
+    required this.focusMessageKey,
     required this.bubbleStyle,
+    required this.isGroup,
   });
 
   final List<Message> messages;
@@ -1301,16 +1686,27 @@ class _MessageList extends StatelessWidget {
   /// boundary goes.
   final DateTime? readAt;
 
+  /// Badge count; used when the read marker alone cannot place a divider.
+  final int unreadCount;
+
   /// Key the unread divider is built with, so the page can scroll to it.
   final GlobalKey unreadDividerKey;
+
+  /// Search / deep-link target; when set, that row gets [focusMessageKey].
+  final String? focusMessageAnchor;
+
+  final GlobalKey focusMessageKey;
 
   /// Corner shape of the bubbles, from this conversation's appearance.
   final BubbleStyle bubbleStyle;
 
+  /// MODE_MULTI: show occupant nicks above incoming bubbles.
+  final bool isGroup;
+
   @override
   Widget build(BuildContext context) {
     if (messages.isEmpty) {
-      return const Center(child: Text('No messages yet'));
+      return Center(child: Text(context.l10n.noMessagesYet));
     }
 
     final rows = <Widget>[];
@@ -1320,7 +1716,11 @@ class _MessageList extends StatelessWidget {
     // everything we hold (a chat read on another device) — in which case no
     // divider is drawn at all, because a divider with nothing above it is a
     // line across the top of an empty conversation.
-    final firstUnread = firstUnreadId(messages, readAt);
+    final firstUnread = firstUnreadId(
+      messages,
+      readAt,
+      unreadCount: unreadCount,
+    );
     bool unreadMarked = firstUnread == null;
 
     for (final m in messages) {
@@ -1333,45 +1733,50 @@ class _MessageList extends StatelessWidget {
       // than sitting under the last read one. The comparison is on the row's
       // own id rather than on a flag, because a MAM import can insert messages
       // in the middle and a one-shot flag would end up in the wrong place.
-      if (!unreadMarked && m.stanzaId == firstUnread) {
+      if (!unreadMarked && matchesUnreadAnchor(m, firstUnread)) {
         rows.add(UnreadDivider(key: unreadDividerKey));
         unreadMarked = true;
       }
       if (EncModeToken.parse(m.encMode) == EncModeToken.error) {
-        rows.add(
-          ListTile(
-            dense: true,
-            leading: Icon(
-              Icons.lock_outline,
-              size: 18,
-              color: context.tg.danger,
-            ),
-            title: Text(
-              'Unable to decrypt this message.',
-              style: TextStyle(
-                fontStyle: FontStyle.italic,
-                color: context.tg.textSecondary,
-              ),
-            ),
-            trailing: TextButton(
-              onPressed: onRetryDecrypt,
-              child: const Text('Retry'),
+        Widget errorRow = ListTile(
+          dense: true,
+          leading: Icon(
+            Icons.lock_outline,
+            size: 18,
+            color: context.tg.danger,
+          ),
+          title: Text(
+            context.l10n.unableToDecrypt,
+            style: TextStyle(
+              fontStyle: FontStyle.italic,
+              color: context.tg.textSecondary,
             ),
           ),
+          trailing: TextButton(
+            onPressed: onRetryDecrypt,
+            child: Text(context.l10n.retry),
+          ),
         );
+        if (matchesUnreadAnchor(m, focusMessageAnchor)) {
+          errorRow = KeyedSubtree(key: focusMessageKey, child: errorRow);
+        }
+        rows.add(errorRow);
         continue;
       }
-      rows.add(
-        _ReactionBubble(
-          message: m,
-          selectionMode: selectionMode,
-          selected: selectedIds.contains(m.stanzaId),
-          bubbleStyle: bubbleStyle,
-          onReact: (emoji) => onReact(m.stanzaId, emoji),
-          onMenu: (body) => onMenu(m, body),
-          onToggleSelected: () => onToggleSelected(m),
-        ),
+      Widget bubble = _ReactionBubble(
+        message: m,
+        selectionMode: selectionMode,
+        selected: selectedIds.contains(m.stanzaId),
+        bubbleStyle: bubbleStyle,
+        isGroup: isGroup,
+        onReact: (emoji) => onReact(m.stanzaId, emoji),
+        onMenu: (body) => onMenu(m, body),
+        onToggleSelected: () => onToggleSelected(m),
       );
+      if (matchesUnreadAnchor(m, focusMessageAnchor)) {
+        bubble = KeyedSubtree(key: focusMessageKey, child: bubble);
+      }
+      rows.add(bubble);
     }
 
     return ListView(
@@ -1390,16 +1795,23 @@ class _InputBar extends StatelessWidget {
     required this.focusNode,
     required this.onChanged,
     required this.onSend,
+    required this.onAttach,
+    required this.attachEnabled,
   });
 
   final TextEditingController controller;
   final FocusNode focusNode;
   final ValueChanged<String> onChanged;
   final VoidCallback onSend;
+  final VoidCallback onAttach;
+
+  /// False when the server has no XEP-0363 — button stays light and inert.
+  final bool attachEnabled;
 
   @override
   Widget build(BuildContext context) {
     final tg = context.tg;
+    final l10n = context.l10n;
     return ValueListenableBuilder<TextEditingValue>(
       valueListenable: controller,
       builder: (context, value, _) {
@@ -1415,8 +1827,13 @@ class _InputBar extends StatelessWidget {
             children: [
               IconButton(
                 icon: const Icon(Icons.attach_file),
-                color: tg.textSecondary,
-                onPressed: () {},
+                // Supported → primary (darker); unsupported → muted, no press.
+                color: attachEnabled ? tg.textPrimary : tg.textSecondary,
+                disabledColor: tg.textSecondary,
+                tooltip: attachEnabled
+                    ? l10n.attachFile
+                    : l10n.httpUploadUnavailable,
+                onPressed: attachEnabled ? onAttach : null,
               ),
               Expanded(
                 child: ConstrainedBox(
@@ -1436,7 +1853,7 @@ class _InputBar extends StatelessWidget {
                       isDense: true,
                       filled: true,
                       fillColor: tg.pageBackground,
-                      hintText: 'Message',
+                      hintText: l10n.messageComposerHint,
                       hintStyle: TextStyle(color: tg.textSecondary),
                       contentPadding: const EdgeInsets.symmetric(
                         horizontal: 12,
@@ -1520,7 +1937,7 @@ class _SubscriptionBanner extends ConsumerWidget {
                 onPressed: () => ref
                     .read(xmppServiceProvider)
                     .requestSubscription(JID.fromString(chatJid)),
-                child: const Text('Ask again'),
+                child: Text(context.l10n.askAgain),
               ),
           ],
         ),
@@ -1539,6 +1956,7 @@ class _ReactionBubble extends ConsumerWidget {
     required this.selectionMode,
     required this.selected,
     required this.bubbleStyle,
+    required this.isGroup,
     required this.onReact,
     required this.onMenu,
     required this.onToggleSelected,
@@ -1548,6 +1966,7 @@ class _ReactionBubble extends ConsumerWidget {
   final bool selectionMode;
   final bool selected;
   final BubbleStyle bubbleStyle;
+  final bool isGroup;
   final void Function(String emoji) onReact;
   final void Function(String body) onMenu;
   final void Function() onToggleSelected;
@@ -1561,10 +1980,15 @@ class _ReactionBubble extends ConsumerWidget {
     final reactions = targetId.isEmpty
         ? const <ReactionGroup>[]
         : ref.watch(reactionGroupsProvider(targetId)).value ?? const [];
+    final nick = isGroup && message.incoming
+        ? _occupantNick(message.sender)
+        : null;
     return MessageBubble(
       text: message.body,
       time: message.timestamp,
       side: message.incoming ? BubbleSide.incoming : BubbleSide.outgoing,
+      senderName: nick,
+      senderColor: nick == null ? null : _nickColor(nick),
       delivered: message.delivered,
       displayed: message.displayed,
       failed: message.deliveryError.isNotEmpty,
@@ -1579,6 +2003,7 @@ class _ReactionBubble extends ConsumerWidget {
       selected: selected,
       selectionMode: selectionMode,
       bubbleStyle: bubbleStyle,
+      message: message,
       onReact: onReact,
       // A long press still opens the context menu when nothing is selected;
       // once a selection exists, long press adds to it, which is what a user
@@ -1591,4 +2016,20 @@ class _ReactionBubble extends ConsumerWidget {
       onTap: selectionMode ? onToggleSelected : null,
     );
   }
+}
+
+/// Occupant nick from a stored sender (`room@server/nick` or bare nick).
+String? _occupantNick(String sender) {
+  if (sender.isEmpty || sender == 'me') return null;
+  final slash = sender.indexOf('/');
+  if (slash >= 0 && slash + 1 < sender.length) {
+    return sender.substring(slash + 1);
+  }
+  return sender;
+}
+
+/// Stable tint for a nick in group transcripts (docs/05).
+Color _nickColor(String nick) {
+  final hue = (nick.hashCode & 0x7fffffff) % 360;
+  return HSLColor.fromAHSL(1, hue.toDouble(), 0.55, 0.42).toColor();
 }

@@ -11,6 +11,7 @@
 
 import 'package:flutter/material.dart';
 
+import '../l10n/l10n.dart';
 import '../omemo/track.dart';
 import 'theme.dart';
 
@@ -93,6 +94,7 @@ Future<MessageAction?> showMessageMenu(
   required MessageActions actions,
   required bool trackIsPlaintext,
 }) {
+  final l10n = context.l10n;
   return showModalBottomSheet<MessageAction>(
     context: context,
     showDragHandle: true,
@@ -103,40 +105,38 @@ Future<MessageAction?> showMessageMenu(
           if (actions.canReply)
             ListTile(
               leading: const Icon(Icons.reply),
-              title: const Text('Reply'),
+              title: Text(l10n.reply),
               onTap: () => Navigator.of(context).pop(MessageAction.reply),
             ),
           if (actions.canReact)
             ListTile(
               leading: const Icon(Icons.add_reaction_outlined),
-              title: const Text('React'),
+              title: Text(l10n.react),
               onTap: () => Navigator.of(context).pop(MessageAction.react),
             ),
           if (actions.canCopy)
             ListTile(
               leading: const Icon(Icons.copy),
-              title: const Text('Copy text'),
+              title: Text(l10n.copyText),
               onTap: () => Navigator.of(context).pop(MessageAction.copy),
             ),
           if (actions.canForward)
             ListTile(
               leading: const Icon(Icons.forward),
-              title: const Text('Forward'),
-              subtitle: const Text(
-                'Sent again to someone else, encrypted for them.',
-              ),
+              title: Text(l10n.forward),
+              subtitle: Text(l10n.forwardSubtitle),
               onTap: () => Navigator.of(context).pop(MessageAction.forward),
             ),
           if (actions.canEdit)
             ListTile(
               leading: const Icon(Icons.edit_outlined),
-              title: const Text('Edit'),
+              title: Text(l10n.edit),
               onTap: () => Navigator.of(context).pop(MessageAction.edit),
             ),
           if (actions.canEdit)
             ListTile(
               leading: const Icon(Icons.push_pin_outlined),
-              title: Text(actions.isPinned ? 'Unpin' : 'Pin'),
+              title: Text(actions.isPinned ? l10n.unpin : l10n.pin),
               onTap: () => Navigator.of(context).pop(MessageAction.pin),
             ),
           if (actions.canRetract)
@@ -146,7 +146,7 @@ Future<MessageAction?> showMessageMenu(
                 color: Theme.of(context).colorScheme.error,
               ),
               title: Text(
-                'Delete for everyone',
+                l10n.deleteForEveryone,
                 style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
               onTap: () => Navigator.of(context).pop(MessageAction.retract),
@@ -159,8 +159,7 @@ Future<MessageAction?> showMessageMenu(
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
               child: Text(
-                'This message went out unencrypted. Deleting it here removes '
-                'your copy, but anyone who already read it still has it.',
+                l10n.deleteUnencryptedWarning,
                 style: TextStyle(
                   fontSize: 12,
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -195,6 +194,7 @@ class SelectionBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = context.l10n;
     return Material(
       color: theme.colorScheme.surfaceContainerHigh,
       child: SafeArea(
@@ -206,20 +206,20 @@ class SelectionBar extends StatelessWidget {
               IconButton(
                 onPressed: onCancel,
                 icon: const Icon(Icons.close),
-                tooltip: 'Cancel',
+                tooltip: l10n.cancel,
               ),
               Expanded(
                 child: Text(
                   count == 0
-                      ? 'Select messages'
-                      : '$count selected',
+                      ? l10n.selectMessages
+                      : l10n.selectedCount(count),
                   style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
                 ),
               ),
               IconButton(
                 onPressed: count == 0 ? null : onForward,
                 icon: const Icon(Icons.forward),
-                tooltip: 'Forward',
+                tooltip: l10n.forward,
               ),
               IconButton(
                 // Delete-all only for our own messages, and only where it can
@@ -227,7 +227,7 @@ class SelectionBar extends StatelessWidget {
                 // deletes the subset we sent and says so.
                 onPressed: count == 0 ? null : onDelete,
                 icon: const Icon(Icons.delete_outline),
-                tooltip: 'Delete mine',
+                tooltip: l10n.deleteMine,
               ),
             ],
           ),
@@ -256,6 +256,7 @@ class QuickReactionBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Material(
       color: Theme.of(context).colorScheme.surfaceContainerHigh,
       child: SafeArea(
@@ -269,12 +270,12 @@ class QuickReactionBar extends StatelessWidget {
                 IconButton(
                   onPressed: () => onPicked(e),
                   icon: Text(e, style: const TextStyle(fontSize: 24)),
-                  tooltip: 'React',
+                  tooltip: l10n.react,
                 ),
               IconButton(
                 onPressed: onDismissed,
                 icon: const Icon(Icons.close),
-                tooltip: 'Cancel',
+                tooltip: l10n.cancel,
               ),
             ],
           ),
@@ -304,6 +305,7 @@ class ReplyPreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = context.l10n;
     return Material(
       color: theme.colorScheme.surfaceContainerHigh,
       child: SafeArea(
@@ -324,7 +326,7 @@ class ReplyPreview extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Replying to $author',
+                      l10n.replyingTo(author),
                       style: TextStyle(
                         fontSize: TgDimens.timeFontSize,
                         fontWeight: FontWeight.w600,
@@ -346,7 +348,7 @@ class ReplyPreview extends StatelessWidget {
               IconButton(
                 onPressed: onCancel,
                 icon: const Icon(Icons.close, size: 18),
-                tooltip: 'Cancel reply',
+                tooltip: l10n.cancelReply,
               ),
             ],
           ),
@@ -410,6 +412,7 @@ class _EditComposerState extends State<EditComposer> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Material(
       color: Theme.of(context).colorScheme.surfaceContainerHigh,
       child: SafeArea(
@@ -425,10 +428,10 @@ class _EditComposerState extends State<EditComposer> {
                   focusNode: _focus,
                   minLines: 1,
                   maxLines: 6,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     isDense: true,
-                    hintText: 'Edit message',
-                    border: OutlineInputBorder(),
+                    hintText: l10n.editMessageHint,
+                    border: const OutlineInputBorder(),
                   ),
                   onSubmitted: (_) => _submit(),
                 ),
@@ -437,12 +440,12 @@ class _EditComposerState extends State<EditComposer> {
               IconButton(
                 onPressed: _busy ? null : widget.onCancel,
                 icon: const Icon(Icons.close),
-                tooltip: 'Cancel',
+                tooltip: l10n.cancel,
               ),
               IconButton(
                 onPressed: _busy ? null : _submit,
                 icon: const Icon(Icons.check),
-                tooltip: 'Save',
+                tooltip: l10n.save,
               ),
             ],
           ),
@@ -480,7 +483,7 @@ class PlaintextNotice extends StatelessWidget {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                'Messages in this chat are not encrypted.',
+                context.l10n.messagesNotEncrypted,
                 style: TextStyle(
                   fontSize: 12,
                   color: theme.colorScheme.onErrorContainer,

@@ -12,6 +12,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../l10n/l10n.dart';
 import '../omemo/track.dart';
 import '../omemo/track_advice.dart';
 import '../omemo/track_resolver.dart';
@@ -39,9 +40,12 @@ class TrackAdviceBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = context.l10n;
     final urgent = advice.kind == TrackAdviceKind.chosenTrackBlocked;
     return Material(
-      color: urgent ? theme.colorScheme.errorContainer : theme.colorScheme.surfaceContainerHighest,
+      color: urgent
+          ? theme.colorScheme.errorContainer
+          : theme.colorScheme.surfaceContainerHighest,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
         child: Row(
@@ -67,12 +71,12 @@ class TrackAdviceBanner extends StatelessWidget {
             ),
             TextButton(
               onPressed: onSwitch,
-              child: Text('Switch to ${advice.suggestion.label}'),
+              child: Text(l10n.switchToTrack(advice.suggestion.label)),
             ),
             IconButton(
               onPressed: onDismiss,
               icon: const Icon(Icons.close, size: 18),
-              tooltip: 'Dismiss',
+              tooltip: l10n.dismiss,
               color: urgent
                   ? theme.colorScheme.onErrorContainer
                   : theme.colorScheme.onSurfaceVariant,
@@ -161,6 +165,7 @@ class _TrackPickerState extends ConsumerState<_TrackPicker> {
 
     final resolution = resolveTrack(requested: current, capabilities: caps);
     final theme = Theme.of(context);
+    final l10n = context.l10n;
 
     return SafeArea(
       child: SingleChildScrollView(
@@ -171,7 +176,7 @@ class _TrackPickerState extends ConsumerState<_TrackPicker> {
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
               child: Text(
-                'Encryption for this chat',
+                l10n.encryptionForThisChat,
                 style: theme.textTheme.titleMedium,
               ),
             ),
@@ -179,9 +184,8 @@ class _TrackPickerState extends ConsumerState<_TrackPicker> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
                 child: Text(
-                  '${resolution.blocked!.consequence} '
-                  'Messages on ${current.label} will ask you what to do '
-                  'before they go.',
+                  '${resolution.blocked!.localizedConsequence(l10n)} '
+                  '${l10n.messagesOnTrackWillAsk(current.label)}',
                   style: TextStyle(color: theme.colorScheme.error, fontSize: 13),
                 ),
               ),
@@ -205,7 +209,7 @@ class _TrackPickerState extends ConsumerState<_TrackPicker> {
                   Navigator.of(context).pop();
                   await setChatTrack(ref, widget.chatJid, null);
                 },
-                child: Text('Use the global default (${global.label})'),
+                child: Text(l10n.useGlobalDefault(global.label)),
               ),
             const Divider(),
             BlockContactTile(
@@ -223,10 +227,7 @@ class _TrackPickerState extends ConsumerState<_TrackPicker> {
                 messenger.showSnackBar(
                   SnackBar(
                     content: Text(
-                      wasBlocked
-                          ? 'Unblocked. Their messages will be shown again.'
-                          : 'Blocked. Their messages will no longer be opened '
-                              'or stored on this device.',
+                      wasBlocked ? l10n.unblockedSnack : l10n.blockedSnack,
                     ),
                   ),
                 );
@@ -256,13 +257,14 @@ class _TrackOption extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = context.l10n;
     return ListTile(
       leading: Icon(
         track.icon,
         color: track == Track.none ? theme.colorScheme.error : null,
       ),
-      title: Text('${track.label}  ${track.description}'),
-      subtitle: inherited ? const Text('Currently your global default') : null,
+      title: Text('${track.label}  ${track.localizedDescription(l10n)}'),
+      subtitle: inherited ? Text(l10n.currentlyYourGlobalDefault) : null,
       trailing: selected
           ? Icon(Icons.check, color: theme.colorScheme.primary)
           : null,
@@ -282,19 +284,23 @@ Future<Track?> askTrackSubstitute(
   required TrackBlocked blocked,
   required Track alternative,
 }) {
+  final l10n = context.l10n;
   return showDialog<Track>(
     context: context,
     builder: (context) => AlertDialog(
-      title: Text(blocked.title),
-      content: Text('${blocked.consequence}\n\n${blocked.outcome}'),
+      title: Text(blocked.localizedTitle(l10n)),
+      content: Text(
+        '${blocked.localizedConsequence(l10n)}\n\n'
+        '${blocked.localizedOutcome(l10n)}',
+      ),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          child: Text(l10n.cancel),
         ),
         FilledButton(
           onPressed: () => Navigator.of(context).pop(alternative),
-          child: Text('Send with ${alternative.label}'),
+          child: Text(l10n.sendWithTrack(alternative.label)),
         ),
       ],
     ),
@@ -312,34 +318,32 @@ Future<bool> confirmPlaintext(
   required String contact,
   required Track alternative,
 }) async {
+  final l10n = context.l10n;
   final agreed = await showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
-      title: const Text('Send without encryption?'),
+      title: Text(l10n.sendWithoutEncryption),
       content: Text(
-        'This message goes to $contact in the clear. Anyone who can reach the '
-        'server — including whoever stores it — can read it. It cannot be '
-        'taken back.\n\n'
-        'Sending with ${alternative.label} instead keeps it readable only by '
-        'them.',
+        l10n.sendWithoutEncryptionBody(contact, alternative.label),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(false),
-          child: const Text('Cancel'),
+          child: Text(l10n.cancel),
         ),
         FilledButton(
           style: FilledButton.styleFrom(
             backgroundColor: Theme.of(context).colorScheme.error,
           ),
           onPressed: () => Navigator.of(context).pop(true),
-          child: const Text('Send in the clear'),
+          child: Text(l10n.sendInTheClear),
         ),
       ],
     ),
   );
   return agreed ?? false;
 }
+
 /// The block/unblock entry in the conversation's menu.
 ///
 /// The wording is the point. "Block" in other apps implies the messages stop
@@ -362,17 +366,17 @@ class BlockContactTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = context.l10n;
     return ListTile(
       leading: Icon(
         blocked ? Icons.lock_open : Icons.block,
         color: blocked ? theme.colorScheme.primary : theme.colorScheme.error,
       ),
-      title: Text(blocked ? 'Unblock $contact' : 'Block $contact'),
+      title: Text(
+        blocked ? l10n.unblockContact(contact) : l10n.blockContact(contact),
+      ),
       subtitle: Text(
-        blocked
-            ? 'Their messages will be shown and stored again.'
-            : 'Their messages still arrive, but will not be opened, stored '
-                'or acknowledged.',
+        blocked ? l10n.unblockContactSubtitle : l10n.blockContactSubtitle,
         style: TextStyle(
           fontSize: 12,
           color: theme.colorScheme.onSurfaceVariant,

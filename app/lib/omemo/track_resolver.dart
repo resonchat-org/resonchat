@@ -21,6 +21,7 @@
 // knows what NO means and chose it anyway, whereas a silent downgrade to NO
 // tells them nothing and cannot be consented to.
 
+import '../l10n/generated/app_localizations.dart';
 import '../xmpp/capabilities.dart';
 import 'track.dart';
 
@@ -92,6 +93,31 @@ extension TrackBlockedMessage on TrackBlocked {
           'Sending in the clear is the only way this message gets read.',
         TrackBlocked.pqUnavailable =>
           'The other person will not be able to read this message at all.',
+      };
+
+  String localizedTitle(AppLocalizations l10n) => switch (this) {
+        TrackBlocked.unknownPeers => l10n.trackBlockedUnknownPeersTitle,
+        TrackBlocked.unreachableDevices => l10n.trackBlockedUnreachableTitle,
+        TrackBlocked.standardUnavailable => l10n.trackBlockedStandardTitle,
+        TrackBlocked.pqUnavailable => l10n.trackBlockedPqTitle,
+      };
+
+  String localizedConsequence(AppLocalizations l10n) => switch (this) {
+        TrackBlocked.unknownPeers =>
+          l10n.trackBlockedUnknownPeersConsequence,
+        TrackBlocked.unreachableDevices =>
+          l10n.trackBlockedUnreachableConsequence,
+        TrackBlocked.standardUnavailable =>
+          l10n.trackBlockedStandardConsequence,
+        TrackBlocked.pqUnavailable => l10n.trackBlockedPqConsequence,
+      };
+
+  String localizedOutcome(AppLocalizations l10n) => switch (this) {
+        TrackBlocked.unknownPeers => l10n.trackBlockedUnknownPeersOutcome,
+        TrackBlocked.unreachableDevices =>
+          l10n.trackBlockedUnreachableOutcome,
+        TrackBlocked.standardUnavailable => l10n.trackBlockedStandardOutcome,
+        TrackBlocked.pqUnavailable => l10n.trackBlockedPqOutcome,
       };
 }
 

@@ -77,11 +77,11 @@ class BTrackManager {
     final layer = PqMessageLayer(
       ownDevice: device,
       sessions: sessions,
-      senderIkOf: (deviceId) async {
+      senderIkOf: (senderBare, deviceId) async {
         final d = await tracks()
-            .deviceById(JID.fromString(bareJid), deviceId);
+            .deviceById(JID.fromString(senderBare), deviceId);
         if (d == null) {
-          throw StateError('no PQ bundle for $bareJid/$deviceId');
+          throw StateError('no PQ bundle for $senderBare/$deviceId');
         }
         return d;
       },
@@ -159,12 +159,27 @@ class BTrackManager {
   Future<PqEncryptedMessage?> encryptIfPossible({
     required String peerJid,
     required String plaintext,
+  }) =>
+      encryptForPeers(peerJids: [peerJid], plaintext: plaintext);
+
+  /// Encrypts [plaintext] for every PQ device of each bare JID in [peerJids]
+  /// (1:1 peer, or MUC member real JIDs + our own bare for multi-device).
+  ///
+  /// One payload, keys per device — same layout as a 1:1 PQ message.
+  Future<PqEncryptedMessage?> encryptForPeers({
+    required List<String> peerJids,
+    required String plaintext,
   }) async {
     final session = _session;
     if (session == null) return null;
 
-    final bare = JID.fromString(peerJid).toBare();
-    final devices = await tracks().loadPqDevices(bare);
+    final devices = <PqDevice>[];
+    final seen = <String>{};
+    for (final jid in peerJids) {
+      final bare = JID.fromString(jid).toBare().toString();
+      if (!seen.add(bare)) continue;
+      devices.addAll(await tracks().loadPqDevices(JID.fromString(bare)));
+    }
     if (devices.isEmpty) return null;
 
     final outgoing = await session.layer.encrypt(
@@ -177,17 +192,21 @@ class BTrackManager {
   /// Decrypts an inbound PQ message; null when it is not for us (a different
   /// device, or not a B-track message at all).
   ///
-  /// Takes the parsed message rather than raw XML so callers that already had
-  /// to parse it — to find the element in the first place — do not do so
-  /// twice and risk disagreeing about the result.
-  Future<String?> decryptIfPossible(PqEncryptedMessage message) async {
+  /// [senderBareJid] is the peer bare JID (groupchat: occupant real JID).
+  Future<String?> decryptIfPossible(
+    PqEncryptedMessage message, {
+    required String senderBareJid,
+  }) async {
     final session = _session;
     if (session == null) return null;
 
     if (!message.keys.any((k) => k.recipientDeviceId == session.device.id)) {
       return null;
     }
-    return session.layer.decrypt(message);
+    return session.layer.decrypt(
+      message,
+      senderBareJid: senderBareJid,
+    );
   }
 
   /// Refills the ML-KEM one-time prekey pool back up to [target] and

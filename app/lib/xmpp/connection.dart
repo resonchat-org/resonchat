@@ -19,10 +19,12 @@ import '../omemo/track.dart';
 import '../omemo/track_resolver.dart';
 import '../omemo/protocol.dart';
 import '../store/omemo_device_store.dart';
+import 'aesgcm_url.dart';
 import 'b_track_manager.dart';
 import 'blocked_inbound.dart';
 import 'blocking.dart';
 import 'eme.dart';
+import 'http_files.dart';
 import 'muc.dart';
 import 'capabilities.dart';
 import 'pq_incoming.dart';
@@ -37,6 +39,7 @@ class InboundMessage {
     required this.body,
     required this.stanzaId,
     this.to,
+    this.type,
     this.encryptionError,
     this.isCarbonCopy = false,
     this.fromArchive = false,
@@ -49,6 +52,9 @@ class InboundMessage {
     this.retracts,
     this.corrects,
     this.reply,
+    this.mediaUrl = '',
+    this.mediaMime = '',
+    this.mediaName = '',
   });
 
   final JID from;
@@ -58,6 +64,10 @@ class InboundMessage {
   /// Needed for archived copies of our own outbound messages: [from] is us,
   /// so the conversation is [to], not [from].
   final JID? to;
+
+  /// Stanza `type` (`chat`, `groupchat`, …). Rooms are marked from
+  /// `groupchat` rather than from guessing the JID.
+  final String? type;
 
   final String body;
 
@@ -114,6 +124,15 @@ class InboundMessage {
   /// Reactions arrive in their own message, but a client may attach one to a
   /// copy of the message. Kept here so the storage layer handles one shape.
   final ReactionUpdate? reactions;
+
+  /// HTTP File Upload / OOB share URL when this message carries a file.
+  final String mediaUrl;
+
+  /// MIME hint when known; may be empty until download/sniff.
+  final String mediaMime;
+
+  /// Original file name when known.
+  final String mediaName;
 
   /// Which track the sender used, read from its EME declaration.
   ///
@@ -265,6 +284,9 @@ class XmppService {
   PubSubManager? _pubsub;
   axolotl.AxolotlOmemoManager? _omemo;
 
+  /// HTTP PUT/GET + aesgcm on top of registered [HttpFileUploadManager].
+  late final HttpFileService httpFiles = HttpFileService(() => _connection);
+
   /// In-flight device initialisation, shared by racing callers.
   Future<axolotl.AxolotlOmemoManager>? _omemoInit;
   OmemoManager? _moxxOmemo;
@@ -365,7 +387,23 @@ class XmppService {
     String? replyTo,
     String? quoteBody,
     String? quoteAuthor,
+    String? oobUrl,
+    /// `chat` for 1:1; `groupchat` for XEP-0045 room messages (Conversations).
+    String messageType = 'chat',
   }) async {
+    // Groupchat: public/anonymous → plaintext; private+non-anonymous →
+    // OMEMO (and PQ when every member is fully PQ-capable) to real JIDs.
+    if (messageType == 'groupchat') {
+      return sendGroupchatOnTrack(
+        to.toBare(),
+        body,
+        track: track,
+        replyTo: replyTo,
+        quoteBody: quoteBody,
+        oobUrl: oobUrl,
+      );
+    }
+
     final caps = await capabilitiesFor(to);
     final resolution = resolveTrack(requested: track, capabilities: caps);
     if (!resolution.canSend) {
@@ -388,6 +426,11 @@ class XmppService {
         ? null
         : buildReplyFallback(quoteBody, body);
     final wireBody = fallback?.wireBody ?? body;
+
+    // moxxmpp MessageManager omits <body/> when OOBData is present, so OMEMO
+    // / PQ must carry the share URL in the encrypted body only. Plaintext can
+    // send both (Conversations does).
+    final wireOob = track == Track.none ? oobUrl : null;
 
     final String? stanzaId;
     switch (track) {
@@ -417,6 +460,7 @@ class XmppService {
           replyTo: replyTo,
           quoteBody: quoteBody,
           replyFallback: fallback,
+          oobUrl: wireOob,
         );
     }
 
@@ -576,6 +620,364 @@ class XmppService {
     return SendOutcome(stanzaId: id, track: Track.standard);
   }
 
+  /// Rejoins stored MODE_MULTI rooms after login (Conversations
+  /// `connectMultiModeConversations`).
+  Future<void> rejoinGroupChats(
+    Iterable<({String roomJid, String nick})> rooms,
+  ) async {
+    for (final room in rooms) {
+      if (room.nick.isEmpty) continue;
+      final err = await joinGroupChat(room.roomJid, room.nick);
+      if (err != null) {
+        _log.info('rejoin ${room.roomJid} failed: $err');
+      }
+    }
+  }
+
+  /// Disco#info features for a room (Conversations fetch after join).
+  ///
+  /// Used to decide [isPrivateAndNonAnonymous] — only then may OMEMO run.
+  Future<List<String>> queryRoomFeatures(String roomJid) async {
+    final manager = muc;
+    if (manager == null) return const [];
+    final result =
+        await manager.queryRoomInformation(JID.fromString(roomJid));
+    if (!result.isType<RoomInformation>()) return const [];
+    return List<String>.from(result.get<RoomInformation>().features);
+  }
+
+  /// Occupants currently known for [roomJid], with real JIDs when published.
+  Future<List<Occupant>> roomOccupantList(String roomJid) async {
+    final state = await groupChatState(roomJid);
+    if (state == null) return const [];
+    return state.members.values.map(Occupant.from).toList();
+  }
+
+  /// Conversations `getUsers` / `getOnlineUsers` for the member list UI.
+  Future<List<Occupant>> roomDisplayMembers(String roomJid) async {
+    final bare = JID.fromString(roomJid).toBare().toString();
+    final online = await roomOccupantList(bare);
+    final private = _privateNonAnonymous[bare] ?? false;
+    return roomMembersForDisplay(
+      privateNonAnonymous: private,
+      affiliation: _affiliations[bare] ?? const [],
+      online: online,
+    );
+  }
+
+  /// Affiliation roster for OMEMO (Conversations `MucOptions.getMembers`).
+  ///
+  /// Falls back to presence when the admin query has not completed yet.
+  Future<List<Occupant>> roomCryptoMembers(String roomJid) async {
+    final bare = JID.fromString(roomJid).toBare().toString();
+    final online = await roomOccupantList(bare);
+    final affiliation = _affiliations[bare];
+    if (affiliation == null) return online;
+    return mergeRoomMembers(affiliation: affiliation, online: online);
+  }
+
+  /// After join/disco: fetch affiliation roster when private+non-anonymous
+  /// (Conversations `fetchMembers`), otherwise presence-only.
+  Future<void> refreshRoomMembership(
+    String roomJid, {
+    required bool privateNonAnonymous,
+  }) async {
+    final bare = JID.fromString(roomJid).toBare().toString();
+    _privateNonAnonymous[bare] = privateNonAnonymous;
+    if (privateNonAnonymous) {
+      await fetchRoomAffiliations(bare);
+    } else {
+      _affiliations.remove(bare);
+    }
+    await _emitRoomState(bare);
+  }
+
+  /// `muc#admin` queries for owner/admin/member (Conversations `fetchMembers`).
+  Future<void> fetchRoomAffiliations(String roomJid) async {
+    final connection = _connection;
+    if (connection == null) return;
+    final bare = JID.fromString(roomJid).toBare().toString();
+    final collected = <String, Occupant>{};
+    for (final affiliation in const ['owner', 'admin', 'member']) {
+      final items = await _queryMucAffiliation(bare, affiliation);
+      for (final o in items) {
+        final key = o.realJid ?? 'nick:${o.nick}';
+        collected[key] = o;
+      }
+    }
+    _affiliations[bare] = collected.values.toList();
+  }
+
+  Future<List<Occupant>> _queryMucAffiliation(
+    String roomJid,
+    String affiliation,
+  ) async {
+    final connection = _connection;
+    if (connection == null) return const [];
+    try {
+      final result = await connection.sendStanza(
+        StanzaDetails(
+          Stanza.iq(
+            to: roomJid,
+            type: 'get',
+            children: [
+              XMLNode.xmlns(
+                tag: 'query',
+                xmlns: mucAdminXmlns,
+                children: [
+                  XMLNode(
+                    tag: 'item',
+                    attributes: {'affiliation': affiliation},
+                  ),
+                ],
+              ),
+            ],
+          ),
+          // Admin IQ is not a chat message; do not OMEMO-wrap it.
+          shouldEncrypt: false,
+        ),
+      );
+      if (result == null || result.attributes['type'] != 'result') {
+        return const [];
+      }
+      final query = result.firstTag('query', xmlns: mucAdminXmlns);
+      if (query == null) return const [];
+      final out = <Occupant>[];
+      for (final item in query.findTags('item')) {
+        final o = occupantFromAdminItem(item);
+        if (o != null) out.add(o);
+      }
+      return out;
+    } catch (e) {
+      _log.info('muc#admin $affiliation for $roomJid failed: $e');
+      return const [];
+    }
+  }
+
+  /// Whether [track] can be used for a groupchat — same checks as send,
+  /// so the UI can show [askTrackSubstitute] before anything goes out
+  /// (aligned with 1:1 [resolveTrack] + capabilities).
+  Future<TrackResolution> resolveGroupchatTrack({
+    required String roomJid,
+    required Track requested,
+  }) async {
+    if (requested == Track.none) {
+      return const TrackResolution(track: Track.none, blocked: null);
+    }
+    final targets = await _groupCryptoTargets(roomJid);
+    if (targets.isEmpty) {
+      return TrackResolution(
+        track: requested,
+        blocked: TrackBlocked.unknownPeers,
+      );
+    }
+    if (requested == Track.pq) {
+      final blocked = await _roomPqBlockReason(targets);
+      return TrackResolution(track: Track.pq, blocked: blocked);
+    }
+    // Standard: member real JIDs are enough to attempt; encrypt failure is
+    // reported after send, same as a stale 1:1 bundle.
+    return const TrackResolution(track: Track.standard, blocked: null);
+  }
+
+  Future<List<String>> _groupCryptoTargets(String roomJid) async {
+    final occupants = await roomCryptoMembers(roomJid);
+    return mucCryptoTargets(occupants: occupants, ourBareJid: myJid);
+  }
+
+  /// Groupchat send: plaintext, standard OMEMO, or PQ to member real JIDs.
+  Future<SendOutcome> sendGroupchatOnTrack(
+    JID roomBare,
+    String body, {
+    required Track track,
+    String? replyTo,
+    String? quoteBody,
+    String? oobUrl,
+  }) async {
+    final fallback = replyTo == null || quoteBody == null
+        ? null
+        : buildReplyFallback(quoteBody, body);
+    final wireBody = fallback?.wireBody ?? body;
+
+    if (track == Track.none) {
+      final stanzaId = await sendUnencryptedMessage(
+        roomBare,
+        wireBody,
+        requestReceipt: false,
+        replyTo: replyTo,
+        quoteBody: quoteBody,
+        replyFallback: fallback,
+        oobUrl: oobUrl,
+        messageType: 'groupchat',
+      );
+      if (stanzaId == null) {
+        return const SendOutcome(
+          stanzaId: null,
+          track: Track.none,
+          blocked: TrackBlocked.unreachableDevices,
+        );
+      }
+      return SendOutcome(stanzaId: stanzaId, track: Track.none);
+    }
+
+    final resolution = await resolveGroupchatTrack(
+      roomJid: roomBare.toString(),
+      requested: track,
+    );
+    if (!resolution.canSend) {
+      return SendOutcome(
+        stanzaId: null,
+        track: track,
+        blocked: resolution.blocked,
+      );
+    }
+
+    final targets = await _groupCryptoTargets(roomBare.toString());
+
+    if (track == Track.pq) {
+      final stanzaId = await sendGroupPqMessage(
+        roomBare,
+        wireBody,
+        recipientJids: targets,
+        replyTo: replyTo,
+        quoteBody: quoteBody,
+        replyFallback: fallback,
+      );
+      if (stanzaId == null) {
+        return const SendOutcome(
+          stanzaId: null,
+          track: Track.pq,
+          blocked: TrackBlocked.pqUnavailable,
+        );
+      }
+      return SendOutcome(stanzaId: stanzaId, track: Track.pq);
+    }
+
+    // Track.standard — Conversations ENCRYPTION_AXOLOTL for private non-anon.
+    final stanzaId = await sendGroupOmemoMessage(
+      roomBare,
+      wireBody,
+      recipientJids: targets,
+      replyTo: replyTo,
+      quoteBody: quoteBody,
+      replyFallback: fallback,
+    );
+    if (stanzaId == null) {
+      return const SendOutcome(
+        stanzaId: null,
+        track: Track.standard,
+        blocked: TrackBlocked.standardUnavailable,
+      );
+    }
+    return SendOutcome(stanzaId: stanzaId, track: Track.standard);
+  }
+
+  /// Like 1:1 PQ: every OMEMO device of every member must be PQ-capable.
+  Future<TrackBlocked?> _roomPqBlockReason(List<String> memberJids) async {
+    if (!bTrackReady) return TrackBlocked.pqUnavailable;
+    for (final jid in memberJids) {
+      final caps = await capabilitiesFor(JID.fromString(jid));
+      if (caps == null || !caps.reliable) return TrackBlocked.unknownPeers;
+      final allPq = caps.recipientDevices.isNotEmpty &&
+          caps.recipientDevices.every(caps.pqDevices.contains);
+      if (!allPq) return TrackBlocked.pqUnavailable;
+    }
+    return null;
+  }
+
+  /// PQ groupchat to [roomBare], keys for every PQ device of [recipientJids].
+  Future<String?> sendGroupPqMessage(
+    JID roomBare,
+    String body, {
+    required List<String> recipientJids,
+    String? replyTo,
+    String? quoteBody,
+    ReplyFallback? replyFallback,
+  }) async {
+    final track = bTrack;
+    if (track == null || !track.ready) return null;
+    if (recipientJids.isEmpty) return null;
+
+    // Include our bare JID so our other devices can open the copy
+    // (mirrors OMEMO MUC encryptToJids + ownBare).
+    final peers = <String>{
+      ...recipientJids,
+      ?myJid,
+    }.toList();
+    final encrypted = await track.encryptForPeers(
+      peerJids: peers,
+      plaintext: body,
+    );
+    if (encrypted == null) return null;
+
+    final mm = _connection?.getManagerById<MessageManager>(messageManager);
+    if (mm == null) throw StateError('not connected');
+    final id = _nextStanzaId();
+    await mm.sendMessage(
+      roomBare,
+      TypedMap<StanzaHandlerExtension>.fromList([
+        MessageBodyData(encryptedBodyFallback),
+        MessageIdData(id),
+        StableIdData(id, const []),
+        if (replyTo != null)
+          ReplyData(
+            replyTo,
+            body: quoteBody,
+            start: replyFallback?.start,
+            end: replyFallback?.end,
+          ),
+        const EmeData(Track.pq, name: 'OMEMO-PQ'),
+        PqEncryptedData(encrypted),
+      ]),
+      type: 'groupchat',
+    );
+    return id;
+  }
+
+  /// OMEMO groupchat to [roomBare], keys for [recipientJids] (member real JIDs).
+  Future<String?> sendGroupOmemoMessage(
+    JID roomBare,
+    String body, {
+    required List<String> recipientJids,
+    String? replyTo,
+    String? quoteBody,
+    ReplyFallback? replyFallback,
+  }) async {
+    final connection = _connection;
+    if (connection == null) throw StateError('not connected');
+    if (recipientJids.isEmpty) return null;
+    final id = _nextStanzaId();
+    final children = <XMLNode>[
+      MessageBodyData(body).toXML(),
+      StableIdData(id, const []).toOriginIdElement(),
+      if (replyTo != null && replyFallback != null)
+        ...replyNodes(
+          targetId: replyTo,
+          quote: quoteBody ?? '',
+          fallback: replyFallback,
+        ),
+    ];
+    try {
+      await connection.sendStanza(
+        StanzaDetails(
+          Stanza.message(
+            to: roomBare.toString(),
+            id: id,
+            type: 'groupchat',
+            children: children,
+          ),
+          awaitable: false,
+          forceEncryption: true,
+          omemoRecipientJids: recipientJids,
+        ),
+      );
+      return id;
+    } catch (e) {
+      _log.warning('OMEMO groupchat to $roomBare failed: $e');
+      return null;
+    }
+  }
+
   /// Joins a group chat at `roomJid` as [nick].
   ///
   /// Returns the error rather than throwing, because a room can refuse for a
@@ -611,10 +1013,13 @@ class XmppService {
   Future<void> leaveGroupChat(String roomJid) async {
     final manager = muc;
     if (manager == null) return;
+    final bare = JID.fromString(roomJid).toBare().toString();
     final result = await manager.leaveRoom(JID.fromString(roomJid));
     if (!result.isType<bool>()) {
       _log.info('leaving $roomJid failed: ${result.get<MUCError>()}');
     }
+    _affiliations.remove(bare);
+    _privateNonAnonymous.remove(bare);
   }
 
   /// The room's occupants, updated as presence arrives.
@@ -909,6 +1314,10 @@ class XmppService {
       MessageArchiveManagementManager(),
       _carbons!,
       _moxxOmemo!,
+      // XEP-0363 slot discovery/request (HTTP PUT/GET stays in HttpFileService).
+      HttpFileUploadManager(),
+      // XEP-0066 OOB URL parse + send callback.
+      OOBManager(),
       // XEP-0380. Without it the received message carries no record of which
       // track the sender used, so every encrypted message from another client
       // would be labelled as unencrypted.
@@ -1424,13 +1833,39 @@ class XmppService {
     if (payload == null) return null;
     final track = bTrack;
     if (track == null || !track.ready) return null;
-    final plaintext = await track.decryptIfPossible(payload);
+    final senderBare = await _pqSenderBareJid(stanza);
+    if (senderBare == null) return null;
+    final plaintext = await track.decryptIfPossible(
+      payload,
+      senderBareJid: senderBare,
+    );
     if (plaintext == null) return null;
     // Each new inbound PQ session burns one one-time prekey; refilling keeps
     // forward secrecy from quietly degrading to the signed prekey for the
     // rest of this device's life.
     unawaited(track.replenishPrekeys());
     return plaintext;
+  }
+
+  /// Bare JID whose PQ bundle binds the inbound session.
+  ///
+  /// 1:1: stanza `from` bare. Groupchat: occupant's real JID when the room
+  /// publishes it (non-anonymous); otherwise null — we cannot open a KEX
+  /// without knowing who sent it.
+  Future<String?> _pqSenderBareJid(Stanza stanza) async {
+    final fromRaw = stanza.from;
+    if (fromRaw == null || fromRaw.isEmpty) return null;
+    final from = JID.fromString(fromRaw);
+    if (stanza.attributes['type'] != 'groupchat') {
+      return from.toBare().toString();
+    }
+    final state = await groupChatState(from.toBare().toString());
+    final nick = from.resource;
+    if (nick.isEmpty || state == null) return null;
+    final member = state.members[nick];
+    final real = member?.realJid;
+    if (real == null) return null;
+    return real.toBare().toString();
   }
 
   /// Serialises the B track's ciphertext
@@ -1545,6 +1980,9 @@ class XmppService {
     String? replyTo,
     String? quoteBody,
     ReplyFallback? replyFallback,
+    String? oobUrl,
+    /// `chat` (1:1) or `groupchat` (XEP-0045 to bare room).
+    String messageType = 'chat',
   }) async {
     final connection = _connection;
     if (connection == null) throw StateError('not connected');
@@ -1558,6 +1996,7 @@ class XmppService {
     // at the moment the hook runs. A plaintext send racing an encrypted one to
     // the same contact would then take the wrong one with it. Per-stanza is
     // the only place this can be decided without a race.
+    final isGroup = messageType == 'groupchat';
     final children = <XMLNode>[
       MessageBodyData(body).toXML(),
       StableIdData(id, const []).toOriginIdElement(),
@@ -1567,16 +2006,18 @@ class XmppService {
           quote: quoteBody ?? '',
           fallback: replyFallback,
         ),
-
-      if (requestReceipt) MessageDeliveryReceiptData(true).toXML(),
-      const MarkableData(true).toXML(),
+      if (oobUrl != null && oobUrl.isNotEmpty) OOBData(oobUrl, null).toXML(),
+      // Receipts / markable are 1:1 (and private MUC) affordances; groupchat
+      // reflections do not answer XEP-0184 the same way (Conversations).
+      if (requestReceipt && !isGroup) MessageDeliveryReceiptData(true).toXML(),
+      if (!isGroup) const MarkableData(true).toXML(),
     ];
     await connection.sendStanza(
       StanzaDetails(
         Stanza.message(
           to: to.toString(),
           id: id,
-          type: 'chat',
+          type: messageType,
           children: children,
         ),
         awaitable: false,
@@ -1658,6 +2099,12 @@ class XmppService {
   /// correct it.
   final _roomOccupants = StreamController<GroupChat?>.broadcast();
 
+  /// Affiliation stubs from `muc#admin` (owner/admin/member), keyed by bare room.
+  final _affiliations = <String, List<Occupant>>{};
+
+  /// Whether [roomJid] is Conversations `isPrivateAndNonAnonymous`.
+  final _privateNonAnonymous = <String, bool>{};
+
   Future<void> _publishRoomState(XmppEvent event) async {
     final roomJid = switch (event) {
       MemberJoinedEvent e => e.roomJid,
@@ -1668,16 +2115,30 @@ class XmppService {
       _ => null,
     };
     if (roomJid == null) return;
-    final state = await groupChatState(roomJid.toBare().toString());
+    await _emitRoomState(roomJid.toBare().toString());
+  }
+
+  /// Emit display roster: full affiliation list when private+non-anon,
+  /// otherwise online-only (Conversations `getUsers` / `getOnlineUsers`).
+  Future<void> _emitRoomState(String roomJid) async {
+    final bare = JID.fromString(roomJid).toBare().toString();
+    final state = await groupChatState(bare);
     if (state == null || _roomOccupants.isClosed) return;
+    final online = state.members.values.map(Occupant.from).toList();
+    final private = _privateNonAnonymous[bare] ?? false;
+    final occupants = roomMembersForDisplay(
+      privateNonAnonymous: private,
+      affiliation: _affiliations[bare] ?? const [],
+      online: online,
+    );
     _roomOccupants.add(
       GroupChat(
-        roomJid: roomJid.toBare().toString(),
+        roomJid: bare,
         // A room with no nick is one we are not in; showing the member list of
         // a room we only queried would be a list of people we are not talking
         // to.
         nick: state.nick ?? '',
-        occupants: state.members.values.map(Occupant.from).toList(),
+        occupants: occupants,
         joined: state.joined,
       ),
     );
@@ -1750,7 +2211,19 @@ class XmppService {
           : (reactionData != null
               ? ''
               : (event.get<MessageBodyData>()?.body ?? ''));
+      // XEP-0066: Conversations puts the upload URL in OOB as well as body.
+      final oobUrl = event.get<OOBData>()?.url?.trim() ?? '';
+      final mediaUrl = () {
+        if (oobUrl.isNotEmpty && AesGcmUrl.looksLikeFileUrl(oobUrl)) {
+          return AesGcmUrl.primaryUrl(oobUrl);
+        }
+        if (AesGcmUrl.looksLikeFileUrl(body)) {
+          return AesGcmUrl.primaryUrl(body);
+        }
+        return '';
+      }();
       final hasContent = body.isNotEmpty ||
+          mediaUrl.isNotEmpty ||
           error != null ||
           reactionData != null ||
           retraction != null ||
@@ -1782,7 +2255,8 @@ class XmppService {
       final inbound = InboundMessage(
         from: event.from,
         to: event.to,
-        body: body,
+        type: event.type,
+        body: body.isNotEmpty ? body : mediaUrl,
         stanzaId: event.id,
         encryptionError: error,
         isCarbonCopy: isCarbon,
@@ -1794,6 +2268,7 @@ class XmppService {
         originId: stable?.originId,
         retracts: retraction?.id,
         corrects: correction?.id,
+        mediaUrl: mediaUrl,
         reply: replyData == null
             ? null
             : ReplyInfo.from(
@@ -1804,7 +2279,10 @@ class XmppService {
             ? null
             : ReactionUpdate(
                 targetId: reactionData.messageId,
-                reactor: event.from.toBare().toString(),
+                reactor: event.type == 'groupchat' &&
+                        event.from.resource.isNotEmpty
+                    ? event.from.resource
+                    : event.from.toBare().toString(),
                 emojis: reactionData.emojis,
               ),
       );

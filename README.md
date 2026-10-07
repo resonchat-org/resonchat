@@ -39,6 +39,75 @@
 - 消息一律落库（虽已加密），无「不保存明文」选项
 - 加密协议**未经第三方安全审计**
 
+## 构建指南
+
+本仓库通过 **Git 子模块** 引入 `packages/moxlib`、`packages/omemo_dart`、`packages/moxxmpp`（见 [`.gitmodules`](.gitmodules)）。子模块里有一部分**生成代码不在 Git 中**（例如 `omemo_dart` 的 `schema.pb.dart`），必须先在各子模块里生成，再进入 `app` 构建；否则 `flutter pub get` / 编译会报缺少文件。
+
+### 环境要求
+
+- [Flutter](https://docs.flutter.dev/get-started/install) stable（与 [`README.dev.md`](README.dev.md) 一致：Dart 3.13+）
+- Android 开发：JDK 21、Android SDK（运行/打包 APK 时需要）
+- **`protoc`**：`omemo_dart` 从 `protobuf/schema.proto` 生成 Dart 代码时需要（例如 Debian/Ubuntu：`protobuf-compiler`）
+
+### 1. 克隆仓库与子模块
+
+```bash
+git clone --recurse-submodules https://github.com/resonchat-org/resonchat
+cd resonchat
+```
+
+### 2. 在子模块中生成代码
+
+按依赖顺序执行（路径均相对于仓库根目录）：
+
+**`moxlib`（无代码生成，只需解析依赖）**
+
+```bash
+cd packages/moxlib && dart pub get && cd ../..
+```
+
+**`omemo_dart`（Protobuf → `lib/src/protobuf/schema.pb.dart`）**
+
+```bash
+cd packages/omemo_dart
+dart pub get
+dart pub global activate protoc_plugin
+export PATH="$PATH:$HOME/.pub-cache/bin"
+protoc --dart_out=lib/src/protobuf -Iprotobuf protobuf/schema.proto
+cd ../..
+```
+
+**`moxxmpp`（拉取依赖并跑 `build_runner`；与上游 monorepo 习惯一致）**
+
+```bash
+cd packages/moxxmpp/packages/moxxmpp
+dart pub get
+dart run build_runner build
+cd ../moxxmpp_socket_tcp
+dart pub get
+cd ../../..
+```
+
+也可在 `packages/moxxmpp` 使用 [melos](https://melos.invertase.dev/)：`melos bootstrap`（需本机已安装 `melos`），再于 `packages/moxxmpp/packages/moxxmpp` 执行上面的 `build_runner` 命令。
+
+### 3. 构建并运行应用
+
+```bash
+cd app
+flutter pub get
+dart run build_runner build   # 生成 drift：database.g.dart 等
+flutter run                   # 连接设备或模拟器
+```
+
+调试 APK：
+
+```bash
+cd app
+flutter build apk --debug
+```
+
+更完整的工具链版本、分析与测试命令见 [`README.dev.md`](README.dev.md)。
+
 ## 开发
 
 构建、测试与本地环境见 [`README.dev.md`](README.dev.md)。

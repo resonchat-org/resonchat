@@ -61,9 +61,11 @@ class PqMessageLayer {
   /// Resolves a remote device's X25519 identity public key, normally from
   /// its published bundle (a network round-trip the first time).
   ///
-  /// Throws [PqDecryptError] when it cannot be fetched, rather than
-  /// proceeding with a weaker session binding.
-  final Future<List<int>> Function(int deviceId) senderIkOf;
+  /// [senderBareJid] is the peer's bare address (for groupchat: the
+  /// occupant's real JID, never the room). Throws [PqDecryptError] when it
+  /// cannot be fetched, rather than proceeding with a weaker session binding.
+  final Future<List<int>> Function(String senderBareJid, int deviceId)
+      senderIkOf;
 
   final _cipher = AesGcm.with256bits();
 
@@ -159,7 +161,13 @@ class PqMessageLayer {
   }
 
   /// Decrypts [message] addressed to our own device.
-  Future<String> decrypt(PqEncryptedMessage message) async {
+  ///
+  /// [senderBareJid] identifies whose bundle to fetch for KEX (1:1: the
+  /// peer; groupchat: the occupant's real bare JID).
+  Future<String> decrypt(
+    PqEncryptedMessage message, {
+    required String senderBareJid,
+  }) async {
     final entry = message.keys.firstWhere(
       (k) => k.recipientDeviceId == ownDevice.id,
       orElse: () => throw PqDecryptError(
@@ -167,23 +175,26 @@ class PqMessageLayer {
       ),
     );
 
+    // Ratchets are keyed by (peer bare JID, peer device id) — same as
+    // initiate. Using our own JID here broke replies and MUC senders.
+    final peerKey = senderBareJid;
+
     // Build the session first when this is a KEX message.
-    if (entry.kex ||
-        !sessions.hasRatchet(ownDevice.jid, message.senderDeviceId)) {
+    if (entry.kex || !sessions.hasRatchet(peerKey, message.senderDeviceId)) {
       try {
         await sessions.accept(
           own: ownDevice,
-          senderJid: ownDevice.jid,
+          senderJid: peerKey,
           senderDeviceId: message.senderDeviceId,
           kex: entry,
-          senderIkDh: await senderIkOf(message.senderDeviceId),
+          senderIkDh: await senderIkOf(peerKey, message.senderDeviceId),
         );
       } on PqSessionError catch (e) {
         throw PqDecryptError('handshake failed: ${e.message}');
       }
     }
 
-    final ratchet = sessions.ratchetFor(ownDevice.jid, message.senderDeviceId);
+    final ratchet = sessions.ratchetFor(peerKey, message.senderDeviceId);
     if (ratchet == null) {
       throw PqDecryptError('no session with ${message.senderDeviceId}');
     }

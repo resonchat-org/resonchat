@@ -345,7 +345,13 @@ Future<void> storeInbound(
   if (own && msg.to == null) return;
   final chatJid = _chatJidFor(msg, ownBare);
   final sender = msg.from.toString();
-  await db.upsertChat(chatJid);
+  final isGroupchat = msg.type == 'groupchat';
+  // Conversations MODE_MULTI: a groupchat stanza marks the conversation as a
+  // room. Never infer from the JID alone — that is how rooms become "contacts".
+  await db.upsertChat(
+    chatJid,
+    isGroup: isGroupchat ? true : null,
+  );
 
   // A carbon duplicates a message we already hold locally.
   if (msg.isCarbonCopy) return;
@@ -384,7 +390,7 @@ Future<void> storeInbound(
       chatJid: Value(chatJid),
       sender: Value(sender),
       // The origin-id when the sender published one, because that is the id
-      // reactions, replies, edits and retractions address. The server's stanza
+      // reactions, replies, edits and retrations address. The server's stanza
       // id is a fallback and it changes across an archive round trip, so a
       // message keyed on it becomes unaddressable after a MAM import.
       stanzaId: Value(msg.originId ?? stanzaId),
@@ -393,7 +399,11 @@ Future<void> storeInbound(
       // it keeps the bubble free of a duplicated quote.
       replyTo: Value(msg.reply?.targetId ?? ''),
       replyBody: Value(msg.reply?.body ?? ''),
-      replyAuthor: Value(msg.from.toBare().toString()),
+      replyAuthor: Value(
+        isGroupchat && msg.from.resource.isNotEmpty
+            ? msg.from.resource
+            : msg.from.toBare().toString(),
+      ),
       // Never store the ciphertext of something we could not open: the
       // placeholder carries the failure, not the payload.
       body: Value(msg.encryptionError != null ? '' : msg.body),
@@ -408,6 +418,9 @@ Future<void> storeInbound(
       ),
       incoming: Value(!own),
       markable: Value(msg.markable),
+      mediaUrl: Value(msg.encryptionError != null ? '' : msg.mediaUrl),
+      mediaMime: Value(msg.mediaMime),
+      mediaName: Value(msg.mediaName),
     ),
   );
 }

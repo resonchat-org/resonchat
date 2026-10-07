@@ -97,6 +97,16 @@ final connectionStateProvider = StateProvider<XmppConnectionState>(
   (ref) => XmppConnectionState.disconnected,
 );
 
+/// Whether the account's server advertises XEP-0363 HTTP File Upload.
+///
+/// Re-checked when the connection state changes; false while disconnected.
+final httpUploadAvailableProvider = FutureProvider<bool>((ref) async {
+  ref.watch(connectionStateProvider);
+  final xmpp = ref.watch(xmppServiceProvider);
+  if (xmpp.state != XmppConnectionState.connected) return false;
+  return xmpp.httpFiles.isAvailable();
+});
+
 /// Live message list for one chat.
 final messagesProvider =
     StreamProvider.family<List<Message>, String>((ref, chatJid) {
@@ -266,10 +276,13 @@ final roomStateProvider =
   final xmpp = ref.watch(xmppServiceProvider);
   final state = await xmpp.groupChatState(roomJid);
   if (state == null) return null;
+  // Conversations getUsers vs getOnlineUsers — private non-anon includes
+  // offline affiliation members.
+  final occupants = await xmpp.roomDisplayMembers(roomJid);
   return GroupChat(
     roomJid: roomJid,
     nick: state.nick ?? '',
-    occupants: state.members.values.map(Occupant.from).toList(),
+    occupants: occupants,
     joined: state.joined,
   );
 });

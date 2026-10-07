@@ -275,6 +275,9 @@ const Map<BackupTable, BackupTableSpec> kBackupTables = {
     BackupColumn('unread_count', BackupColumnKind.integer),
     BackupColumn('last_read_at', BackupColumnKind.stamp),
     BackupColumn('track_override', BackupColumnKind.text),
+    BackupColumn('is_group', BackupColumnKind.flag),
+    BackupColumn('muc_nick', BackupColumnKind.text),
+    BackupColumn('muc_private_non_anonymous', BackupColumnKind.flag),
   ]),
   // `id` is deliberately absent. It is a storage artefact of the device the
   // backup came from: nothing in this schema references a message by row id —
@@ -300,6 +303,10 @@ const Map<BackupTable, BackupTableSpec> kBackupTables = {
     BackupColumn('reply_body', BackupColumnKind.text),
     BackupColumn('reply_author', BackupColumnKind.text),
     BackupColumn('edited_at', BackupColumnKind.stamp, nullable: true),
+    BackupColumn('media_url', BackupColumnKind.text),
+    BackupColumn('media_mime', BackupColumnKind.text),
+    BackupColumn('media_name', BackupColumnKind.text),
+    // local_path is device-local and deliberately omitted from backups.
   ]),
   BackupTable.rosterEntries: BackupTableSpec(BackupTable.rosterEntries, [
     BackupColumn('jid', BackupColumnKind.text),

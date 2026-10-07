@@ -8,13 +8,23 @@
 
 import 'package:flutter/material.dart';
 
+import '../l10n/l10n.dart';
 import '../omemo/track.dart';
+import '../store/database.dart';
 import '../xmpp/reactions.dart';
 import '../xmpp/retraction.dart';
 import 'appearance.dart';
+import 'media_attachment.dart';
 import 'theme.dart';
 
 enum BubbleSide { incoming, outgoing }
+
+/// Hide the raw share URL when the media chrome already represents the file.
+bool _shouldHideUrlBody(Message? message, String text) {
+  if (message == null || message.mediaUrl.isEmpty) return false;
+  return text.trim() == message.mediaUrl.trim() ||
+      text.trim().split('\n').first.trim() == message.mediaUrl.trim();
+}
 
 /// Paints a rounded rectangle whose one corner is squared off, forming the
 /// tail that points at the sender.
@@ -117,12 +127,16 @@ class MessageBubble extends StatelessWidget {
     this.replyTo = '',
     this.replyBody = '',
     this.replyAuthor = '',
+    this.message,
     this.onReact,
     this.onLongPress,
     this.onTap,
   });
 
   final String text;
+
+  /// When set and carrying a media URL, render download / image UI.
+  final Message? message;
   final DateTime time;
   final BubbleSide side;
 
@@ -242,52 +256,66 @@ class MessageBubble extends StatelessWidget {
                   TgDimens.bubblePaddingH + 4,
                   TgDimens.bubblePaddingV,
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Flexible(
-                      child: retracted
-                          ? Text(
-                              mine ? kRetractedNoticeMine : kRetractedNotice,
+                    if (!retracted &&
+                        message != null &&
+                        message!.mediaUrl.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: MediaAttachment(message: message!),
+                      ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Flexible(
+                          child: retracted
+                              ? Text(
+                                  mine
+                                      ? kRetractedNoticeMine
+                                      : kRetractedNotice,
+                                  style: TextStyle(
+                                    fontSize: TgDimens.messageFontSize,
+                                    fontStyle: FontStyle.italic,
+                                    color: tg.textSecondary,
+                                    height: 1.3,
+                                  ),
+                                )
+                              : _shouldHideUrlBody(message, text)
+                                  ? const SizedBox.shrink()
+                                  : Text(
+                                      text,
+                                      style: TextStyle(
+                                        fontSize: TgDimens.messageFontSize,
+                                        color: tg.textPrimary,
+                                        height: 1.3,
+                                      ),
+                                    ),
+                        ),
+                        if (edited && !retracted)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 6, bottom: 2),
+                            child: Text(
+                              context.l10n.edited,
                               style: TextStyle(
-                                fontSize: TgDimens.messageFontSize,
-                                fontStyle: FontStyle.italic,
+                                fontSize: TgDimens.timeFontSize - 1,
                                 color: tg.textSecondary,
-                                height: 1.3,
-                              ),
-                            )
-                          : Text(
-                              text,
-                              style: TextStyle(
-                                fontSize: TgDimens.messageFontSize,
-                                color: tg.textPrimary,
-                                height: 1.3,
                               ),
                             ),
-                    ),
-                    // The marker sits beside the timestamp rather than on its
-                    // own line: it is metadata about the text, and a separate
-                    // row would push the bubble taller for every edit.
-                    if (edited && !retracted)
-                      Padding(
-                        padding: const EdgeInsets.only(left: 6, bottom: 2),
-                        child: Text(
-                          'edited',
-                          style: TextStyle(
-                            fontSize: TgDimens.timeFontSize - 1,
-                            color: tg.textSecondary,
                           ),
+                        const SizedBox(width: 8),
+                        _MetaRow(
+                          time: time,
+                          delivered: delivered,
+                          displayed: displayed,
+                          failed: failed,
+                          mine: mine,
+                          track: track,
                         ),
-                      ),
-                    const SizedBox(width: 8),
-                    _MetaRow(
-                      time: time,
-                      delivered: delivered,
-                      displayed: displayed,
-                      failed: failed,
-                      mine: mine,
-                      track: track,
+                      ],
                     ),
                   ],
                 ),

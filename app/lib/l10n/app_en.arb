@@ -43,8 +43,45 @@
   "connecting": "Connecting…",
   "authenticationFailed": "Authentication failed",
   "searchMessages": "Search messages",
+  "searching": "Searching…",
+  "noMessagesFound": "No messages found",
+  "searchFailed": "Search failed: {error}",
+  "@searchFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "clear": "Clear",
   "contactRequests": "Contact requests",
+  "nothingWaiting": "Nothing waiting",
+  "wantToSeeYou": "Want to see you",
+  "waitingForThem": "Waiting for them",
+  "theyHaveNotAnswered": "They have not answered yet.",
+  "incomingRequestSubtitle": "They want to see when you are online and to send you messages.",
+  "decline": "Decline",
+  "accept": "Accept",
   "joinGroup": "Join a group",
+  "roomAddress": "Room address",
+  "roomAddressHint": "room@conference.example.org",
+  "yourNicknameInRoom": "Your nickname in this room",
+  "nicknameHelper": "How everyone else in the room will see you.",
+  "joinRoomNeedBoth": "Both the room address and a nickname are needed.",
+  "joining": "Joining…",
+  "join": "Join",
+  "nicknameTaken": "That nickname is taken in this room. Pick another.",
+  "roomNeedsPassword": "This room needs a password, which this client does not support yet.",
+  "bannedFromRoom": "You are banned from this room.",
+  "roomFull": "This room is full.",
+  "joinForbidden": "The room refused the join without saying why.",
+  "nicknameRequired": "A nickname is required to join.",
+  "roomNotFound": "That service has no room at that address. Group rooms look like room@conference.example.org.",
+  "mucUnresponsive": "Nothing answered at that address. Check the room address — group rooms look like room@conference.example.org.",
+  "couldNotJoin": "Could not join: {error}",
+  "@couldNotJoin": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
   "noConversationsYet": "No conversations yet",
   "openChatHint": "JID to open",
   "open": "Open",
@@ -59,13 +96,41 @@
   "react": "React",
   "copyText": "Copy text",
   "forward": "Forward",
+  "forwardSubtitle": "Sent again to someone else, encrypted for them.",
   "edit": "Edit",
   "deleteForEveryone": "Delete for everyone",
+  "deleteUnencryptedWarning": "This message went out unencrypted. Deleting it here removes your copy, but anyone who already read it still has it.",
+  "selectMessages": "Select messages",
+  "selectedCount": "{count} selected",
+  "@selectedCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "deleteMine": "Delete mine",
+  "replyingTo": "Replying to {author}",
+  "@replyingTo": {
+    "placeholders": {
+      "author": { "type": "String" }
+    }
+  },
+  "cancelReply": "Cancel reply",
+  "editMessageHint": "Edit message",
+  "messagesNotEncrypted": "Messages in this chat are not encrypted.",
+  "copied": "Copied",
   "cancel": "Cancel",
   "close": "Close",
   "save": "Save",
   "details": "Details",
   "members": "Members",
+  "membersInRoom": "{count} in the room",
+  "@membersInRoom": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "moderator": "Moderator",
+  "you": "you",
   "searchInChat": "Search in this chat",
   "appearance": "Appearance",
   "pinnedMessages": "Pinned messages",
@@ -98,5 +163,94 @@
     }
   },
   "edited": "edited",
-  "youPrefix": "You: "
+  "youPrefix": "You: ",
+  "fileAttachment": "File",
+  "tapToDownload": "Tap to download",
+  "fileSavedLocally": "Saved on this device",
+  "couldNotOpenFile": "Could not open file",
+  "uploadingFile": "Uploading…",
+  "uploadFailed": "Upload failed: {error}",
+  "@uploadFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "httpUploadUnavailable": "This server does not support HTTP File Upload",
+  "attachFile": "Attach file",
+  "messageComposerHint": "Message",
+  "noMessagesYet": "No messages yet",
+  "unableToDecrypt": "Unable to decrypt this message.",
+  "retry": "Retry",
+  "askAgain": "Ask again",
+  "tapToOpen": "Tap to open",
+  "unreadMessages": "Unread messages",
+  "jumpToFirstUnread": "Jump to the first unread message",
+  "scrollToLatest": "Scroll to the latest",
+  "encryptionForThisChat": "Encryption for this chat",
+  "trackDescriptionNone": "Plaintext — anyone with access to the server can read this.",
+  "trackDescriptionStandard": "Standard OMEMO — readable by other XMPP apps such as Conversations.",
+  "trackDescriptionPq": "Post-quantum — strongest, but only resonchat apps can read it.",
+  "currentlyYourGlobalDefault": "Currently your global default",
+  "useGlobalDefault": "Use the global default ({label})",
+  "@useGlobalDefault": {
+    "placeholders": {
+      "label": { "type": "String" }
+    }
+  },
+  "messagesOnTrackWillAsk": "Messages on {label} will ask you what to do before they go.",
+  "@messagesOnTrackWillAsk": {
+    "placeholders": {
+      "label": { "type": "String" }
+    }
+  },
+  "switchToTrack": "Switch to {label}",
+  "@switchToTrack": {
+    "placeholders": {
+      "label": { "type": "String" }
+    }
+  },
+  "dismiss": "Dismiss",
+  "sendWithoutEncryption": "Send without encryption?",
+  "sendWithoutEncryptionBody": "This message goes to {contact} in the clear. Anyone who can reach the server — including whoever stores it — can read it. It cannot be taken back.\n\nSending with {alternative} instead keeps it readable only by them.",
+  "@sendWithoutEncryptionBody": {
+    "placeholders": {
+      "contact": { "type": "String" },
+      "alternative": { "type": "String" }
+    }
+  },
+  "sendInTheClear": "Send in the clear",
+  "sendWithTrack": "Send with {label}",
+  "@sendWithTrack": {
+    "placeholders": {
+      "label": { "type": "String" }
+    }
+  },
+  "blockContact": "Block {contact}",
+  "@blockContact": {
+    "placeholders": {
+      "contact": { "type": "String" }
+    }
+  },
+  "unblockContact": "Unblock {contact}",
+  "@unblockContact": {
+    "placeholders": {
+      "contact": { "type": "String" }
+    }
+  },
+  "blockContactSubtitle": "Their messages still arrive, but will not be opened, stored or acknowledged.",
+  "unblockContactSubtitle": "Their messages will be shown and stored again.",
+  "blockedSnack": "Blocked. Their messages will no longer be opened or stored on this device.",
+  "unblockedSnack": "Unblocked. Their messages will be shown again.",
+  "trackBlockedUnknownPeersTitle": "Cannot check what they support",
+  "trackBlockedUnknownPeersConsequence": "We could not read this contact's device list, so we do not know what they can open.",
+  "trackBlockedUnknownPeersOutcome": "This message will not be sent until we can tell what they support.",
+  "trackBlockedUnreachableTitle": "They have no reachable device",
+  "trackBlockedUnreachableConsequence": "This contact publishes no encryption device we can encrypt to, so any message we send would go out readable.",
+  "trackBlockedUnreachableOutcome": "The only way to send is in the clear, readable by anyone with access to the server.",
+  "trackBlockedStandardTitle": "Standard encryption is not possible here",
+  "trackBlockedStandardConsequence": "At least one of their devices has no standard OMEMO bundle, so an encrypted message would be unreadable on that device.",
+  "trackBlockedStandardOutcome": "Sending in the clear is the only way this message gets read.",
+  "trackBlockedPqTitle": "They cannot read post-quantum messages",
+  "trackBlockedPqConsequence": "At least one of their devices is not an resonchat device, and it cannot read post-quantum messages.",
+  "trackBlockedPqOutcome": "The other person will not be able to read this message at all."
 }

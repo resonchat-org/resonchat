@@ -3,18 +3,18 @@
 //
 // Group chats (XEP-0045).
 //
-// A room is addressed as `room@server/nick`, and almost every decision here
-// follows from that one fact:
+// A room is identified by the bare JID `room@server` plus our join nick
+// (`room@server/nick` in presence). Almost every decision follows from that:
 //
-//   * Outgoing messages go to `room@server/ourNick`, not to the bare room. A
-//     message addressed to the room goes to nobody in particular and many
-//     servers drop it.
-//   * The sender of an incoming message is the *nick*, not the room. Showing
-//     `room@server/nick` in a bubble makes the room unreadable, and the bare
-//     room says nothing about who spoke.
+//   * Join / leave presence goes to `room@server/ourNick`.
+//   * Outgoing group messages go to the *bare* room with `type='groupchat'`
+//     (XEP-0045 / Conversations). Private occupant PMs use `type='chat'` to
+//     `room@server/theirNick`.
+//   * The sender of an incoming message is the *nick* (resource), not the room.
 //   * Occupants change without notice. Anything computed once at join time — a
 //     device list, a track decision — is stale by the time it is used, so
 //     nothing here is cached beyond what the presence stream itself says.
+//   * A room is never a roster contact: no subscription, no PEP-as-peer.
 //
 // On encryption, the honest position: a room's recipient set is "whoever is in
 // it right now", and that set cannot be established at the moment a message is
@@ -53,6 +53,7 @@ class Occupant {
     required this.nick,
     required this.affiliation,
     required this.role,
+    this.realJid,
   });
 
   /// The room-local nickname. Stable for as long as they are in the room, and
@@ -68,8 +69,16 @@ class Occupant {
   /// change the room's configuration until the server promotes them back.
   final String role;
 
+  /// Real bare JID when the room is non-anonymous; null otherwise.
+  final String? realJid;
+
   bool get isModerator => role == 'moderator';
   bool get canSpeak => role == 'moderator' || role == 'participant';
+
+  /// Present in the room now (Conversations `ranks(Role.PARTICIPANT)`).
+  ///
+  /// Affiliation stubs from `muc#admin` use `role=none` until presence arrives.
+  bool get isOnline => role == 'moderator' || role == 'participant' || role == 'visitor';
 
   /// Whether this occupant may be addressed by others in the room.
   ///
@@ -77,10 +86,17 @@ class Occupant {
   /// broadcasting to somebody who explicitly asked not to be addressed.
   bool get isAddressable => canSpeak && affiliation != 'outcast';
 
+  /// Conversations `User.ranks(Affiliation.MEMBER)` — OMEMO crypto targets.
+  bool get isMemberOrAbove =>
+      affiliation == 'owner' ||
+      affiliation == 'admin' ||
+      affiliation == 'member';
+
   factory Occupant.from(RoomMember member) => Occupant(
         nick: member.nick,
         affiliation: member.affiliation.value,
         role: member.role.value,
+        realJid: member.realJid?.toBare().toString(),
       );
 
   @override
@@ -88,10 +104,96 @@ class Occupant {
       other is Occupant &&
       other.nick == nick &&
       other.affiliation == affiliation &&
-      other.role == role;
+      other.role == role &&
+      other.realJid == realJid;
 
   @override
-  int get hashCode => Object.hash(nick, affiliation, role);
+  int get hashCode => Object.hash(nick, affiliation, role, realJid);
+}
+
+/// Conversations `MucOptions.isPrivateAndNonAnonymous`:
+/// `muc_membersonly` && `muc_nonanonymous`.
+bool isPrivateAndNonAnonymous(Iterable<String> discoFeatures) {
+  final features = discoFeatures.toSet();
+  return features.contains('muc_membersonly') &&
+      features.contains('muc_nonanonymous');
+}
+
+/// Bare real JIDs to encrypt a groupchat OMEMO message to
+/// (Conversations `MucOptions.getMembers`).
+List<String> mucCryptoTargets({
+  required List<Occupant> occupants,
+  required String? ourBareJid,
+}) {
+  final out = <String>{};
+  for (final o in occupants) {
+    if (!o.isMemberOrAbove) continue;
+    final jid = o.realJid;
+    if (jid == null || jid.isEmpty) continue;
+    // Skip domain JIDs (Conversations `!u.realJid.isDomainJid()`).
+    final at = jid.indexOf('@');
+    if (at <= 0) continue;
+    if (ourBareJid != null && jid == ourBareJid) continue;
+    out.add(jid);
+  }
+  return out.toList();
+}
+
+/// Occupant from a `muc#admin` `<item/>` (Conversations `itemToUser`).
+///
+/// Affiliation lookups have no full occupant address — [role] defaults to
+/// `none` so the stub stays offline until presence overlays it.
+Occupant? occupantFromAdminItem(XMLNode item) {
+  final jidRaw = item.attributes['jid']?.toString();
+  if (jidRaw == null || jidRaw.isEmpty) return null;
+  final bare = JID.fromString(jidRaw).toBare().toString();
+  // Domain-only JIDs are not people (Conversations `!u.isDomain()`).
+  if (!bare.contains('@') || bare.startsWith('@')) return null;
+  final affiliation = item.attributes['affiliation']?.toString() ?? 'none';
+  final role = item.attributes['role']?.toString() ?? 'none';
+  final nickAttr = item.attributes['nick']?.toString();
+  final nick = (nickAttr != null && nickAttr.isNotEmpty)
+      ? nickAttr
+      : bare.split('@').first;
+  return Occupant(
+    nick: nick,
+    affiliation: affiliation,
+    role: role,
+    realJid: bare,
+  );
+}
+
+/// Merge affiliation roster with live presence (Conversations `updateUser`).
+///
+/// Presence wins when the same real JID is online; offline affiliation stubs
+/// (`role=none`) remain so OMEMO can still target them.
+List<Occupant> mergeRoomMembers({
+  required List<Occupant> affiliation,
+  required List<Occupant> online,
+}) {
+  final byKey = <String, Occupant>{};
+  for (final o in affiliation) {
+    byKey[o.realJid ?? 'nick:${o.nick}'] = o;
+  }
+  for (final o in online) {
+    byKey[o.realJid ?? 'nick:${o.nick}'] = o;
+  }
+  return byKey.values.toList();
+}
+
+/// Member list for the UI — Conversations `getUsers` vs `getOnlineUsers`.
+///
+/// Private non-anonymous rooms show the full affiliation roster (including
+/// offline). Every other room shows only currently present occupants.
+List<Occupant> roomMembersForDisplay({
+  required bool privateNonAnonymous,
+  required List<Occupant> affiliation,
+  required List<Occupant> online,
+}) {
+  if (privateNonAnonymous) {
+    return mergeRoomMembers(affiliation: affiliation, online: online);
+  }
+  return List<Occupant>.of(online);
 }
 
 /// A room we are in.
@@ -117,11 +219,10 @@ class GroupChat {
 
   final bool joined;
 
-  /// Where our messages go.
+  /// Our occupant address for presence and private PMs.
   ///
-  /// `room@server/ourNick` — not the bare room. This is the single most common
-  /// MUC mistake and it fails silently: the server accepts the stanza and
-  /// delivers it to nobody.
+  /// Group messages use the bare [roomJid] with `type='groupchat'` instead
+  /// (XEP-0045). Confusing the two is the classic silent MUC bug.
   String get myAddress => '${roomJid.isEmpty ? '' : '$roomJid/'}$nick';
 
   bool get isMuc => true;
@@ -174,35 +275,38 @@ class GroupChat {
   }
 }
 
-/// Which track a room message goes out on.
+/// Which track a room message goes out on (standard-path device snapshot).
 ///
-/// Rooms get their own resolver rather than reusing the 1:1 one because the
-/// question is genuinely different. A 1:1 conversation has a fixed recipient
-/// set we can enumerate; a room does not, so the standard track is available
-/// whenever we have *any* reachable occupant device, rather than requiring every
-/// device of every occupant — which would be unreachable in a room with anyone
-/// who has OMEMO disabled.
+/// Private non-anonymous rooms enumerate affiliation members (including
+/// offline). Standard OMEMO is available when any member device is reachable;
+/// PQ is decided separately in [XmppService.sendGroupchatOnTrack] because it
+/// needs every member to be fully PQ-capable (same bar as 1:1).
 TrackResolution resolveRoomTrack({
   required Set<int> occupantOmemoDevices,
   required bool devicesReadable,
+  Track requested = Track.standard,
 }) {
+  if (requested == Track.none) {
+    return const TrackResolution(track: Track.none, blocked: null);
+  }
   if (!devicesReadable) {
-    // Same reasoning as a 1:1 conversation: not knowing is not permission.
-    return const TrackResolution(
-      track: Track.standard,
+    return TrackResolution(
+      track: requested,
       blocked: TrackBlocked.unknownPeers,
     );
   }
   if (occupantOmemoDevices.isEmpty) {
-    return const TrackResolution(
-      track: Track.standard,
+    return TrackResolution(
+      track: requested,
       blocked: TrackBlocked.unreachableDevices,
     );
   }
-  // The room track is whatever the room's setting says. Not inferred from
-  // devices: a room can be configured to be unencrypted while every occupant
-  // happens to support OMEMO, and encrypting anyway would contradict the
-  // person who owns the room.
+  if (requested == Track.pq) {
+    // Device snapshot alone cannot prove every member is PQ-capable; the
+    // send path loads each member's bundles. Treat as sendable here so the
+    // UI can offer the track; sendGroupchatOnTrack may still refuse.
+    return const TrackResolution(track: Track.pq, blocked: null);
+  }
   return const TrackResolution(track: Track.standard, blocked: null);
 }
 

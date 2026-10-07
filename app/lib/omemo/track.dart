@@ -14,6 +14,8 @@ import 'package:flutter/material.dart';
 import 'package:moxxmpp/moxxmpp.dart'
     show ExplicitEncryptionType, emeOmemo, emePomemo0;
 
+import '../l10n/generated/app_localizations.dart';
+
 /// Which track a message used.
 ///
 /// The [name] of each value is the token stored in `messages.enc_mode`; the
@@ -45,7 +47,7 @@ enum Track {
         Track.pq => emePomemo0,
       };
 
-  /// Human-readable label for the track picker.
+  /// Human-readable label for the track picker (English; tests / logs).
   String get description => switch (this) {
         Track.none => 'Plaintext — anyone with access to the server can read '
             'this.',
@@ -53,6 +55,13 @@ enum Track {
           'Standard OMEMO — readable by other XMPP apps such as Conversations.',
         Track.pq => 'Post-quantum — strongest, but only resonchat apps can read '
             'it.',
+      };
+
+  /// Localized description for UI.
+  String localizedDescription(AppLocalizations l10n) => switch (this) {
+        Track.none => l10n.trackDescriptionNone,
+        Track.standard => l10n.trackDescriptionStandard,
+        Track.pq => l10n.trackDescriptionPq,
       };
 
   /// Recovers the track from a received EME declaration.

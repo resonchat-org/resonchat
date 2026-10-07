@@ -109,12 +109,12 @@ Future<void> main(List<String> args) async {
     final layerA = PqMessageLayer(
       ownDevice: a.device,
       sessions: sessionsA,
-      senderIkOf: (_) async => bIk,
+      senderIkOf: (_, __) async => bIk,
     );
     final layerB = PqMessageLayer(
       ownDevice: b.device,
       sessions: sessionsB,
-      senderIkOf: (_) async => aIk,
+      senderIkOf: (_, __) async => aIk,
     );
 
     const plaintext = 'PQ interop over XMPP 🔐';
@@ -139,7 +139,7 @@ Future<void> main(List<String> args) async {
       onWire.keys.length == 1,
     );
 
-    final recovered = await layerB.decrypt(onWire);
+    final recovered = await layerB.decrypt(onWire, senderBareJid: a.device.jid);
     check(
       'B decrypted A\'s PQ message',
       recovered == plaintext,
@@ -152,6 +152,7 @@ Future<void> main(List<String> args) async {
     check('subsequent message skips the handshake', !secondEntry.kex);
     final back2 = await layerB.decrypt(
       PqEncryptedMessage.fromXml(second.stanza.toXml()),
+      senderBareJid: a.device.jid,
     );
     check('second message decrypts', back2 == 'second');
   } catch (e, st) {

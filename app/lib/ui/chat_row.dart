@@ -45,11 +45,14 @@ class ChatRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tg = context.tg;
-    final title = chat.title.isEmpty ? chat.jid : chat.title;
+    final title = chat.isGroup
+        ? (chat.title.isEmpty ? chat.jid : chat.title)
+        : (chat.title.isEmpty ? chat.jid : chat.title);
     // The chosen track, not the negotiated one: a row says what the user
-    // picked. Whether it can be used right now is a question for the chat page
-    // and for the moment of sending.
-    final track = ref.watch(chatTrackProvider(chat.jid)).value ?? Track.standard;
+    // picked. Public rooms stay plaintext; private non-anonymous may use OMEMO.
+    final track = chat.isGroup && !chat.mucPrivateNonAnonymous
+        ? Track.none
+        : ref.watch(chatTrackProvider(chat.jid)).value ?? Track.standard;
     final preview = ref.watch(lastMessageProvider(chat.jid));
     final locked = track != Track.none;
 
@@ -90,11 +93,21 @@ class ChatRow extends ConsumerWidget {
           ),
           child: Row(
             children: [
-              ContactAvatar(
-                jid: chat.jid,
-                title: title,
-                hero: true,
-              ),
+              chat.isGroup
+                  ? CircleAvatar(
+                      radius: TgDimens.avatarChats / 2,
+                      backgroundColor: tg.accent.withValues(alpha: 0.18),
+                      child: Icon(
+                        Icons.groups_outlined,
+                        color: tg.accent,
+                        size: TgDimens.avatarChats * 0.55,
+                      ),
+                    )
+                  : ContactAvatar(
+                      jid: chat.jid,
+                      title: title,
+                      hero: true,
+                    ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(

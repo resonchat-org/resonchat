@@ -13,13 +13,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: false
+          submodules: recursive
 
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: stable
           channel: stable
           cache: true
+
+      - name: Generate submodule code
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+          dart pub global activate protoc_plugin
+          export PATH="$PATH:$HOME/.pub-cache/bin"
+          (cd packages/moxlib && dart pub get)
+          (cd packages/omemo_dart && dart pub get && protoc --dart_out=lib/src/protobuf -Iprotobuf protobuf/schema.proto)
+          (cd packages/moxxmpp/packages/moxxmpp && dart pub get && dart run build_runner build)
+          (cd packages/moxxmpp/packages/moxxmpp_socket_tcp && dart pub get)
 
       - name: Resolve app dependencies
         working-directory: app
@@ -44,6 +56,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - uses: subosito/flutter-action@v2
         with:
@@ -55,6 +69,18 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+
+      - name: Generate submodule code
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+          dart pub global activate protoc_plugin
+          export PATH="$PATH:$HOME/.pub-cache/bin"
+          (cd packages/moxlib && dart pub get)
+          (cd packages/omemo_dart && dart pub get && protoc --dart_out=lib/src/protobuf -Iprotobuf protobuf/schema.proto)
+          (cd packages/moxxmpp/packages/moxxmpp && dart pub get && dart run build_runner build)
+          (cd packages/moxxmpp/packages/moxxmpp_socket_tcp && dart pub get)
 
       - name: Resolve app dependencies
         working-directory: app

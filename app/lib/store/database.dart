@@ -20,7 +20,11 @@ import 'package:path_provider/path_provider.dart';
 
 part 'database.g.dart';
 
-/// One conversation (1:1 JID for M1; MUC rooms join at M4/M5).
+/// One conversation: a 1:1 contact or a MUC room (Conversations MODE_MULTI).
+///
+/// Rooms are **not** roster contacts. [isGroup] + [mucNick] are what distinguish
+/// them: subscription/PEP/1:1 OMEMO capability checks must not run against a
+/// room bare JID.
 class Chats extends Table {
   TextColumn get jid => text()();
   TextColumn get title => text().withDefault(const Constant(''))();
@@ -69,6 +73,27 @@ class Chats extends Table {
   /// previous conversation was set to.
   TextColumn get trackOverride =>
       text().withDefault(const Constant(''))();
+
+  /// True for XEP-0045 rooms (Conversations `MODE_MULTI`).
+  ///
+  /// Stored rather than inferred from the JID: a bare `room@conference`
+  /// and a contact share the same address shape, and guessing from
+  /// `conference.` in the domain is how rooms get treated as contacts.
+  BoolColumn get isGroup => boolean().withDefault(const Constant(false))();
+
+  /// Our nickname in this room when [isGroup], empty for 1:1.
+  ///
+  /// Property of the join (Conversations bookmark nick / MucOptions), not of
+  /// the room address. Empty means we have not joined yet / left without a
+  /// nick to rejoin with.
+  TextColumn get mucNick => text().withDefault(const Constant(''))();
+
+  /// Conversations `isPrivateAndNonAnonymous` — only these rooms may use OMEMO.
+  ///
+  /// From disco `muc_membersonly` + `muc_nonanonymous`. Public / anonymous
+  /// rooms stay plaintext groupchat.
+  BoolColumn get mucPrivateNonAnonymous =>
+      boolean().withDefault(const Constant(false))();
 
   @override
   Set<Column> get primaryKey => {jid};
@@ -151,6 +176,22 @@ class Messages extends Table {
   /// happened; a boolean defaulting to false cannot tell "not edited" from
   /// "edited and we lost the flag in a migration".
   DateTimeColumn get editedAt => dateTime().nullable()();
+
+  /// HTTP File Upload / OOB share URL (`https://…` or `aesgcm://…#iv+key`).
+  ///
+  /// Empty when the message is plain text. The body usually repeats this URL
+  /// (Conversations), so the column exists so the UI can treat file messages
+  /// without re-parsing every body.
+  TextColumn get mediaUrl => text().withDefault(const Constant(''))();
+
+  /// Declared MIME type when known (upload Content-Type / sniff), else empty.
+  TextColumn get mediaMime => text().withDefault(const Constant(''))();
+
+  /// Original file name when known, else empty.
+  TextColumn get mediaName => text().withDefault(const Constant(''))();
+
+  /// Absolute path of a downloaded/cached copy on this device, else empty.
+  TextColumn get localPath => text().withDefault(const Constant(''))();
 }
 
 /// Roster cache + RFC 6121 version, persisted for roster versioning.
@@ -306,11 +347,45 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
   @override
-  int get schemaVersion => 16;
+  int get schemaVersion => 19;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
         onUpgrade: (m, from, to) async {
+          if (from < 19) {
+            await customStatement(
+              'ALTER TABLE chats ADD COLUMN muc_private_non_anonymous '
+              'INTEGER NOT NULL DEFAULT 0',
+            );
+          }
+          if (from < 18) {
+            await customStatement(
+              'ALTER TABLE chats ADD COLUMN is_group INTEGER NOT NULL '
+              'DEFAULT 0',
+            );
+            await customStatement(
+              "ALTER TABLE chats ADD COLUMN muc_nick TEXT NOT NULL "
+              "DEFAULT ''",
+            );
+          }
+          if (from < 17) {
+            await customStatement(
+              "ALTER TABLE messages ADD COLUMN media_url TEXT NOT NULL "
+              "DEFAULT ''",
+            );
+            await customStatement(
+              "ALTER TABLE messages ADD COLUMN media_mime TEXT NOT NULL "
+              "DEFAULT ''",
+            );
+            await customStatement(
+              "ALTER TABLE messages ADD COLUMN media_name TEXT NOT NULL "
+              "DEFAULT ''",
+            );
+            await customStatement(
+              "ALTER TABLE messages ADD COLUMN local_path TEXT NOT NULL "
+              "DEFAULT ''",
+            );
+          }
           if (from < 16) {
             await customStatement(
               'ALTER TABLE messages ADD COLUMN displayed INTEGER NOT NULL '
@@ -1204,19 +1279,42 @@ class AppDatabase extends _$AppDatabase {
 
   /// Creates or updates a chat row. [at] overrides the activity timestamp
   /// (tests and MAM imports need deterministic ordering).
+  ///
+  /// [isGroup] / [mucNick] / [mucPrivateNonAnonymous] are optional so a later
+  /// 1:1 upsert cannot wipe a room's MODE_MULTI flags.
   Future<void> upsertChat(
     String jid, {
     String? title,
     DateTime? at,
+    bool? isGroup,
+    String? mucNick,
+    bool? mucPrivateNonAnonymous,
   }) async {
     await into(chats).insertOnConflictUpdate(
       ChatsCompanion(
         jid: Value(jid),
         title: Value(title ?? jid),
         lastActivity: Value(at ?? DateTime.now()),
+        isGroup: isGroup != null ? Value(isGroup) : const Value.absent(),
+        mucNick: mucNick != null ? Value(mucNick) : const Value.absent(),
+        mucPrivateNonAnonymous: mucPrivateNonAnonymous != null
+            ? Value(mucPrivateNonAnonymous)
+            : const Value.absent(),
       ),
     );
   }
+
+  /// One conversation row, or null.
+  Future<Chat?> getChat(String jid) =>
+      (select(chats)..where((c) => c.jid.equals(jid))).getSingleOrNull();
+
+  /// Rooms with a nick to rejoin after login (Conversations connectMultiMode).
+  Future<List<Chat>> groupChatsForJoin() =>
+      (select(chats)
+            ..where(
+              (c) => c.isGroup.equals(true) & c.mucNick.equals('').not(),
+            ))
+          .get();
 
   Future<void> insertMessage(MessagesCompanion message) async {
     await transaction(() async {
@@ -1265,6 +1363,12 @@ class AppDatabase extends _$AppDatabase {
   /// the UI words this as "clear history on this device".
   Future<int> clearChatMessages(String chatJid) =>
       (delete(messages)..where((m) => m.chatJid.equals(chatJid))).go();
+
+  /// Records the local cache path after a successful download.
+  Future<int> setMessageLocalPath(int messageId, String path) {
+    return (update(messages)..where((m) => m.id.equals(messageId)))
+        .write(MessagesCompanion(localPath: Value(path)));
+  }
 
   /// Marks one of our outgoing messages as delivered (XEP-0184).
   /// Returns the number of rows updated (0 when the id is unknown).

@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:moxxmpp/moxxmpp.dart';
 
+import '../l10n/l10n.dart';
 import '../state/providers.dart';
 import '../xmpp/muc.dart';
 import 'theme.dart';
@@ -49,7 +50,7 @@ class _JoinRoomSheetState extends ConsumerState<JoinRoomSheet> {
     final roomJid = _room.text.trim();
     final nick = _nick.text.trim();
     if (roomJid.isEmpty || nick.isEmpty) {
-      setState(() => _error = 'Both the room address and a nickname are needed.');
+      setState(() => _error = context.l10n.joinRoomNeedBoth);
       return;
     }
     setState(() {
@@ -66,10 +67,26 @@ class _JoinRoomSheetState extends ConsumerState<JoinRoomSheet> {
       // Each of these needs a different sentence: "could not join" for a
       // nickname clash and for a password requirement leaves the user with
       // nothing to act on.
-      setState(() => _error = _describe(failure));
+      setState(() => _error = _describe(context.l10n, failure));
       return;
     }
-    await db.upsertChat(roomJid);
+    // MODE_MULTI: persist as a room with nick — never as a roster contact.
+    // Disco decides Conversations isPrivateAndNonAnonymous (OMEMO allowed).
+    final xmpp = ref.read(xmppServiceProvider);
+    final features = await xmpp.queryRoomFeatures(roomJid);
+    final encryptable = isPrivateAndNonAnonymous(features);
+    // Conversations fetchMembers after join when private+non-anonymous.
+    await xmpp.refreshRoomMembership(
+      roomJid,
+      privateNonAnonymous: encryptable,
+    );
+    await db.upsertChat(
+      roomJid,
+      isGroup: true,
+      mucNick: nick,
+      title: roomJid,
+      mucPrivateNonAnonymous: encryptable,
+    );
     if (!mounted) return;
     final navigator = Navigator.of(context);
     navigator.pop();
@@ -81,44 +98,22 @@ class _JoinRoomSheetState extends ConsumerState<JoinRoomSheet> {
   /// Matched on the error *type* rather than on its text: moxxmpp's own
   /// `toString()` is not a contract, and a message that has to be rewritten
   /// every time it changes is a message that will be wrong for one release.
-  static String _describe(Object error) {
-    if (error is NicknameTakenError) {
-      return 'That nickname is taken in this room. Pick another.';
-    }
-    if (error is PasswordRequiredError) {
-      return 'This room needs a password, which this client does not support '
-          'yet.';
-    }
-    if (error is BannedFromRoomError) {
-      return 'You are banned from this room.';
-    }
-    if (error is RoomFullError) {
-      return 'This room is full.';
-    }
-    if (error is JoinForbiddenError) {
-      return 'The room refused the join without saying why.';
-    }
-    if (error is NoNicknameSpecified) {
-      return 'A nickname is required to join.';
-    }
-    if (error is RoomNotFoundError) {
-      // The address is the likely mistake, and this is the one refusal where
-      // that is almost certainly true.
-      return 'That service has no room at that address. Group rooms look like '
-          'room@conference.example.org.';
-    }
-    if (error is MucServiceUnresponsive) {
-      // The most likely cause by far: an address that is not a group chat.
-      // "Could not join" would leave the user with nothing to act on.
-      return 'Nothing answered at that address. Check the room address — group '
-          'rooms look like room@conference.example.org.';
-    }
-    return 'Could not join: $error';
+  static String _describe(AppLocalizations l10n, Object error) {
+    if (error is NicknameTakenError) return l10n.nicknameTaken;
+    if (error is PasswordRequiredError) return l10n.roomNeedsPassword;
+    if (error is BannedFromRoomError) return l10n.bannedFromRoom;
+    if (error is RoomFullError) return l10n.roomFull;
+    if (error is JoinForbiddenError) return l10n.joinForbidden;
+    if (error is NoNicknameSpecified) return l10n.nicknameRequired;
+    if (error is RoomNotFoundError) return l10n.roomNotFound;
+    if (error is MucServiceUnresponsive) return l10n.mucUnresponsive;
+    return l10n.couldNotJoin('$error');
   }
 
   @override
   Widget build(BuildContext context) {
     final tg = context.tg;
+    final l10n = context.l10n;
     return Padding(
       padding: EdgeInsets.fromLTRB(
         20,
@@ -130,22 +125,22 @@ class _JoinRoomSheetState extends ConsumerState<JoinRoomSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('Join a group', style: Theme.of(context).textTheme.titleMedium),
+          Text(l10n.joinGroup, style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 12),
           TextField(
             controller: _room,
             autofocus: true,
-            decoration: const InputDecoration(
-              labelText: 'Room address',
-              hintText: 'room@conference.example.org',
+            decoration: InputDecoration(
+              labelText: l10n.roomAddress,
+              hintText: l10n.roomAddressHint,
             ),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _nick,
-            decoration: const InputDecoration(
-              labelText: 'Your nickname in this room',
-              helperText: 'How everyone else in the room will see you.',
+            decoration: InputDecoration(
+              labelText: l10n.yourNicknameInRoom,
+              helperText: l10n.nicknameHelper,
             ),
           ),
           if (_error != null) ...[
@@ -158,7 +153,7 @@ class _JoinRoomSheetState extends ConsumerState<JoinRoomSheet> {
           const SizedBox(height: 16),
           FilledButton(
             onPressed: _busy ? null : _join,
-            child: Text(_busy ? 'Joining…' : 'Join'),
+            child: Text(_busy ? l10n.joining : l10n.join),
           ),
         ],
       ),
@@ -190,7 +185,7 @@ class MemberList extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
           child: Text(
-            '${chat.occupants.length} in the room',
+            context.l10n.membersInRoom(chat.occupants.length),
             style: TextStyle(color: tg.textSecondary, fontSize: 13),
           ),
         ),
@@ -211,14 +206,18 @@ class MemberList extends StatelessWidget {
               ),
             ),
             subtitle: occupant.isModerator
-                ? const Text('Moderator')
+                ? Text(context.l10n.moderator)
                 : null,
             // Our own row is marked rather than disabled: tapping it to start a
             // private chat is reasonable, and greyed-out rows look broken.
             trailing: occupant.nick == chat.nick
-                ? Text('you', style: TextStyle(color: tg.textSecondary))
+                ? Text(
+                    context.l10n.you,
+                    style: TextStyle(color: tg.textSecondary),
+                  )
                 : null,
-            onTap: occupant.nick == chat.nick
+            // Offline affiliation stubs have no occupant address for PMs.
+            onTap: occupant.nick == chat.nick || !occupant.isAddressable
                 ? null
                 : () => Navigator.of(context).pop(occupant.nick),
           ),

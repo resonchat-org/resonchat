@@ -24,8 +24,9 @@
 // `unreadableOccupants` rather than a boolean.
 //
 // What is *not* relaxed: the room's track is never chosen on the user's
-// behalf, a partial or stale roster blocks exactly as an unreadable device
-// list blocks for 1:1, and the post-quantum track is not offered at all.
+// behalf, and a partial or stale roster blocks exactly as an unreadable
+// device list blocks for 1:1. PQ is offered for private non-anonymous rooms
+// when every member is fully PQ-capable (checked at send time).
 
 import '../omemo/track.dart';
 import '../omemo/track_resolver.dart';
@@ -191,18 +192,6 @@ TrackResolution resolveRoomSend({
     );
   }
 
-  // PQ before the snapshot, because it does not depend on the snapshot. A
-  // room's recipient set is "whoever is in it when the message leaves", and
-  // that cannot be established at send time; offering PO here would be offering
-  // a track we can never decide on. Reporting a stale roster instead would
-  // send the user chasing a network problem that will not fix anything.
-  if (requested == Track.pq) {
-    return const TrackResolution(
-      track: Track.pq,
-      blocked: TrackBlocked.pqUnavailable,
-    );
-  }
-
   // A partial list blocks, exactly as an unreadable one does for 1:1.
   //
   // Silently sending in the clear because we could not read half the room's
@@ -217,7 +206,9 @@ TrackResolution resolveRoomSend({
     );
   }
 
-  // One reachable occupant device is enough, unlike a 1:1 conversation.
+  // One reachable occupant device is enough for standard OMEMO, unlike a 1:1
+  // conversation. PQ still needs every member fully PQ-capable — that bar is
+  // checked at send time (sendGroupchatOnTrack), using the affiliation list.
   //
   // What the resulting guarantee is: everyone in the room whose bundle
   // answered can open the message, and the server — which holds ciphertext
@@ -239,7 +230,7 @@ TrackResolution resolveRoomSend({
     );
   }
 
-  return const TrackResolution(track: Track.standard, blocked: null);
+  return TrackResolution(track: requested, blocked: null);
 }
 
 /// The occupants of one room who cannot read a message sent now.
@@ -494,16 +485,6 @@ TrackResolution _privateResolution({
   if (requested == Track.none) {
     return const TrackResolution(track: Track.none, blocked: null);
   }
-  if (requested == Track.pq) {
-    // Not because this occupant lacks a PQ device — rooms do not get the track
-    // at all, for the reason resolveRoomSend gives. pqUnavailable is the
-    // closest the vocabulary comes, and the alternative it offers (standard) is
-    // the only outcome worth offering either way.
-    return const TrackResolution(
-      track: Track.pq,
-      blocked: TrackBlocked.pqUnavailable,
-    );
-  }
   if (!audienceKnown) {
     return TrackResolution(
       track: requested,
@@ -529,5 +510,7 @@ TrackResolution _privateResolution({
       blocked: TrackBlocked.unreachableDevices,
     );
   }
-  return const TrackResolution(track: Track.standard, blocked: null);
+  // PQ capability for this one occupant is checked at send time (1:1
+  // capabilitiesFor on their real JID).
+  return TrackResolution(track: requested, blocked: null);
 }
