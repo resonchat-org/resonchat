@@ -57,12 +57,12 @@ class TrackAdvice {
 
   /// A single line, safe to put in a banner.
   String get message => switch (kind) {
-        TrackAdviceKind.pqNowPossible =>
-          'Post-quantum is now possible here — only resonchat apps can read it.',
-        TrackAdviceKind.chosenTrackBlocked =>
-          '${blocked?.consequence ?? 'This contact can no longer be reached.'} '
-              'Messages on ${track.label} will ask you what to do.',
-      };
+    TrackAdviceKind.pqNowPossible =>
+      'Post-quantum is now possible here — only resonchat apps can read it.',
+    TrackAdviceKind.chosenTrackBlocked =>
+      '${blocked?.consequence ?? 'This contact can no longer be reached.'} '
+          'Messages on ${track.label} will ask you what to do.',
+  };
 
   /// The track worth offering instead.
   ///
@@ -70,14 +70,11 @@ class TrackAdvice {
   /// that went away, and offering it here is how a capability change turns
   /// into a downgrade the user accepts without reading.
   Track get suggestion => switch (kind) {
-        TrackAdviceKind.pqNowPossible => Track.pq,
-        TrackAdviceKind.chosenTrackBlocked =>
-          resolveTrack(
-            requested: track,
-            capabilities: null,
-          ).alternative ??
-              Track.standard,
-      };
+    TrackAdviceKind.pqNowPossible => Track.pq,
+    TrackAdviceKind.chosenTrackBlocked =>
+      resolveTrack(requested: track, capabilities: null).alternative ??
+          Track.standard,
+  };
 }
 
 /// True when *every* recipient device has a usable post-quantum bundle.

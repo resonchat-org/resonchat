@@ -62,21 +62,32 @@ class PqBundle {
         builder.element('spk', attributes: {'id': '$spkId'}, nest: spk);
         builder.element('spsk', nest: spkSignature);
         builder.element('ik', nest: ikEncoded);
-        builder.element('prekeys', nest: () {
-          for (final entry in prekeys.entries) {
-            builder.element('pk',
-                attributes: {'id': '${entry.key}'}, nest: entry.value);
-          }
-        });
-        builder.element('pqspk',
-            attributes: {'id': '$pqSpkId'}, nest: pqSpk);
+        builder.element(
+          'prekeys',
+          nest: () {
+            for (final entry in prekeys.entries) {
+              builder.element(
+                'pk',
+                attributes: {'id': '${entry.key}'},
+                nest: entry.value,
+              );
+            }
+          },
+        );
+        builder.element('pqspk', attributes: {'id': '$pqSpkId'}, nest: pqSpk);
         builder.element('pqspks', nest: pqSpkSignature);
-        builder.element('pqprekeys', nest: () {
-          for (final entry in pqPrekeys.entries) {
-            builder.element('pqpk',
-                attributes: {'id': '${entry.key}'}, nest: entry.value);
-          }
-        });
+        builder.element(
+          'pqprekeys',
+          nest: () {
+            for (final entry in pqPrekeys.entries) {
+              builder.element(
+                'pqpk',
+                attributes: {'id': '${entry.key}'},
+                nest: entry.value,
+              );
+            }
+          },
+        );
       },
     );
     return builder.buildDocument().rootElement;

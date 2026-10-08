@@ -41,16 +41,18 @@ void main() {
       expect(dec, isNot(enc.sharedSecret));
     });
 
-    test('invalid ciphertext yields a distinct secret (implicit rejection)',
-        () {
-      final bob = kem.generateKeyPair();
-      final enc = kem.encapsulate(bob.publicKey);
-      final tampered = Uint8List.fromList(enc.ciphertext);
-      tampered[0] ^= 0xFF;
-      final dec = kem.decapsulate(bob.secretKey, tampered);
-      expect(dec.length, 32);
-      expect(dec, isNot(enc.sharedSecret));
-    });
+    test(
+      'invalid ciphertext yields a distinct secret (implicit rejection)',
+      () {
+        final bob = kem.generateKeyPair();
+        final enc = kem.encapsulate(bob.publicKey);
+        final tampered = Uint8List.fromList(enc.ciphertext);
+        tampered[0] ^= 0xFF;
+        final dec = kem.decapsulate(bob.secretKey, tampered);
+        expect(dec.length, 32);
+        expect(dec, isNot(enc.sharedSecret));
+      },
+    );
   });
 
   group('PQXDH', () {
@@ -123,15 +125,29 @@ void main() {
     test('root key changes when only the PQ ciphertexts differ', () async {
       final dh = fill(32, 3);
       final a = await derivePqxdh(
-          dh1: dh, dh2: dh, dh3: dh, ss1: fill(32, 9), ss2: fill(32, 8));
+        dh1: dh,
+        dh2: dh,
+        dh3: dh,
+        ss1: fill(32, 9),
+        ss2: fill(32, 8),
+      );
       final b = await derivePqxdh(
-          dh1: dh, dh2: dh, dh3: dh, ss1: fill(32, 8), ss2: fill(32, 9));
+        dh1: dh,
+        dh2: dh,
+        dh3: dh,
+        ss1: fill(32, 8),
+        ss2: fill(32, 9),
+      );
       expect(a.rootKey, isNot(b.rootKey));
     });
 
     test('optional DH4/ss2 change the transcript length', () async {
       final base = await derivePqxdh(
-          dh1: fill(32, 1), dh2: fill(32, 2), dh3: fill(32, 3), ss1: fill(32, 4));
+        dh1: fill(32, 1),
+        dh2: fill(32, 2),
+        dh3: fill(32, 3),
+        ss1: fill(32, 4),
+      );
       final withOpk = await derivePqxdh(
         dh1: fill(32, 1),
         dh2: fill(32, 2),
@@ -153,11 +169,14 @@ void main() {
     });
 
     test('groups into 8-char blocks for on-screen comparison', () {
-      const hex = '0123456789abcdef0123456789abcdef'
+      const hex =
+          '0123456789abcdef0123456789abcdef'
           '0123456789abcdef0123456789abcdef';
-      expect(formatFingerprint(hex),
-          '01234567 89abcdef 01234567 89abcdef '
-          '01234567 89abcdef 01234567 89abcdef');
+      expect(
+        formatFingerprint(hex),
+        '01234567 89abcdef 01234567 89abcdef '
+        '01234567 89abcdef 01234567 89abcdef',
+      );
     });
 
     test('strips whitespace and lowercases', () {

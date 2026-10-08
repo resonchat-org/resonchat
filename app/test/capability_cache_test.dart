@@ -39,11 +39,7 @@ void main() {
 
     // A second attempt must retry rather than serve a poisoned entry.
     await expectLater(service.forChat(jid), throwsA(isA<_Boom>()));
-    expect(
-      resolves,
-      2,
-      reason: 'failures must not be cached',
-    );
+    expect(resolves, 2, reason: 'failures must not be cached');
   });
 
   test('a zero TTL disables caching', () async {

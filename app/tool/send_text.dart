@@ -74,8 +74,7 @@ Future<void> main(List<String> args) async {
   // ignore: avoid_print
   print('roster add: $added');
 
-  final presence =
-      connection.getManagerById<PresenceManager>(presenceManager)!;
+  final presence = connection.getManagerById<PresenceManager>(presenceManager)!;
   await presence.requestSubscription(peer.toBare());
   // ignore: avoid_print
   print('sent subscribe to ${peer.toBare()}');
@@ -102,9 +101,7 @@ Future<void> main(List<String> args) async {
   if (rosterResult.isType<RosterRequestResult>()) {
     for (final item in rosterResult.get<RosterRequestResult>().items) {
       // ignore: avoid_print
-      print(
-        '  ${item.jid}: subscription=${item.subscription} ask=${item.ask}',
-      );
+      print('  ${item.jid}: subscription=${item.subscription} ask=${item.ask}');
     }
   } else {
     // ignore: avoid_print
@@ -129,8 +126,10 @@ Future<void> main(List<String> args) async {
       final body = event.get<MessageBodyData>()?.body;
       got.add('${event.from}: $body');
       // ignore: avoid_print
-      print('INBOUND from=${event.from} to=${event.to} type=${event.type} '
-          'id=${event.id} error=${event.error} body=$body');
+      print(
+        'INBOUND from=${event.from} to=${event.to} type=${event.type} '
+        'id=${event.id} error=${event.error} body=$body',
+      );
       if (event.error != null) {
         // ignore: avoid_print
         print('  SERVER REFUSAL: ${event.error}');

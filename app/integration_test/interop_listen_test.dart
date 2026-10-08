@@ -13,7 +13,6 @@
 // `TRACE:<raw>` line so a silence can be attributed to routing rather than
 // decryption.
 
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:logging/logging.dart';

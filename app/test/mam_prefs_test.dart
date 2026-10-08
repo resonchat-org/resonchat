@@ -88,12 +88,11 @@ void main() {
     MamRetention? policy, {
     int? maxDays,
     String? unrecognised,
-  }) =>
-      RetentionPolicy(
-        policy: policy,
-        maxDays: maxDays,
-        unrecognised: unrecognised,
-      );
+  }) => RetentionPolicy(
+    policy: policy,
+    maxDays: maxDays,
+    unrecognised: unrecognised,
+  );
 
   /// Whether a state says anything at all. The one state that does not is
   /// unreachable on the wire, so it cannot survive a round trip.
@@ -105,8 +104,7 @@ void main() {
   MamPrefs prefsWith(
     RetentionPolicy? defaultRetention, {
     Map<String, RetentionPolicy> overrides = const {},
-  }) =>
-      MamPrefs(defaultRetention: defaultRetention, overrides: overrides);
+  }) => MamPrefs(defaultRetention: defaultRetention, overrides: overrides);
 
   /// What a server that stated no default at all leaves us with: not a policy,
   /// not a period, and *nothing to summarise*.
@@ -115,8 +113,9 @@ void main() {
   /// States where the server stated a period but not a policy: the only two
   /// things it said are "something" and "for this long".
   final capOnly = states
-      .where((p) =>
-          p.policy == null && p.unrecognised == null && p.maxDays != null)
+      .where(
+        (p) => p.policy == null && p.unrecognised == null && p.maxDays != null,
+      )
       .toList();
 
   /// States that state no recognisable policy at all. Any summary built from
@@ -132,7 +131,15 @@ void main() {
   ];
 
   /// The spellings of "no policy token" a stanza can carry.
-  const tokens = <String?>[null, '', 'never', '  ', 'urgent', 'ALWAYS', 'always '];
+  const tokens = <String?>[
+    null,
+    '',
+    'never',
+    '  ',
+    'urgent',
+    'ALWAYS',
+    'always ',
+  ];
 
   /// The spellings of "no JID" a `<with/>` can carry.
   const missingJids = <String?>[null, ''];
@@ -158,16 +165,18 @@ void main() {
 
   /// Elements to put inside a `<prefs/>` that are not policy statements.
   final elements = <MamPrefsElement>[
-    const MamPrefsElement(MamPrefsForm.withElement,
-        attributes: {MamPrefsForm.attrJid: juliet, MamPrefsForm.attrDefault: 'never'}),
+    const MamPrefsElement(
+      MamPrefsForm.withElement,
+      attributes: {
+        MamPrefsForm.attrJid: juliet,
+        MamPrefsForm.attrDefault: 'never',
+      },
+    ),
     const MamPrefsElement('message'),
     const MamPrefsElement('subject'),
   ];
 
-  void expectShorterWarning(
-    List<MamChangeWarning> warnings,
-    String what,
-  ) {
+  void expectShorterWarning(List<MamChangeWarning> warnings, String what) {
     expect(
       warnings.map((w) => w.kind),
       contains(MamChangeKind.shorterRetention),
@@ -175,10 +184,7 @@ void main() {
     );
   }
 
-  void expectNoShorterWarning(
-    List<MamChangeWarning> warnings,
-    String what,
-  ) {
+  void expectNoShorterWarning(List<MamChangeWarning> warnings, String what) {
     expect(
       warnings.map((w) => w.kind),
       isNot(contains(MamChangeKind.shorterRetention)),
@@ -316,10 +322,16 @@ void main() {
       // re-parsed on every round trip, and the failure would be invisible
       // because the setting still looks set.
       for (final policy in MamRetention.values) {
-        expect(int.tryParse(policy.token), isNull,
-            reason: '${policy.token} is a token, not a number');
-        expect(policy.token, isNot(contains(RegExp(r'\d'))),
-            reason: policy.token);
+        expect(
+          int.tryParse(policy.token),
+          isNull,
+          reason: '${policy.token} is a token, not a number',
+        );
+        expect(
+          policy.token,
+          isNot(contains(RegExp(r'\d'))),
+          reason: policy.token,
+        );
       }
       expect(MamRetention.parse('30'), isNull);
       expect(MamRetention.parse('7'), isNull);
@@ -332,10 +344,16 @@ void main() {
       // user believing something the server was never told.
       for (final n in [1, 2, 7, 30, 365, 3650, 1000000]) {
         final wire = toPrefsElement(prefsWith(RetentionPolicy.days(n)));
-        expect(wire.toXml(), contains("max='$n'"),
-            reason: 'days $n: ${wire.toXml()}');
-        expect(parseMamPrefs(wire)!.defaultRetention!.maxDays, n,
-            reason: 'days $n');
+        expect(
+          wire.toXml(),
+          contains("max='$n'"),
+          reason: 'days $n: ${wire.toXml()}',
+        );
+        expect(
+          parseMamPrefs(wire)!.defaultRetention!.maxDays,
+          n,
+          reason: 'days $n',
+        );
       }
     });
 
@@ -347,8 +365,11 @@ void main() {
         for (final n in [1, 30, 1000000]) {
           final original = state(policy, maxDays: n);
           final back = parseMamPrefs(toPrefsElement(prefsWith(original)))!;
-          expect(back.defaultRetention, original,
-              reason: '${policy.token} for $n days');
+          expect(
+            back.defaultRetention,
+            original,
+            reason: '${policy.token} for $n days',
+          );
         }
       }
     });
@@ -357,10 +378,14 @@ void main() {
       // A cap on one conversation is the reason the number has to survive per
       // entry. Losing it there is worse than losing it on the account, because
       // the account default is at least visible somewhere else.
-      final back = parseMamPrefs(toPrefsElement(prefsWith(
-        state(MamRetention.roster, maxDays: 7),
-        overrides: {juliet: state(MamRetention.always, maxDays: 365)},
-      )))!;
+      final back = parseMamPrefs(
+        toPrefsElement(
+          prefsWith(
+            state(MamRetention.roster, maxDays: 7),
+            overrides: {juliet: state(MamRetention.always, maxDays: 365)},
+          ),
+        ),
+      )!;
       expect(back.overrides[juliet], state(MamRetention.always, maxDays: 365));
       expect(back.defaultRetention, state(MamRetention.roster, maxDays: 7));
     });
@@ -382,8 +407,11 @@ void main() {
       // keep for a day — and silently picking one is the whole failure this
       // file is about. Throwing is what forces the caller to decide.
       for (final bad in [0, -1, -30]) {
-        expect(() => RetentionPolicy.days(bad), throwsA(isA<ArgumentError>()),
-            reason: 'days($bad)');
+        expect(
+          () => RetentionPolicy.days(bad),
+          throwsA(isA<ArgumentError>()),
+          reason: 'days($bad)',
+        );
         expect(
           () => RetentionPolicy(maxDays: bad, policy: MamRetention.always),
           throwsA(isA<ArgumentError>()),
@@ -397,11 +425,15 @@ void main() {
       // "keep for exactly one day" would be inexpressible and the shortest
       // useful retention would be unreachable.
       expect(RetentionPolicy.days(1).maxDays, 1);
-      final summary = privacySummary(prefsWith(
-          state(MamRetention.always, maxDays: 1)));
+      final summary = privacySummary(
+        prefsWith(state(MamRetention.always, maxDays: 1)),
+      );
       expect(summary, contains('1 day'));
-      expect(summary, isNot(contains('1 days')),
-          reason: '"1 days" reads as a bug and undermines the number');
+      expect(
+        summary,
+        isNot(contains('1 days')),
+        reason: '"1 days" reads as a bug and undermines the number',
+      );
     });
 
     test('a policy and an unreadable token cannot both be set', () {
@@ -409,8 +441,8 @@ void main() {
       // which messages" are mutually exclusive readings. A constructor that
       // accepted both would let a caller assert a policy it never read.
       expect(
-        () => RetentionPolicy(
-            policy: MamRetention.never, unrecognised: 'weird'),
+        () =>
+            RetentionPolicy(policy: MamRetention.never, unrecognised: 'weird'),
         throwsA(isA<ArgumentError>()),
       );
     });
@@ -420,15 +452,19 @@ void main() {
       // never < onlyMuc < roster < always < unlimited. If the exposures stopped
       // being monotone, a shortening would be ranked by how the wire happens to
       // spell two policies.
-      expect(
-        MamRetention.values.map((p) => p.name),
-        ['never', 'onlyMuc', 'roster', 'always', 'unlimited'],
-      );
+      expect(MamRetention.values.map((p) => p.name), [
+        'never',
+        'onlyMuc',
+        'roster',
+        'always',
+        'unlimited',
+      ]);
       for (var i = 1; i < MamRetention.values.length; i++) {
         expect(
           MamRetention.values[i].exposure,
           greaterThan(MamRetention.values[i - 1].exposure),
-          reason: '${MamRetention.values[i].name} must outrank '
+          reason:
+              '${MamRetention.values[i].name} must outrank '
               '${MamRetention.values[i - 1].name}',
         );
       }
@@ -459,12 +495,16 @@ void main() {
           conversationPrivacySummary(prefsWith(p), juliet),
           privacySummary(prefsWith(null, overrides: {juliet: p})),
           conversationPrivacySummary(
-              prefsWith(state(MamRetention.roster), overrides: {juliet: p}),
-              juliet),
+            prefsWith(state(MamRetention.roster), overrides: {juliet: p}),
+            juliet,
+          ),
         ]) {
           expect(summary.trim(), isNotEmpty, reason: '$p');
-          expect(summary.trim(), summary,
-              reason: '$p: leading or trailing space');
+          expect(
+            summary.trim(),
+            summary,
+            reason: '$p: leading or trailing space',
+          );
         }
       }
     });
@@ -545,7 +585,10 @@ void main() {
         'The server has been told to keep none of your messages.',
       );
       expect(
-        conversationPrivacySummary(prefsWith(state(MamRetention.never)), juliet),
+        conversationPrivacySummary(
+          prefsWith(state(MamRetention.never)),
+          juliet,
+        ),
         'In this conversation, as everywhere else, the server has been told to '
         'keep none of your messages.',
       );
@@ -555,8 +598,9 @@ void main() {
       // The two may well be redundant rather than contradictory ("unlimited"
       // about volume, `max` about age). Assuming no cap is the one reading
       // under which a user who set a limit is told they have none.
-      final summary =
-          privacySummary(prefsWith(state(MamRetention.unlimited, maxDays: 30)));
+      final summary = privacySummary(
+        prefsWith(state(MamRetention.unlimited, maxDays: 30)),
+      );
       expect(summary, contains('30 days'));
       expect(summary, isNot(contains('no limit')));
     });
@@ -564,8 +608,9 @@ void main() {
     test('an unrecognised token is quoted and the period called unknown', () {
       // Actionable: the user has to be able to read the thing that was not
       // understood and go and ask about it. A paraphrase is not actionable.
-      final summary =
-          privacySummary(prefsWith(state(null, unrecognised: 'weird')));
+      final summary = privacySummary(
+        prefsWith(state(null, unrecognised: 'weird')),
+      );
       expect(summary, contains('"weird"'));
       expect(summary, contains('unknown'));
       expect(summary, contains('for how long'));
@@ -579,8 +624,9 @@ void main() {
       for (final p in states) {
         final summary = privacySummary(prefsWith(p));
         expect(
-          RegExp(r'has been told to keep|has said|has not said|does not understand')
-              .hasMatch(summary),
+          RegExp(
+            r'has been told to keep|has said|has not said|does not understand',
+          ).hasMatch(summary),
           isTrue,
           reason: '$p states an unattributed fact: "$summary"',
         );
@@ -606,8 +652,10 @@ void main() {
       // "The server has been told to keep nothing" and "…and not here either"
       // are different facts, and the second is the one a user standing in that
       // conversation is asking about.
-      final summary =
-          conversationPrivacySummary(prefsWith(state(MamRetention.never)), juliet);
+      final summary = conversationPrivacySummary(
+        prefsWith(state(MamRetention.never)),
+        juliet,
+      );
       expect(summary, contains('as everywhere else'));
       expect(summary, contains('In this conversation'));
     });
@@ -662,9 +710,9 @@ void main() {
       final unattributed = <String>[
         for (final p in noReadablePolicy)
           if (!conversationPrivacySummary(
-                  prefsWith(state(MamRetention.unlimited), overrides: {juliet: p}),
-                  juliet)
-              .contains('In this conversation'))
+            prefsWith(state(MamRetention.unlimited), overrides: {juliet: p}),
+            juliet,
+          ).contains('In this conversation'))
             'as an override: $p',
         for (final p in noReadablePolicy)
           if (conversationPrivacySummary(prefsWith(p), juliet) ==
@@ -689,8 +737,11 @@ void main() {
       for (final policy in MamRetention.values) {
         final sentence = privacySummary(prefsWith(state(policy)));
         final clash = sentences[sentence];
-        expect(clash, isNull,
-            reason: '$policy and $clash both read "$sentence"');
+        expect(
+          clash,
+          isNull,
+          reason: '$policy and $clash both read "$sentence"',
+        );
         sentences[sentence] = policy;
       }
     });
@@ -730,8 +781,11 @@ void main() {
           conversationPrivacySummary(prefsWith(p), juliet),
         ]) {
           if (summary.contains('delete')) {
-            expect(summary, contains('has not said when it will delete them'),
-                reason: '$p mentions deleting: "$summary"');
+            expect(
+              summary,
+              contains('has not said when it will delete them'),
+              reason: '$p mentions deleting: "$summary"',
+            );
           }
           expect(
             RegExp(r'\bdeleted\b|\bremoved\b|\berased\b|\bgone\b|\bpurged\b')
@@ -760,8 +814,10 @@ void main() {
         state(MamRetention.never),
       );
       expect(privacySummary(prefs), contains('a copy of all your messages'));
-      expect(conversationPrivacySummary(prefs, juliet),
-          contains('none of your messages'));
+      expect(
+        conversationPrivacySummary(prefs, juliet),
+        contains('none of your messages'),
+      );
     });
 
     test('and an override wins when it is the more permissive of the two', () {
@@ -777,8 +833,10 @@ void main() {
         state(MamRetention.always),
       );
       expect(privacySummary(prefs), contains('none of your messages'));
-      expect(conversationPrivacySummary(prefs, juliet),
-          contains('a copy of all your messages'));
+      expect(
+        conversationPrivacySummary(prefs, juliet),
+        contains('a copy of all your messages'),
+      );
     });
 
     test('precedence holds for every pair of policies', () {
@@ -795,38 +853,50 @@ void main() {
           expect(
             effectiveRetention(prefs: prefs, conversation: juliet),
             state(local),
-            reason: 'account ${account?.token ?? 'unstated'} vs override $local',
+            reason:
+                'account ${account?.token ?? 'unstated'} vs override $local',
           );
         }
       }
     });
 
-    test('an override is keyed on the bare JID, whichever resource is asked',
-        () {
-      // An override filed against `juliet@…/phone` must be found by a lookup
-      // for `juliet@…`, or a resource-qualified lookup would miss it and hand
-      // the conversation back to the account default — re-enabling archiving
-      // for exactly the person the user switched it off for.
-      final policy = state(MamRetention.never);
-      for (final filed in [juliet, julietPhone, julietTablet]) {
-        final prefs = prefsWith(null, overrides: {filed: policy});
-        for (final asked in [juliet, julietPhone, julietTablet]) {
-          expect(prefs.overrideFor(asked), policy,
-              reason: 'filed $filed, asked $asked');
-          expect(effectiveRetention(prefs: prefs, conversation: asked), policy,
-              reason: 'filed $filed, asked $asked');
+    test(
+      'an override is keyed on the bare JID, whichever resource is asked',
+      () {
+        // An override filed against `juliet@…/phone` must be found by a lookup
+        // for `juliet@…`, or a resource-qualified lookup would miss it and hand
+        // the conversation back to the account default — re-enabling archiving
+        // for exactly the person the user switched it off for.
+        final policy = state(MamRetention.never);
+        for (final filed in [juliet, julietPhone, julietTablet]) {
+          final prefs = prefsWith(null, overrides: {filed: policy});
+          for (final asked in [juliet, julietPhone, julietTablet]) {
+            expect(
+              prefs.overrideFor(asked),
+              policy,
+              reason: 'filed $filed, asked $asked',
+            );
+            expect(
+              effectiveRetention(prefs: prefs, conversation: asked),
+              policy,
+              reason: 'filed $filed, asked $asked',
+            );
+          }
         }
-      }
-    });
+      },
+    );
 
     test('two entries for one person collapse to one, keyed on the bare JID', () {
       // Two policies for one person is a server-side detail the user has no way
       // to see. Last one read wins and only one is kept; the alternative is two
       // rows and a question of which the server applied.
-      final prefs = prefsWith(null, overrides: {
-        julietPhone: state(MamRetention.always),
-        julietTablet: state(MamRetention.never),
-      });
+      final prefs = prefsWith(
+        null,
+        overrides: {
+          julietPhone: state(MamRetention.always),
+          julietTablet: state(MamRetention.never),
+        },
+      );
       expect(prefs.overrides.keys.toSet(), {juliet});
       expect(prefs.overrideFor(julietPhone), state(MamRetention.never));
       expect(prefs.overrideFor(julietTablet), state(MamRetention.never));
@@ -852,9 +922,14 @@ void main() {
     test('no override and no default is null, not the permissive reading', () {
       // The honest answer: the server applies a policy of its own that it did
       // not tell us, which is not the same as a permissive one.
-      expect(effectiveRetention(prefs: MamPrefs(), conversation: juliet), isNull);
-      expect(effectiveRetention(prefs: prefsWith(null), conversation: juliet),
-          isNull);
+      expect(
+        effectiveRetention(prefs: MamPrefs(), conversation: juliet),
+        isNull,
+      );
+      expect(
+        effectiveRetention(prefs: prefsWith(null), conversation: juliet),
+        isNull,
+      );
     });
 
     test('withOverride and withDefault replace exactly one thing', () {
@@ -878,13 +953,20 @@ void main() {
       expect(removed.defaultRetention, base.defaultRetention);
       expect(removed.resource, base.resource);
 
-      final replaced = base.withOverride('tybalt@capulet.lit',
-          state(MamRetention.roster, maxDays: 7));
-      expect(replaced.overrideFor('tybalt@capulet.lit'),
-          state(MamRetention.roster, maxDays: 7));
+      final replaced = base.withOverride(
+        'tybalt@capulet.lit',
+        state(MamRetention.roster, maxDays: 7),
+      );
+      expect(
+        replaced.overrideFor('tybalt@capulet.lit'),
+        state(MamRetention.roster, maxDays: 7),
+      );
       expect(replaced.overrideFor(juliet), state(MamRetention.never));
-      expect(base.overrideFor('tybalt@capulet.lit'), isNull,
-          reason: 'the original must not be mutated');
+      expect(
+        base.overrideFor('tybalt@capulet.lit'),
+        isNull,
+        reason: 'the original must not be mutated',
+      );
     });
 
     test('withOverride removes by bare JID whichever form is passed', () {
@@ -892,10 +974,15 @@ void main() {
       // *increases* what the server keeps. A removal that missed because the
       // caller used a different resource would leave the override in place.
       final base = prefsWith(
-          null, overrides: {julietPhone: state(MamRetention.never)});
+        null,
+        overrides: {julietPhone: state(MamRetention.never)},
+      );
       for (final form in [juliet, julietPhone, julietTablet]) {
-        expect(base.withOverride(form, null).overrideFor(juliet), isNull,
-            reason: 'removed via $form');
+        expect(
+          base.withOverride(form, null).overrideFor(juliet),
+          isNull,
+          reason: 'removed via $form',
+        );
       }
     });
   });
@@ -922,7 +1009,8 @@ void main() {
         );
         expect(
           serverSupportsMamPrefs(
-              supportFromFeatures(features, featuresReadable: false)),
+            supportFromFeatures(features, featuresReadable: false),
+          ),
           isFalse,
           reason: 'an unreadable answer is not a permission: $features',
         );
@@ -933,13 +1021,19 @@ void main() {
       // The opposite direction. "We asked and it is not there" is a real answer
       // and the user deserves it; collapsing it into `unknown` would mean asking
       // again forever and never telling the user the truth.
-      expect(supportFromFeatures(const [], featuresReadable: true),
-          MamPrefsSupport.unsupported);
-      expect(supportFromFeatures(['urn:xmpp:mam:2'], featuresReadable: true),
-          MamPrefsSupport.unsupported,
-          reason: 'a MAM query var is the opposite privacy direction');
-      expect(supportFromFeatures(['urn:xmpp:mam:0'], featuresReadable: true),
-          MamPrefsSupport.unsupported);
+      expect(
+        supportFromFeatures(const [], featuresReadable: true),
+        MamPrefsSupport.unsupported,
+      );
+      expect(
+        supportFromFeatures(['urn:xmpp:mam:2'], featuresReadable: true),
+        MamPrefsSupport.unsupported,
+        reason: 'a MAM query var is the opposite privacy direction',
+      );
+      expect(
+        supportFromFeatures(['urn:xmpp:mam:0'], featuresReadable: true),
+        MamPrefsSupport.unsupported,
+      );
     });
 
     test('the advertised var is the preferences namespace', () {
@@ -948,18 +1042,26 @@ void main() {
       // is a setting for it".
       expect(MamPrefsForm.feature, MamPrefsForm.namespace);
       expect(MamPrefsForm.feature, isNot('urn:xmpp:mam:2'));
-      expect(supportFromFeatures([MamPrefsForm.feature], featuresReadable: true),
-          MamPrefsSupport.supported);
+      expect(
+        supportFromFeatures([MamPrefsForm.feature], featuresReadable: true),
+        MamPrefsSupport.supported,
+      );
     });
 
     test('only `supported` says a set should be expected to work', () {
       // `unknown` and `unsupported` fail differently, but neither of them is a
       // permission, which is the only thing this getter is asked.
       for (final support in MamPrefsSupport.values) {
-        expect(support.honoured, support == MamPrefsSupport.supported,
-            reason: '$support');
-        expect(serverSupportsMamPrefs(support), support.honoured,
-            reason: '$support');
+        expect(
+          support.honoured,
+          support == MamPrefsSupport.supported,
+          reason: '$support',
+        );
+        expect(
+          serverSupportsMamPrefs(support),
+          support.honoured,
+          reason: '$support',
+        );
       }
     });
 
@@ -978,7 +1080,8 @@ void main() {
           expect(
             mayWritePreferences(support: support, current: current),
             support == MamPrefsSupport.supported && current != null,
-            reason: 'support $support, current ${current == null ? 'unread' : 'read'}',
+            reason:
+                'support $support, current ${current == null ? 'unread' : 'read'}',
           );
         }
       }
@@ -991,7 +1094,9 @@ void main() {
       // state a fresh account is in.
       expect(
         mayWritePreferences(
-            support: MamPrefsSupport.supported, current: MamPrefs()),
+          support: MamPrefsSupport.supported,
+          current: MamPrefs(),
+        ),
         isTrue,
       );
     });
@@ -1063,21 +1168,26 @@ void main() {
       expect(appliesToResource(null, null), isFalse);
     });
 
-    test('the resource survives a parse, from the argument or the attribute', () {
-      // The IQ's `to` is authoritative and the element's own `to` is a
-      // fallback for a server that names it there.
-      final element = toPrefsElement(MamPrefs(
-        resource: 'phone',
-        defaultRetention: state(MamRetention.never),
-      ));
-      expect(parseMamPrefs(element, resource: 'tablet')!.resource, 'tablet');
-      expect(parseMamPrefs(element)!.resource, 'phone');
-      expect(
-        parseMamPrefs(toPrefsElement(prefsWith(state(MamRetention.never))))!
-            .resource,
-        isNull,
-      );
-    });
+    test(
+      'the resource survives a parse, from the argument or the attribute',
+      () {
+        // The IQ's `to` is authoritative and the element's own `to` is a
+        // fallback for a server that names it there.
+        final element = toPrefsElement(
+          MamPrefs(
+            resource: 'phone',
+            defaultRetention: state(MamRetention.never),
+          ),
+        );
+        expect(parseMamPrefs(element, resource: 'tablet')!.resource, 'tablet');
+        expect(parseMamPrefs(element)!.resource, 'phone');
+        expect(
+          parseMamPrefs(toPrefsElement(prefsWith(state(MamRetention.never))))!
+              .resource,
+          isNull,
+        );
+      },
+    );
   });
 
   // ---------------------------------------------------------------------
@@ -1143,12 +1253,17 @@ void main() {
       // Swept over every next state and every support value.
       for (final next in states) {
         for (final support in MamPrefsSupport.values) {
-          final warnings =
-              warningsBeforeChange(current: null, next: next, support: support);
+          final warnings = warningsBeforeChange(
+            current: null,
+            next: next,
+            support: support,
+          );
           expectNoShorterWarning(warnings, 'unknown → $next on $support');
-          expect(warnings.map((w) => w.kind),
-              contains(MamChangeKind.unknownCurrent),
-              reason: 'unknown → $next on $support');
+          expect(
+            warnings.map((w) => w.kind),
+            contains(MamChangeKind.unknownCurrent),
+            reason: 'unknown → $next on $support',
+          );
         }
       }
     });
@@ -1211,12 +1326,15 @@ void main() {
       // same epistemic position with one fewer step of inference — and
       // `warningsBeforeChange` only tests `current == null`, the pointer, so
       // these states fall through to a direction claim.
-      for (final unreadable in states.where((p) => !carriesSomething(p) ||
-          p.unrecognised != null)) {
+      for (final unreadable in states.where(
+        (p) => !carriesSomething(p) || p.unrecognised != null,
+      )) {
         for (final next in states) {
           final warnings = warningsBeforeChange(
-              current: unreadable, next: next,
-              support: MamPrefsSupport.supported);
+            current: unreadable,
+            next: next,
+            support: MamPrefsSupport.supported,
+          );
           expect(
             warnings.map((w) => w.kind),
             contains(MamChangeKind.unknownCurrent),
@@ -1235,10 +1353,11 @@ void main() {
         for (final to in [1, 7, 30, 365]) {
           expect(
             shortensRetention(
-                state(MamRetention.always, maxDays: from),
-                state(MamRetention.always, maxDays: to)),
+              state(MamRetention.always, maxDays: from),
+              state(MamRetention.always, maxDays: to),
+            ),
             to < from,
-            reason: '${from} → ${to} days on always',
+            reason: '$from → $to days on always',
           );
         }
       }
@@ -1249,10 +1368,11 @@ void main() {
         for (final to in [365, 3650, 1000000]) {
           expect(
             shortensRetention(
-                state(MamRetention.always, maxDays: from),
-                state(MamRetention.always, maxDays: to)),
+              state(MamRetention.always, maxDays: from),
+              state(MamRetention.always, maxDays: to),
+            ),
             isFalse,
-            reason: '${from} → ${to} days on always',
+            reason: '$from → $to days on always',
           );
         }
       }
@@ -1270,7 +1390,10 @@ void main() {
       expect(current.maxDays, isNull);
       expectShorterWarning(
         warningsBeforeChange(
-            current: current, next: next, support: MamPrefsSupport.supported),
+          current: current,
+          next: next,
+          support: MamPrefsSupport.supported,
+        ),
         'stating a cap where there was none',
       );
     });
@@ -1281,7 +1404,9 @@ void main() {
       // than by a direction claim here.
       expect(
         shortensRetention(
-            state(MamRetention.always, maxDays: 30), state(MamRetention.always)),
+          state(MamRetention.always, maxDays: 30),
+          state(MamRetention.always),
+        ),
         isFalse,
       );
       expectNoShorterWarning(
@@ -1304,7 +1429,10 @@ void main() {
           expect(shortensRetention(from, to), isFalse, reason: '$from → $to');
           expectNoShorterWarning(
             warningsBeforeChange(
-                current: from, next: to, support: MamPrefsSupport.supported),
+              current: from,
+              next: to,
+              support: MamPrefsSupport.supported,
+            ),
             '$from → $to',
           );
         }
@@ -1318,7 +1446,10 @@ void main() {
       for (final p in states) {
         expectNoShorterWarning(
           warningsBeforeChange(
-              current: p, next: p, support: MamPrefsSupport.supported),
+            current: p,
+            next: p,
+            support: MamPrefsSupport.supported,
+          ),
           '$p → itself',
         );
       }
@@ -1346,20 +1477,28 @@ void main() {
       expect(warnings.first.kind, MamChangeKind.shorterRetention);
     });
 
-    test('a supported server produces at most one warning, about the direction',
-        () {
-      // With nothing unverifiable, there is nothing to say but what happened
-      // to the retention. A second warning here would be noise over the
-      // sentence the user has to read.
-      for (final current in <RetentionPolicy?>[null, ...states]) {
-        for (final next in states) {
-          final warnings = warningsBeforeChange(
-              current: current, next: next, support: MamPrefsSupport.supported);
-          expect(warnings.length, lessThanOrEqualTo(1),
-              reason: '$current → $next on a supported server');
+    test(
+      'a supported server produces at most one warning, about the direction',
+      () {
+        // With nothing unverifiable, there is nothing to say but what happened
+        // to the retention. A second warning here would be noise over the
+        // sentence the user has to read.
+        for (final current in <RetentionPolicy?>[null, ...states]) {
+          for (final next in states) {
+            final warnings = warningsBeforeChange(
+              current: current,
+              next: next,
+              support: MamPrefsSupport.supported,
+            );
+            expect(
+              warnings.length,
+              lessThanOrEqualTo(1),
+              reason: '$current → $next on a supported server',
+            );
+          }
         }
-      }
-    });
+      },
+    );
 
     test('an unsupported server warns but an unknown one only reports', () {
       // The two failure modes are different and the user needs to know which:
@@ -1367,10 +1506,12 @@ void main() {
       // waiting on a better connection. And only the first may demand a
       // confirmation — a dialog that blocks every edit while the server is
       // quiet trains dismissal of the one above it, the one that matters.
-      final unsupported =
-          MamChangeWarning.mayNotTakeEffect(MamPrefsSupport.unsupported);
-      final unknown =
-          MamChangeWarning.mayNotTakeEffect(MamPrefsSupport.unknown);
+      final unsupported = MamChangeWarning.mayNotTakeEffect(
+        MamPrefsSupport.unsupported,
+      );
+      final unknown = MamChangeWarning.mayNotTakeEffect(
+        MamPrefsSupport.unknown,
+      );
       expect(unsupported.kind, MamChangeKind.mayNotTakeEffect);
       expect(unknown.kind, MamChangeKind.mayNotTakeEffect);
       expect(unsupported.title, isNot(unknown.title));
@@ -1405,8 +1546,11 @@ void main() {
       expect(warning.kind, MamChangeKind.shorterRetention);
       expect(warning.title, contains('not delete'));
       expect(warning.consequence, contains('not deleted'));
-      expect(warning.needsConfirmation, isTrue,
-          reason: 'this is the one dialog that must block the change');
+      expect(
+        warning.needsConfirmation,
+        isTrue,
+        reason: 'this is the one dialog that must block the change',
+      );
     });
 
     test('every warning carries a kind, a title and a consequence', () {
@@ -1434,7 +1578,10 @@ void main() {
         for (final next in states) {
           for (final support in MamPrefsSupport.values) {
             for (final warning in warningsBeforeChange(
-                current: current, next: next, support: support)) {
+              current: current,
+              next: next,
+              support: support,
+            )) {
               expect(
                 RegExp(r'\bhas deleted\b|\bwere deleted\b|\bdeleted them\b')
                     .hasMatch('${warning.title} ${warning.consequence}'),
@@ -1498,8 +1645,11 @@ void main() {
       // change nobody can describe.
       for (final current in capOnly) {
         final next = state(MamRetention.onlyMuc, maxDays: 30);
-        expect(shortensRetention(current, next), isFalse,
-            reason: '$current → $next is genuinely unrankable');
+        expect(
+          shortensRetention(current, next),
+          isFalse,
+          reason: '$current → $next is genuinely unrankable',
+        );
       }
     });
 
@@ -1510,8 +1660,10 @@ void main() {
       for (final from in [1, 7, 30, 365]) {
         for (final to in [1, 7, 30, 365]) {
           expect(
-            shortensRetention(RetentionPolicy.days(from),
-                RetentionPolicy.days(to)),
+            shortensRetention(
+              RetentionPolicy.days(from),
+              RetentionPolicy.days(to),
+            ),
             to < from,
             reason: 'cap-only $from → $to',
           );
@@ -1541,18 +1693,24 @@ void main() {
       // the two lead to opposite screens.
       for (final namespace in ['urn:xmpp:mam:2', 'jabber:iq:prefs', '']) {
         expect(
-          parseMamPrefs(MamPrefsElement(
-            MamPrefsForm.prefsElement,
-            namespace: namespace,
-            attributes: {MamPrefsForm.attrDefault: 'never'},
-          )),
+          parseMamPrefs(
+            MamPrefsElement(
+              MamPrefsForm.prefsElement,
+              namespace: namespace,
+              attributes: {MamPrefsForm.attrDefault: 'never'},
+            ),
+          ),
           isNull,
           reason: 'namespace "$namespace"',
         );
       }
       expect(
-        parseMamPrefs(const MamPrefsElement(MamPrefsForm.prefsElement,
-            attributes: {MamPrefsForm.attrDefault: 'never'})),
+        parseMamPrefs(
+          const MamPrefsElement(
+            MamPrefsForm.prefsElement,
+            attributes: {MamPrefsForm.attrDefault: 'never'},
+          ),
+        ),
         isNotNull,
       );
     });
@@ -1560,8 +1718,12 @@ void main() {
     test('an element of another name is not read as preferences', () {
       for (final name in ['query', 'message', 'with', 'result']) {
         expect(
-          parseMamPrefs(MamPrefsElement(name,
-              attributes: {MamPrefsForm.attrDefault: 'never'})),
+          parseMamPrefs(
+            MamPrefsElement(
+              name,
+              attributes: {MamPrefsForm.attrDefault: 'never'},
+            ),
+          ),
           isNull,
           reason: 'element <$name>',
         );
@@ -1573,8 +1735,9 @@ void main() {
       // form". A `<prefs/>` carrying nothing is the server saying it has no
       // preference set, and conflating the two either hides a control that
       // works or invents one that does not.
-      final parsed =
-          parseMamPrefs(const MamPrefsElement(MamPrefsForm.prefsElement));
+      final parsed = parseMamPrefs(
+        const MamPrefsElement(MamPrefsForm.prefsElement),
+      );
       expect(parsed, isNotNull);
       expect(parsed!.defaultRetention, isNull);
       expect(parsed.overrides, isEmpty);
@@ -1590,33 +1753,43 @@ void main() {
         isNull,
       );
       expect(
-        parseMamPrefs(const MamPrefsElement(MamPrefsForm.prefsElement,
-            attributes: {MamPrefsForm.attrTo: 'phone'}))!
-            .defaultRetention,
+        parseMamPrefs(
+          const MamPrefsElement(
+            MamPrefsForm.prefsElement,
+            attributes: {MamPrefsForm.attrTo: 'phone'},
+          ),
+        )!.defaultRetention,
         isNull,
         reason: 'a `to` is not a statement about what is kept',
       );
       expect(
-        parseMamPrefs(const MamPrefsElement(MamPrefsForm.prefsElement,
-            attributes: {MamPrefsForm.attrDefault: 'never'}))!
-            .defaultRetention,
+        parseMamPrefs(
+          const MamPrefsElement(
+            MamPrefsForm.prefsElement,
+            attributes: {MamPrefsForm.attrDefault: 'never'},
+          ),
+        )!.defaultRetention,
         state(MamRetention.never),
       );
     });
 
-    test('an unknown element inside the form costs us nothing we could read',
-        () {
+    test('an unknown element inside the form costs us nothing we could read', () {
       // A server extending the form must not turn into "we have no
       // preferences". Each unknown child is dropped and the `<with/>` beside it
       // is still read, which is what keeps a working control working.
       for (final child in elements) {
-        final parsed = parseMamPrefs(MamPrefsElement(
-          MamPrefsForm.prefsElement,
-          attributes: {MamPrefsForm.attrDefault: 'never'},
-          children: [child],
-        ))!;
-        expect(parsed.defaultRetention, state(MamRetention.never),
-            reason: 'child ${child.toXml()}');
+        final parsed = parseMamPrefs(
+          MamPrefsElement(
+            MamPrefsForm.prefsElement,
+            attributes: {MamPrefsForm.attrDefault: 'never'},
+            children: [child],
+          ),
+        )!;
+        expect(
+          parsed.defaultRetention,
+          state(MamRetention.never),
+          reason: 'child ${child.toXml()}',
+        );
         expect(
           parsed.overrides.length,
           child.name == MamPrefsForm.withElement ? 1 : 0,
@@ -1631,23 +1804,33 @@ void main() {
       // not to guess which conversation was meant. The one thing that must
       // survive is the entries we *can* read, either side of the bad one.
       for (final missing in missingJids) {
-        final parsed = parseMamPrefs(MamPrefsElement(
-          MamPrefsForm.prefsElement,
-          attributes: {MamPrefsForm.attrDefault: 'never'},
-          children: [
-            MamPrefsElement(MamPrefsForm.withElement,
-                attributes: {MamPrefsForm.attrDefault: 'always'}),
-            if (missing != null)
-              MamPrefsElement(MamPrefsForm.withElement, attributes: {
-                MamPrefsForm.attrJid: missing,
-                MamPrefsForm.attrDefault: 'always',
-              }),
-            const MamPrefsElement(MamPrefsForm.withElement,
-                attributes: {MamPrefsForm.attrJid: juliet, 'default': 'always'}),
-          ],
-        ))!;
-        expect(parsed.overrides.keys, [juliet],
-            reason: 'a jid of ${missing == null ? 'nothing' : '""'}');
+        final parsed = parseMamPrefs(
+          MamPrefsElement(
+            MamPrefsForm.prefsElement,
+            attributes: {MamPrefsForm.attrDefault: 'never'},
+            children: [
+              MamPrefsElement(
+                MamPrefsForm.withElement,
+                attributes: {MamPrefsForm.attrDefault: 'always'},
+              ),
+              if (missing != null)
+                MamPrefsElement(
+                  MamPrefsForm.withElement,
+                  attributes: {
+                    MamPrefsForm.attrJid: missing,
+                    MamPrefsForm.attrDefault: 'always',
+                  },
+                ),
+              const MamPrefsElement(
+                MamPrefsForm.withElement,
+                attributes: {MamPrefsForm.attrJid: juliet, 'default': 'always'},
+              ),
+            ],
+          ),
+        )!;
+        expect(parsed.overrides.keys, [
+          juliet,
+        ], reason: 'a jid of ${missing == null ? 'nothing' : '""'}');
         expect(
           effectiveRetention(prefs: parsed, conversation: juliet),
           state(MamRetention.always),
@@ -1675,17 +1858,20 @@ void main() {
       // list a user reads to find out what the server holds.
       final kept = <String>[
         for (final blank in const [' ', '  ', '\t'])
-          if (parseMamPrefs(MamPrefsElement(
-            MamPrefsForm.prefsElement,
-            children: [
-              MamPrefsElement(MamPrefsForm.withElement, attributes: {
-                MamPrefsForm.attrJid: blank,
-                MamPrefsForm.attrDefault: 'never',
-              }),
-            ],
-          ))!
-              .overrides
-              .isNotEmpty)
+          if (parseMamPrefs(
+            MamPrefsElement(
+              MamPrefsForm.prefsElement,
+              children: [
+                MamPrefsElement(
+                  MamPrefsForm.withElement,
+                  attributes: {
+                    MamPrefsForm.attrJid: blank,
+                    MamPrefsForm.attrDefault: 'never',
+                  },
+                ),
+              ],
+            ),
+          )!.overrides.isNotEmpty)
             '"$blank"',
       ];
       expect(kept, isEmpty, reason: 'a blank JID is not a conversation');
@@ -1696,28 +1882,39 @@ void main() {
       // which is a different and more permissive claim than "the server said
       // something about this conversation that we cannot describe".
       for (final token in tokens) {
-        final parsed = parseMamPrefs(MamPrefsElement(
-          MamPrefsForm.prefsElement,
-          attributes: {MamPrefsForm.attrDefault: 'never'},
-          children: [
-            MamPrefsElement(MamPrefsForm.withElement, attributes: {
-              MamPrefsForm.attrJid: juliet,
-              if (token != null) MamPrefsForm.attrDefault: token,
-            }),
-          ],
-        ))!;
-        expect(parsed.overrides.containsKey(juliet), isTrue,
-            reason: 'default token ${token ?? 'absent'}');
+        final parsed = parseMamPrefs(
+          MamPrefsElement(
+            MamPrefsForm.prefsElement,
+            attributes: {MamPrefsForm.attrDefault: 'never'},
+            children: [
+              MamPrefsElement(
+                MamPrefsForm.withElement,
+                attributes: {
+                  MamPrefsForm.attrJid: juliet,
+                  MamPrefsForm.attrDefault: ?token,
+                },
+              ),
+            ],
+          ),
+        )!;
+        expect(
+          parsed.overrides.containsKey(juliet),
+          isTrue,
+          reason: 'default token ${token ?? 'absent'}',
+        );
         final entry = parsed.overrides[juliet]!;
         final recognised = token == null ? null : MamRetention.parse(token);
         expect(entry.policy, recognised, reason: 'default token "$token"');
-        expect(entry.unrecognised,
-            recognised == null && token != null ? token : null,
-            reason: 'default token "$token"');
+        expect(
+          entry.unrecognised,
+          recognised == null && token != null ? token : null,
+          reason: 'default token "$token"',
+        );
         expect(
           effectiveRetention(prefs: parsed, conversation: juliet),
           entry,
-          reason: 'an entry we cannot describe must not fall back to the default',
+          reason:
+              'an entry we cannot describe must not fall back to the default',
         );
       }
     });
@@ -1729,8 +1926,11 @@ void main() {
       // reason for the app to fail to start.
       for (final token in tokens) {
         for (final max in readCaps.keys) {
-          expect(() => parseRetention(token, max: max), returnsNormally,
-              reason: 'token ${token ?? 'absent'}, max ${max ?? 'absent'}');
+          expect(
+            () => parseRetention(token, max: max),
+            returnsNormally,
+            reason: 'token ${token ?? 'absent'}, max ${max ?? 'absent'}',
+          );
         }
       }
     });
@@ -1742,7 +1942,11 @@ void main() {
       // is not, and a lost cap must read as unknown rather than as unbounded.
       for (final entry in readCaps.entries) {
         final parsed = parseRetention('always', max: entry.key);
-        expect(parsed.policy, MamRetention.always, reason: 'max "${entry.key}"');
+        expect(
+          parsed.policy,
+          MamRetention.always,
+          reason: 'max "${entry.key}"',
+        );
         expect(parsed.maxDays, entry.value, reason: 'max "${entry.key}"');
         if (entry.value == null) {
           expect(
@@ -1758,10 +1962,12 @@ void main() {
       // The server said how long and not what. Reporting nothing here would
       // discard the one fact it did tell us, and reporting a guessed policy
       // would invent the other one.
-      final parsed = parseMamPrefs(const MamPrefsElement(
-        MamPrefsForm.prefsElement,
-        attributes: {MamPrefsForm.attrMax: '30'},
-      ))!;
+      final parsed = parseMamPrefs(
+        const MamPrefsElement(
+          MamPrefsForm.prefsElement,
+          attributes: {MamPrefsForm.attrMax: '30'},
+        ),
+      )!;
       expect(parsed.defaultRetention, isNotNull);
       expect(parsed.defaultRetention!.policy, isNull);
       expect(parsed.defaultRetention!.maxDays, 30);
@@ -1774,9 +1980,14 @@ void main() {
       // "there is no policy here". Collapsing them on the way out would turn the
       // server's word into silence and, if the result were echoed back, into a
       // `set` that removes a setting.
-      final wire = toPrefsElement(prefsWith(state(null, unrecognised: 'weird-policy')));
-      expect(wire.toXml(), contains("default='weird-policy'"),
-          reason: wire.toXml());
+      final wire = toPrefsElement(
+        prefsWith(state(null, unrecognised: 'weird-policy')),
+      );
+      expect(
+        wire.toXml(),
+        contains("default='weird-policy'"),
+        reason: wire.toXml(),
+      );
       final back = parseMamPrefs(wire)!;
       expect(back.defaultRetention!.unrecognised, 'weird-policy');
       expect(back.defaultRetention!.policy, isNull);
@@ -1796,13 +2007,19 @@ void main() {
           final wire = toPrefsElement(original);
           final back = parseMamPrefs(wire, resource: resource)!;
           expect(back.defaultRetention, p, reason: '$p on $resource');
-          expect(back.overrides[juliet], state(MamRetention.roster, maxDays: 7),
-              reason: '$p on $resource');
+          expect(
+            back.overrides[juliet],
+            state(MamRetention.roster, maxDays: 7),
+            reason: '$p on $resource',
+          );
           expect(back.resource, resource, reason: '$p on $resource');
           // And a second trip changes nothing, so a caller that echoes the
           // result of a write back to the server does not drift.
-          expect(toPrefsElement(back).toXml(), wire.toXml(),
-              reason: '$p on $resource');
+          expect(
+            toPrefsElement(back).toXml(),
+            wire.toXml(),
+            reason: '$p on $resource',
+          );
         }
       }
     });
@@ -1827,16 +2044,22 @@ void main() {
       // form that produces a different stanza and a different log line for the
       // same settings." Two insertions of the same set must produce identical
       // XML, and in sorted order.
-      final a = prefsWith(null, overrides: {
-        juliet: state(MamRetention.never),
-        'tybalt@capulet.lit': state(MamRetention.roster),
-        'paris@capulet.lit': state(MamRetention.onlyMuc),
-      });
-      final b = prefsWith(null, overrides: {
-        'paris@capulet.lit': state(MamRetention.onlyMuc),
-        juliet: state(MamRetention.never),
-        'tybalt@capulet.lit': state(MamRetention.roster),
-      });
+      final a = prefsWith(
+        null,
+        overrides: {
+          juliet: state(MamRetention.never),
+          'tybalt@capulet.lit': state(MamRetention.roster),
+          'paris@capulet.lit': state(MamRetention.onlyMuc),
+        },
+      );
+      final b = prefsWith(
+        null,
+        overrides: {
+          'paris@capulet.lit': state(MamRetention.onlyMuc),
+          juliet: state(MamRetention.never),
+          'tybalt@capulet.lit': state(MamRetention.roster),
+        },
+      );
       expect(toPrefsElement(a).toXml(), toPrefsElement(b).toXml());
       expect(
         toPrefsElement(a).toXml(),
@@ -1881,11 +2104,15 @@ void main() {
       // `MamPrefs` is the *whole* desired state, so narrowing one thing must
       // not quietly drop another: an override that vanishes from a `set` is
       // removed on the server.
-      final full = prefsWith(state(MamRetention.never), overrides: {
-        juliet: state(MamRetention.never),
-        'tybalt@capulet.lit': state(MamRetention.roster),
-      });
-      final wire = toPrefsElement(full.withDefault(state(MamRetention.roster))).toXml();
+      final full = prefsWith(
+        state(MamRetention.never),
+        overrides: {
+          juliet: state(MamRetention.never),
+          'tybalt@capulet.lit': state(MamRetention.roster),
+        },
+      );
+      final wire = toPrefsElement(full.withDefault(state(MamRetention.roster)))
+          .toXml();
       expect(wire, contains("default='roster'"));
       expect(wire, contains("jid='juliet@capulet.lit'"));
       expect(wire, contains("jid='tybalt@capulet.lit'"));
@@ -1904,10 +2131,16 @@ void main() {
         ...states.where((p) => p.policy == null),
       ]) {
         final prefs = prefsWith(p);
-        expect(effectiveRetention(prefs: prefs, conversation: juliet), p,
-            reason: '$p');
-        expect(privacySummary(prefs), isNot(contains('with no limit on how long')),
-            reason: '$p must not claim an unbounded period');
+        expect(
+          effectiveRetention(prefs: prefs, conversation: juliet),
+          p,
+          reason: '$p',
+        );
+        expect(
+          privacySummary(prefs),
+          isNot(contains('with no limit on how long')),
+          reason: '$p must not claim an unbounded period',
+        );
       }
       for (final support in [
         MamPrefsSupport.unknown,
@@ -1937,8 +2170,9 @@ void main() {
       // to hide an archive control, so a false positive tells a user their
       // history is not being kept when it is — the mistake the doc calls worse
       // than the opposite one, because a wrong reassurance gets believed.
-      expect(states.where((p) => p.keepsNothing).toList(),
-          [state(MamRetention.never)]);
+      expect(states.where((p) => p.keepsNothing).toList(), [
+        state(MamRetention.never),
+      ]);
     });
 
     test('`exposure` is null exactly when the policy is unreadable', () {
@@ -1966,13 +2200,19 @@ void main() {
           }
         }
       }
-      expect(state(MamRetention.always, maxDays: 30),
-          state(MamRetention.always, maxDays: 30));
-      expect(state(MamRetention.always, maxDays: 30),
-          isNot(state(MamRetention.always, maxDays: 7)));
+      expect(
+        state(MamRetention.always, maxDays: 30),
+        state(MamRetention.always, maxDays: 30),
+      );
+      expect(
+        state(MamRetention.always, maxDays: 30),
+        isNot(state(MamRetention.always, maxDays: 7)),
+      );
       expect(state(MamRetention.always), isNot(state(MamRetention.unlimited)));
-      expect(state(null, unrecognised: 'weird'),
-          isNot(state(null, unrecognised: 'other')));
+      expect(
+        state(null, unrecognised: 'weird'),
+        isNot(state(null, unrecognised: 'other')),
+      );
     });
 
     test('no function in the module throws for any state it can be handed', () {
@@ -1983,23 +2223,38 @@ void main() {
       for (final p in states) {
         final prefs = prefsWith(p, overrides: {juliet: p});
         expect(() => privacySummary(prefs), returnsNormally, reason: '$p');
-        expect(() => conversationPrivacySummary(prefs, juliet), returnsNormally,
-            reason: '$p');
-        expect(() => effectiveRetention(prefs: prefs, conversation: juliet),
-            returnsNormally, reason: '$p');
-        expect(() => appliesToResource(prefs, 'phone'), returnsNormally,
-            reason: '$p');
+        expect(
+          () => conversationPrivacySummary(prefs, juliet),
+          returnsNormally,
+          reason: '$p',
+        );
+        expect(
+          () => effectiveRetention(prefs: prefs, conversation: juliet),
+          returnsNormally,
+          reason: '$p',
+        );
+        expect(
+          () => appliesToResource(prefs, 'phone'),
+          returnsNormally,
+          reason: '$p',
+        );
         expect(() => toPrefsElement(prefs), returnsNormally, reason: '$p');
-        expect(() => parseMamPrefs(toPrefsElement(prefs)), returnsNormally,
-            reason: '$p');
+        expect(
+          () => parseMamPrefs(toPrefsElement(prefs)),
+          returnsNormally,
+          reason: '$p',
+        );
         for (final support in MamPrefsSupport.values) {
           expect(
             () => warningsBeforeChange(current: p, next: p, support: support),
             returnsNormally,
             reason: '$p on $support',
           );
-          expect(() => mayWritePreferences(support: support, current: prefs),
-              returnsNormally, reason: '$p on $support');
+          expect(
+            () => mayWritePreferences(support: support, current: prefs),
+            returnsNormally,
+            reason: '$p on $support',
+          );
         }
       }
     });
@@ -2012,16 +2267,31 @@ void main() {
       expect(bareJid(julietPhone), juliet);
       expect(bareJid(julietTablet), juliet);
       expect(bareJid(juliet), juliet);
-      expect(bareJid('room@conference.example.org/nick'),
-          'room@conference.example.org');
+      expect(
+        bareJid('room@conference.example.org/nick'),
+        'room@conference.example.org',
+      );
       expect(bareJid('a/b/c'), 'a');
       expect(bareJid('@example.org'), '@example.org');
       expect(bareJid('no-at-sign'), 'no-at-sign');
-      for (final jid in [juliet, julietPhone, julietTablet, 'a/b/c', '@x', '']) {
-        final prefs = prefsWith(null, overrides: {jid: state(MamRetention.never)});
+      for (final jid in [
+        juliet,
+        julietPhone,
+        julietTablet,
+        'a/b/c',
+        '@x',
+        '',
+      ]) {
+        final prefs = prefsWith(
+          null,
+          overrides: {jid: state(MamRetention.never)},
+        );
         expect(prefs.overrideFor(jid), isNotNull, reason: 'JID "$jid"');
-        expect(prefs.overrideFor(bareJid(jid)), isNotNull,
-            reason: 'JID "$jid" by its bare form');
+        expect(
+          prefs.overrideFor(bareJid(jid)),
+          isNotNull,
+          reason: 'JID "$jid" by its bare form',
+        );
       }
     });
 
@@ -2030,8 +2300,12 @@ void main() {
       // while testing less. The counts are asserted so that a later edit which
       // drops a state cannot hide.
       expect(states, hasLength(42));
-      expect(states.toSet(), hasLength(42),
-          reason: 'the states must be distinct or the sweep is smaller than it looks');
+      expect(
+        states.toSet(),
+        hasLength(42),
+        reason:
+            'the states must be distinct or the sweep is smaller than it looks',
+      );
       expect(everyPair().length, 42 * 42);
       expect(capOnly, isNotEmpty);
       expect(noReadablePolicy, isNotEmpty);

@@ -43,14 +43,21 @@ typedef _DecapsNative = Int32 Function(
 /// Falls back to [PqcryptoMlKem768] elsewhere; see `MlKem768Provider`.
 class LiboqsMlKem768 implements MlKem768 {
   LiboqsMlKem768._(DynamicLibrary lib)
-      : _keypair = lib.lookupFunction<_KeypairNative,
-            int Function(Pointer<Uint8>, Pointer<Uint8>)>('pq_mlkem768_keypair'),
-        _encaps = lib.lookupFunction<_EncapsNative,
-            int Function(Pointer<Uint8>, Pointer<Uint8>,
-                Pointer<Uint8>)>('pq_mlkem768_encaps'),
-        _decaps = lib.lookupFunction<_DecapsNative,
-            int Function(Pointer<Uint8>, Pointer<Uint8>,
-                Pointer<Uint8>)>('pq_mlkem768_decaps');
+    : _keypair = lib
+          .lookupFunction<
+            _KeypairNative,
+            int Function(Pointer<Uint8>, Pointer<Uint8>)
+          >('pq_mlkem768_keypair'),
+      _encaps = lib
+          .lookupFunction<
+            _EncapsNative,
+            int Function(Pointer<Uint8>, Pointer<Uint8>, Pointer<Uint8>)
+          >('pq_mlkem768_encaps'),
+      _decaps = lib
+          .lookupFunction<
+            _DecapsNative,
+            int Function(Pointer<Uint8>, Pointer<Uint8>, Pointer<Uint8>)
+          >('pq_mlkem768_decaps');
 
   /// Opens the bridge, or returns null when it is unavailable on this
   /// platform (desktop, tests, web).
@@ -107,10 +114,12 @@ class LiboqsMlKem768 implements MlKem768 {
       final rc = _encaps(pk, ct, ss);
       if (rc != 0) throw StateError('pq_mlkem768_encaps failed: $rc');
       return KemEncapsulation(
-        ciphertext:
-            Uint8List.fromList(ct.asTypedList(MlKem768.ciphertextLength)),
-        sharedSecret:
-            Uint8List.fromList(ss.asTypedList(MlKem768.sharedSecretLength)),
+        ciphertext: Uint8List.fromList(
+          ct.asTypedList(MlKem768.ciphertextLength),
+        ),
+        sharedSecret: Uint8List.fromList(
+          ss.asTypedList(MlKem768.sharedSecretLength),
+        ),
       );
     } finally {
       calloc.free(pk);
@@ -129,9 +138,7 @@ class LiboqsMlKem768 implements MlKem768 {
     try {
       final rc = _decaps(sk, ct, ss);
       if (rc != 0) throw StateError('pq_mlkem768_decaps failed: $rc');
-      return Uint8List.fromList(
-        ss.asTypedList(MlKem768.sharedSecretLength),
-      );
+      return Uint8List.fromList(ss.asTypedList(MlKem768.sharedSecretLength));
     } finally {
       calloc.free(sk);
       calloc.free(ct);

@@ -23,10 +23,7 @@ import 'theme.dart';
   if (raw.isEmpty) return null;
   final split = raw.indexOf(':');
   if (split <= 0) return null;
-  return (
-    jid: raw.substring(0, split),
-    password: raw.substring(split + 1),
-  );
+  return (jid: raw.substring(0, split), password: raw.substring(split + 1));
 }
 
 class LoginPage extends ConsumerStatefulWidget {
@@ -137,9 +134,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     final proxyOn = appNetwork.config.enabled;
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          widget.addAccountMode ? l10n.addAccount : l10n.appName,
-        ),
+        title: Text(widget.addAccountMode ? l10n.addAccount : l10n.appName),
       ),
       body: Center(
         child: SingleChildScrollView(

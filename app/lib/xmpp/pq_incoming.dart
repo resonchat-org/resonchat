@@ -42,7 +42,8 @@ const pqIncomingManagerId = 'resonchat-pq-incoming';
 
 /// Decrypts inbound `<encrypted xmlns='urn:xmpp:pomemo:0'/>` elements.
 class PqIncomingManager extends XmppManagerBase {
-  PqIncomingManager(this._decrypt, this._onFailure) : super(pqIncomingManagerId);
+  PqIncomingManager(this._decrypt, this._onFailure)
+    : super(pqIncomingManagerId);
 
   final PqIncomingCallback _decrypt;
   final void Function(PqDecryptFailure failure) _onFailure;
@@ -52,16 +53,16 @@ class PqIncomingManager extends XmppManagerBase {
 
   @override
   List<StanzaHandler> getIncomingPreStanzaHandlers() => [
-        StanzaHandler(
-          stanzaTag: 'message',
-          tagName: 'encrypted',
-          tagXmlns: pomemoXmlns,
-          // Ahead of the A-track handler, though the two never collide:
-          // both use the tag <encrypted />, separated by namespace.
-          priority: 200,
-          callback: _onIncoming,
-        ),
-      ];
+    StanzaHandler(
+      stanzaTag: 'message',
+      tagName: 'encrypted',
+      tagXmlns: pomemoXmlns,
+      // Ahead of the A-track handler, though the two never collide:
+      // both use the tag <encrypted />, separated by namespace.
+      priority: 200,
+      callback: _onIncoming,
+    ),
+  ];
 
   Future<StanzaHandlerData> _onIncoming(
     Stanza stanza,
@@ -81,7 +82,8 @@ class PqIncomingManager extends XmppManagerBase {
       return state;
     }
     if (plaintext == null) {
-      const reason = 'post-quantum message could not be opened: '
+      const reason =
+          'post-quantum message could not be opened: '
           'not addressed to one of our B-track devices';
       // Without this the placeholder body reaches the UI as if it were the
       // message. "This message is encrypted. Use a supported client to read

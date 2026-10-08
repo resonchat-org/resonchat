@@ -13,7 +13,8 @@ import 'package:resonchat/omemo/device_pruning.dart';
 
 void main() {
   /// A `bundleAbsent` answering true exactly for [absent].
-  bool Function(int) probe(Set<int> absent) => (id) => absent.contains(id);
+  bool Function(int) probe(Set<int> absent) =>
+      (id) => absent.contains(id);
 
   group('a positively absent bundle is removed', () {
     test('and reported as removed', () {

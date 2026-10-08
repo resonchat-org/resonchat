@@ -1,52 +1,83 @@
 #!/usr/bin/env bash
+# Copyright (C) 2026 resonchat contributors.
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
 # Builds the native ML-KEM-768 pieces this project needs (ADR-006):
 #
-#   1. a host-side reference binary that emits deterministic KAT vectors,
-#      used by test/mlkem_interop_test.dart to prove the pure-Dart backend
-#      and liboqs agree byte-for-byte
+#   1. a host-side reference binary that emits deterministic KAT vectors
+#      (skipped with --android-only)
 #   2. Android static libraries (arm64-v8a + x86_64) for the FFI backend
 #
-# Usage: tool/build_liboqs.sh [liboqs-source-dir]
+# Usage:
+#   ./tool/build_liboqs.sh                 # host ref + Android ABIs
+#   ./tool/build_liboqs.sh --android-only  # APK packaging path
+#   ./tool/build_liboqs.sh [liboqs-source-dir]
 #
-# Requires: Android NDK, cmake, ninja, a C compiler.
+# Requires: Android NDK, cmake, ninja, a C compiler (host build only).
 
 set -euo pipefail
 
 export ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
-export ANDROID_NDK="${ANDROID_NDK:-$(ls -d "$ANDROID_HOME"/ndk/* 2>/dev/null | head -1)}"
+# Prefer ANDROID_NDK_HOME (CI / sdkmanager), then ANDROID_NDK, then newest NDK.
+if [[ -z "${ANDROID_NDK:-}" ]]; then
+  if [[ -n "${ANDROID_NDK_HOME:-}" ]]; then
+    ANDROID_NDK="$ANDROID_NDK_HOME"
+  else
+    ANDROID_NDK="$(ls -d "$ANDROID_HOME"/ndk/* 2>/dev/null | sort -V | tail -1 || true)"
+  fi
+fi
+export ANDROID_NDK
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 APP="$(cd "$HERE/.." && pwd)"
-LIBOQS="${1:-$APP/third_party/liboqs}"
 ALGORITHMS="KEM_ml_kem_768;SIG_ml_dsa_65"
+ANDROID_ONLY=0
+LIBOQS="$APP/third_party/liboqs"
 
-if [ ! -d "$LIBOQS" ]; then
+for arg in "$@"; do
+  case "$arg" in
+    --android-only) ANDROID_ONLY=1 ;;
+    -h|--help)
+      sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
+      exit 0
+      ;;
+    *)
+      LIBOQS="$arg"
+      ;;
+  esac
+done
+
+if [[ ! -d "$LIBOQS" ]]; then
   echo "==> cloning liboqs into $LIBOQS"
   git clone --depth 1 https://github.com/open-quantum-safe/liboqs "$LIBOQS"
 fi
 
-if [ ! -d "$ANDROID_NDK" ]; then
-  echo "error: Android NDK not found (set ANDROID_NDK)" >&2
+if [[ ! -d "$ANDROID_NDK" ]]; then
+  echo "error: Android NDK not found (set ANDROID_NDK or ANDROID_NDK_HOME)" >&2
+  exit 1
+fi
+if ! command -v cmake >/dev/null 2>&1 || ! command -v ninja >/dev/null 2>&1; then
+  echo "error: cmake and ninja are required to build liboqs" >&2
   exit 1
 fi
 echo "==> NDK: $ANDROID_NDK"
 
-# --- host reference binary -------------------------------------------
-echo "==> building host reference binary"
-cmake -GNinja -S "$LIBOQS" -B "$LIBOQS/build-host" \
-  -DOQS_BUILD_ONLY_LIB=ON \
-  -DOQS_USE_OPENSSL=OFF \
-  -DOQS_MINIMAL_BUILD="$ALGORITHMS" \
-  -DCMAKE_BUILD_TYPE=Release >/dev/null
-ninja -C "$LIBOQS/build-host" >/dev/null
+if [[ "$ANDROID_ONLY" -eq 0 ]]; then
+  echo "==> building host reference binary"
+  cmake -GNinja -S "$LIBOQS" -B "$LIBOQS/build-host" \
+    -DOQS_BUILD_ONLY_LIB=ON \
+    -DOQS_USE_OPENSSL=OFF \
+    -DOQS_MINIMAL_BUILD="$ALGORITHMS" \
+    -DCMAKE_BUILD_TYPE=Release >/dev/null
+  ninja -C "$LIBOQS/build-host" >/dev/null
 
-mkdir -p "$APP/build/liboqs-ref"
-cc -O2 -I "$LIBOQS/build-host/include" \
-   "$HERE/native/mlkem_ref.c" -o "$APP/build/liboqs-ref/mlkem_ref" \
-   "$LIBOQS/build-host/lib/liboqs.a" -lm -lpthread
-echo "    → $APP/build/liboqs-ref/mlkem_ref"
+  mkdir -p "$APP/build/liboqs-ref"
+  cc -O2 -I "$LIBOQS/build-host/include" \
+     "$HERE/native/mlkem_ref.c" -o "$APP/build/liboqs-ref/mlkem_ref" \
+     "$LIBOQS/build-host/lib/liboqs.a" -lm -lpthread
+  echo "    → $APP/build/liboqs-ref/mlkem_ref"
+fi
 
-# --- Android static libraries ----------------------------------------
 for abi in arm64-v8a x86_64; do
   echo "==> building liboqs for $abi"
   cmake -GNinja -S "$LIBOQS" -B "$LIBOQS/build-$abi" \
@@ -62,12 +93,13 @@ for abi in arm64-v8a x86_64; do
   ninja -C "$LIBOQS/build-$abi" >/dev/null
   mkdir -p "$APP/build/liboqs/$abi"
   cp "$LIBOQS/build-$abi/lib/liboqs.a" "$APP/build/liboqs/$abi/"
-  # Headers travel with the library so the FFI build can compile later.
   mkdir -p "$APP/build/liboqs/include"
   cp -r "$LIBOQS/build-$abi/include/oqs" "$APP/build/liboqs/include/"
   du -h "$APP/build/liboqs/$abi/liboqs.a"
 done
 
 echo "==> done"
-echo "    reference binary: app/build/liboqs-ref/mlkem_ref"
+if [[ "$ANDROID_ONLY" -eq 0 ]]; then
+  echo "    reference binary: app/build/liboqs-ref/mlkem_ref"
+fi
 echo "    android libs:     app/build/liboqs/<abi>/liboqs.a"

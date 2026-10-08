@@ -376,9 +376,8 @@ String firstInitial(String name, String jid) {
   if (start < 0) start = _indexOf(runes, _visible);
   if (start < 0) return unknownName;
 
-  return String.fromCharCodes(
-    runes.sublist(start, _endOfGlyph(runes, start)),
-  ).toUpperCase();
+  return String.fromCharCodes(runes.sublist(start, _endOfGlyph(runes, start)))
+      .toUpperCase();
 }
 
 /// Where the picture that starts at [start] ends.

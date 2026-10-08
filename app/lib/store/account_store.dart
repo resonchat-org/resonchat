@@ -49,39 +49,38 @@ class StoredAccount {
     bool? enabled,
     bool? legacyDb,
     bool clearHost = false,
-  }) =>
-      StoredAccount(
-        id: id ?? this.id,
-        jid: jid ?? this.jid,
-        password: password ?? this.password,
-        host: clearHost ? null : (host ?? this.host),
-        enabled: enabled ?? this.enabled,
-        legacyDb: legacyDb ?? this.legacyDb,
-      );
+  }) => StoredAccount(
+    id: id ?? this.id,
+    jid: jid ?? this.jid,
+    password: password ?? this.password,
+    host: clearHost ? null : (host ?? this.host),
+    enabled: enabled ?? this.enabled,
+    legacyDb: legacyDb ?? this.legacyDb,
+  );
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'jid': jid,
-        'password': password,
-        if (hasHost) 'host': host,
-        'enabled': enabled,
-        'legacyDb': legacyDb,
-      };
+    'id': id,
+    'jid': jid,
+    'password': password,
+    if (hasHost) 'host': host,
+    'enabled': enabled,
+    'legacyDb': legacyDb,
+  };
 
   factory StoredAccount.fromJson(Map<String, dynamic> json) => StoredAccount(
-        id: json['id'] as String,
-        jid: json['jid'] as String,
-        password: json['password'] as String,
-        host: json['host'] as String?,
-        enabled: json['enabled'] as bool? ?? true,
-        legacyDb: json['legacyDb'] as bool? ?? false,
-      );
+    id: json['id'] as String,
+    jid: json['jid'] as String,
+    password: json['password'] as String,
+    host: json['host'] as String?,
+    enabled: json['enabled'] as bool? ?? true,
+    legacyDb: json['legacyDb'] as bool? ?? false,
+  );
 }
 
 /// Reads and writes the account list in the platform keystore.
 class AccountStore {
   AccountStore({FlutterSecureStorage? storage})
-      : _storage = storage ?? const FlutterSecureStorage();
+    : _storage = storage ?? const FlutterSecureStorage();
 
   final FlutterSecureStorage _storage;
   static const _listKey = 'resonchat.accounts.v1';
@@ -167,8 +166,9 @@ class AccountStore {
 /// Random account id (Conversations-style UUID string).
 String newAccountId() {
   final r = Random.secure();
-  String hex(int n) =>
-      List.generate(n, (_) => r.nextInt(256).toRadixString(16).padLeft(2, '0'))
-          .join();
+  String hex(int n) => List.generate(
+    n,
+    (_) => r.nextInt(256).toRadixString(16).padLeft(2, '0'),
+  ).join();
   return '${hex(4)}-${hex(2)}-${hex(2)}-${hex(2)}-${hex(6)}';
 }

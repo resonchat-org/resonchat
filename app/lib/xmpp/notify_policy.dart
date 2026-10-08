@@ -139,7 +139,8 @@ class NotifyDecision {
   bool get alerts => sound || banner;
 
   @override
-  String toString() => 'NotifyDecision(post: $post, sound: $sound, '
+  String toString() =>
+      'NotifyDecision(post: $post, sound: $sound, '
       'banner: $banner, preview: $includePreview, unread: $countsAsUnread, '
       'why: $reason)';
 }
@@ -398,13 +399,13 @@ NotifyDecision decide(NotifyPolicy policy) {
 
 /// Everything suppressed: no shade entry, no noise, no banner, no badge.
 NotifyDecision _silent(String reason) => NotifyDecision(
-      post: false,
-      sound: false,
-      banner: false,
-      includePreview: false,
-      countsAsUnread: false,
-      reason: reason,
-    );
+  post: false,
+  sound: false,
+  banner: false,
+  includePreview: false,
+  countsAsUnread: false,
+  reason: reason,
+);
 
 /// One decided notification, ready for whatever mechanism this platform needs.
 ///
@@ -444,10 +445,7 @@ class NotifyRequest {
 ///
 /// Null rather than a request carrying `post: false`, so that "post this" and
 /// "do nothing" are different values rather than one value read two ways.
-NotifyRequest? notificationFor(
-  NotifyPolicy policy, {
-  required String chatJid,
-}) {
+NotifyRequest? notificationFor(NotifyPolicy policy, {required String chatJid}) {
   final decision = decide(policy);
   if (!decision.post) return null;
   return NotifyRequest(

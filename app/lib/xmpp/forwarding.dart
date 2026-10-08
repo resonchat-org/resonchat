@@ -81,8 +81,11 @@ String forwardAttribution(String originJid) => 'Forwarded from $originJid';
 
 /// Sends one message of a forward. Injected so the loop can be tested without
 /// a connection.
-typedef ForwardSender =
-    Future<SendOutcome> Function(String body, String quote, Track track);
+typedef ForwardSender = Future<SendOutcome> Function(
+  String body,
+  String quote,
+  Track track,
+);
 
 /// Runs the forward loop.
 ///

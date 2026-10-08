@@ -32,29 +32,25 @@ void main() {
   /// Bit 4 is `pinned`, so `sweep(bits | 4)` is the same message with the
   /// conversation pinned and nothing else changed.
   NotifyPolicy sweep(int bits, {String body = 'see you soon'}) => NotifyPolicy(
-        sender: roomAlice,
-        me: zoe,
-        body: body,
-        muted: (bits & 1) != 0,
-        archived: (bits & 2) != 0,
-        pinned: (bits & 4) != 0,
-        isGroup: (bits & 8) != 0,
-        carbon: (bits & 16) != 0,
-        undecryptable: (bits & 32) != 0,
-        blocked: (bits & 64) != 0,
-        appInForeground: (bits & 128) != 0,
-        reading: (bits & 256) != 0,
-      );
+    sender: roomAlice,
+    me: zoe,
+    body: body,
+    muted: (bits & 1) != 0,
+    archived: (bits & 2) != 0,
+    pinned: (bits & 4) != 0,
+    isGroup: (bits & 8) != 0,
+    carbon: (bits & 16) != 0,
+    undecryptable: (bits & 32) != 0,
+    blocked: (bits & 64) != 0,
+    appInForeground: (bits & 128) != 0,
+    reading: (bits & 256) != 0,
+  );
 
   /// The whole space of inputs, over the three bodies that matter.
   Iterable<NotifyPolicy> everyInput() => [
-        for (final body in const [
-          'see you soon',
-          'zoe: are you there?',
-          '   ',
-        ])
-          for (var bits = 0; bits < 512; bits++) sweep(bits, body: body),
-      ];
+    for (final body in const ['see you soon', 'zoe: are you there?', '   '])
+      for (var bits = 0; bits < 512; bits++) sweep(bits, body: body),
+  ];
 
   /// Every reason a decision is allowed to give.
   const reasons = {
@@ -186,11 +182,7 @@ void main() {
       // told about. Described never, because there is nothing honest to
       // describe.
       final d = decide(
-        const NotifyPolicy(
-          sender: alice,
-          me: zoe,
-          undecryptable: true,
-        ),
+        const NotifyPolicy(sender: alice, me: zoe, undecryptable: true),
       );
       expect(d.post, isTrue);
       expect(d.sound, isTrue);
@@ -300,14 +292,17 @@ void main() {
       expect(d.includePreview, isTrue);
       expect(d.countsAsUnread, isTrue);
       expect(d.reason, NotifyReason.mentionedInMutedConversation);
-      expect(mentionsUser(
-        const NotifyPolicy(
-          sender: roomAlice,
-          me: zoe,
-          body: 'zoe: are you there?',
-          isGroup: true,
+      expect(
+        mentionsUser(
+          const NotifyPolicy(
+            sender: roomAlice,
+            me: zoe,
+            body: 'zoe: are you there?',
+            isGroup: true,
+          ),
         ),
-      ), isTrue);
+        isTrue,
+      );
     });
 
     test('and only that message', () {
@@ -321,23 +316,27 @@ void main() {
       );
       expect(decide(room).reason, NotifyReason.muted);
       expect(
-        decide(const NotifyPolicy(
-          sender: roomAlice,
-          me: zoe,
-          body: 'reacted 👍',
-          isGroup: true,
-          muted: true,
-        )).reason,
+        decide(
+          const NotifyPolicy(
+            sender: roomAlice,
+            me: zoe,
+            body: 'reacted 👍',
+            isGroup: true,
+            muted: true,
+          ),
+        ).reason,
         NotifyReason.muted,
       );
       expect(
-        decide(const NotifyPolicy(
-          sender: roomAlice,
-          me: zoe,
-          body: 'zoe: ping',
-          isGroup: true,
-          muted: true,
-        )).reason,
+        decide(
+          const NotifyPolicy(
+            sender: roomAlice,
+            me: zoe,
+            body: 'zoe: ping',
+            isGroup: true,
+            muted: true,
+          ),
+        ).reason,
         NotifyReason.mentionedInMutedConversation,
       );
     });
@@ -414,12 +413,9 @@ void main() {
       const names = ['zoe', 'zoe:', 'hey zoe', '@zoe', 'zoe?', '(zoe)'];
       for (final body in names) {
         expect(
-          mentionsUser(NotifyPolicy(
-            sender: roomAlice,
-            me: zoe,
-            body: body,
-            isGroup: true,
-          )),
+          mentionsUser(
+            NotifyPolicy(sender: roomAlice, me: zoe, body: body, isGroup: true),
+          ),
           isTrue,
           reason: 'should match: $body',
         );
@@ -431,12 +427,14 @@ void main() {
       // will use the address. Dropping the localpart would lose those mentions
       // silently, which is the failure this rule exists to prevent.
       expect(
-        mentionsUser(const NotifyPolicy(
-          sender: roomAlice,
-          me: zoeNoNick,
-          body: 'zoe: ping',
-          isGroup: true,
-        )),
+        mentionsUser(
+          const NotifyPolicy(
+            sender: roomAlice,
+            me: zoeNoNick,
+            body: 'zoe: ping',
+            isGroup: true,
+          ),
+        ),
         isTrue,
       );
     });
@@ -446,12 +444,14 @@ void main() {
       // device name is not addressing the user.
       expect(zoeNoNick.localpart, 'zoe');
       expect(
-        mentionsUser(const NotifyPolicy(
-          sender: roomAlice,
-          me: zoeNoNick,
-          body: 'phone was talking all night',
-          isGroup: true,
-        )),
+        mentionsUser(
+          const NotifyPolicy(
+            sender: roomAlice,
+            me: zoeNoNick,
+            body: 'phone was talking all night',
+            isGroup: true,
+          ),
+        ),
         isFalse,
       );
     });
@@ -465,12 +465,14 @@ void main() {
         NotifyIdentity(jid: 'zoe@example.org', nickname: '   '),
       ]) {
         expect(
-          mentionsUser(NotifyPolicy(
-            sender: roomAlice,
-            me: me,
-            body: 'anyone around?',
-            isGroup: true,
-          )),
+          mentionsUser(
+            NotifyPolicy(
+              sender: roomAlice,
+              me: me,
+              body: 'anyone around?',
+              isGroup: true,
+            ),
+          ),
           isFalse,
           reason: '$me',
         );
@@ -485,7 +487,9 @@ void main() {
       final pinned = decide(
         const NotifyPolicy(sender: alice, me: zoe, body: 'hi', pinned: true),
       );
-      final plain = decide(const NotifyPolicy(sender: alice, me: zoe, body: 'hi'));
+      final plain = decide(
+        const NotifyPolicy(sender: alice, me: zoe, body: 'hi'),
+      );
       expectIdentical(pinned, plain, 'pinned vs not');
     });
 
@@ -518,8 +522,10 @@ void main() {
       // arrive. The notification is the only way the user learns it is there.
       final d = decide(const NotifyPolicy(sender: alice, me: zoe));
       expect(d.post, isTrue);
-      expect(previewText(const NotifyPolicy(sender: alice, me: zoe)),
-          kNoPreviewText);
+      expect(
+        previewText(const NotifyPolicy(sender: alice, me: zoe)),
+        kNoPreviewText,
+      );
     });
   });
 
@@ -569,8 +575,11 @@ void main() {
       };
       for (final policy in everyInput()) {
         final d = decide(policy);
-        expect(d.countsAsUnread, neverCounts.contains(d.reason) ? isFalse : isTrue,
-            reason: '${d.reason} for $policy');
+        expect(
+          d.countsAsUnread,
+          neverCounts.contains(d.reason) ? isFalse : isTrue,
+          reason: '${d.reason} for $policy',
+        );
       }
     });
   });
@@ -578,8 +587,9 @@ void main() {
   group('what the notification is allowed to say', () {
     test('an undecryptable message is announced and not described', () {
       expect(
-        previewText(const NotifyPolicy(sender: alice, me: zoe,
-            undecryptable: true)),
+        previewText(
+          const NotifyPolicy(sender: alice, me: zoe, undecryptable: true),
+        ),
         kNoPreviewText,
       );
     });
@@ -645,29 +655,35 @@ void main() {
       // "see you at 8" is a different message depending on who said it, and a
       // preview without the name makes the user open the app to find out.
       expect(
-        previewText(const NotifyPolicy(
-          sender: roomAlice,
-          me: zoe,
-          body: 'see you at 8',
-          isGroup: true,
-        )),
+        previewText(
+          const NotifyPolicy(
+            sender: roomAlice,
+            me: zoe,
+            body: 'see you at 8',
+            isGroup: true,
+          ),
+        ),
         'alice: see you at 8',
       );
     });
 
     test('a group member with no nickname is still named', () {
       expect(
-        previewText(const NotifyPolicy(
-          sender: NotifyIdentity(jid: 'bob@conference.example.org/x'),
-          me: zoe,
-          body: 'yes',
-          isGroup: true,
-        )),
+        previewText(
+          const NotifyPolicy(
+            sender: NotifyIdentity(jid: 'bob@conference.example.org/x'),
+            me: zoe,
+            body: 'yes',
+            isGroup: true,
+          ),
+        ),
         'bob: yes',
       );
       expect(
-        const NotifyIdentity(jid: 'zoe@example.org/phone', nickname: '  ')
-            .label,
+        const NotifyIdentity(
+          jid: 'zoe@example.org/phone',
+          nickname: '  ',
+        ).label,
         'zoe',
       );
     });
@@ -685,22 +701,26 @@ void main() {
 
     test('whitespace is collapsed onto one line', () {
       expect(
-        previewText(const NotifyPolicy(
-          sender: alice,
-          me: zoe,
-          body: 'line one\n\n   line two\t',
-        )),
+        previewText(
+          const NotifyPolicy(
+            sender: alice,
+            me: zoe,
+            body: 'line one\n\n   line two\t',
+          ),
+        ),
         'line one line two',
       );
     });
 
     test('a long message is cut, sender prefix included', () {
-      final text = previewText(NotifyPolicy(
-        sender: roomAlice,
-        me: zoe,
-        body: 'x' * 200,
-        isGroup: true,
-      ));
+      final text = previewText(
+        NotifyPolicy(
+          sender: roomAlice,
+          me: zoe,
+          body: 'x' * 200,
+          isGroup: true,
+        ),
+      );
       expect(text.length, lessThanOrEqualTo(kMaxPreviewLength));
       expect(text, endsWith('…'));
       expect(text, startsWith('alice: '));

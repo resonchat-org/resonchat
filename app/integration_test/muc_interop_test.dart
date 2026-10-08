@@ -40,8 +40,7 @@ void main() {
   const jid = String.fromEnvironment('RESONCHAT_A_JID');
   const pass = String.fromEnvironment('RESONCHAT_A_PASS');
   const room = String.fromEnvironment('RESONCHAT_ROOM');
-  const waitSeconds =
-      int.fromEnvironment('RESONCHAT_A_WAIT', defaultValue: 45);
+  const waitSeconds = int.fromEnvironment('RESONCHAT_A_WAIT', defaultValue: 45);
 
   testWidgets('two clients in one room exchange a message', (tester) async {
     expect(jid, isNotEmpty, reason: 'pass RESONCHAT_A_JID');
@@ -188,8 +187,10 @@ void main() {
       await b.leaveGroupChat(room);
       await a.disconnect();
       await b.disconnect();
-      final failed =
-          results.entries.where((e) => !e.value).map((e) => e.key).toList();
+      final failed = results.entries
+          .where((e) => !e.value)
+          .map((e) => e.key)
+          .toList();
       if (failed.isNotEmpty) {
         // ignore: avoid_print
         print('FAILED CHECKS: ${failed.join(', ')}');

@@ -65,7 +65,7 @@ class PqMessageLayer {
   /// occupant's real JID, never the room). Throws [PqDecryptError] when it
   /// cannot be fetched, rather than proceeding with a weaker session binding.
   final Future<List<int>> Function(String senderBareJid, int deviceId)
-      senderIkOf;
+  senderIkOf;
 
   final _cipher = AesGcm.with256bits();
 
@@ -94,18 +94,12 @@ class PqMessageLayer {
     // `concatenation()` is ciphertext **plus zero padding** (GCM pads to a
     // block multiple), so it is not the wire format. Use cipherText and
     // append the tag explicitly.
-    final payloadBytes = <int>[
-      ...payload.cipherText,
-      ...payload.mac.bytes,
-    ];
+    final payloadBytes = <int>[...payload.cipherText, ...payload.mac.bytes];
 
     final keys = <PqKeyEntry>[];
     for (final peer in recipients) {
       try {
-        keys.add(await _encryptForDevice(
-          peer: peer,
-          messageKey: messageKey,
-        ));
+        keys.add(await _encryptForDevice(peer: peer, messageKey: messageKey));
       } catch (e) {
         _log.warning('could not encrypt for ${peer.jid}/${peer.id}: $e');
       }
@@ -155,8 +149,9 @@ class PqMessageLayer {
       pkId: kex?.pkId,
       pqSpkId: kex?.pqSpkId,
       pqPkId: kex?.pqPkId,
-      pqCiphertexts:
-          kex == null ? const <String>[] : kex.pqCiphertexts.map(base64Encode).toList(),
+      pqCiphertexts: kex == null
+          ? const <String>[]
+          : kex.pqCiphertexts.map(base64Encode).toList(),
     );
   }
 
@@ -170,9 +165,8 @@ class PqMessageLayer {
   }) async {
     final entry = message.keys.firstWhere(
       (k) => k.recipientDeviceId == ownDevice.id,
-      orElse: () => throw PqDecryptError(
-        'not addressed to device ${ownDevice.id}',
-      ),
+      orElse: () =>
+          throw PqDecryptError('not addressed to device ${ownDevice.id}'),
     );
 
     // Ratchets are keyed by (peer bare JID, peer device id) — same as

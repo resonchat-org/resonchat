@@ -43,79 +43,79 @@ void main() {
   final previewFont = AppThemeTokens.fontFamily;
 
   Widget lightSample() => MaterialApp(
-        debugShowCheckedModeBanner: false,
-        theme: AppThemeTokens.light(),
-        builder: (context, child) => DefaultTextStyle.merge(
-          style: TextStyle(fontFamily: previewFont),
-          child: child!,
-        ),
-        home: Scaffold(
-          body: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              DateSeparator(date: DateTime(2026, 10, 2)),
-              MessageBubble(
-                text: 'Hey, are we still on for tonight?',
-                time: DateTime(2026, 10, 2, 19, 4),
-                side: BubbleSide.incoming,
-                senderName: 'Alice',
-              ),
-              MessageBubble(
-                text: 'Yes. I finished the PQ handshake.',
-                time: DateTime(2026, 10, 2, 19, 6),
-                side: BubbleSide.outgoing,
-                delivered: true,
-              ),
-              MessageBubble(
-                text: 'Sent.',
-                time: DateTime(2026, 10, 2, 19, 6),
-                side: BubbleSide.outgoing,
-              ),
-              MessageBubble(
-                text: 'Mirrored from my laptop.',
-                time: DateTime(2026, 10, 2, 19, 7),
-                side: BubbleSide.outgoing,
-                delivered: true,
-              ),
-              UnreadDivider(),
-              MessageBubble(
-                text: 'That one could not be decrypted.',
-                time: DateTime(2026, 10, 2, 19, 8),
-                side: BubbleSide.incoming,
-              ),
-            ],
+    debugShowCheckedModeBanner: false,
+    theme: AppThemeTokens.light(),
+    builder: (context, child) => DefaultTextStyle.merge(
+      style: TextStyle(fontFamily: previewFont),
+      child: child!,
+    ),
+    home: Scaffold(
+      body: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          DateSeparator(date: DateTime(2026, 10, 2)),
+          MessageBubble(
+            text: 'Hey, are we still on for tonight?',
+            time: DateTime(2026, 10, 2, 19, 4),
+            side: BubbleSide.incoming,
+            senderName: 'Alice',
           ),
-        ),
-      );
+          MessageBubble(
+            text: 'Yes. I finished the PQ handshake.',
+            time: DateTime(2026, 10, 2, 19, 6),
+            side: BubbleSide.outgoing,
+            delivered: true,
+          ),
+          MessageBubble(
+            text: 'Sent.',
+            time: DateTime(2026, 10, 2, 19, 6),
+            side: BubbleSide.outgoing,
+          ),
+          MessageBubble(
+            text: 'Mirrored from my laptop.',
+            time: DateTime(2026, 10, 2, 19, 7),
+            side: BubbleSide.outgoing,
+            delivered: true,
+          ),
+          UnreadDivider(),
+          MessageBubble(
+            text: 'That one could not be decrypted.',
+            time: DateTime(2026, 10, 2, 19, 8),
+            side: BubbleSide.incoming,
+          ),
+        ],
+      ),
+    ),
+  );
 
   Widget darkSample() => MaterialApp(
-        debugShowCheckedModeBanner: false,
-        theme: AppThemeTokens.dark(),
-        builder: (context, child) => DefaultTextStyle.merge(
-          style: TextStyle(fontFamily: previewFont),
-          child: child!,
-        ),
-        home: Scaffold(
-          body: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              DateSeparator(date: DateTime(2026, 10, 2)),
-              MessageBubble(
-                text: 'Dark theme check.',
-                time: DateTime(2026, 10, 2, 19, 4),
-                side: BubbleSide.incoming,
-                senderName: 'Alice',
-              ),
-              MessageBubble(
-                text: 'Looks right.',
-                time: DateTime(2026, 10, 2, 19, 6),
-                side: BubbleSide.outgoing,
-                delivered: true,
-              ),
-            ],
+    debugShowCheckedModeBanner: false,
+    theme: AppThemeTokens.dark(),
+    builder: (context, child) => DefaultTextStyle.merge(
+      style: TextStyle(fontFamily: previewFont),
+      child: child!,
+    ),
+    home: Scaffold(
+      body: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          DateSeparator(date: DateTime(2026, 10, 2)),
+          MessageBubble(
+            text: 'Dark theme check.',
+            time: DateTime(2026, 10, 2, 19, 4),
+            side: BubbleSide.incoming,
+            senderName: 'Alice',
           ),
-        ),
-      );
+          MessageBubble(
+            text: 'Looks right.',
+            time: DateTime(2026, 10, 2, 19, 6),
+            side: BubbleSide.outgoing,
+            delivered: true,
+          ),
+        ],
+      ),
+    ),
+  );
 
   testWidgets('render light bubbles', (tester) async {
     tester.view.physicalSize = const Size(420, 620);

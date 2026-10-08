@@ -227,8 +227,11 @@ class XColors extends ThemeExtension<XColors> {
       accent: Color.lerp(accent, other.accent, t)!,
       onAccent: Color.lerp(onAccent, other.onAccent, t)!,
       accentContainer: Color.lerp(accentContainer, other.accentContainer, t)!,
-      onAccentContainer:
-          Color.lerp(onAccentContainer, other.onAccentContainer, t)!,
+      onAccentContainer: Color.lerp(
+        onAccentContainer,
+        other.onAccentContainer,
+        t,
+      )!,
       canvas: Color.lerp(canvas, other.canvas, t)!,
       surface: Color.lerp(surface, other.surface, t)!,
       surfaceRaised: Color.lerp(surfaceRaised, other.surfaceRaised, t)!,
@@ -253,15 +256,15 @@ class XColors extends ThemeExtension<XColors> {
   /// Exposed as data rather than checked in comments so the audit is a test
   /// that can fail, instead of a claim in prose that cannot.
   Map<String, Color> get foregrounds => {
-        'textPrimary': textPrimary,
-        'textSecondary': textSecondary,
-        'textTertiary': textTertiary,
-        'accent': accent,
-        'danger': danger,
-        'online': online,
-        'onOwnBubble': onOwnBubble,
-        'onPeerBubble': onPeerBubble,
-      };
+    'textPrimary': textPrimary,
+    'textSecondary': textSecondary,
+    'textTertiary': textTertiary,
+    'accent': accent,
+    'danger': danger,
+    'online': online,
+    'onOwnBubble': onOwnBubble,
+    'onPeerBubble': onPeerBubble,
+  };
 }
 
 /// Spacing, radii and type sizes.
@@ -322,7 +325,7 @@ class XDimens {
 /// with no theme is overwhelmingly more likely to be a preview or a test, and
 /// the dark palette is the one this app is designed around.
 extension XTheme on BuildContext {
-  XColors get x => Theme.of(this).extension<XColors>() ?? XColors.dark(
-        Theme.of(this).colorScheme,
-      );
+  XColors get x =>
+      Theme.of(this).extension<XColors>() ??
+      XColors.dark(Theme.of(this).colorScheme);
 }

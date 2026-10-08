@@ -55,7 +55,5 @@ Set<int> keepableDeviceIds({
 ///
 /// Separate from [keepableDeviceIds] so the caller can report what changed, and
 /// so "nothing was removed" is distinguishable from "the list was never read".
-Set<int> deadDeviceIds({
-  required Set<int> listed,
-  required Set<int> kept,
-}) => listed.difference(kept);
+Set<int> deadDeviceIds({required Set<int> listed, required Set<int> kept}) =>
+    listed.difference(kept);

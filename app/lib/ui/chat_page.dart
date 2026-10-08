@@ -40,11 +40,7 @@ import 'theme.dart';
 import 'unread.dart';
 
 class ChatPage extends ConsumerStatefulWidget {
-  const ChatPage({
-    super.key,
-    required this.chatJid,
-    this.focusMessageAnchor,
-  });
+  const ChatPage({super.key, required this.chatJid, this.focusMessageAnchor});
 
   /// [ChatRef.key] (accountId + peer JID), or legacy bare JID.
   final String chatJid;
@@ -150,9 +146,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
   Future<void> _openInChatSearch() async {
     final hit = await Navigator.of(context).push<SearchHit>(
-      MaterialPageRoute(
-        builder: (_) => SearchPage(chatJid: widget.chatJid),
-      ),
+      MaterialPageRoute(builder: (_) => SearchPage(chatJid: widget.chatJid)),
     );
     if (!mounted || hit == null) return;
     setState(() => _focusMessageAnchor = hit.messageAnchor);
@@ -228,13 +222,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     super.initState();
     _scroll.addListener(_onScroll);
     // A message the server refused must stop looking sent.
-    _failureSub = _xmpp
-        .deliveryFailures
-        .listen(_onDeliveryFailure);
+    _failureSub = _xmpp.deliveryFailures.listen(_onDeliveryFailure);
     _adviceSub = trackAdvice.listen(_onAdvice);
-    _typingSub = _xmpp
-        .typingStates
-        .listen(_onPeerTyping);
+    _typingSub = _xmpp.typingStates.listen(_onPeerTyping);
     // While this chat is open, a new inbound markable message is already
     // being read — send <displayed/> like Conversations markRead on open.
     _inboundReadSub = _xmpp.inbound.listen((msg) {
@@ -242,10 +232,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       if (!msg.markable || msg.fromArchive) return;
       final id = msg.originId ?? msg.stanzaId;
       if (id == null || id.isEmpty) return;
-      unawaited(
-        _xmpp
-            .sendDisplayedMarker(JID.fromString(_peerJid), id),
-      );
+      unawaited(_xmpp.sendDisplayedMarker(JID.fromString(_peerJid), id));
     });
     // Deliberately *not* marked read here. Marking on arrival would clear the
     // unread badge before the user has read anything, and the boundary in the
@@ -289,15 +276,12 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final features = await xmpp.queryRoomFeatures(jid);
     final encryptable = isPrivateAndNonAnonymous(features);
     // Conversations fetchMembers when private+non-anonymous.
-    await xmpp.refreshRoomMembership(
-      jid,
-      privateNonAnonymous: encryptable,
-    );
+    await xmpp.refreshRoomMembership(jid, privateNonAnonymous: encryptable);
     await _db.upsertChat(
-          jid,
-          isGroup: true,
-          mucPrivateNonAnonymous: encryptable,
-        );
+      jid,
+      isGroup: true,
+      mucPrivateNonAnonymous: encryptable,
+    );
     if (!mounted) return;
     if (encryptable != _mucEncryptable) {
       setState(() => _mucEncryptable = encryptable);
@@ -315,10 +299,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final xmpp = _xmpp;
     final last = await db.lastIncomingMarkable(_peerJid);
     if (last == null || last.stanzaId.isEmpty) return;
-    await xmpp.sendDisplayedMarker(
-      JID.fromString(_peerJid),
-      last.stanzaId,
-    );
+    await xmpp.sendDisplayedMarker(JID.fromString(_peerJid), last.stanzaId);
   }
 
   @override
@@ -334,10 +315,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
   Future<void> _onDeliveryFailure(DeliveryFailure failure) async {
     if (failure.from.toBare().toString() != _peerJid) return;
-    await _db.markDeliveryFailure(
-          failure.stanzaId,
-          failure.reason,
-        );
+    await _db.markDeliveryFailure(failure.stanzaId, failure.reason);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -356,8 +334,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   /// mutual subscription, which is the single most common reason a fresh
   /// contact sees every message silently vanish.
   void _showRefusalHelp(String reason) {
-    final mutual =
-        ref.read(contactStateProvider(widget.chatJid)).value;
+    final mutual = ref.read(contactStateProvider(widget.chatJid)).value;
     showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
@@ -365,9 +342,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         content: Text(
           'The server refused this message:\n\n$reason\n\n'
           '${(mutual?.isMutual ?? false) ? '' : 'This contact is not a '
-              'mutual subscription yet (currently ${mutual?.summary ?? 'unknown'}). '
-              'Many servers refuse messages until both sides have accepted '
-              'each other.\n\n'}'
+                    'mutual subscription yet (currently ${mutual?.summary ?? 'unknown'}). '
+                    'Many servers refuse messages until both sides have accepted '
+                    'each other.\n\n'}'
           'Ask them to accept your contact request, or wait for the other '
           'side to accept yours.',
         ),
@@ -455,10 +432,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       if (!_typingNotified) return;
       // onTypingStopped → paused; next keystroke re-sends composing.
       _typingNotified = false;
-      unawaited(
-        _xmpp
-            .sendChatState(peer, TypingState.paused),
-      );
+      unawaited(_xmpp.sendChatState(peer, TypingState.paused));
     });
 
     if (!_typingNotified) {
@@ -624,32 +598,36 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       // sent.
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Not sent: ${outcome.blocked?.title ?? 'unknown reason'}')),
+          SnackBar(
+            content: Text(
+              'Not sent: ${outcome.blocked?.title ?? 'unknown reason'}',
+            ),
+          ),
         );
       }
       return null;
     }
 
     await _db.insertMessage(
-          MessagesCompanion(
-            chatJid: Value(_peerJid),
-            sender: const Value('me'),
-            stanzaId: Value(outcome.stanzaId ?? ''),
-            body: Value(text),
-            timestamp: Value(DateTime.now()),
-            // What went out, as reported by the send — never the track we
-            // hoped for. A bubble labelled PO that travelled as plaintext is
-            // the one lie this app must not tell.
-            encMode: Value(EncModeToken.of(outcome.track).wire),
-            incoming: const Value(false),
-            // The quote is copied onto this row. Looking it up from the target
-            // message would empty the quote out the moment that message is
-            // retracted — and retracting it is one tap away.
-            replyTo: Value(reply?.id ?? ''),
-            replyBody: Value(reply?.body ?? ''),
-            replyAuthor: Value(reply?.author ?? ''),
-          ),
-        );
+      MessagesCompanion(
+        chatJid: Value(_peerJid),
+        sender: const Value('me'),
+        stanzaId: Value(outcome.stanzaId ?? ''),
+        body: Value(text),
+        timestamp: Value(DateTime.now()),
+        // What went out, as reported by the send — never the track we
+        // hoped for. A bubble labelled PO that travelled as plaintext is
+        // the one lie this app must not tell.
+        encMode: Value(EncModeToken.of(outcome.track).wire),
+        incoming: const Value(false),
+        // The quote is copied onto this row. Looking it up from the target
+        // message would empty the quote out the moment that message is
+        // retracted — and retracting it is one tap away.
+        replyTo: Value(reply?.id ?? ''),
+        replyBody: Value(reply?.body ?? ''),
+        replyAuthor: Value(reply?.author ?? ''),
+      ),
+    );
     if (reply != null) {
       setState(() => _replyingTo = null);
     }
@@ -689,9 +667,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final peer = JID.fromString(_peerJid);
     _sending = true;
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.l10n.uploadingFile)),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(context.l10n.uploadingFile)));
     }
     try {
       // Same resolve / substitute dialog as text (incl. MUC PQ → standard).
@@ -732,23 +709,22 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         return;
       }
       await _db.insertMessage(
-            MessagesCompanion(
-              chatJid: Value(_peerJid),
-              sender: const Value('me'),
-              stanzaId: Value(outcome.stanzaId ?? ''),
-              body: Value(uploaded.shareUrl),
-              timestamp: Value(DateTime.now()),
-              encMode: Value(EncModeToken.of(outcome.track).wire),
-              incoming: const Value(false),
-              mediaUrl: Value(uploaded.shareUrl),
-              mediaMime: Value(uploaded.mime),
-              mediaName: Value(uploaded.fileName),
-              localPath: Value(cached.path),
-            ),
-          );
+        MessagesCompanion(
+          chatJid: Value(_peerJid),
+          sender: const Value('me'),
+          stanzaId: Value(outcome.stanzaId ?? ''),
+          body: Value(uploaded.shareUrl),
+          timestamp: Value(DateTime.now()),
+          encMode: Value(EncModeToken.of(outcome.track).wire),
+          incoming: const Value(false),
+          mediaUrl: Value(uploaded.shareUrl),
+          mediaMime: Value(uploaded.mime),
+          mediaName: Value(uploaded.fileName),
+          localPath: Value(cached.path),
+        ),
+      );
       if (mounted) {
-        WidgetsBinding.instance
-            .addPostFrameCallback((_) => _scrollToBottom());
+        WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
       }
     } catch (e) {
       if (mounted) {
@@ -788,7 +764,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     }
 
     if (chosen == Track.none) {
-      final alternative = resolution.alternative ??
+      final alternative =
+          resolution.alternative ??
           (_mucEncryptable || !_isGroup ? Track.standard : Track.none);
       if (!mounted) return null;
       // Asked once per conversation, not once per message.
@@ -845,11 +822,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       _typingNotified = false;
       if (!_isGroup) {
         unawaited(
-          _xmpp
-              .sendChatState(
-                JID.fromString(_peerJid),
-                TypingState.inactive,
-              ),
+          _xmpp.sendChatState(JID.fromString(_peerJid), TypingState.inactive),
         );
       }
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
@@ -886,11 +859,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final chatJid = _peerJid;
     await storeReaction(
       db,
-      ReactionUpdate(
-        targetId: targetId,
-        reactor: myJid,
-        emojis: next.toList(),
-      ),
+      ReactionUpdate(targetId: targetId, reactor: myJid, emojis: next.toList()),
     );
     _bumpReactions();
 
@@ -937,13 +906,11 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     // Join with the stored nick when the MUC cache has nothing yet
     // (Conversations joinMuc on open / connect).
     if ((chat == null || !chat.joined) && nick.isNotEmpty) {
-      final err =
-          await _xmpp.joinGroupChat(jid, nick);
+      final err = await _xmpp.joinGroupChat(jid, nick);
       if (!mounted) return;
       if (err != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$err')),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('$err')));
       }
       ref.invalidate(roomStateProvider(widget.chatJid));
       chat = await ref.read(roomStateProvider(widget.chatJid).future);
@@ -965,11 +932,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      builder: (_) => PinnedSheet(
-        chatJid: widget.chatJid,
-        pinnedIds: ids,
-        bodies: bodies,
-      ),
+      builder: (_) =>
+          PinnedSheet(chatJid: widget.chatJid, pinnedIds: ids, bodies: bodies),
     );
   }
 
@@ -982,11 +946,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       await _xmpp.leaveGroupChat(chat.roomJid);
       // Keep isGroup; clear nick so connect does not auto-rejoin until they
       // join again (bookmark autojoin can restore nick later).
-      await _db.upsertChat(
-            chat.roomJid,
-            isGroup: true,
-            mucNick: '',
-          );
+      await _db.upsertChat(chat.roomJid, isGroup: true, mucNick: '');
       if (mounted) Navigator.of(context).maybePop();
       return;
     }
@@ -995,7 +955,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     // address by the server's occupant lookup.
     if (result.nick != null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Private chat with ${result.nick} is not set up yet.')),
+        SnackBar(
+          content: Text('Private chat with ${result.nick} is not set up yet.'),
+        ),
       );
     }
   }
@@ -1006,8 +968,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     // Read before the dialog opens: an await here would leave a frame where a
     // tap lands on nothing, and the dialog is modal so the menu's own action
     // handler is the only thing that should be doing async work.
-    final pinned = await _db
-        .isPinned(_peerJid, message.stanzaId);
+    final pinned = await _db.isPinned(_peerJid, message.stanzaId);
     if (!mounted) return;
     final track = storedTrack(message.encMode);
     final actions = MessageActions.for_(
@@ -1015,7 +976,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       retracted: message.retracted,
       // An undecryptable message has no body to copy or correct; offering
       // either would act on a placeholder.
-      decrypted: message.encMode != EncModeToken.error.wire && !message.retracted,
+      decrypted:
+          message.encMode != EncModeToken.error.wire && !message.retracted,
       addressable: message.stanzaId.isNotEmpty,
       pinned: pinned,
     );
@@ -1034,23 +996,22 @@ class _ChatPageState extends ConsumerState<ChatPage> {
           _replyingTo = (
             id: message.stanzaId,
             body: body,
-            author: message.incoming
-                ? _peerJid
-                : 'You',
+            author: message.incoming ? _peerJid : 'You',
           );
         });
         // The keyboard is what the user wants next; opening the composer
         // without it leaves them typing at nothing.
-        WidgetsBinding.instance.addPostFrameCallback((_) => _focus.requestFocus());
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => _focus.requestFocus(),
+        );
       case MessageAction.react:
         setState(() => _reactingToId = message.stanzaId);
       case MessageAction.copy:
         unawaited(
           Clipboard.setData(ClipboardData(text: body)).then((_) {
             if (!mounted) return;
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(context.l10n.copied)),
-            );
+            ScaffoldMessenger.of(context)
+                .showSnackBar(SnackBar(content: Text(context.l10n.copied)));
           }),
         );
       case MessageAction.forward:
@@ -1083,7 +1044,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     if (!sent) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not delete: the message was not sent.')),
+        const SnackBar(
+          content: Text('Could not delete: the message was not sent.'),
+        ),
       );
       return;
     }
@@ -1103,9 +1066,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       context: context,
       isScrollControlled: true,
       builder: (_) => ForwardTargetSheet(
-        items: [
-          ForwardItem(body: body, chatJid: _peerJid),
-        ],
+        items: [ForwardItem(body: body, chatJid: _peerJid)],
       ),
     );
     if (target == null || !mounted) return;
@@ -1136,7 +1097,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
           outcome.ok
               ? 'Forwarded to $destPeer'
               : 'Forwarded ${outcome.forwarded}, then stopped: the $destPeer '
-                  'track cannot be used right now.',
+                    'track cannot be used right now.',
         ),
       ),
     );
@@ -1153,12 +1114,11 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final targetId = _editingId;
     if (targetId == null) return;
     final db = _db;
-    final outcome = await _xmpp
-        .correctMessage(
-          JID.fromString(_peerJid).toBare(),
-          targetId: targetId,
-          body: body,
-        );
+    final outcome = await _xmpp.correctMessage(
+      JID.fromString(_peerJid).toBare(),
+      targetId: targetId,
+      body: body,
+    );
     if (!outcome.sent) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1280,11 +1240,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     }
     var deleted = 0;
     for (final id in mine) {
-      final ok = await retractMessage(
-        _xmpp,
-        chatJid: _peerJid,
-        targetId: id,
-      );
+      final ok = await retractMessage(_xmpp, chatJid: _peerJid, targetId: id);
       if (!ok) break;
       deleted++;
     }
@@ -1317,8 +1273,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   }
 
   Future<void> _loadHistory() async {
-    final count = await _xmpp
-        .fetchHistory(JID.fromString(_peerJid));
+    final count = await _xmpp.fetchHistory(JID.fromString(_peerJid));
     if (!mounted) return;
     final l10n = context.l10n;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -1373,9 +1328,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         : ref.watch(chatTrackProvider(widget.chatJid)).value ?? Track.standard;
     final appearance =
         ref.watch(chatAppearanceProvider(widget.chatJid)).value ??
-            const ChatAppearance();
-    final attachEnabled =
-        ref.watch(httpUploadAvailableProvider).value ?? false;
+        const ChatAppearance();
+    final attachEnabled = ref.watch(httpUploadAvailableProvider).value ?? false;
     final chatRow = ref.watch(chatProvider(widget.chatJid)).value;
     final title = displayName(
       localNickname: null,
@@ -1391,232 +1345,223 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     return Stack(
       children: [
         Scaffold(
-      appBar: AppBar(
-        titleSpacing: 0,
-        title: Row(
-          children: [
-            // Rooms open the member list; contacts open the profile.
-            GestureDetector(
-              onTap: _isGroup
-                  ? _showMembers
-                  : () => Navigator.of(context)
-                      .pushNamed('/profile', arguments: widget.chatJid),
-              child: _isGroup
-                  ? CircleAvatar(
-                      radius: TgDimens.avatarChat / 2,
-                      backgroundColor: tg.accent.withValues(alpha: 0.18),
-                      child: Icon(
-                        Icons.groups_outlined,
-                        color: tg.accent,
-                        size: TgDimens.avatarChat * 0.55,
+          appBar: AppBar(
+            titleSpacing: 0,
+            title: Row(
+              children: [
+                // Rooms open the member list; contacts open the profile.
+                GestureDetector(
+                  onTap: _isGroup
+                      ? _showMembers
+                      : () => Navigator.of(context)
+                            .pushNamed('/profile', arguments: widget.chatJid),
+                  child: _isGroup
+                      ? CircleAvatar(
+                          radius: TgDimens.avatarChat / 2,
+                          backgroundColor: tg.accent.withValues(alpha: 0.18),
+                          child: Icon(
+                            Icons.groups_outlined,
+                            color: tg.accent,
+                            size: TgDimens.avatarChat * 0.55,
+                          ),
+                        )
+                      : ContactAvatar(
+                          jid: _peerJid,
+                          title: title,
+                          radius: TgDimens.avatarChat / 2,
+                          hero: true,
+                        ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      Text(
+                        _isGroup
+                            ? (_room == null
+                                  ? l10n.joining
+                                  : l10n.membersInRoom(_room!.occupants.length))
+                            : _peerStatusSubtitle(context, track),
+                        style: TextStyle(
+                          fontSize: TgDimens.timeFontSize,
+                          fontWeight: FontWeight.w400,
+                          color: Colors.white70,
+                          fontStyle:
+                              !_isGroup &&
+                                  (_peerTyping == TypingState.composing ||
+                                      _peerTyping == TypingState.paused)
+                              ? FontStyle.italic
+                              : FontStyle.normal,
+                        ),
                       ),
-                    )
-                  : ContactAvatar(
-                      jid: _peerJid,
-                      title: title,
-                      radius: TgDimens.avatarChat / 2,
-                      hero: true,
-                    ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  Text(
-                    _isGroup
-                        ? (_room == null
-                            ? l10n.joining
-                            : l10n.membersInRoom(_room!.occupants.length))
-                        : _peerStatusSubtitle(context, track),
-                    style: TextStyle(
-                      fontSize: TgDimens.timeFontSize,
-                      fontWeight: FontWeight.w400,
-                      color: Colors.white70,
-                      fontStyle: !_isGroup &&
-                              (_peerTyping == TypingState.composing ||
-                                  _peerTyping == TypingState.paused)
-                          ? FontStyle.italic
-                          : FontStyle.normal,
-                    ),
-                  ),
-                ],
+            actions: [
+              if (!_isGroup || _mucEncryptable)
+                EncBadge(
+                  label: track.label,
+                  locked: track != Track.none,
+                  onTap: () => showTrackPicker(context, ref, widget.chatJid),
+                ),
+              if (_isGroup)
+                IconButton(
+                  icon: const Icon(Icons.group_outlined),
+                  tooltip: l10n.members,
+                  onPressed: _showMembers,
+                ),
+              IconButton(
+                icon: const Icon(Icons.search),
+                tooltip: l10n.searchInChat,
+                onPressed: _openInChatSearch,
               ),
-            ),
-          ],
-        ),
-        actions: [
-          if (!_isGroup || _mucEncryptable)
-            EncBadge(
-              label: track.label,
-              locked: track != Track.none,
-              onTap: () => showTrackPicker(context, ref, widget.chatJid),
-            ),
-          if (_isGroup)
-            IconButton(
-              icon: const Icon(Icons.group_outlined),
-              tooltip: l10n.members,
-              onPressed: _showMembers,
-            ),
-          IconButton(
-            icon: const Icon(Icons.search),
-            tooltip: l10n.searchInChat,
-            onPressed: _openInChatSearch,
-          ),
-          IconButton(
-            icon: const Icon(Icons.palette_outlined),
-            tooltip: l10n.appearance,
-            onPressed: () => showModalBottomSheet<void>(
-              context: context,
-              isScrollControlled: true,
-              builder: (sheetContext) => AppearancePicker(
-                initial: appearance,
-                // Written on every change rather than on dismissal: the swatches
-                // are the preview, and waiting for "done" would mean choosing
-                // blind.
-                onChanged: (next) => unawaited(
-                  setChatAppearance(ref, widget.chatJid, next),
+              IconButton(
+                icon: const Icon(Icons.palette_outlined),
+                tooltip: l10n.appearance,
+                onPressed: () => showModalBottomSheet<void>(
+                  context: context,
+                  isScrollControlled: true,
+                  builder: (sheetContext) => AppearancePicker(
+                    initial: appearance,
+                    // Written on every change rather than on dismissal: the swatches
+                    // are the preview, and waiting for "done" would mean choosing
+                    // blind.
+                    onChanged: (next) =>
+                        unawaited(setChatAppearance(ref, widget.chatJid, next)),
+                  ),
                 ),
               ),
-            ),
+              IconButton(
+                icon: const Icon(Icons.push_pin_outlined),
+                tooltip: l10n.pinnedMessages,
+                onPressed: _showPinned,
+              ),
+              IconButton(
+                icon: const Icon(Icons.history),
+                tooltip: l10n.loadHistoryMam,
+                onPressed: _loadHistory,
+              ),
+            ],
           ),
-          IconButton(
-            icon: const Icon(Icons.push_pin_outlined),
-            tooltip: l10n.pinnedMessages,
-            onPressed: _showPinned,
-          ),
-          IconButton(
-            icon: const Icon(Icons.history),
-            tooltip: l10n.loadHistoryMam,
-            onPressed: _loadHistory,
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // Rooms are not roster contacts — no subscription banner.
-          if (!_isGroup) _SubscriptionBanner(chatJid: widget.chatJid),
-          if (_advice != null)
-            TrackAdviceBanner(
-              advice: _advice!,
-              onSwitch: _adoptAdvice,
-              onDismiss: _dismissAdvice,
-            ),
-          Expanded(
-            child: Container(
-              color: tg.pageBackground,
-              // Painted inside the Expanded rather than behind the Scaffold,
-              // so the pattern does not also sit under the app bar and the input
-              // bar — Telegram draws it only behind the transcript.
-              child: CustomPaint(
-                painter: WallpaperPainter(
-                  wallpaper: appearance.wallpaper,
-                  base: tg.pageBackground,
-                  // A per-conversation accent tints the pattern; without one it
-                  // falls back to the theme's, so the pattern is never drawn in
-                  // a colour the app does not otherwise use.
-                  accent: appearance.accent ?? tg.accent,
-                  seed: _peerJid,
+          body: Column(
+            children: [
+              // Rooms are not roster contacts — no subscription banner.
+              if (!_isGroup) _SubscriptionBanner(chatJid: widget.chatJid),
+              if (_advice != null)
+                TrackAdviceBanner(
+                  advice: _advice!,
+                  onSwitch: _adoptAdvice,
+                  onDismiss: _dismissAdvice,
                 ),
-                child: messages.when(
-                  data: (list) {
-                    if (list.isNotEmpty) _ensureInitialScroll();
-                    return _MessageList(
-                      chatKey: widget.chatJid,
-                      messages: list,
-                      scroll: _scroll,
-                      onRetryDecrypt: () =>
-                          _loadHistory(),
-                      onReact: _toggleReaction,
-                      onMenu: _showMessageMenu,
-                      onToggleSelected: _toggleSelected,
-                      selectionMode: _selectionMode,
-                      selectedIds: _selection,
-                      readAt: ref
-                          .watch(chatLastReadProvider(widget.chatJid))
-                          .value,
-                      unreadCount: _unreadCountHere ?? 0,
-                      unreadDividerKey: _unreadDividerKey,
-                      focusMessageAnchor: _activeFocusAnchor,
-                      focusMessageKey: _focusMessageKey,
-                      bubbleStyle: appearance.bubble,
-                      isGroup: _isGroup,
-                    );
+              Expanded(
+                child: Container(
+                  color: tg.pageBackground,
+                  // Painted inside the Expanded rather than behind the Scaffold,
+                  // so the pattern does not also sit under the app bar and the input
+                  // bar — Telegram draws it only behind the transcript.
+                  child: CustomPaint(
+                    painter: WallpaperPainter(
+                      wallpaper: appearance.wallpaper,
+                      base: tg.pageBackground,
+                      // A per-conversation accent tints the pattern; without one it
+                      // falls back to the theme's, so the pattern is never drawn in
+                      // a colour the app does not otherwise use.
+                      accent: appearance.accent ?? tg.accent,
+                      seed: _peerJid,
+                    ),
+                    child: messages.when(
+                      data: (list) {
+                        if (list.isNotEmpty) _ensureInitialScroll();
+                        return _MessageList(
+                          chatKey: widget.chatJid,
+                          messages: list,
+                          scroll: _scroll,
+                          onRetryDecrypt: () => _loadHistory(),
+                          onReact: _toggleReaction,
+                          onMenu: _showMessageMenu,
+                          onToggleSelected: _toggleSelected,
+                          selectionMode: _selectionMode,
+                          selectedIds: _selection,
+                          readAt: ref
+                              .watch(chatLastReadProvider(widget.chatJid))
+                              .value,
+                          unreadCount: _unreadCountHere ?? 0,
+                          unreadDividerKey: _unreadDividerKey,
+                          focusMessageAnchor: _activeFocusAnchor,
+                          focusMessageKey: _focusMessageKey,
+                          bubbleStyle: appearance.bubble,
+                          isGroup: _isGroup,
+                        );
+                      },
+                      loading: () =>
+                          const Center(child: CircularProgressIndicator()),
+                      error: (e, _) => Center(child: Text('$e')),
+                    ),
+                  ),
+                ),
+              ),
+              // Editing replaces the input bar rather than sitting above it: two
+              // text fields in one chat is ambiguous about which one a keystroke
+              // goes to.
+              if (_replyingTo != null && _editingId == null)
+                ReplyPreview(
+                  author: _replyingTo!.author,
+                  body: _replyingTo!.body,
+                  onCancel: () => setState(() => _replyingTo = null),
+                ),
+              if (_selectionMode)
+                SelectionBar(
+                  count: _selection.length,
+                  onForward: _forwardSelection,
+                  onDelete: _deleteSelection,
+                  onCancel: () => setState(_selection.clear),
+                )
+              else if (_editingId != null)
+                EditComposer(
+                  initialText: _editingBody,
+                  onSubmit: _submitCorrection,
+                  onCancel: () => setState(() {
+                    _editingId = null;
+                    _editingBody = '';
+                  }),
+                )
+              else
+                _InputBar(
+                  controller: _input,
+                  focusNode: _focus,
+                  onChanged: _onInputChanged,
+                  onSend: _send,
+                  onAttach: _attachFile,
+                  attachEnabled: attachEnabled,
+                ),
+              if (_reactingToId != null)
+                QuickReactionBar(
+                  emoji: kQuickReactions,
+                  onPicked: (emoji) {
+                    final target = _reactingToId;
+                    setState(() => _reactingToId = null);
+                    if (target != null)
+                      unawaited(_toggleReaction(target, emoji));
                   },
-                  loading: () =>
-                      const Center(child: CircularProgressIndicator()),
-                  error: (e, _) => Center(child: Text('$e')),
+                  onDismissed: () => setState(() => _reactingToId = null),
                 ),
-              ),
-            ),
+            ],
           ),
-          // Editing replaces the input bar rather than sitting above it: two
-          // text fields in one chat is ambiguous about which one a keystroke
-          // goes to.
-          if (_replyingTo != null && _editingId == null)
-            ReplyPreview(
-              author: _replyingTo!.author,
-              body: _replyingTo!.body,
-              onCancel: () => setState(() => _replyingTo = null),
-            ),
-          if (_selectionMode)
-            SelectionBar(
-              count: _selection.length,
-              onForward: _forwardSelection,
-              onDelete: _deleteSelection,
-              onCancel: () => setState(_selection.clear),
-            )
-          else if (_editingId != null)
-            EditComposer(
-              initialText: _editingBody,
-              onSubmit: _submitCorrection,
-              onCancel: () => setState(() {
-                _editingId = null;
-                _editingBody = '';
-              }),
-            )
-          else
-            _InputBar(
-              controller: _input,
-              focusNode: _focus,
-              onChanged: _onInputChanged,
-              onSend: _send,
-              onAttach: _attachFile,
-              attachEnabled: attachEnabled,
-            ),
-          if (_reactingToId != null)
-            QuickReactionBar(
-              emoji: kQuickReactions,
-              onPicked: (emoji) {
-                final target = _reactingToId;
-                setState(() => _reactingToId = null);
-                if (target != null) unawaited(_toggleReaction(target, emoji));
-              },
-              onDismissed: () => setState(() => _reactingToId = null),
-            ),
-        ],
-      ),
-      // Two different destinations, so two different affordances. Scrolling to
-      // the bottom is "show me what just happened"; jumping to the first unread
-      // is "show me what I missed". Collapsing them means the user who scrolled
-      // up to find an older message cannot get back to the new ones in one tap.
-      floatingActionButton: _atBottom
-          ? null
-          : _scrollButton(tg),
+          // Two different destinations, so two different affordances. Scrolling to
+          // the bottom is "show me what just happened"; jumping to the first unread
+          // is "show me what I missed". Collapsing them means the user who scrolled
+          // up to find an older message cannot get back to the new ones in one tap.
+          floatingActionButton: _atBottom ? null : _scrollButton(tg),
         ),
         // Covers app bar, transcript, FAB, and input while the OS picker is up
         // so nothing behind it can be tapped or scrolled.
         if (_pickingFile)
-          const ModalBarrier(
-            dismissible: false,
-            color: Color(0x66000000),
-          ),
+          const ModalBarrier(dismissible: false, color: Color(0x66000000)),
       ],
     );
   }
@@ -1626,20 +1571,16 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   Widget _scrollButton(TgColors tg) {
     final l10n = context.l10n;
     final unread = _unreadCountHere ?? 0;
-    final hasUnreadDivider = unread > 0 &&
-        _unreadDividerKey.currentContext != null;
+    final hasUnreadDivider =
+        unread > 0 && _unreadDividerKey.currentContext != null;
     return FloatingActionButton.small(
       backgroundColor: hasUnreadDivider ? tg.accent : tg.peerBubble,
       // White on the accent, and the accent on the pale bubble: both pairs are
       // legible, and the colour difference is what tells the two states apart
       // without reading the icon.
       foregroundColor: hasUnreadDivider ? Colors.white : tg.accent,
-      tooltip: hasUnreadDivider
-          ? l10n.jumpToFirstUnread
-          : l10n.scrollToLatest,
-      onPressed: hasUnreadDivider
-          ? () => _jumpToUnread()
-          : _scrollToBottom,
+      tooltip: hasUnreadDivider ? l10n.jumpToFirstUnread : l10n.scrollToLatest,
+      onPressed: hasUnreadDivider ? () => _jumpToUnread() : _scrollToBottom,
       child: Icon(
         hasUnreadDivider
             ? Icons.keyboard_double_arrow_up
@@ -1735,7 +1676,11 @@ class _MessageList extends StatelessWidget {
     bool unreadMarked = firstUnread == null;
 
     for (final m in messages) {
-      final day = DateTime(m.timestamp.year, m.timestamp.month, m.timestamp.day);
+      final day = DateTime(
+        m.timestamp.year,
+        m.timestamp.month,
+        m.timestamp.day,
+      );
       if (lastDay == null || day != lastDay) {
         rows.add(DateSeparator(date: m.timestamp));
         lastDay = day;
@@ -1751,11 +1696,7 @@ class _MessageList extends StatelessWidget {
       if (EncModeToken.parse(m.encMode) == EncModeToken.error) {
         Widget errorRow = ListTile(
           dense: true,
-          leading: Icon(
-            Icons.lock_outline,
-            size: 18,
-            color: context.tg.danger,
-          ),
+          leading: Icon(Icons.lock_outline, size: 18, color: context.tg.danger),
           title: Text(
             context.l10n.unableToDecrypt,
             style: TextStyle(
@@ -1900,8 +1841,6 @@ class _InputBar extends StatelessWidget {
   }
 }
 
-
-
 /// Warns when the contact is not a mutual subscription.
 ///
 /// Without this, a server that refuses stanzas outside a mutual
@@ -1921,12 +1860,14 @@ class _SubscriptionBanner extends ConsumerWidget {
 
     final text = switch (state.subscription) {
       'none' => 'Not a contact yet — the server may refuse messages.',
-      'to' => state.asked
-          ? 'They can see you. Waiting for them to accept.'
-          : 'They can see you, but you cannot see them.',
-      'from' => state.asked
-          ? 'You can see them. Waiting for them to accept your request.'
-          : 'You can see them, but they cannot see you.',
+      'to' =>
+        state.asked
+            ? 'They can see you. Waiting for them to accept.'
+            : 'They can see you, but you cannot see them.',
+      'from' =>
+        state.asked
+            ? 'You can see them. Waiting for them to accept your request.'
+            : 'You can see them, but they cannot see you.',
       _ => 'Subscription state: ${state.subscription}',
     };
 
@@ -1948,9 +1889,7 @@ class _SubscriptionBanner extends ConsumerWidget {
               TextButton(
                 onPressed: () {
                   final r = resolveChatKey(chatJid);
-                  r.session.xmpp.requestSubscription(
-                    JID.fromString(r.jid),
-                  );
+                  r.session.xmpp.requestSubscription(JID.fromString(r.jid));
                 },
                 child: Text(context.l10n.askAgain),
               ),
@@ -1997,13 +1936,14 @@ class _ReactionBubble extends ConsumerWidget {
     final reactions = targetId.isEmpty
         ? const <ReactionGroup>[]
         : ref
-                .watch(
-                  reactionGroupsProvider(
-                    (chatKey: chatKey, targetId: targetId),
-                  ),
-                )
-                .value ??
-            const [];
+                  .watch(
+                    reactionGroupsProvider((
+                      chatKey: chatKey,
+                      targetId: targetId,
+                    )),
+                  )
+                  .value ??
+              const [];
     final nick = isGroup && message.incoming
         ? _occupantNick(message.sender)
         : null;
@@ -2036,8 +1976,8 @@ class _ReactionBubble extends ConsumerWidget {
       onLongPress: message.retracted
           ? null
           : selectionMode
-              ? onToggleSelected
-              : () => onMenu(message.body),
+          ? onToggleSelected
+          : () => onMenu(message.body),
       onTap: selectionMode ? onToggleSelected : null,
     );
   }

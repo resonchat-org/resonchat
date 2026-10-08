@@ -50,10 +50,7 @@ class OmemoDeviceStore {
   Future<int> save(AxolotlDevice device) async {
     final preKeyIds = device.store.preKeyStore.store.keys.toList();
     final snap = await device.snapshot(preKeyIds);
-    final json = jsonEncode({
-      'v': _formatVersion,
-      ...snap.toJson(),
-    });
+    final json = jsonEncode({'v': _formatVersion, ...snap.toJson()});
     final key = SecretKey(await _sealingKey());
     final nonce = _randomBytes(12);
     final sealed = await _cipher.encrypt(

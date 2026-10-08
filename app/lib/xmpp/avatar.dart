@@ -24,7 +24,6 @@ import 'dart:typed_data';
 
 import 'package:cryptography/cryptography.dart';
 
-
 import 'package:moxlib/moxlib.dart';
 import 'package:moxxmpp/moxxmpp.dart';
 
@@ -37,7 +36,6 @@ import '../store/database.dart';
 /// (XEP-0084 specifies SHA-1 for the item id; it is an identifier here, not a
 /// security decision.)
 final _sha1 = Sha1();
-
 
 /// One contact's avatar, as bytes plus the facts we need to cache it.
 class AvatarData {
@@ -52,10 +50,10 @@ class AvatarData {
   /// republished identical avatar produces no notification, and a changed one
   /// produces exactly one. It therefore has to be the hash of the *bytes* and
   /// not of the base64 text, whose line breaks are transport detail.
-  Future<String> get hash async => (await _sha1.hash(bytes))
-      .bytes
-      .map((b) => b.toRadixString(16).padLeft(2, '0'))
-      .join();
+  Future<String> get hash async =>
+      (await _sha1.hash(bytes)).bytes
+          .map((b) => b.toRadixString(16).padLeft(2, '0'))
+          .join();
 
   String get base64 => base64Encode(bytes);
 }
@@ -75,13 +73,16 @@ Future<AvatarData?> fetchAvatar(
   required String id,
   int timeoutSeconds = 8,
 }) async {
-  final result = await manager.getUserAvatarData(jid, id).timeout(
-    Duration(seconds: timeoutSeconds),
-    // A timeout is an ordinary outcome here — peers without avatars answer
-    // slowly or not at all — so it becomes the same "no avatar" the UI already
-    // knows how to draw, rather than an exception on the chat-list path.
-    onTimeout: () => Result<AvatarError, UserAvatarData>(UnknownAvatarError()),
-  );
+  final result = await manager
+      .getUserAvatarData(jid, id)
+      .timeout(
+        Duration(seconds: timeoutSeconds),
+        // A timeout is an ordinary outcome here — peers without avatars answer
+        // slowly or not at all — so it becomes the same "no avatar" the UI already
+        // knows how to draw, rather than an exception on the chat-list path.
+        onTimeout: () =>
+            Result<AvatarError, UserAvatarData>(UnknownAvatarError()),
+      );
   if (!result.isType<UserAvatarData>()) return null;
   final data = result.get<UserAvatarData>();
   try {
@@ -106,12 +107,13 @@ Future<String?> latestAvatarId(
   JID jid, {
   int timeoutSeconds = 8,
 }) async {
-  final result = await manager.getLatestMetadata(jid).timeout(
-    Duration(seconds: timeoutSeconds),
-    onTimeout: () => Result<AvatarError, List<UserAvatarMetadata>>(
-      UnknownAvatarError(),
-    ),
-  );
+  final result = await manager
+      .getLatestMetadata(jid)
+      .timeout(
+        Duration(seconds: timeoutSeconds),
+        onTimeout: () =>
+            Result<AvatarError, List<UserAvatarMetadata>>(UnknownAvatarError()),
+      );
   if (!result.isType<List<UserAvatarMetadata>>()) return null;
   final items = result.get<List<UserAvatarMetadata>>();
   if (items.isEmpty) return null;
@@ -134,7 +136,10 @@ String sniffMimeType(List<int> bytes) {
       bytes[2] == 0x4E) {
     return 'image/png';
   }
-  if (bytes.length >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF) {
+  if (bytes.length >= 3 &&
+      bytes[0] == 0xFF &&
+      bytes[1] == 0xD8 &&
+      bytes[2] == 0xFF) {
     return 'image/jpeg';
   }
   if (bytes.length >= 6 &&
@@ -167,11 +172,7 @@ Future<bool> publishOwnAvatar(
   bool public = true,
 }) async {
   final hash = await avatar.hash;
-  final result = await manager.publishUserAvatar(
-    avatar.base64,
-    hash,
-    public,
-  );
+  final result = await manager.publishUserAvatar(avatar.base64, hash, public);
   if (!result.isType<bool>()) return false;
   // The metadata is a second publish. Skipping it does not break the avatar on
   // clients that fall back to reading the data node, but leaves this one showing

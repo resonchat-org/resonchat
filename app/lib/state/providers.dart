@@ -62,17 +62,17 @@ final capabilityServiceProvider = Provider<CapabilityService>((ref) {
 /// Dual-track managers for the primary session.
 final Provider<DualTrackManager?> dualTrackManagerProvider =
     Provider<DualTrackManager?>((ref) {
-  final xmpp = ref.watch(xmppServiceProvider);
-  final moxxOmemo = xmpp.moxxOmemo;
-  final pubsub = xmpp.pubsub;
-  if (moxxOmemo == null || pubsub == null) return null;
-  final tracks = DualTrackManager(
-    aTrack: moxxOmemo,
-    pubsubOf: () => pubsub,
-  );
-  xmpp.tracks = tracks;
-  return tracks;
-});
+      final xmpp = ref.watch(xmppServiceProvider);
+      final moxxOmemo = xmpp.moxxOmemo;
+      final pubsub = xmpp.pubsub;
+      if (moxxOmemo == null || pubsub == null) return null;
+      final tracks = DualTrackManager(
+        aTrack: moxxOmemo,
+        pubsubOf: () => pubsub,
+      );
+      xmpp.tracks = tracks;
+      return tracks;
+    });
 
 /// Primary account's [XmppService] (settings, “open chat” when one account).
 final Provider<XmppService> xmppServiceProvider = Provider<XmppService>((ref) {
@@ -106,35 +106,35 @@ final httpUploadAvailableProvider = FutureProvider<bool>((ref) async {
 });
 
 /// Live message list for one chat ([ChatRef.key] or legacy bare JID).
-final messagesProvider =
-    StreamProvider.family<List<Message>, String>((ref, chatKey) {
+final messagesProvider = StreamProvider.family<List<Message>, String>((
+  ref,
+  chatKey,
+) {
   final r = resolveChatKey(chatKey);
   return r.session.db.watchMessages(r.jid);
 });
 
 /// Unified multi-account chat list.
-final chatsProvider = StreamProvider<List<AccountChat>>(
-  (ref) {
-    ref.watch(accountHubProvider);
-    return accountHub.watchMergedChats();
-  },
-);
+final chatsProvider = StreamProvider<List<AccountChat>>((ref) {
+  ref.watch(accountHubProvider);
+  return accountHub.watchMergedChats();
+});
 
 /// One chat row, or null while loading / unknown ([ChatRef.key]).
 final chatProvider = FutureProvider.family<Chat?, String>((ref, chatKey) {
   final r = resolveChatKey(chatKey);
-  return r.session.db
-      .watchChats()
-      .first
-      .then((all) => all.where((c) => c.jid == r.jid).firstOrNull);
+  return r.session.db.watchChats().first.then(
+    (all) => all.where((c) => c.jid == r.jid).firstOrNull,
+  );
 });
 
-final lastMessageProvider = StreamProvider.family<String?, String>(
-  (ref, chatKey) {
-    final r = resolveChatKey(chatKey);
-    return r.session.db.watchLastMessage(r.jid);
-  },
-);
+final lastMessageProvider = StreamProvider.family<String?, String>((
+  ref,
+  chatKey,
+) {
+  final r = resolveChatKey(chatKey);
+  return r.session.db.watchLastMessage(r.jid);
+});
 
 /// Live capability snapshot for a chat, or null while resolving.
 ///
@@ -172,15 +172,17 @@ class ContactState {
 
   /// One-line description for the user.
   String get summary => switch (subscription) {
-        'both' => 'mutual',
-        'to' => asked
-            ? 'they can see you; your request is pending'
-            : 'they can see you; you cannot see them',
-        'from' => asked
-            ? 'you can see them; your request is pending'
-            : 'you can see them; they cannot see you',
-        _ => 'not a contact',
-      };
+    'both' => 'mutual',
+    'to' =>
+      asked
+          ? 'they can see you; your request is pending'
+          : 'they can see you; you cannot see them',
+    'from' =>
+      asked
+          ? 'you can see them; your request is pending'
+          : 'you can see them; they cannot see you',
+    _ => 'not a contact',
+  };
 }
 
 final chatCapabilitiesProvider =
@@ -207,8 +209,10 @@ final chatCapabilitiesProvider =
 /// The default is [Track.standard]: it is the only track a third-party client
 /// can read, and a fresh install that starts on plaintext would hand every new
 /// conversation to anyone with access to the server.
-final chatTrackProvider =
-    FutureProvider.family<Track, String>((ref, chatKey) async {
+final chatTrackProvider = FutureProvider.family<Track, String>((
+  ref,
+  chatKey,
+) async {
   final global = ref.watch(globalTrackProvider.future);
   final r = resolveChatKey(chatKey);
   final override = await r.session.db.trackOverride(r.jid);
@@ -220,68 +224,69 @@ final chatTrackProvider =
 /// Null while the needle is empty, so a caller can tell "no search running"
 /// from "a search that found nothing" — a blank results list and an unopened
 /// search must not look the same.
-final messageSearchProvider =
-    StreamProvider.autoDispose.family<List<Message>, String>((ref, needle) {
-  if (needle.trim().isEmpty) return Stream.value(const []);
-  ref.watch(accountHubProvider);
-  final sessions = accountHub.sessions.toList();
-  if (sessions.isEmpty) return Stream.value(const []);
-  if (sessions.length == 1) {
-    return sessions.first.db.searchMessages(needle);
-  }
-  // Merge per-account FTS streams (same bare JID on two accounts is rare).
-  late final StreamController<List<Message>> controller;
-  final subs = <StreamSubscription<List<Message>>>[];
-  final latest = <int, List<Message>>{};
-  void emit() {
-    final all = latest.values.expand((e) => e).toList()
-      ..sort((a, b) {
-        final byTime = b.timestamp.compareTo(a.timestamp);
-        if (byTime != 0) return byTime;
-        return b.id.compareTo(a.id);
-      });
-    if (!controller.isClosed) {
-      controller.add(all.length > 200 ? all.sublist(0, 200) : all);
-    }
-  }
+final messageSearchProvider = StreamProvider.autoDispose
+    .family<List<Message>, String>((ref, needle) {
+      if (needle.trim().isEmpty) return Stream.value(const []);
+      ref.watch(accountHubProvider);
+      final sessions = accountHub.sessions.toList();
+      if (sessions.isEmpty) return Stream.value(const []);
+      if (sessions.length == 1) {
+        return sessions.first.db.searchMessages(needle);
+      }
+      // Merge per-account FTS streams (same bare JID on two accounts is rare).
+      late final StreamController<List<Message>> controller;
+      final subs = <StreamSubscription<List<Message>>>[];
+      final latest = <int, List<Message>>{};
+      void emit() {
+        final all = latest.values.expand((e) => e).toList()
+          ..sort((a, b) {
+            final byTime = b.timestamp.compareTo(a.timestamp);
+            if (byTime != 0) return byTime;
+            return b.id.compareTo(a.id);
+          });
+        if (!controller.isClosed) {
+          controller.add(all.length > 200 ? all.sublist(0, 200) : all);
+        }
+      }
 
-  controller = StreamController<List<Message>>(
-    onListen: () {
-      for (var i = 0; i < sessions.length; i++) {
-        final index = i;
-        subs.add(
-          sessions[i].db.searchMessages(needle).listen((list) {
-            latest[index] = list;
-            emit();
-          }),
-        );
-      }
-    },
-    onCancel: () async {
-      for (final s in subs) {
-        await s.cancel();
-      }
-    },
-  );
-  return controller.stream;
-});
+      controller = StreamController<List<Message>>(
+        onListen: () {
+          for (var i = 0; i < sessions.length; i++) {
+            final index = i;
+            subs.add(
+              sessions[i].db.searchMessages(needle).listen((list) {
+                latest[index] = list;
+                emit();
+              }),
+            );
+          }
+        },
+        onCancel: () async {
+          for (final s in subs) {
+            await s.cancel();
+          }
+        },
+      );
+      return controller.stream;
+    });
 
 /// Search inside one conversation.
-final chatMessageSearchProvider =
-    StreamProvider.autoDispose.family<List<Message>, ({String chatJid, String needle})>(
-  (ref, args) {
-  if (args.needle.trim().isEmpty) return Stream.value(const []);
-  final r = resolveChatKey(args.chatJid);
-  return r.session.db.searchInChat(r.jid, args.needle);
-});
+final chatMessageSearchProvider = StreamProvider.autoDispose
+    .family<List<Message>, ({String chatJid, String needle})>((ref, args) {
+      if (args.needle.trim().isEmpty) return Stream.value(const []);
+      final r = resolveChatKey(args.chatJid);
+      return r.session.db.searchInChat(r.jid, args.needle);
+    });
 
 /// One contact's avatar, fetched once and re-fetched only when its hash moves.
 ///
 /// An [avatarRevision] is passed as `ref.watch`'s argument so an avatar push
 /// invalidates every avatar at once without the caller having to know which
 /// contacts changed.
-final contactAvatarProvider =
-    FutureProvider.family<Uint8List?, String>((ref, jid) async {
+final contactAvatarProvider = FutureProvider.family<Uint8List?, String>((
+  ref,
+  jid,
+) async {
   ref.watch(avatarRevisionProvider);
   final xmpp = ref.watch(xmppServiceProvider);
   final manager = xmpp.avatarManager;
@@ -295,7 +300,11 @@ final contactAvatarProvider =
   if (await lastAvatarHash(db, jid) == id) {
     return _avatarBlobCache[jid];
   }
-  final avatar = await fetchAvatar(manager, JID.fromString(jid).toBare(), id: id);
+  final avatar = await fetchAvatar(
+    manager,
+    JID.fromString(jid).toBare(),
+    id: id,
+  );
   if (avatar == null) return null;
   await noteAvatarChanged(db, jid, id);
   _avatarBlobCache[jid] = avatar.bytes;
@@ -312,8 +321,10 @@ final _avatarBlobCache = <String, Uint8List>{};
 ///
 /// Keyed by [ChatRef.key] (or legacy bare JID) so multi-account sessions use
 /// the owning [XmppService], not only the primary account.
-final roomStateProvider =
-    FutureProvider.family<GroupChat?, String>((ref, chatKey) async {
+final roomStateProvider = FutureProvider.family<GroupChat?, String>((
+  ref,
+  chatKey,
+) async {
   // Re-reads when the occupant stream fires, so a new arrival shows up without
   // anything having to invalidate this.
   ref.watch(roomOccupantsProvider(chatKey));
@@ -334,8 +345,10 @@ final roomStateProvider =
 });
 
 /// Occupants of the room for [chatKey], updated as presence arrives.
-final roomOccupantsProvider =
-    StreamProvider.family<List<Occupant>, String>((ref, chatKey) {
+final roomOccupantsProvider = StreamProvider.family<List<Occupant>, String>((
+  ref,
+  chatKey,
+) {
   final r = resolveChatKey(chatKey);
   return r.session.xmpp
       .roomOccupants(r.jid)
@@ -343,12 +356,10 @@ final roomOccupantsProvider =
 });
 
 /// Archived conversations across accounts.
-final archivedChatsProvider = StreamProvider<List<AccountChat>>(
-  (ref) {
-    ref.watch(accountHubProvider);
-    return accountHub.watchMergedChats(archivedOnly: true);
-  },
-);
+final archivedChatsProvider = StreamProvider<List<AccountChat>>((ref) {
+  ref.watch(accountHubProvider);
+  return accountHub.watchMergedChats(archivedOnly: true);
+});
 
 /// How [chatJid] looks: wallpaper, bubble shape, accent.
 final chatAppearanceProvider = FutureProvider.family<ChatAppearance, String>((
@@ -377,42 +388,43 @@ Future<void> setChatAppearance(
 }
 
 /// Unread count for [chatKey], or null while it is being read.
-final chatUnreadProvider = FutureProvider.family<int?, String>(
-  (ref, chatKey) async {
-    ref.watch(chatRowRevisionProvider);
-    final r = resolveChatKey(chatKey);
-    final chat = await r.session.db.watchChats().first;
-    for (final c in chat) {
-      if (c.jid == r.jid) return c.unreadCount;
-    }
-    return null;
-  },
-);
+final chatUnreadProvider = FutureProvider.family<int?, String>((
+  ref,
+  chatKey,
+) async {
+  ref.watch(chatRowRevisionProvider);
+  final r = resolveChatKey(chatKey);
+  final chat = await r.session.db.watchChats().first;
+  for (final c in chat) {
+    if (c.jid == r.jid) return c.unreadCount;
+  }
+  return null;
+});
 
 /// When the user last read [chatJid], or null before they ever have.
 ///
 /// Watched by the chat page to place the unread boundary. Re-reads whenever the
 /// row changes, so reading on another device moves the divider without a
 /// restart.
-final chatLastReadProvider = FutureProvider.family<DateTime?, String>(
-  (ref, chatKey) async {
-    ref.watch(chatRowRevisionProvider);
-    final r = resolveChatKey(chatKey);
-    final chat = await r.session.db.watchChats().first;
-    for (final c in chat) {
-      if (c.jid == r.jid) return c.lastReadAt;
-    }
-    return null;
-  },
-);
+final chatLastReadProvider = FutureProvider.family<DateTime?, String>((
+  ref,
+  chatKey,
+) async {
+  ref.watch(chatRowRevisionProvider);
+  final r = resolveChatKey(chatKey);
+  final chat = await r.session.db.watchChats().first;
+  for (final c in chat) {
+    if (c.jid == r.jid) return c.lastReadAt;
+  }
+  return null;
+});
 
 /// Bumped whenever a conversation row changes, so anything derived from it
 /// (the unread badge, the read marker) re-reads.
 final chatRowRevisionProvider = StateProvider<int>((ref) => 0);
 
 /// Pending contact requests, newest first.
-final subscriptionRequestsProvider =
-    StreamProvider<List<SubscriptionRequest>>(
+final subscriptionRequestsProvider = StreamProvider<List<SubscriptionRequest>>(
   (ref) => ref.watch(databaseProvider).watchSubscriptionRequests(),
 );
 
@@ -435,12 +447,13 @@ Future<void> saveDraft(WidgetRef ref, String chatKey, String? text) async {
 }
 
 /// Stanza ids pinned in [chatKey], most recent first.
-final pinnedIdsProvider = StreamProvider.family<List<String>, String>(
-  (ref, chatKey) {
-    final r = resolveChatKey(chatKey);
-    return r.session.db.watchPinned(r.jid);
-  },
-);
+final pinnedIdsProvider = StreamProvider.family<List<String>, String>((
+  ref,
+  chatKey,
+) {
+  final r = resolveChatKey(chatKey);
+  return r.session.db.watchPinned(r.jid);
+});
 
 /// Pins or unpins a message.
 Future<void> togglePinned(
@@ -498,14 +511,17 @@ Future<void> toggleBlocked(
 ///
 /// Keyed on chat + stanza id so multi-account DBs do not mix chips, and so
 /// "mine" is judged against the owning account's bare JID.
-final reactionGroupsProvider = FutureProvider.family<List<ReactionGroup>,
-    ({String chatKey, String targetId})>((ref, args) async {
-  ref.watch(reactionRevisionProvider);
-  final r = resolveChatKey(args.chatKey);
-  final myJid = r.session.xmpp.myJid;
-  if (myJid == null) return const [];
-  return reactionsFor(r.session.db, args.targetId, myJid);
-});
+final reactionGroupsProvider =
+    FutureProvider.family<
+      List<ReactionGroup>,
+      ({String chatKey, String targetId})
+    >((ref, args) async {
+      ref.watch(reactionRevisionProvider);
+      final r = resolveChatKey(args.chatKey);
+      final myJid = r.session.xmpp.myJid;
+      if (myJid == null) return const [];
+      return reactionsFor(r.session.db, args.targetId, myJid);
+    });
 
 /// Bumped whenever a reaction is stored, to invalidate every chip strip.
 final reactionRevisionProvider = StateProvider<int>((ref) => 0);
@@ -521,8 +537,10 @@ final myBareJidProvider = FutureProvider<String?>((ref) async {
 /// Separate from [chatTrackProvider] because "inherits the global default" and
 /// "is set to the same value as the global default" are different states: only
 /// the first one follows a later change to the default.
-final chatTrackOverrideProvider =
-    FutureProvider.family<Track?, String>((ref, chatKey) {
+final chatTrackOverrideProvider = FutureProvider.family<Track?, String>((
+  ref,
+  chatKey,
+) {
   final r = resolveChatKey(chatKey);
   return r.session.db.trackOverride(r.jid);
 });

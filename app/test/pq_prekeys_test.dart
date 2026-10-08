@@ -58,7 +58,8 @@ void main() {
       kem: kem,
     );
 
-    final kex = await PqSessionManager(kem: kem).initiate(own: alice, peer: bob);
+    final kex = await PqSessionManager(kem: kem)
+        .initiate(own: alice, peer: bob);
     expect(kex.pqPkId, isNotNull, reason: 'should use a PQ one-time prekey');
     expect(kex.pqCiphertexts.length, 2, reason: 'signed prekey + one-time');
     for (final ct in kex.pqCiphertexts) {
@@ -88,7 +89,8 @@ void main() {
       pqOpkCount: 0,
       kem: kem,
     );
-    final kex = await PqSessionManager(kem: kem).initiate(own: alice, peer: bob);
+    final kex = await PqSessionManager(kem: kem)
+        .initiate(own: alice, peer: bob);
     expect(kex.pqPkId, isNull);
     expect(kex.pqCiphertexts.length, 1, reason: 'signed PQ prekey only');
     expect(kex.pqCiphertexts.single.length, MlKem768.ciphertextLength);

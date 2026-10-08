@@ -41,12 +41,16 @@ void main() {
       // Stored as three digits of hue rather than a full colour, so a hue at
       // the top of the circle must still come back recognisable.
       for (var hue = 0; hue < 360; hue += 17) {
-        final colour = HSLColor.fromAHSL(1, hue.toDouble(), 0.55, 0.5).toColor();
+        final colour = HSLColor.fromAHSL(
+          1,
+          hue.toDouble(),
+          0.55,
+          0.5,
+        ).toColor();
         final back = ChatAppearance.decode(
           ChatAppearance(accent: colour).encode(),
         );
-        final diff = (HSLColor.fromColor(back.accent!).hue.round() - hue)
-            .abs();
+        final diff = (HSLColor.fromColor(back.accent!).hue.round() - hue).abs();
         expect(diff <= 1, isTrue, reason: 'hue $hue came back off by $diff');
       }
     });
@@ -102,10 +106,14 @@ void main() {
 
   group('bubble corners', () {
     test('rounded and square are what they say', () {
-      expect(bubbleRadii(BubbleStyle.rounded, true).topLeft,
-          const Radius.circular(14));
-      expect(bubbleRadii(BubbleStyle.square, true).topLeft,
-          const Radius.circular(4));
+      expect(
+        bubbleRadii(BubbleStyle.rounded, true).topLeft,
+        const Radius.circular(14),
+      );
+      expect(
+        bubbleRadii(BubbleStyle.square, true).topLeft,
+        const Radius.circular(4),
+      );
     });
 
     test('asymmetric points the far corner away from the sender', () {
@@ -191,10 +199,7 @@ void main() {
           seed: 'x',
         );
         expect(
-          () => painter.paint(
-            _RecordingCanvas(),
-            const Size(0, 0),
-          ),
+          () => painter.paint(_RecordingCanvas(), const Size(0, 0)),
           returnsNormally,
           reason: w.name,
         );
@@ -224,8 +229,10 @@ void main() {
       await db.upsertChat('a@example.org');
       const a = ChatAppearance(wallpaper: Wallpaper.stripes);
       await db.setChatAppearance('a@example.org', a.encode());
-      expect(ChatAppearance.decode(await appearanceOf('a@example.org')).wallpaper,
-          Wallpaper.stripes);
+      expect(
+        ChatAppearance.decode(await appearanceOf('a@example.org')).wallpaper,
+        Wallpaper.stripes,
+      );
     });
 
     test('is per conversation', () async {
@@ -237,8 +244,10 @@ void main() {
 
     test('can be set before the conversation has a row', () async {
       await db.setChatAppearance('new@example.org', '11');
-      expect(ChatAppearance.decode(await appearanceOf('new@example.org'))
-          .wallpaper, Wallpaper.dots);
+      expect(
+        ChatAppearance.decode(await appearanceOf('new@example.org')).wallpaper,
+        Wallpaper.dots,
+      );
     });
 
     test('clearing restores the default rather than storing a default', () {

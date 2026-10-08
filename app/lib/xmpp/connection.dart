@@ -190,7 +190,8 @@ class MessageTrace {
   final String body;
 
   @override
-  String toString() => 'MessageTrace(from=$from id=$id type=$type '
+  String toString() =>
+      'MessageTrace(from=$from id=$id type=$type '
       'encrypted=$encrypted error=$error decryptionError=$decryptionError '
       'body=${body.isEmpty ? "<none>" : '"$body"'})';
 }
@@ -259,11 +260,8 @@ class SendOutcome {
 }
 
 class XmppService {
-  XmppService({
-    ShouldEncrypt? shouldEncrypt,
-    this.deviceStore,
-    this.bTrack,
-  }) : _shouldEncrypt = shouldEncrypt ?? ((_) async => false);
+  XmppService({ShouldEncrypt? shouldEncrypt, this.deviceStore, this.bTrack})
+    : _shouldEncrypt = shouldEncrypt ?? ((_) async => false);
 
   final Logger _log = Logger('XmppService');
   ShouldEncrypt _shouldEncrypt;
@@ -388,6 +386,7 @@ class XmppService {
     String? quoteBody,
     String? quoteAuthor,
     String? oobUrl,
+
     /// `chat` for 1:1; `groupchat` for XEP-0045 room messages (Conversations).
     String messageType = 'chat',
   }) async {
@@ -535,10 +534,7 @@ class XmppService {
   /// reactions: it must not be wrapped by the A track, and its stanza id is
   /// minted locally so an echoed retraction cannot land in the transcript as an
   /// empty bubble.
-  Future<bool> retractMessage(
-    JID to, {
-    required String targetId,
-  }) async {
+  Future<bool> retractMessage(JID to, {required String targetId}) async {
     final connection = _connection;
     if (connection == null) return false;
     try {
@@ -553,7 +549,9 @@ class XmppService {
                 tag: 'apply-to',
                 xmlns: fasteningXmlns,
                 attributes: <String, String>{'id': targetId},
-                children: [XMLNode.xmlns(tag: 'retract', xmlns: messageRetractionXmlns)],
+                children: [
+                  XMLNode.xmlns(tag: 'retract', xmlns: messageRetractionXmlns),
+                ],
               ),
               XMLNode(tag: 'body', text: 'This message has been deleted'),
               XMLNode.xmlns(tag: 'fallback', xmlns: fallbackIndicationXmlns),
@@ -592,7 +590,10 @@ class XmppService {
       );
     }
     final caps = await capabilitiesFor(to);
-    final resolution = resolveTrack(requested: Track.standard, capabilities: caps);
+    final resolution = resolveTrack(
+      requested: Track.standard,
+      capabilities: caps,
+    );
     if (!resolution.canSend) {
       return SendOutcome(
         stanzaId: null,
@@ -640,8 +641,7 @@ class XmppService {
   Future<List<String>> queryRoomFeatures(String roomJid) async {
     final manager = muc;
     if (manager == null) return const [];
-    final result =
-        await manager.queryRoomInformation(JID.fromString(roomJid));
+    final result = await manager.queryRoomInformation(JID.fromString(roomJid));
     if (!result.isType<RoomInformation>()) return const [];
     return List<String>.from(result.get<RoomInformation>().features);
   }
@@ -878,7 +878,8 @@ class XmppService {
     for (final jid in memberJids) {
       final caps = await capabilitiesFor(JID.fromString(jid));
       if (caps == null || !caps.reliable) return TrackBlocked.unknownPeers;
-      final allPq = caps.recipientDevices.isNotEmpty &&
+      final allPq =
+          caps.recipientDevices.isNotEmpty &&
           caps.recipientDevices.every(caps.pqDevices.contains);
       if (!allPq) return TrackBlocked.pqUnavailable;
     }
@@ -900,10 +901,7 @@ class XmppService {
 
     // Include our bare JID so our other devices can open the copy
     // (mirrors OMEMO MUC encryptToJids + ownBare).
-    final peers = <String>{
-      ...recipientJids,
-      ?myJid,
-    }.toList();
+    final peers = <String>{...recipientJids, ?myJid}.toList();
     final encrypted = await track.encryptForPeers(
       peerJids: peers,
       plaintext: body,
@@ -1003,7 +1001,8 @@ class XmppService {
           // The one error type moxxmpp does not have, which is the point: a
           // service that simply did not answer is a different thing from one
           // that refused, and the user needs to be told which happened.
-          onTimeout: () => Result<bool, MUCError>(MucServiceUnresponsive(roomJid)),
+          onTimeout: () =>
+              Result<bool, MUCError>(MucServiceUnresponsive(roomJid)),
         );
     if (!result.isType<bool>()) return result.get<MUCError>();
     return null;
@@ -1029,8 +1028,7 @@ class XmppService {
   /// devices, and a cached snapshot is wrong within seconds.
   Stream<GroupChat?> roomOccupants(String roomJid) {
     final bare = JID.fromString(roomJid).toBare().toString();
-    return _roomOccupants.stream
-        .where((chat) => chat?.roomJid == bare);
+    return _roomOccupants.stream.where((chat) => chat?.roomJid == bare);
   }
 
   /// The current state of [roomJid], or null when we are not in it.
@@ -1044,7 +1042,9 @@ class XmppService {
   /// user was told about is worth honouring on this device even if nothing
   /// else learns about it, because the alternative is "blocking did not work".
   Future<bool> blockOnServer(List<String> items) async {
-    final manager = _connection?.getManagerById<BlockingManager>(blockingManager);
+    final manager = _connection?.getManagerById<BlockingManager>(
+      blockingManager,
+    );
     if (manager == null || items.isEmpty) return false;
     try {
       if (!await manager.isSupported()) return false;
@@ -1061,7 +1061,9 @@ class XmppService {
   /// and telling the user "still blocked" because a server was unreachable
   /// would just teach them not to trust the button.
   Future<void> unblockOnServer(List<String> items) async {
-    final manager = _connection?.getManagerById<BlockingManager>(blockingManager);
+    final manager = _connection?.getManagerById<BlockingManager>(
+      blockingManager,
+    );
     if (manager == null || items.isEmpty) return;
     try {
       if (!await manager.isSupported()) return;
@@ -1084,19 +1086,15 @@ class XmppService {
   Set<String> blockedJids = const {};
 
   /// A blocked contact's message we refused to open.
-  Stream<BlockedMessageDropped> get blockedMessages =>
-      _blockedDropped.stream;
-  final _blockedDropped =
-      StreamController<BlockedMessageDropped>.broadcast();
+  Stream<BlockedMessageDropped> get blockedMessages => _blockedDropped.stream;
+  final _blockedDropped = StreamController<BlockedMessageDropped>.broadcast();
 
   /// The JIDs currently blocked, as last pushed by the server.
   Stream<Set<String>> get blocklistChanges => _blocklistChanges.stream;
-  final _blocklistChanges =
-      StreamController<Set<String>>.broadcast();
+  final _blocklistChanges = StreamController<Set<String>>.broadcast();
 
   /// Attaches the capability resolver so [autoShouldEncrypt] works.
-  void attachCapabilities(CapabilityService service) =>
-      _capabilities = service;
+  void attachCapabilities(CapabilityService service) => _capabilities = service;
   CapabilityService? _capabilities;
 
   XmppConnectionState get state => _state;
@@ -1140,19 +1138,19 @@ class XmppService {
   MUCManager? get muc => _connection?.getManagerById<MUCManager>(mucManager);
 
   /// The XEP-0084 avatar manager, or null before connecting.
-  UserAvatarManager? get avatarManager => _connection
-      ?.getManagerById<UserAvatarManager>(userAvatarManager);
+  UserAvatarManager? get avatarManager =>
+      _connection?.getManagerById<UserAvatarManager>(userAvatarManager);
 
   /// Our own bare JID, or null when not connected.
   ///
   /// Taken from the live session rather than stored, so a reconnect to a
   /// different account cannot leave reactions attributed to the previous one.
-  String? get myJid =>
-      _connection?.connectionSettings.jid.toBare().toString();
+  String? get myJid => _connection?.connectionSettings.jid.toBare().toString();
 
   /// Sends an "available" presence, announcing this resource to contacts.
   Future<void> sendAvailablePresence() async {
-    await _connection?.getManagerById<PresenceManager>(presenceManager)
+    await _connection
+        ?.getManagerById<PresenceManager>(presenceManager)
         ?.sendInitialPresence();
   }
 
@@ -1181,8 +1179,7 @@ class XmppService {
   final _outgoingRequests = StreamController<JID>.broadcast();
 
   /// Our outgoing requests, as of right now.
-  Set<String> get pendingOutgoingRequests =>
-      Set.unmodifiable(_pendingOutgoing);
+  Set<String> get pendingOutgoingRequests => Set.unmodifiable(_pendingOutgoing);
   final _pendingOutgoing = <String>{};
 
   void resolveOutgoingRequest(JID peer) =>
@@ -1260,40 +1257,39 @@ class XmppService {
     // Held as a local so the manager can read the blocked list through a
     // closure, and so it survives `disconnect()` — a block is a property of the
     // account, not of the session.
-    final blockedInbound = BlockedInboundManager(
-      () => blockedJids,
-      (from) {
-        final jid = from.toBare().toString();
-        _log.info('dropped a message from blocked $jid before opening it');
-        if (!_blockedDropped.isClosed) {
-          _blockedDropped.add(
-            BlockedMessageDropped(from: jid, reason: 'refused before decrypt'),
-          );
-        }
-      },
-    );
+    final blockedInbound = BlockedInboundManager(() => blockedJids, (from) {
+      final jid = from.toBare().toString();
+      _log.info('dropped a message from blocked $jid before opening it');
+      if (!_blockedDropped.isClosed) {
+        _blockedDropped.add(
+          BlockedMessageDropped(from: jid, reason: 'refused before decrypt'),
+        );
+      }
+    });
     // On web, the optional "host" field may be a full wss:// URL (manual
     // override when host-meta is missing). TCP hosts stay unchanged on IO.
     final websocketOverride =
         (host != null && (host.startsWith('wss:') || host.startsWith('ws:')))
-            ? host
-            : null;
-    final connection = XmppConnection(
-      reconnect ? TestingReconnectionPolicy() : NeverReconnectPolicy(),
-      // TODO(M7): replace with a connectivity_plus-backed manager plus
-      // XEP-0357 push so Doze-mode delivery works without a permanent
-      // radio lock (Briar's always-on lesson, docs/09).
-      AlwaysConnectedConnectivityManager(),
-      ClientToServerNegotiator(),
-      // Native: TCP (+ SOCKS5). Web: RFC 7395 WebSocket + XEP-0156.
-      createXmppSocket(websocketUrl: websocketOverride),
-    )..connectionSettings = ConnectionSettings(
-        jid: JID.fromString(jid),
-        // When host is a WebSocket URL, do not pass it as a TCP hostname.
-        password: password,
-        host: websocketOverride != null ? null : host,
-        port: websocketOverride != null ? null : port,
-      );
+        ? host
+        : null;
+    final connection =
+        XmppConnection(
+            reconnect ? TestingReconnectionPolicy() : NeverReconnectPolicy(),
+            // TODO(M7): replace with a connectivity_plus-backed manager plus
+            // XEP-0357 push so Doze-mode delivery works without a permanent
+            // radio lock (Briar's always-on lesson, docs/09).
+            AlwaysConnectedConnectivityManager(),
+            ClientToServerNegotiator(),
+            // Native: TCP (+ SOCKS5). Web: RFC 7395 WebSocket + XEP-0156.
+            createXmppSocket(websocketUrl: websocketOverride),
+          )
+          ..connectionSettings = ConnectionSettings(
+            jid: JID.fromString(jid),
+            // When host is a WebSocket URL, do not pass it as a TCP hostname.
+            password: password,
+            host: websocketOverride != null ? null : host,
+            port: websocketOverride != null ? null : port,
+          );
 
     _carbons = CarbonsManager();
     _pubsub = PubSubManager();
@@ -1307,7 +1303,8 @@ class XmppService {
     await connection.registerManagers([
       PresenceManager(),
       RosterManager(
-        rosterState ?? (_rosterState = TestingRosterStateManager(null, const [])),
+        rosterState ??
+            (_rosterState = TestingRosterStateManager(null, const [])),
       ),
       DiscoManager(const []),
       _pubsub!,
@@ -1394,8 +1391,9 @@ class XmppService {
       _log.severe('connect failed: $lastError');
     }
     _connection = ok ? connection : null;
-    _state =
-        ok ? XmppConnectionState.connected : XmppConnectionState.disconnected;
+    _state = ok
+        ? XmppConnectionState.connected
+        : XmppConnectionState.disconnected;
     if (ok) {
       _carbonsEnabled = await _carbons!.enableCarbons();
       _mamAvailable = await _isMamAvailable();
@@ -1426,11 +1424,8 @@ class XmppService {
   // once when the class is first touched and read on every connect.
   static final List<String> _subscribedPepNodes = <String>[
     omemoDefactoDevicesNode,
-    '${omemoDefactoDevicesNode}+notify',
-    for (final node in omemoSpecDevicesNodes) ...<String>[
-      node,
-      '$node+notify',
-    ],
+    '$omemoDefactoDevicesNode+notify',
+    for (final node in omemoSpecDevicesNodes) ...<String>[node, '$node+notify'],
     pomemoDevicesXmlns,
     pomemoBundlesXmlns,
   ];
@@ -1503,10 +1498,9 @@ class XmppService {
     String? beforeId,
     int? pageSize = mamPageSize,
   }) async {
-    final mm =
-        _connection?.getManagerById<MessageArchiveManagementManager>(
-              mamManager,
-            );
+    final mm = _connection?.getManagerById<MessageArchiveManagementManager>(
+      mamManager,
+    );
     final own = _connection?.connectionSettings.jid.toBare();
     if (mm == null || own == null || !_mamAvailable) return null;
     final result = await mm.requestMessages(
@@ -1535,10 +1529,9 @@ class XmppService {
     int pageSize = mamPageSize,
     int maxPages = mamCatchupMaxPages,
   }) async {
-    final mm =
-        _connection?.getManagerById<MessageArchiveManagementManager>(
-              mamManager,
-            );
+    final mm = _connection?.getManagerById<MessageArchiveManagementManager>(
+      mamManager,
+    );
     final own = _connection?.connectionSettings.jid.toBare();
     if (mm == null || own == null || !_mamAvailable) return null;
 
@@ -1649,7 +1642,9 @@ class XmppService {
   /// Restoring matters: a fresh device id on every start would keep
   /// appending to our own PEP device list and make peers encrypt to
   /// devices we no longer hold keys for.
-  Future<axolotl.AxolotlOmemoManager> _omemoOrCreate({int opkAmount = 20}) async {
+  Future<axolotl.AxolotlOmemoManager> _omemoOrCreate({
+    int opkAmount = 20,
+  }) async {
     final existing = _omemo;
     if (existing != null) return existing;
     // Several events can race here; building twice would orphan the first
@@ -1659,9 +1654,10 @@ class XmppService {
     });
   }
 
-  Future<axolotl.AxolotlOmemoManager> _buildOmemo({required int opkAmount}) async {
-    final bareJid =
-        _connection!.connectionSettings.jid.toBare().toString();
+  Future<axolotl.AxolotlOmemoManager> _buildOmemo({
+    required int opkAmount,
+  }) async {
+    final bareJid = _connection!.connectionSettings.jid.toBare().toString();
 
     axolotl.AxolotlDevice device;
     final restored = await deviceStore?.load();
@@ -1693,7 +1689,7 @@ class XmppService {
   Future<List<int>?> _fetchDeviceListDialectAware(String jid) async {
     final resolved =
         await tracks?.resolveOmemoDevices(JID.fromString(jid)) ??
-            (devices: const <int>{}, listReadable: false);
+        (devices: const <int>{}, listReadable: false);
     if (!resolved.listReadable) return null;
     return resolved.devices.toList();
   }
@@ -1715,19 +1711,23 @@ class XmppService {
     final id = await manager.getDeviceId();
     final device = await manager.getDevice();
     final bundle = await manager.getLocalBundle();
-    final bare = JID.fromString(_connection!.connectionSettings.jid.toBare().toString());
+    final bare = JID.fromString(
+      _connection!.connectionSettings.jid.toBare().toString(),
+    );
 
     // Publish through the dual-track manager so the bundle lands in both
     // the de-facto and the XEP-0384 dialects. Publishing only the spec form
     // makes us invisible to every client that actually exists.
     final published = tracks == null
-        ? await _moxxOmemo!.publishBundle(bundle).then(
-              // moxxmpp's payload bool is
-              // `deviceBundlePublish.isType<PubSubError>()` — true means
-              // failure.
-              (r) => r.isType<bool>() && !r.get<bool>(),
-              onError: (_) => false,
-            )
+        ? await _moxxOmemo!
+              .publishBundle(bundle)
+              .then(
+                // moxxmpp's payload bool is
+                // `deviceBundlePublish.isType<PubSubError>()` — true means
+                // failure.
+                (r) => r.isType<bool>() && !r.get<bool>(),
+                onError: (_) => false,
+              )
         : await tracks!.publishOmemoBundle(bare, bundle);
     if (!published) {
       _log.warning('OMEMO bundle publish reported failure');
@@ -1989,6 +1989,7 @@ class XmppService {
     String? quoteBody,
     ReplyFallback? replyFallback,
     String? oobUrl,
+
     /// `chat` (1:1) or `groupchat` (XEP-0045 to bare room).
     String messageType = 'chat',
   }) async {
@@ -2217,8 +2218,8 @@ class XmppService {
       final body = error != null
           ? ''
           : (reactionData != null
-              ? ''
-              : (event.get<MessageBodyData>()?.body ?? ''));
+                ? ''
+                : (event.get<MessageBodyData>()?.body ?? ''));
       // XEP-0066: Conversations puts the upload URL in OOB as well as body.
       final oobUrl = event.get<OOBData>()?.url?.trim() ?? '';
       final mediaUrl = () {
@@ -2230,7 +2231,8 @@ class XmppService {
         }
         return '';
       }();
-      final hasContent = body.isNotEmpty ||
+      final hasContent =
+          body.isNotEmpty ||
           mediaUrl.isNotEmpty ||
           error != null ||
           reactionData != null ||
@@ -2287,8 +2289,8 @@ class XmppService {
             ? null
             : ReactionUpdate(
                 targetId: reactionData.messageId,
-                reactor: event.type == 'groupchat' &&
-                        event.from.resource.isNotEmpty
+                reactor:
+                    event.type == 'groupchat' && event.from.resource.isNotEmpty
                     ? event.from.resource
                     : event.from.toBare().toString(),
                 emojis: reactionData.emojis,
@@ -2301,9 +2303,7 @@ class XmppService {
       // (Conversations DisplayedManager / delivery path).
       if (event.type == ChatMarker.displayed) {
         if (!_readReceipts.isClosed) {
-          _readReceipts.add(
-            ReadReceipt(from: event.from, stanzaId: event.id),
-          );
+          _readReceipts.add(ReadReceipt(from: event.from, stanzaId: event.id));
         }
       } else if (event.type == ChatMarker.received) {
         if (!_deliveryReceipts.isClosed) {
@@ -2359,8 +2359,7 @@ class XmppService {
       // test that subscribes after asking — would be lost permanently. For
       // something the user is meant to decide on, losing it is not acceptable,
       // and "we told nobody" is indistinguishable from "it never happened".
-      _pendingIncoming
-          .add(JID.fromString('${event.from}').toBare().toString());
+      _pendingIncoming.add(JID.fromString('${event.from}').toBare().toString());
       if (!_incomingRequests.isClosed) {
         _incomingRequests.add(JID.fromString('${event.from}').toBare());
       }
@@ -2376,8 +2375,7 @@ class XmppService {
   ///
   /// Current state rather than a stream of arrivals, so a caller that starts
   /// listening late still sees what it missed.
-  Set<String> get pendingIncomingRequests =>
-      Set.unmodifiable(_pendingIncoming);
+  Set<String> get pendingIncomingRequests => Set.unmodifiable(_pendingIncoming);
   final _pendingIncoming = <String>{};
 
   /// Forgets [peer]'s request locally, after it has been answered.

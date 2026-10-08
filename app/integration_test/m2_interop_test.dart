@@ -51,8 +51,10 @@ void main() {
   const jid = String.fromEnvironment('RESONCHAT_M2_JID');
   const password = String.fromEnvironment('RESONCHAT_M2_PASS');
   const peerText = String.fromEnvironment('RESONCHAT_M2_PEER');
-  const listenSeconds =
-      int.fromEnvironment('RESONCHAT_M2_LISTEN', defaultValue: 45);
+  const listenSeconds = int.fromEnvironment(
+    'RESONCHAT_M2_LISTEN',
+    defaultValue: 45,
+  );
 
   testWidgets('interoperate with a real OMEMO client', (tester) async {
     expect(jid, isNotEmpty, reason: 'pass RESONCHAT_M2_JID');
@@ -112,8 +114,9 @@ void main() {
       xmpp.attachCapabilities(caps);
 
       // --- roster + presence so the reference client will talk to us ---
-      final roster =
-          xmpp.connection!.getManagerById<RosterManager>(rosterManager);
+      final roster = xmpp.connection!.getManagerById<RosterManager>(
+        rosterManager,
+      );
       check(
         'roster entry added for $peer',
         await roster!.addToRoster(peer.toBare().toString(), 'interop peer'),
@@ -121,8 +124,10 @@ void main() {
       await xmpp.requestRoster();
       for (final item in await xmpp.requestRoster()) {
         // ignore: avoid_print
-        print('roster ${item.jid}: subscription=${item.subscription} '
-            'ask=${item.ask}');
+        print(
+          'roster ${item.jid}: subscription=${item.subscription} '
+          'ask=${item.ask}',
+        );
       }
       await xmpp.sendAvailablePresence();
       // A one-sided relationship makes most servers refuse to route, which
@@ -152,10 +157,10 @@ void main() {
         final detail = bundle == null
             ? 'could not parse'
             : 'spk ${_len(bundle.spkEncoded)}B '
-                'sig ${_len(bundle.spkSignatureEncoded)}B '
-                'ik ${_len(bundle.ikEncoded)}B '
-                'opks ${bundle.opksEncoded.length} '
-                'pk sizes ${bundle.opksEncoded.values.map(_len).toSet().toList()}';
+                  'sig ${_len(bundle.spkSignatureEncoded)}B '
+                  'ik ${_len(bundle.ikEncoded)}B '
+                  'opks ${bundle.opksEncoded.length} '
+                  'pk sizes ${bundle.opksEncoded.values.map(_len).toSet().toList()}';
         check(
           'device $id bundle verifies (spk sig ik sizes, opks present)',
           bundle != null && _bundleLooksSane(bundle),
@@ -169,7 +174,7 @@ void main() {
         'capability resolution is reliable',
         capabilities.reliable,
         'mode ${capabilities.mode.name}, '
-        'devices ${capabilities.recipientDevices.toList()}',
+            'devices ${capabilities.recipientDevices.toList()}',
       );
       check(
         'a standard client negotiates onto the A track',
@@ -190,7 +195,9 @@ void main() {
       check(
         'stanza accepted for sending',
         outcome.sent,
-        outcome.blocked == null ? 'id $stanzaId' : 'blocked: ${outcome.blocked}',
+        outcome.blocked == null
+            ? 'id $stanzaId'
+            : 'blocked: ${outcome.blocked}',
       );
       // ignore: avoid_print
       print('sent: "$plaintext" → $peer (look for it in the peer client)');
@@ -207,12 +214,17 @@ void main() {
       });
       final sub = xmpp.inbound.listen((m) {
         // ignore: avoid_print
-        print('[${DateTime.now().toIso8601String()}] DECODED from=${m.from} '
-            'body="${m.body}" err=${m.encryptionError}');
+        print(
+          '[${DateTime.now().toIso8601String()}] DECODED from=${m.from} '
+          'body="${m.body}" err=${m.encryptionError}',
+        );
         if (m.from.toBare() != peer.toBare()) return;
         if (m.encryptionError != null) {
-          check('inbound from ${m.from} decrypted', false,
-              '${m.encryptionError}');
+          check(
+            'inbound from ${m.from} decrypted',
+            false,
+            '${m.encryptionError}',
+          );
         } else if (m.body.isEmpty) {
           // ignore: avoid_print
           print('  (no body from ${m.from})');
@@ -240,8 +252,11 @@ void main() {
         }
       }
       if (decrypted.isEmpty) {
-        check('received at least one decrypted inbound message', false,
-            'nothing arrived from the peer in ${listenSeconds}s');
+        check(
+          'received at least one decrypted inbound message',
+          false,
+          'nothing arrived from the peer in ${listenSeconds}s',
+        );
       }
     } catch (e, st) {
       // A server dropping an idle stream is not an interoperability

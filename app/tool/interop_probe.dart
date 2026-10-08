@@ -45,7 +45,9 @@ Future<void> main(List<String> args) async {
   var failures = 0;
   void check(String name, bool ok, [String detail = '']) {
     // ignore: avoid_print
-    print('${ok ? "PASS" : "FAIL"}  $name${detail.isEmpty ? "" : " — $detail"}');
+    print(
+      '${ok ? "PASS" : "FAIL"}  $name${detail.isEmpty ? "" : " — $detail"}',
+    );
     if (!ok) failures++;
   }
 
@@ -87,8 +89,11 @@ Future<void> main(List<String> args) async {
     shouldReconnect: false,
     waitUntilLogin: true,
   );
-  check('authenticate', result.isType<bool>() && result.get<bool>(),
-      result.isType<bool>() ? '' : 'server refused');
+  check(
+    'authenticate',
+    result.isType<bool>() && result.get<bool>(),
+    result.isType<bool>() ? '' : 'server refused',
+  );
 
   if (!result.isType<bool>() || !result.get<bool>()) {
     await connection.disconnect();
@@ -114,17 +119,17 @@ Future<void> main(List<String> args) async {
   final deviceId = await oom.getDeviceId();
   final bundle = await (await oom.getDevice()).toBundle();
   final published = await moxxOmemo.publishBundle(bundle);
-  final publishFailed =
-      !published.isType<bool>() || published.get<bool>();
+  final publishFailed = !published.isType<bool>() || published.get<bool>();
   check('publish bundle', !publishFailed, 'device id $deviceId');
 
   // --- 3. read it back and verify it ---------------------------------
   final pm = connection.getManagerById<PubSubManager>(pubsubManager)!;
   final items = await pm.getItems(jid.toBare(), omemoDevicesXmlns);
-  final listed = items.isType<List<PubSubItem>>() &&
-      items
-          .get<List<PubSubItem>>()
-          .any((i) => i.payload.toXml().contains("'$deviceId'"));
+  final listed =
+      items.isType<List<PubSubItem>>() &&
+      items.get<List<PubSubItem>>().any(
+        (i) => i.payload.toXml().contains("'$deviceId'"),
+      );
   check('device list contains our id', listed);
 
   final fetched = await moxxOmemo.fetchDeviceBundle(
@@ -142,12 +147,12 @@ Future<void> main(List<String> args) async {
       // the classic M2 interop failure, so this is worth asserting.
       final spk = await fetched.spk.getBytes();
       final ik = await fetched.ik.getBytes();
-      signatureOk = spk.length == 32 &&
+      signatureOk =
+          spk.length == 32 &&
           ik.length == 32 &&
           fetched.spkSignature.length == 64 &&
           fetched.opksEncoded.isNotEmpty &&
-          fetched.opksEncoded.values
-              .every((v) => base64Decode(v).length == 32);
+          fetched.opksEncoded.values.every((v) => base64Decode(v).length == 32);
     } catch (e) {
       // ignore: avoid_print
       print('  bundle verification threw: $e');

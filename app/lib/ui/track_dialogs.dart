@@ -154,13 +154,14 @@ class _TrackPickerState extends ConsumerState<_TrackPicker> {
     // Track.standard while the stored value is still loading: the sheet has to
     // render something, and standard is the same default a fresh install gets,
     // so the checkmark cannot be wrong for more than a frame.
-    final current = ref.watch(chatTrackProvider(widget.chatJid)).value ??
+    final current =
+        ref.watch(chatTrackProvider(widget.chatJid)).value ??
         widget.current ??
         Track.standard;
-    final global = ref.watch(globalTrackProvider).value ??
-        widget.global ??
-        Track.standard;
-    final caps = ref.watch(chatCapabilitiesProvider(widget.chatJid)).value ??
+    final global =
+        ref.watch(globalTrackProvider).value ?? widget.global ?? Track.standard;
+    final caps =
+        ref.watch(chatCapabilitiesProvider(widget.chatJid)).value ??
         widget.capabilities;
     final override = ref.watch(chatTrackOverrideProvider(widget.chatJid)).value;
 
@@ -187,7 +188,10 @@ class _TrackPickerState extends ConsumerState<_TrackPicker> {
                 child: Text(
                   '${resolution.blocked!.localizedConsequence(l10n)} '
                   '${l10n.messagesOnTrackWillAsk(current.label)}',
-                  style: TextStyle(color: theme.colorScheme.error, fontSize: 13),
+                  style: TextStyle(
+                    color: theme.colorScheme.error,
+                    fontSize: 13,
+                  ),
                 ),
               ),
             for (final track in Track.values)
@@ -324,9 +328,7 @@ Future<bool> confirmPlaintext(
     context: context,
     builder: (context) => AlertDialog(
       title: Text(l10n.sendWithoutEncryption),
-      content: Text(
-        l10n.sendWithoutEncryptionBody(contact, alternative.label),
-      ),
+      content: Text(l10n.sendWithoutEncryptionBody(contact, alternative.label)),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(false),

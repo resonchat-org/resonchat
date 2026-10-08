@@ -23,15 +23,10 @@ void main() {
   setUp(() => db = AppDatabase(NativeDatabase.memory()));
   tearDown(() => db.close());
 
-  Future<void> react(String reactor, List<String> emojis) =>
-      storeReaction(
-        db,
-        ReactionUpdate(
-          targetId: target,
-          reactor: reactor,
-          emojis: emojis,
-        ),
-      );
+  Future<void> react(String reactor, List<String> emojis) => storeReaction(
+    db,
+    ReactionUpdate(targetId: target, reactor: reactor, emojis: emojis),
+  );
 
   group('a broadcast is a complete set', () {
     test('adding', () async {
@@ -116,12 +111,16 @@ void main() {
       // Otherwise the strip reorders on every rebuild, which reads as the
       // reactions flickering.
       await react(peer, ['👍', '😂']);
-      final first = (await reactionsFor(db, target, me))
-          .map((g) => g.emoji)
-          .toList();
-      final second = (await reactionsFor(db, target, me))
-          .map((g) => g.emoji)
-          .toList();
+      final first = (await reactionsFor(
+        db,
+        target,
+        me,
+      )).map((g) => g.emoji).toList();
+      final second = (await reactionsFor(
+        db,
+        target,
+        me,
+      )).map((g) => g.emoji).toList();
       expect(first, second);
     });
   });
@@ -130,19 +129,11 @@ void main() {
     test('a reaction lands on its target only', () async {
       await storeReaction(
         db,
-        ReactionUpdate(
-          targetId: 'origin-id-1',
-          reactor: peer,
-          emojis: ['👍'],
-        ),
+        ReactionUpdate(targetId: 'origin-id-1', reactor: peer, emojis: ['👍']),
       );
       await storeReaction(
         db,
-        ReactionUpdate(
-          targetId: 'origin-id-2',
-          reactor: peer,
-          emojis: ['😂'],
-        ),
+        ReactionUpdate(targetId: 'origin-id-2', reactor: peer, emojis: ['😂']),
       );
       expect((await reactionsFor(db, 'origin-id-1', me)).single.emoji, '👍');
       expect((await reactionsFor(db, 'origin-id-2', me)).single.emoji, '😂');

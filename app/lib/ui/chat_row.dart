@@ -94,9 +94,7 @@ class ChatRow extends ConsumerWidget {
           height: TgDimens.chatsRowHeight,
           decoration: multi && showAccountChrome
               ? BoxDecoration(
-                  border: Border(
-                    left: BorderSide(color: accent, width: 3),
-                  ),
+                  border: Border(left: BorderSide(color: accent, width: 3)),
                 )
               : null,
           padding: const EdgeInsets.symmetric(
@@ -125,8 +123,7 @@ class ChatRow extends ConsumerWidget {
                             icon: Icons.notifications_off,
                             color: tg.textSecondary,
                           ),
-                        if (locked)
-                          _Flag(icon: Icons.lock, color: tg.accent),
+                        if (locked) _Flag(icon: Icons.lock, color: tg.accent),
                         Expanded(
                           child: Text(
                             title,
@@ -243,11 +240,7 @@ class _AccountAvatar extends StatelessWidget {
               size: TgDimens.avatarChats * 0.55,
             ),
           )
-        : ContactAvatar(
-            jid: chat.jid,
-            title: title,
-            hero: true,
-          );
+        : ContactAvatar(jid: chat.jid, title: title, hero: true);
     if (!ring) return child;
     return Container(
       padding: const EdgeInsets.all(2),

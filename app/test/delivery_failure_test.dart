@@ -54,10 +54,7 @@ void main() {
     });
 
     test('a modelled error falls back to its own rendering', () {
-      expect(
-        describeStanzaError(ServiceUnavailableError()),
-        isNotEmpty,
-      );
+      expect(describeStanzaError(ServiceUnavailableError()), isNotEmpty);
     });
   });
 
@@ -86,8 +83,10 @@ void main() {
         ),
       );
 
-      final updated =
-          await db.markDeliveryFailure('stanza-1', 'auth/forbidden: nope');
+      final updated = await db.markDeliveryFailure(
+        'stanza-1',
+        'auth/forbidden: nope',
+      );
       expect(updated, isTrue);
 
       final rows = await db.watchMessages('peer@example.org').first;
@@ -110,19 +109,21 @@ void main() {
       expect(rows.single.deliveryError, isEmpty);
     });
 
-    test('an empty stanza id is ignored rather than matching every row',
-        () async {
-      await db.insertMessage(
-        MessagesCompanion(
-          chatJid: const Value('peer@example.org'),
-          sender: const Value('me'),
-          stanzaId: const Value(''),
-          body: const Value('hello'),
-          incoming: const Value(false),
-        ),
-      );
-      expect(await db.markDeliveryFailure('', 'auth/forbidden'), isFalse);
-    });
+    test(
+      'an empty stanza id is ignored rather than matching every row',
+      () async {
+        await db.insertMessage(
+          MessagesCompanion(
+            chatJid: const Value('peer@example.org'),
+            sender: const Value('me'),
+            stanzaId: const Value(''),
+            body: const Value('hello'),
+            incoming: const Value(false),
+          ),
+        );
+        expect(await db.markDeliveryFailure('', 'auth/forbidden'), isFalse);
+      },
+    );
 
     test('a fresh message is not marked as failed', () async {
       await db.insertMessage(

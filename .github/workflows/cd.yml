@@ -1,0 +1,168 @@
+# Build release APK + Linux AppImage and attach them to the GitHub Release.
+#
+# Trigger: publish a Release in the GitHub UI (or `gh release create`).
+# Assets land on that Release page — the usual place for downloadable binaries.
+
+name: CD
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cd-${{ github.event.release.tag_name }}
+  cancel-in-progress: true
+
+env:
+  TAG: ${{ github.event.release.tag_name }}
+
+jobs:
+  build-apk:
+    name: Build release APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Generate submodule code
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            protobuf-compiler ffmpeg cmake ninja-build
+          dart pub global activate protoc_plugin
+          export PATH="$PATH:$HOME/.pub-cache/bin"
+          (cd packages/moxlib && dart pub get)
+          (cd packages/omemo_dart && dart pub get && protoc --dart_out=lib/src/protobuf -Iprotobuf protobuf/schema.proto)
+          (cd packages/moxxmpp/packages/moxxmpp && dart pub get && dart run build_runner build)
+          (cd packages/moxxmpp/packages/moxxmpp_socket_tcp && dart pub get)
+
+      - name: Resolve app dependencies
+        working-directory: app
+        run: flutter pub get
+
+      - name: Generate drift code
+        working-directory: app
+        run: dart run build_runner build
+
+      - name: Build APK
+        working-directory: app
+        # Release currently signs with the debug keystore (see
+        # android/app/build.gradle.kts); swap in a real keystore later.
+        # build_android.sh builds liboqs (NDK) when build/liboqs is missing.
+        run: |
+          set -euo pipefail
+          export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$(ls -d "$ANDROID_HOME"/ndk/* | sort -V | tail -1)}"
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
+          ./tool/build_android.sh --release
+
+      - name: Stage APK
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          src=app/build/app/outputs/flutter-apk/app-release.apk
+          test -f "$src"
+          cp "$src" "dist/resonchat-${TAG}-android.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: dist/resonchat-*-android.apk
+          if-no-files-found: error
+
+  build-appimage:
+    name: Build Linux AppImage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install Linux desktop build deps
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang cmake ninja-build pkg-config \
+            libgtk-3-dev liblzma-dev libsecret-1-dev \
+            protobuf-compiler curl ffmpeg
+
+      - name: Generate submodule code
+        run: |
+          set -euo pipefail
+          dart pub global activate protoc_plugin
+          export PATH="$PATH:$HOME/.pub-cache/bin"
+          (cd packages/moxlib && dart pub get)
+          (cd packages/omemo_dart && dart pub get && protoc --dart_out=lib/src/protobuf -Iprotobuf protobuf/schema.proto)
+          (cd packages/moxxmpp/packages/moxxmpp && dart pub get && dart run build_runner build)
+          (cd packages/moxxmpp/packages/moxxmpp_socket_tcp && dart pub get)
+
+      - name: Resolve app dependencies
+        working-directory: app
+        run: flutter pub get
+
+      - name: Generate drift code
+        working-directory: app
+        run: dart run build_runner build
+
+      - name: Build AppImage
+        working-directory: app
+        run: ./tool/build_appimage.sh
+
+      - name: Stage AppImage
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          src=$(ls app/build/resonchat-*-x86_64.AppImage | head -1)
+          test -f "$src"
+          cp "$src" "dist/resonchat-${TAG}-x86_64.AppImage"
+          chmod +x "dist/resonchat-${TAG}-x86_64.AppImage"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: appimage
+          path: dist/resonchat-*-x86_64.AppImage
+          if-no-files-found: error
+
+  upload-release:
+    name: Attach to GitHub Release
+    needs: [build-apk, build-appimage]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List assets
+        run: ls -la dist/
+
+      - name: Upload assets to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          files: |
+            dist/resonchat-*-android.apk
+            dist/resonchat-*-x86_64.AppImage
+          fail_on_unmatched_files: true

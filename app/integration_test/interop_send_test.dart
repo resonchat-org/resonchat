@@ -29,8 +29,9 @@ void main() {
   const password = String.fromEnvironment('RESONCHAT_SEND_PASS');
   const peerJid = String.fromEnvironment('RESONCHAT_SEND_PEER');
 
-  testWidgets('send one encrypted message a real client should display',
-      (tester) async {
+  testWidgets('send one encrypted message a real client should display', (
+    tester,
+  ) async {
     expect(jid, isNotEmpty, reason: 'pass RESONCHAT_SEND_JID');
     expect(peerJid, isNotEmpty, reason: 'pass RESONCHAT_SEND_PEER');
 
@@ -63,16 +64,20 @@ void main() {
       print('device=$deviceId');
 
       final peer = JID.fromString(peerJid);
-      final roster =
-          xmpp.connection!.getManagerById<RosterManager>(rosterManager)!;
+      final roster = xmpp.connection!.getManagerById<RosterManager>(
+        rosterManager,
+      )!;
       await roster.addToRoster(peer.toBare().toString(), 'interop');
       await xmpp.sendAvailablePresence();
       await xmpp.requestSubscription(peer);
       await Future<void>.delayed(const Duration(seconds: 6));
 
       final body = '$marker$unicodeSuffix';
-      final stanzaId =
-          await xmpp.sendOnTrack(peer, body, track: Track.standard);
+      final stanzaId = await xmpp.sendOnTrack(
+        peer,
+        body,
+        track: Track.standard,
+      );
       // ignore: avoid_print
       print('stanzaId=$stanzaId');
 

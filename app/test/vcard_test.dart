@@ -28,9 +28,9 @@ import 'package:resonchat/xmpp/vcard.dart';
 /// Parses a card body exactly as a server would have sent it inside the
 /// vcard-temp namespace.
 VCard? parse(String body) => parseVCard(
-      XmlDocument.parse('<vCard xmlns="$vCardTempNamespace">$body</vCard>')
-          .rootElement,
-    );
+  XmlDocument.parse('<vCard xmlns="$vCardTempNamespace">$body</vCard>')
+      .rootElement,
+);
 
 /// The name a contact carrying this card body would be shown as.
 String nameFor(String body, [String jid = 'bob@example.test']) {
@@ -82,7 +82,7 @@ void main() {
       // of these has to produce a name rather than an exception, and that name
       // is the JID for every field except the three that carry a name.
       for (final field in everyField.keys) {
-        final name = nameFor('<${field}>${everyField[field]}</${field}>');
+        final name = nameFor('<$field>${everyField[field]}</$field>');
         expect(name.isNotEmpty, isTrue, reason: '$field alone');
         expect(
           name.runes.every((r) => r != 0x202E && r != 0x200D),
@@ -146,10 +146,7 @@ void main() {
       expect(card.email, 'rob@example.test');
       expect(card.birthday, '1970-01-01');
       expect(card.note, 'Met at a conference.');
-      expect(
-        card.address?.oneLine,
-        '1 Example Way, Woodstock, NY, 12401, US',
-      );
+      expect(card.address?.oneLine, '1 Example Way, Woodstock, NY, 12401, US');
     });
 
     test('the structured name renders given name first, as FN does', () {
@@ -178,7 +175,10 @@ void main() {
       // client that emitted a template. Treating it as a name renders "".
       final card = parse('<N><FAMILY></FAMILY><GIVEN> </GIVEN></N>')!;
       expect(card.structuredName, isNull);
-      expect(preferredDisplayName(card, 'bob@example.test'), 'bob@example.test');
+      expect(
+        preferredDisplayName(card, 'bob@example.test'),
+        'bob@example.test',
+      );
     });
 
     test('property names are case-insensitive, as RFC 2426 says', () {
@@ -191,9 +191,9 @@ void main() {
     });
 
     test('the root may be spelled vcard', () {
-      final el =
-          XmlDocument.parse('<vcard xmlns="vcard-temp"><FN>Alex</FN></vcard>')
-              .rootElement;
+      final el = XmlDocument.parse(
+        '<vcard xmlns="vcard-temp"><FN>Alex</FN></vcard>',
+      ).rootElement;
       expect(parseVCard(el)?.formattedName, 'Alex');
     });
 
@@ -216,9 +216,7 @@ void main() {
     });
 
     test('a TYPE parameter is not folded into the value', () {
-      final card = parse(
-        '<TEL><TYPE>WORK</TYPE><PREF/>+441234</TEL>',
-      )!;
+      final card = parse('<TEL><TYPE>WORK</TYPE><PREF/>+441234</TEL>')!;
       expect(card.phone, '+441234');
     });
 
@@ -266,7 +264,10 @@ void main() {
     test('an empty first value does not hide a real one behind it', () {
       // The failure this prevents is a contact who clears a nickname in one
       // place and has it still set in another, ending up nameless.
-      expect(parse('<NICKNAME></NICKNAME><NICKNAME>Rob</NICKNAME>')!.nickname, 'Rob');
+      expect(
+        parse('<NICKNAME></NICKNAME><NICKNAME>Rob</NICKNAME>')!.nickname,
+        'Rob',
+      );
     });
   });
 
@@ -436,19 +437,28 @@ void main() {
       // The point of the whole module. Somebody who set a nickname did so
       // because they wanted to be called that; FN is whatever the account was
       // created with and they may not have looked at it since.
-      expect(
-        nameFor('<FN>Robert Smith</FN><NICKNAME>Rob</NICKNAME>'),
-        'Rob',
-      );
+      expect(nameFor('<FN>Robert Smith</FN><NICKNAME>Rob</NICKNAME>'), 'Rob');
     });
 
-    test('an empty nickname falls through to FN rather than rendering blank', () {
-      expect(nameFor('<FN>Robert Smith</FN><NICKNAME></NICKNAME>'), 'Robert Smith');
-      expect(nameFor('<FN>Robert Smith</FN><NICKNAME> </NICKNAME>'), 'Robert Smith');
-    });
+    test(
+      'an empty nickname falls through to FN rather than rendering blank',
+      () {
+        expect(
+          nameFor('<FN>Robert Smith</FN><NICKNAME></NICKNAME>'),
+          'Robert Smith',
+        );
+        expect(
+          nameFor('<FN>Robert Smith</FN><NICKNAME> </NICKNAME>'),
+          'Robert Smith',
+        );
+      },
+    );
 
     test('a nickname of only invisible characters falls through too', () {
-      expect(nameFor('<FN>Robert Smith</FN><NICKNAME>\u200D\u200D</NICKNAME>'), 'Robert Smith');
+      expect(
+        nameFor('<FN>Robert Smith</FN><NICKNAME>\u200D\u200D</NICKNAME>'),
+        'Robert Smith',
+      );
     });
 
     test('FN beats a reconstructed structured name', () {
@@ -456,7 +466,9 @@ void main() {
       // which order this person writes their name. Preferring our guess means
       // one contact renders two ways in one app.
       expect(
-        nameFor('<FN>Wei Chen</FN><N><FAMILY>Chen</FAMILY><GIVEN>Wei</GIVEN></N>'),
+        nameFor(
+          '<FN>Wei Chen</FN><N><FAMILY>Chen</FAMILY><GIVEN>Wei</GIVEN></N>',
+        ),
         'Wei Chen',
       );
     });
@@ -590,15 +602,21 @@ void main() {
       expect(vcardInitial('alex', 'bob@example.test'), 'A');
     });
 
-    test('nothing anywhere is a question mark, not a crash or an empty circle', () {
-      expect(vcardInitial('', ''), '?');
-      expect(vcardInitial('\u200D', ''), '?');
-    });
+    test(
+      'nothing anywhere is a question mark, not a crash or an empty circle',
+      () {
+        expect(vcardInitial('', ''), '?');
+        expect(vcardInitial('\u200D', ''), '?');
+      },
+    );
 
     test('works on the name the display rule actually chose', () {
       // The two functions are a pair: this is what the chat list draws.
       final card = parse('<FN>Robert Smith</FN><NICKNAME>Роберт</NICKNAME>')!;
-      expect(vcardInitial(preferredDisplayName(card, 'x@y.test'), 'x@y.test'), 'Р');
+      expect(
+        vcardInitial(preferredDisplayName(card, 'x@y.test'), 'x@y.test'),
+        'Р',
+      );
     });
   });
 
@@ -620,10 +638,7 @@ void main() {
     });
 
     test('an error response is no card', () {
-      expect(
-        parseVCardResponse('<iq type="error"><error/></iq>'),
-        isNull,
-      );
+      expect(parseVCardResponse('<iq type="error"><error/></iq>'), isNull);
     });
 
     test('malformed XML is no card', () {

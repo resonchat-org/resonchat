@@ -84,15 +84,14 @@ class PqDevice {
     // The Ed25519 identity key is the master key; its X25519 conversion is
     // what DH uses. Same arrangement as the A track, so one fingerprint
     // identifies the device across both tracks.
-    final ikEd = await omemo.OmemoKeyPair.generateNewPair(
-      KeyPairType.ed25519,
-    );
+    final ikEd = await omemo.OmemoKeyPair.generateNewPair(KeyPairType.ed25519);
     final ik = await ikEd.toCurve25519();
-    final spk = await omemo.OmemoKeyPair.generateNewPair(
-      KeyPairType.x25519,
-    );
+    final spk = await omemo.OmemoKeyPair.generateNewPair(KeyPairType.x25519);
     final spkId = _randomId();
-    final signature = await _sign(await ikEd.sk.getBytes(), await spk.pk.getBytes());
+    final signature = await _sign(
+      await ikEd.sk.getBytes(),
+      await spk.pk.getBytes(),
+    );
 
     final opks = <int, omemo.OmemoKeyPair>{};
     for (var i = 0; i < opkCount; i++) {
@@ -139,13 +138,13 @@ class PqDevice {
   }
 
   /// Random 31-bit positive id, matching the OMEMO device/prekey id space
-/// (XEP-0384). Uses the platform CSPRNG, never a clock.
-static int _randomId() {
-  final rnd = _rng.nextInt(0x7FFFFFFF);
-  return rnd == 0 ? 1 : rnd;
-}
+  /// (XEP-0384). Uses the platform CSPRNG, never a clock.
+  static int _randomId() {
+    final rnd = _rng.nextInt(0x7FFFFFFF);
+    return rnd == 0 ? 1 : rnd;
+  }
 
-static final Random _rng = Random.secure();
+  static final Random _rng = Random.secure();
 }
 
 /// Why a B-track session could not be built.
@@ -160,7 +159,6 @@ class PqSessionError implements Exception {
 class PqSessionManager {
   PqSessionManager({required this.kem});
 
-
   final MlKem768 kem;
 
   /// Established ratchets, keyed by "jid/deviceId".
@@ -169,14 +167,11 @@ class PqSessionManager {
   omemo.OmemoDoubleRatchet? ratchetFor(String jid, int deviceId) =>
       _ratchets[_key(jid, deviceId)];
 
-  void putRatchet(
-    String jid,
-    int deviceId,
-    omemo.OmemoDoubleRatchet ratchet,
-  ) =>
+  void putRatchet(String jid, int deviceId, omemo.OmemoDoubleRatchet ratchet) =>
       _ratchets[_key(jid, deviceId)] = ratchet;
 
-  bool hasRatchet(String jid, int deviceId) => ratchetFor(jid, deviceId) != null;
+  bool hasRatchet(String jid, int deviceId) =>
+      ratchetFor(jid, deviceId) != null;
 
   String _key(String jid, int deviceId) => '$jid/$deviceId';
 
@@ -188,16 +183,13 @@ class PqSessionManager {
     required PqDevice own,
     required PqDevice peer,
   }) async {
-    final ek = await omemo.OmemoKeyPair.generateNewPair(
-      KeyPairType.x25519,
-    );
+    final ek = await omemo.OmemoKeyPair.generateNewPair(KeyPairType.x25519);
 
     // Prefer one-time prekeys on both legs; fall back to the signed ones.
-    final opkEntry = peer.opks.entries.isEmpty
+    final opkEntry = peer.opks.entries.isEmpty ? null : peer.opks.entries.first;
+    final pqOpkEntry = peer.pqOpks.entries.isEmpty
         ? null
-        : peer.opks.entries.first;
-    final pqOpkEntry =
-        peer.pqOpks.entries.isEmpty ? null : peer.pqOpks.entries.first;
+        : peer.pqOpks.entries.first;
 
     final ss1 = kem.encapsulate(peer.pqSpk);
     final ss2 = pqOpkEntry == null
@@ -308,10 +300,7 @@ class PqSessionManager {
     if (pkId != null) {
       final opk = own.opks[pkId];
       if (opk != null) {
-        dh4 = await x25519Agree(
-          await opk.sk.getBytes(),
-          await ek.getBytes(),
-        );
+        dh4 = await x25519Agree(await opk.sk.getBytes(), await ek.getBytes());
       }
     }
 
@@ -322,18 +311,9 @@ class PqSessionManager {
     _senderIks[senderJid] = peerIk;
 
     final derived = await derivePqxdh(
-      dh1: await x25519Agree(
-        await own.spk.sk.getBytes(),
-        peerIk,
-      ),
-      dh2: await x25519Agree(
-        await own.ikDh.sk.getBytes(),
-        await ek.getBytes(),
-      ),
-      dh3: await x25519Agree(
-        await own.spk.sk.getBytes(),
-        await ek.getBytes(),
-      ),
+      dh1: await x25519Agree(await own.spk.sk.getBytes(), peerIk),
+      dh2: await x25519Agree(await own.ikDh.sk.getBytes(), await ek.getBytes()),
+      dh3: await x25519Agree(await own.spk.sk.getBytes(), await ek.getBytes()),
       dh4: dh4,
       ss1: ss1,
       ss2: ss2,
@@ -367,10 +347,7 @@ class PqSessionManager {
   /// IK_responder`. Both sides compute this, so a mismatch here silently
   /// produces different root keys and every message fails to decrypt.
   /// [initiatorIk] is therefore always the *sender* of the first message.
-  List<int> _associatedData(
-    List<int> initiatorIkDh,
-    List<int> responderIkDh,
-  ) {
+  List<int> _associatedData(List<int> initiatorIkDh, List<int> responderIkDh) {
     if (initiatorIkDh.isEmpty || responderIkDh.isEmpty) {
       throw const PqSessionError('associated data needs both identity keys');
     }

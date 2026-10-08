@@ -134,8 +134,7 @@ void main() {
   });
 
   group('the invariant this whole file exists for', () {
-    test('the track used is always the one requested, or nothing is sent',
-        () {
+    test('the track used is always the one requested, or nothing is sent', () {
       final cases = <TrackResolution>[
         for (final requested in Track.values)
           for (final snapshot in <ChatCapabilities?>[
@@ -176,10 +175,7 @@ void main() {
         checkedAt: DateTime(2026),
         reliable: true,
       );
-      final r = resolveTrack(
-        requested: Track.pq,
-        capabilities: verdictSaysPq,
-      );
+      final r = resolveTrack(requested: Track.pq, capabilities: verdictSaysPq);
       expect(r.canSend, isFalse);
       expect(r.blocked, TrackBlocked.pqUnavailable);
     });

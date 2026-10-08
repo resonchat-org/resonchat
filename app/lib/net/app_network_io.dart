@@ -18,9 +18,7 @@ export 'socks5_config.dart';
 
 /// App-wide connector: XMPP TCP and HTTP file PUT/GET both call [openTcp].
 class AppNetwork {
-  AppNetwork({
-    this._config = Socks5ProxyConfig.disabled,
-  });
+  AppNetwork({this._config = Socks5ProxyConfig.disabled});
 
   final _log = Logger('AppNetwork');
   Socks5ProxyConfig _config;
@@ -58,11 +56,7 @@ class AppNetwork {
   }
 
   /// Plain TCP to [host]:[port], optionally via SOCKS5 CONNECT.
-  Future<Socket> openTcp(
-    String host,
-    int port, {
-    Duration? timeout,
-  }) async {
+  Future<Socket> openTcp(String host, int port, {Duration? timeout}) async {
     await waitUntilReady();
     final cfg = _config;
     final wait = timeout ?? const Duration(seconds: 15);
@@ -108,9 +102,7 @@ class AppNetwork {
   http.Client createHttpClient() {
     final io = HttpClient();
     io.connectionFactory = (uri, proxyHost, proxyPort) async {
-      final port = uri.hasPort
-          ? uri.port
-          : (uri.scheme == 'https' ? 443 : 80);
+      final port = uri.hasPort ? uri.port : (uri.scheme == 'https' ? 443 : 80);
       Socket? raw;
       final future = () async {
         raw = await openTcp(uri.host, port);

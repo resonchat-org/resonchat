@@ -17,11 +17,7 @@ class Socks5ProxyConfig {
 
   static const disabled = Socks5ProxyConfig(enabled: false);
 
-  Socks5ProxyConfig copyWith({
-    bool? enabled,
-    String? host,
-    int? port,
-  }) =>
+  Socks5ProxyConfig copyWith({bool? enabled, String? host, int? port}) =>
       Socks5ProxyConfig(
         enabled: enabled ?? this.enabled,
         host: host ?? this.host,

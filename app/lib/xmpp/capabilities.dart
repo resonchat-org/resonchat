@@ -90,8 +90,7 @@ class CapabilityService {
   Future<ChatCapabilities> forChat(JID jid) {
     final key = jid.toBare().toString();
     final cached = _cache[key];
-    if (cached != null &&
-        DateTime.now().difference(cached.checkedAt) < ttl) {
+    if (cached != null && DateTime.now().difference(cached.checkedAt) < ttl) {
       return Future.value(cached);
     }
     return _inflight[key] ??= _resolve(jid).whenComplete(() {
@@ -127,9 +126,8 @@ class CapabilityService {
     // Only devices we can actually deliver to count as PQ-capable; a
     // stale capability cache must not upgrade a mixed chat. Our own PQ
     // device only qualifies once its bundle is actually published.
-    final pq = <int>{...pqDevices.intersection(devices), ...ourPq}..retainWhere(
-          devices.contains,
-        );
+    final pq = <int>{...pqDevices.intersection(devices), ...ourPq}
+      ..retainWhere(devices.contains);
 
     final mode = decideEncMode(
       allDevices: devices,

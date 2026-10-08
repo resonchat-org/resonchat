@@ -373,11 +373,7 @@ String? buildPackUri({
   if (!_isPackItemId(item)) return null;
   final cleanedNode = node.trim();
   if (cleanedNode.isEmpty || cleanedNode.length > 512) return null;
-  return StickerPackUri(
-    publisher: bare,
-    node: cleanedNode,
-    itemId: item,
-  ).uri;
+  return StickerPackUri(publisher: bare, node: cleanedNode, itemId: item).uri;
 }
 
 /// Parses a pack URI, or null when it is not one.
@@ -540,7 +536,16 @@ class StickerFormat {
 /// reported as `image/gif` *and* animated, so the refusal can name the format
 /// instead of saying we could not read it.
 StickerFormat sniffStickerFormat(List<int> bytes) {
-  if (_startsWith(bytes, const <int>[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])) {
+  if (_startsWith(bytes, const <int>[
+    0x89,
+    0x50,
+    0x4E,
+    0x47,
+    0x0D,
+    0x0A,
+    0x1A,
+    0x0A,
+  ])) {
     final animated = _pngIsAnimated(bytes);
     return StickerFormat(
       mediaType: animated ? 'image/apng' : 'image/png',
@@ -780,11 +785,10 @@ enum StickerRefusal {
   /// we can send, and conflating the two would make a pack with a malformed
   /// hash unsendable, which is not what is wrong with it.
   bool get blocksSend => switch (this) {
-        StickerRefusal.missingIntegrity ||
-        StickerRefusal.malformedIntegrity =>
-          false,
-        _ => true,
-      };
+    StickerRefusal.missingIntegrity ||
+    StickerRefusal.malformedIntegrity => false,
+    _ => true,
+  };
 
   /// True when this stops us handing the bytes to a decoder and drawing them in
   /// a bubble.
@@ -794,15 +798,14 @@ enum StickerRefusal {
   /// fallback, and the two hash rules. None of those make a picture dangerous to
   /// look at, and the person who sent it would not understand the refusal.
   bool get blocksDisplay => switch (this) {
-        StickerRefusal.tooLarge ||
-        StickerRefusal.declaredSizeDisagrees ||
-        StickerRefusal.notSquare ||
-        StickerRefusal.noFallbackText ||
-        StickerRefusal.missingIntegrity ||
-        StickerRefusal.malformedIntegrity =>
-          false,
-        _ => true,
-      };
+    StickerRefusal.tooLarge ||
+    StickerRefusal.declaredSizeDisagrees ||
+    StickerRefusal.notSquare ||
+    StickerRefusal.noFallbackText ||
+    StickerRefusal.missingIntegrity ||
+    StickerRefusal.malformedIntegrity => false,
+    _ => true,
+  };
 
   /// True when this stops us keeping the sticker.
   ///
@@ -819,13 +822,12 @@ enum StickerRefusal {
   /// 40 MB file enter the cache wearing a 2 KB declaration, which is precisely
   /// what the guard was for.
   bool get blocksCaching => switch (this) {
-        StickerRefusal.tooLarge ||
-        StickerRefusal.missingIntegrity ||
-        StickerRefusal.malformedIntegrity ||
-        StickerRefusal.declaredSizeDisagrees =>
-          true,
-        _ => false,
-      };
+    StickerRefusal.tooLarge ||
+    StickerRefusal.missingIntegrity ||
+    StickerRefusal.malformedIntegrity ||
+    StickerRefusal.declaredSizeDisagrees => true,
+    _ => false,
+  };
 }
 
 /// One sentence per refusal, in the register the rest of the app uses: the
@@ -835,33 +837,31 @@ enum StickerRefusal {
 /// caller can show a reason without every value having to carry one.
 extension StickerRefusalMessage on StickerRefusal {
   String get reason => switch (this) {
-        StickerRefusal.undecodableMediaType =>
-          'This sticker is not in a format we can display.',
-        StickerRefusal.declaredTypeMismatch =>
-          'This sticker says it is one format and is another.',
-        StickerRefusal.animated =>
-          'This sticker is an animation, which is not shown in a conversation.',
-        StickerRefusal.unknownDimensions =>
-          'This sticker does not say how big it is.',
-        StickerRefusal.absurdDimensions =>
-          'This sticker is too large an image to be drawn safely.',
-        StickerRefusal.tooLarge =>
-          'This sticker is too large to send or to keep.',
-        StickerRefusal.declaredSizeDisagrees =>
-          'This sticker does not match the size it advertises.',
-        StickerRefusal.notSquare =>
-          'Stickers are square; send this as a photo.',
-        StickerRefusal.noFallbackText =>
-          'This sticker has no text to show when the picture cannot be drawn.',
-        StickerRefusal.bytesUnavailable =>
-          'This sticker has not been downloaded yet.',
-        StickerRefusal.unusableSource =>
-          'This sticker cannot be fetched from where it says.',
-        StickerRefusal.missingIntegrity =>
-          'This sticker has no checksum, so it cannot be kept.',
-        StickerRefusal.malformedIntegrity =>
-          'This sticker has a checksum we cannot check, so it cannot be kept.',
-      };
+    StickerRefusal.undecodableMediaType =>
+      'This sticker is not in a format we can display.',
+    StickerRefusal.declaredTypeMismatch =>
+      'This sticker says it is one format and is another.',
+    StickerRefusal.animated =>
+      'This sticker is an animation, which is not shown in a conversation.',
+    StickerRefusal.unknownDimensions =>
+      'This sticker does not say how big it is.',
+    StickerRefusal.absurdDimensions =>
+      'This sticker is too large an image to be drawn safely.',
+    StickerRefusal.tooLarge => 'This sticker is too large to send or to keep.',
+    StickerRefusal.declaredSizeDisagrees =>
+      'This sticker does not match the size it advertises.',
+    StickerRefusal.notSquare => 'Stickers are square; send this as a photo.',
+    StickerRefusal.noFallbackText =>
+      'This sticker has no text to show when the picture cannot be drawn.',
+    StickerRefusal.bytesUnavailable =>
+      'This sticker has not been downloaded yet.',
+    StickerRefusal.unusableSource =>
+      'This sticker cannot be fetched from where it says.',
+    StickerRefusal.missingIntegrity =>
+      'This sticker has no checksum, so it cannot be kept.',
+    StickerRefusal.malformedIntegrity =>
+      'This sticker has a checksum we cannot check, so it cannot be kept.',
+  };
 }
 
 /// What may be done with one sticker.
@@ -872,7 +872,7 @@ extension StickerRefusalMessage on StickerRefusal {
 /// hashes is sent, shown, and not cached.
 class StickerVerdict {
   StickerVerdict(Iterable<StickerRefusal> refusals)
-      : refusals = List<StickerRefusal>.unmodifiable(refusals);
+    : refusals = List<StickerRefusal>.unmodifiable(refusals);
 
   /// Every refusal that applies, in the order they were found.
   ///
@@ -1050,8 +1050,7 @@ String? _normaliseMediaType(String raw) {
   // Parameters are transport detail. A peer that wrote `image/png; charset=x`
   // has not contradicted us, and refusing it would drop an honest sticker.
   final semicolon = text.indexOf(';');
-  final base =
-      semicolon < 0 ? text : text.substring(0, semicolon).trim();
+  final base = semicolon < 0 ? text : text.substring(0, semicolon).trim();
   return _mediaTypeSpellings[base] ?? base;
 }
 
@@ -1123,8 +1122,10 @@ class StickerSendShape {
   final String cleartextBody;
 
   /// The nodes to place in the plaintext that the chosen track encrypts.
-  List<StickerStanzaNode> get encryptedPayloadNodes =>
-      <StickerStanzaNode>[marker, fileSharing];
+  List<StickerStanzaNode> get encryptedPayloadNodes => <StickerStanzaNode>[
+    marker,
+    fileSharing,
+  ];
 
   /// The nodes that may be placed outside the encrypted payload.
   ///

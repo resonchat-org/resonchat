@@ -1,14 +1,14 @@
 // Copyright (C) 2026 resonchat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// OMEMO device persistence: a round-trip must reproduce the exact key
+// Axolotl device persistence: a round-trip must reproduce the exact key
 // material, and a lost/tampered blob must degrade to "no device" rather
 // than crash or, worse, resurrect partial keys.
 
 import 'dart:convert';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:omemo_dart/omemo_dart.dart';
+import 'package:omemo_dart/omemo_dart_axolotl.dart';
 import 'package:test/test.dart';
 import 'package:resonchat/store/omemo_device_store.dart';
 
@@ -35,32 +35,49 @@ void main() {
   });
 
   test('round-trips identity, signed prekey and one-time prekeys', () async {
-    final device =
-        await OmemoDevice.generateNewDevice('me@example.org', opkAmount: 3);
+    final device = await AxolotlDevice.generateNewDevice(
+      'me@example.org',
+      preKeyCount: 3,
+    );
+    final deviceId = await device.deviceId;
     final id = await store.save(device);
-    expect(id, device.id);
+    expect(id, deviceId);
 
     final back = await store.load();
     expect(back, isNotNull);
-    expect(back!.id, device.id);
+    expect(await back!.deviceId, deviceId);
     expect(back.jid, 'me@example.org');
-    expect(back.spkId, device.spkId);
-    expect(back.spkSignature, device.spkSignature);
-    expect(back.opks.keys.toSet(), device.opks.keys.toSet());
+    expect(back.signedPreKeyId, device.signedPreKeyId);
 
-    expect(await back.ik.sk.getBytes(), await device.ik.sk.getBytes());
-    expect(await back.ik.pk.getBytes(), await device.ik.pk.getBytes());
-    expect(await back.spk.sk.getBytes(), await device.spk.sk.getBytes());
-    expect(await back.spk.pk.getBytes(), await device.spk.pk.getBytes());
-    for (final e in device.opks.entries) {
-      expect(await back.opks[e.key]!.sk.getBytes(), await e.value.sk.getBytes());
-      expect(await back.opks[e.key]!.pk.getBytes(), await e.value.pk.getBytes());
+    final origIk = await device.identityKeyPair;
+    final backIk = await back.identityKeyPair;
+    expect(
+      backIk.getPrivateKey().serialize(),
+      origIk.getPrivateKey().serialize(),
+    );
+    expect(
+      backIk.getPublicKey().serialize(),
+      origIk.getPublicKey().serialize(),
+    );
+
+    final origSpk = await device.store.loadSignedPreKey(device.signedPreKeyId);
+    final backSpk = await back.store.loadSignedPreKey(back.signedPreKeyId);
+    expect(backSpk.serialize(), origSpk.serialize());
+
+    final preKeyIds = device.store.preKeyStore.store.keys.toSet();
+    expect(back.store.preKeyStore.store.keys.toSet(), preKeyIds);
+    for (final pkId in preKeyIds) {
+      final orig = await device.store.loadPreKey(pkId);
+      final restored = await back.store.loadPreKey(pkId);
+      expect(restored.serialize(), orig.serialize());
     }
   });
 
   test('stored blob is nonce||ciphertext||mac with a real GCM tag', () async {
-    final device =
-        await OmemoDevice.generateNewDevice('me@example.org', opkAmount: 1);
+    final device = await AxolotlDevice.generateNewDevice(
+      'me@example.org',
+      preKeyCount: 1,
+    );
     await store.save(device);
     final bytes = _b64d(blob['blob']!);
 
@@ -74,22 +91,30 @@ void main() {
   });
 
   test('survives a process restart by reusing the stored blob', () async {
-    final device =
-        await OmemoDevice.generateNewDevice('me@example.org', opkAmount: 1);
+    final device = await AxolotlDevice.generateNewDevice(
+      'me@example.org',
+      preKeyCount: 1,
+    );
     await store.save(device);
 
     // A fresh store over the same storage: the sealing key lives in the
     // keystore, not in the blob, so it must still open.
     final reopened = buildStore(keystore, blob);
     final back = await reopened.load();
-    expect(back!.id, device.id);
-    expect(await back.ik.sk.getBytes(), await device.ik.sk.getBytes());
+    expect(await back!.deviceId, await device.deviceId);
+    final origIk = await device.identityKeyPair;
+    final backIk = await back.identityKeyPair;
+    expect(
+      backIk.getPrivateKey().serialize(),
+      origIk.getPrivateKey().serialize(),
+    );
   });
 
-  test('a lost keystore key discards the blob rather than crashing',
-      () async {
-    final device =
-        await OmemoDevice.generateNewDevice('me@example.org', opkAmount: 1);
+  test('a lost keystore key discards the blob rather than crashing', () async {
+    final device = await AxolotlDevice.generateNewDevice(
+      'me@example.org',
+      preKeyCount: 1,
+    );
     await store.save(device);
 
     // Simulate a reinstall: blob survives, keystore key does not.
@@ -98,8 +123,10 @@ void main() {
   });
 
   test('a tampered blob is discarded instead of returned', () async {
-    final device =
-        await OmemoDevice.generateNewDevice('me@example.org', opkAmount: 1);
+    final device = await AxolotlDevice.generateNewDevice(
+      'me@example.org',
+      preKeyCount: 1,
+    );
     await store.save(device);
 
     final bytes = _b64d(blob['blob']!);
@@ -113,8 +140,10 @@ void main() {
   });
 
   test('a truncated blob is discarded', () async {
-    final device =
-        await OmemoDevice.generateNewDevice('me@example.org', opkAmount: 1);
+    final device = await AxolotlDevice.generateNewDevice(
+      'me@example.org',
+      preKeyCount: 1,
+    );
     await store.save(device);
     blob['blob'] = _b64e(_b64d(blob['blob']!).sublist(0, 8));
     expect(await store.load(), isNull);
@@ -134,8 +163,7 @@ class _MemoryKeystore implements FlutterSecureStorage {
     WebOptions? webOptions,
     MacOsOptions? mOptions,
     WindowsOptions? wOptions,
-  }) async =>
-      values[key];
+  }) async => values[key];
 
   @override
   Future<void> write({

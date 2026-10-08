@@ -14,7 +14,11 @@ import 'package:resonchat/omemo/track.dart';
 import 'package:resonchat/store/database.dart';
 
 /// Mirrors what the settings UI does when the track changes.
-Future<void> setTrackForTest(AppDatabase db, String chatJid, Track? track) async {
+Future<void> setTrackForTest(
+  AppDatabase db,
+  String chatJid,
+  Track? track,
+) async {
   await db.setTrackOverride(chatJid, track);
   await db.clearPlaintextAcknowledgement(chatJid);
 }
@@ -106,8 +110,7 @@ void main() {
       );
     });
 
-    test('an override does not leak into a different conversation',
-        () async {
+    test('an override does not leak into a different conversation', () async {
       await db.upsertChat('a@example.org');
       await db.upsertChat('b@example.org');
       await db.setTrackOverride('a@example.org', Track.none);
@@ -150,8 +153,7 @@ void main() {
       expect(await db.plaintextAcknowledged('bob@example.org'), isFalse);
     });
 
-    test('acknowledging silences it, and only for that conversation',
-        () async {
+    test('acknowledging silences it, and only for that conversation', () async {
       await db.acknowledgePlaintext('bob@example.org');
       expect(await db.plaintextAcknowledged('bob@example.org'), isTrue);
       expect(await db.plaintextAcknowledged('carol@example.org'), isFalse);

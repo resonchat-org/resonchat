@@ -41,20 +41,20 @@ class TgColors extends ThemeExtension<TgColors> {
   /// intentionally *not* stock Telegram blue so the apps are not
   /// confusable (docs/05 §6).
   const TgColors.light()
-      : barBackground = const Color(0xFF517DA2),
-        pageBackground = const Color(0xFFFFFFFF),
-        peerBubble = const Color(0xFFFFFFFF),
-        ownBubble = const Color(0xFFEFFDE0),
-        ownBubbleFrom = const Color(0xFFE2F7D1),
-        textPrimary = const Color(0xFF000000),
-        textSecondary = const Color(0xFFA1AAB3),
-        accent = const Color(0xFF3D9BD4),
-        separator = const Color(0xFFE5E5E5),
-        unreadBadge = const Color(0xFF4FAE4E),
-        online = const Color(0xFF4FAE4E),
-        dateSeparator = const Color(0x19000000),
-        dateSeparatorText = const Color(0xFF6D7F8F),
-        danger = const Color(0xFFE53935);
+    : barBackground = const Color(0xFF517DA2),
+      pageBackground = const Color(0xFFFFFFFF),
+      peerBubble = const Color(0xFFFFFFFF),
+      ownBubble = const Color(0xFFEFFDE0),
+      ownBubbleFrom = const Color(0xFFE2F7D1),
+      textPrimary = const Color(0xFF000000),
+      textSecondary = const Color(0xFFA1AAB3),
+      accent = const Color(0xFF3D9BD4),
+      separator = const Color(0xFFE5E5E5),
+      unreadBadge = const Color(0xFF4FAE4E),
+      online = const Color(0xFF4FAE4E),
+      dateSeparator = const Color(0x19000000),
+      dateSeparatorText = const Color(0xFF6D7F8F),
+      danger = const Color(0xFFE53935);
 
   /// Dark theme. Telegram derives these at runtime from the accent colour
   /// (`Theme.java` applies `changeColorAccent` against `isDarkTheme`)
@@ -62,20 +62,20 @@ class TgColors extends ThemeExtension<TgColors> {
   /// hand-tuned equivalents sampled from the night theme's rendered
   /// output, not copies of a literal table.
   const TgColors.dark()
-      : barBackground = const Color(0xFF242F3D),
-        pageBackground = const Color(0xFF17212B),
-        peerBubble = const Color(0xFF182533),
-        ownBubble = const Color(0xFF2B5278),
-        ownBubbleFrom = const Color(0xFF38536F),
-        textPrimary = const Color(0xFFFFFFFF),
-        textSecondary = const Color(0xFF6D7F8F),
-        accent = const Color(0xFF5EB5F7),
-        separator = const Color(0xFF101921),
-        unreadBadge = const Color(0xFF4FAE4E),
-        online = const Color(0xFF4FAE4E),
-        dateSeparator = const Color(0x66000000),
-        dateSeparatorText = const Color(0xFF8A9BA8),
-        danger = const Color(0xFFEF5350);
+    : barBackground = const Color(0xFF242F3D),
+      pageBackground = const Color(0xFF17212B),
+      peerBubble = const Color(0xFF182533),
+      ownBubble = const Color(0xFF2B5278),
+      ownBubbleFrom = const Color(0xFF38536F),
+      textPrimary = const Color(0xFFFFFFFF),
+      textSecondary = const Color(0xFF6D7F8F),
+      accent = const Color(0xFF5EB5F7),
+      separator = const Color(0xFF101921),
+      unreadBadge = const Color(0xFF4FAE4E),
+      online = const Color(0xFF4FAE4E),
+      dateSeparator = const Color(0x66000000),
+      dateSeparatorText = const Color(0xFF8A9BA8),
+      danger = const Color(0xFFEF5350);
 
   final Color barBackground;
   final Color pageBackground;
@@ -143,8 +143,11 @@ class TgColors extends ThemeExtension<TgColors> {
       unreadBadge: Color.lerp(unreadBadge, other.unreadBadge, t)!,
       online: Color.lerp(online, other.online, t)!,
       dateSeparator: Color.lerp(dateSeparator, other.dateSeparator, t)!,
-      dateSeparatorText:
-          Color.lerp(dateSeparatorText, other.dateSeparatorText, t)!,
+      dateSeparatorText: Color.lerp(
+        dateSeparatorText,
+        other.dateSeparatorText,
+        t,
+      )!,
       danger: Color.lerp(danger, other.danger, t)!,
     );
   }

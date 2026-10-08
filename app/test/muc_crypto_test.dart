@@ -22,20 +22,17 @@ final _now = DateTime.utc(2026, 5, 1, 12);
 
 /// An occupant whose real JID the room publishes — the common case.
 OccupantDevice dev(String nick, {bool reachable = true}) => OccupantDevice(
-      nick: nick,
-      realJid: '$nick@example.org',
-      bundleReachable: reachable,
-    );
+  nick: nick,
+  realJid: '$nick@example.org',
+  bundleReachable: reachable,
+);
 
 /// An occupant the room does not identify.
 ///
 /// XEP-0045 permits this and plenty of rooms are configured that way, so it is
 /// a state to be handled, not an error to be logged.
-OccupantDevice anon(String nick, {bool reachable = true}) => OccupantDevice(
-      nick: nick,
-      realJid: null,
-      bundleReachable: reachable,
-    );
+OccupantDevice anon(String nick, {bool reachable = true}) =>
+    OccupantDevice(nick: nick, realJid: null, bundleReachable: reachable);
 
 /// A snapshot read [age] before [_now].
 OccupantSnapshot room(
@@ -43,34 +40,34 @@ OccupantSnapshot room(
   bool complete = true,
   bool joined = true,
   Duration age = Duration.zero,
-}) =>
-    OccupantSnapshot(
-      occupants: occupants,
-      readAt: _now.subtract(age),
-      complete: complete,
-      joined: joined,
-    );
+}) => OccupantSnapshot(
+  occupants: occupants,
+  readAt: _now.subtract(age),
+  complete: complete,
+  joined: joined,
+);
 
 TrackResolution send({
   required Track requested,
   required OccupantSnapshot snapshot,
   String? ourNick = 'me',
-}) =>
-    resolveRoomSend(
-      requested: requested,
-      snapshot: snapshot,
-      ourNick: ourNick,
-      now: _now,
-    );
+}) => resolveRoomSend(
+  requested: requested,
+  snapshot: snapshot,
+  ourNick: ourNick,
+  now: _now,
+);
 
 RoomUnreadable audience(OccupantSnapshot snapshot, {String? ourNick = 'me'}) =>
     unreadableOccupants(snapshot: snapshot, ourNick: ourNick, now: _now);
 
-const alice =
-    Occupant(nick: 'alice', affiliation: 'none', role: 'participant');
+const alice = Occupant(nick: 'alice', affiliation: 'none', role: 'participant');
 const quiet = Occupant(nick: 'quiet', affiliation: 'none', role: 'visitor');
-const banned =
-    Occupant(nick: 'banned', affiliation: 'outcast', role: 'participant');
+const banned = Occupant(
+  nick: 'banned',
+  affiliation: 'outcast',
+  role: 'participant',
+);
 
 PrivateRoomSend priv({
   required OccupantSnapshot snapshot,
@@ -79,16 +76,15 @@ PrivateRoomSend priv({
   String targetNick = 'alice',
   Occupant? target = alice,
   Track requested = Track.standard,
-}) =>
-    resolvePrivateToOccupant(
-      roomJid: roomJid,
-      ourNick: ourNick,
-      targetNick: targetNick,
-      target: target,
-      snapshot: snapshot,
-      requested: requested,
-      now: _now,
-    );
+}) => resolvePrivateToOccupant(
+  roomJid: roomJid,
+  ourNick: ourNick,
+  targetNick: targetNick,
+  target: target,
+  snapshot: snapshot,
+  requested: requested,
+  now: _now,
+);
 
 /// Every room state the rest of this file can describe, in one list.
 final _rooms = <OccupantSnapshot>[
@@ -170,10 +166,7 @@ void main() {
         requested: Track.standard,
         snapshot: room(const [], complete: false),
       );
-      final empty = send(
-        requested: Track.standard,
-        snapshot: room(const []),
-      );
+      final empty = send(requested: Track.standard, snapshot: room(const []));
       expect(unreadable.blocked, TrackBlocked.unknownPeers);
       expect(empty.blocked, TrackBlocked.unreachableDevices);
     });
@@ -187,10 +180,10 @@ void main() {
       // no longer true.
       final r = send(
         requested: Track.standard,
-        snapshot: room(
-          [dev('me'), dev('alice')],
-          age: const Duration(hours: 1),
-        ),
+        snapshot: room([
+          dev('me'),
+          dev('alice'),
+        ], age: const Duration(hours: 1)),
       );
       expect(r.canSend, isFalse);
       expect(r.blocked, TrackBlocked.unknownPeers);
@@ -202,10 +195,10 @@ void main() {
       // exist for any age that divides evenly.
       final justInside = send(
         requested: Track.standard,
-        snapshot: room(
-          [dev('me'), dev('alice')],
-          age: OccupantSnapshot.maxAge - const Duration(milliseconds: 1),
-        ),
+        snapshot: room([
+          dev('me'),
+          dev('alice'),
+        ], age: OccupantSnapshot.maxAge - const Duration(milliseconds: 1)),
       );
       final exactly = send(
         requested: Track.standard,
@@ -321,32 +314,34 @@ void main() {
       expect(r.blocked, TrackBlocked.unreachableDevices);
     });
 
-    test('a bundle that answered for an unpublished JID is still unreachable',
-        () {
-      // The constructor is allowed to hold this contradiction so a mapping
-      // mistake upstream is visible instead of normalised away. The decision
-      // must refuse it anyway.
-      expect(
-        const OccupantDevice(
-          nick: 'alice',
-          realJid: null,
-          bundleReachable: true,
-        ).isReachable,
-        isFalse,
-      );
-      final r = send(
-        requested: Track.standard,
-        snapshot: room([
-          dev('me'),
+    test(
+      'a bundle that answered for an unpublished JID is still unreachable',
+      () {
+        // The constructor is allowed to hold this contradiction so a mapping
+        // mistake upstream is visible instead of normalised away. The decision
+        // must refuse it anyway.
+        expect(
           const OccupantDevice(
             nick: 'alice',
             realJid: null,
             bundleReachable: true,
-          ),
-        ]),
-      );
-      expect(r.canSend, isFalse);
-    });
+          ).isReachable,
+          isFalse,
+        );
+        final r = send(
+          requested: Track.standard,
+          snapshot: room([
+            dev('me'),
+            const OccupantDevice(
+              nick: 'alice',
+              realJid: null,
+              bundleReachable: true,
+            ),
+          ]),
+        );
+        expect(r.canSend, isFalse);
+      },
+    );
   });
 
   group('who cannot read it', () {
@@ -388,9 +383,7 @@ void main() {
       // The sentence the composer shows is about people. Counting devices
       // would read "3 people in this room cannot read this" for one person
       // with three dead bundles.
-      final u = audience(
-        room([dev('me'), dev('bob', reachable: false)]),
-      );
+      final u = audience(room([dev('me'), dev('bob', reachable: false)]));
       expect(u.count, 1);
       expect(u.summary, contains('1 person in this room'));
     });
@@ -405,18 +398,18 @@ void main() {
       expect(u.summary, contains('carol'));
     });
 
-    test('knows nobody when the roster is partial, even with nobody on the list',
-        () {
-      // An incomplete read that found nobody unreadable has established that
-      // we looked at part of the room. Saying "everyone can read this" would
-      // be a room-wide guarantee from a roster that was never read.
-      final u = audience(
-        room([dev('me'), dev('alice')], complete: false),
-      );
-      expect(u.occupants, isEmpty);
-      expect(u.knowsEveryone, isFalse);
-      expect(u.summary, contains('could not read the whole room'));
-    });
+    test(
+      'knows nobody when the roster is partial, even with nobody on the list',
+      () {
+        // An incomplete read that found nobody unreadable has established that
+        // we looked at part of the room. Saying "everyone can read this" would
+        // be a room-wide guarantee from a roster that was never read.
+        final u = audience(room([dev('me'), dev('alice')], complete: false));
+        expect(u.occupants, isEmpty);
+        expect(u.knowsEveryone, isFalse);
+        expect(u.summary, contains('could not read the whole room'));
+      },
+    );
 
     test('knows nobody when we are not in the room', () {
       // The audience of a room we are not in is not the empty set; it is
@@ -429,10 +422,11 @@ void main() {
       // "At least these" is true even when the check was incomplete, so a
       // partial answer beats no answer.
       final u = audience(
-        room(
-          [dev('me'), dev('bob', reachable: false), dev('alice')],
-          age: const Duration(hours: 1),
-        ),
+        room([
+          dev('me'),
+          dev('bob', reachable: false),
+          dev('alice'),
+        ], age: const Duration(hours: 1)),
       );
       expect(u.nicks, ['bob']);
       expect(u.knowsEveryone, isFalse);
@@ -484,10 +478,7 @@ void main() {
     });
 
     test('a nickname nobody holds is not present', () {
-      final p = priv(
-        snapshot: room([dev('me'), dev('bob')]),
-        target: null,
-      );
+      final p = priv(snapshot: room([dev('me'), dev('bob')]), target: null);
       expect(p.canSend, isFalse);
       expect(p.refusal, PrivateRefusal.notPresent);
       expect(p.address, isNull);
@@ -499,10 +490,10 @@ void main() {
       // encrypted to A in front of B, and the ciphertext would be the one
       // thing protecting it.
       final p = priv(
-        snapshot: room(
-          [dev('me'), dev('alice')],
-          age: const Duration(hours: 1),
-        ),
+        snapshot: room([
+          dev('me'),
+          dev('alice'),
+        ], age: const Duration(hours: 1)),
       );
       expect(p.canSend, isFalse);
       expect(p.refusal, PrivateRefusal.audienceUnknown);
@@ -533,8 +524,7 @@ void main() {
       expect(p.toJid, isNull);
     });
 
-    test('a roster that names them but whose devices were never mapped is unknown',
-        () {
+    test('a roster that names them but whose devices were never mapped is unknown', () {
       // A mapping gap is not a positive finding of "this person has no
       // devices", so it must not be reported as one — that would tell the user
       // to go and fix a device that may be perfectly fine.
@@ -590,8 +580,11 @@ void main() {
       // "this person asked not to be addressed" gets overridden by a caller
       // that read the wrong field.
       for (final p in [
-        priv(snapshot: room([dev('me'), dev('quiet')]),
-            targetNick: 'quiet', target: quiet),
+        priv(
+          snapshot: room([dev('me'), dev('quiet')]),
+          targetNick: 'quiet',
+          target: quiet,
+        ),
         priv(snapshot: room([dev('me'), dev('bob')]), target: null),
         priv(snapshot: room([dev('me'), dev('alice')], joined: false)),
         priv(snapshot: room([dev('me'), dev('alice')], complete: false)),
@@ -650,7 +643,11 @@ void main() {
         final snapshot = _rooms[i];
         final r = send(requested: Track.standard, snapshot: snapshot);
         if (!r.canSend) continue;
-        expect(audience(snapshot).knowsEveryone, isTrue, reason: 'snapshot #$i');
+        expect(
+          audience(snapshot).knowsEveryone,
+          isTrue,
+          reason: 'snapshot #$i',
+        );
         expect(
           snapshot.occupants.any((o) => o.nick != 'me' && o.isReachable),
           isTrue,
@@ -682,11 +679,7 @@ void main() {
         final snapshot = _rooms[i];
         final known =
             snapshot.joined && snapshot.complete && !snapshot.isStale(_now);
-        expect(
-          audience(snapshot).knowsEveryone,
-          known,
-          reason: 'snapshot #$i',
-        );
+        expect(audience(snapshot).knowsEveryone, known, reason: 'snapshot #$i');
       }
     });
   });

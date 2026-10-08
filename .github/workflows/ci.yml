@@ -72,7 +72,8 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y protobuf-compiler ffmpeg
+          sudo apt-get install -y \
+            protobuf-compiler ffmpeg cmake ninja-build
           dart pub global activate protoc_plugin
           export PATH="$PATH:$HOME/.pub-cache/bin"
           (cd packages/moxlib && dart pub get)
@@ -90,7 +91,14 @@ jobs:
 
       - name: Build APK
         working-directory: app
-        run: ./tool/build_android.sh --debug
+        # build_android.sh builds liboqs (NDK) when build/liboqs is missing.
+        run: |
+          set -euo pipefail
+          export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$(ls -d "$ANDROID_HOME"/ndk/* | sort -V | tail -1)}"
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
+          ./tool/build_android.sh --debug
 
   build-appimage:
     name: Build Linux AppImage

@@ -80,8 +80,10 @@ void main() {
 
     test('the sendable set is a subset of the displayable one', () {
       final displayable = allEmoji.map((e) => e.emoji).toSet();
-      expect(sendableEmoji.map((e) => e.emoji).toSet(),
-          everyElement(isIn(displayable)));
+      expect(
+        sendableEmoji.map((e) => e.emoji).toSet(),
+        everyElement(isIn(displayable)),
+      );
     });
 
     test('the two lists partition the catalogue, and neither is empty', () {
@@ -120,8 +122,7 @@ void main() {
       // to hold single code points only, and a reaction picker must read from
       // `sendableEmoji` rather than from a category.
       final sendableCategories = EmojiCategory.values.where(isCategorySendable);
-      expect(sendableCategories,
-          [EmojiCategory.recent, EmojiCategory.smileys]);
+      expect(sendableCategories, [EmojiCategory.recent, EmojiCategory.smileys]);
     });
   });
 
@@ -178,8 +179,11 @@ void main() {
       // capital in it is a name a query can never equal.
       for (final entry in allEmoji) {
         expect(entry.name, isNotEmpty, reason: entry.emoji);
-        expect(RegExp(r'^[a-z]+( [a-z]+)*$').hasMatch(entry.name), isTrue,
-            reason: entry.emoji);
+        expect(
+          RegExp(r'^[a-z]+( [a-z]+)*$').hasMatch(entry.name),
+          isTrue,
+          reason: entry.emoji,
+        );
       }
     });
 
@@ -253,8 +257,10 @@ void main() {
     test('an explicit limit is the head of the full result', () {
       final all = searchEmoji('a');
       expect(all.length, greaterThan(3));
-      expect(searchEmoji('a', limit: 3).map((e) => e.emoji),
-          all.take(3).map((e) => e.emoji));
+      expect(
+        searchEmoji('a', limit: 3).map((e) => e.emoji),
+        all.take(3).map((e) => e.emoji),
+      );
     });
 
     test('a limit of nothing returns nothing', () {

@@ -53,15 +53,8 @@ ReplyFallback buildReplyFallback(String quote, String body) {
     // of nothing, reading as a truncation of the message above it.
     return ReplyFallback(wireBody: body, start: 0, end: 0);
   }
-  final quoted = quote
-      .split('\n')
-      .map((line) => '> $line\n')
-      .join();
-  return ReplyFallback(
-    wireBody: '$quoted$body',
-    start: 0,
-    end: quoted.length,
-  );
+  final quoted = quote.split('\n').map((line) => '> $line\n').join();
+  return ReplyFallback(wireBody: '$quoted$body', start: 0, end: quoted.length);
 }
 
 /// Builds the XEP-0461 elements for a reply.

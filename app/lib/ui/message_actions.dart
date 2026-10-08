@@ -210,9 +210,7 @@ class SelectionBar extends StatelessWidget {
               ),
               Expanded(
                 child: Text(
-                  count == 0
-                      ? l10n.selectMessages
-                      : l10n.selectedCount(count),
+                  count == 0 ? l10n.selectMessages : l10n.selectedCount(count),
                   style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
                 ),
               ),

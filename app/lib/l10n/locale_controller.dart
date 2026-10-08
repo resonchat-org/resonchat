@@ -13,10 +13,7 @@ import '../state/providers.dart';
 const prefLocaleKey = 'pref_locale';
 
 /// Supported app locales. English is the fallback / default.
-const supportedAppLocales = <Locale>[
-  Locale('en'),
-  Locale('zh'),
-];
+const supportedAppLocales = <Locale>[Locale('en'), Locale('zh')];
 
 /// Resolves a stored preference value to a [Locale], or null for system.
 Locale? localeFromPref(String? raw) {
@@ -41,8 +38,8 @@ String prefFromLocale(Locale? locale) {
 /// Explicit locale override, or null to follow the platform.
 final localeOverrideProvider =
     StateNotifierProvider<LocaleOverrideNotifier, Locale?>((ref) {
-  return LocaleOverrideNotifier(ref);
-});
+      return LocaleOverrideNotifier(ref);
+    });
 
 class LocaleOverrideNotifier extends StateNotifier<Locale?> {
   LocaleOverrideNotifier(this._ref) : super(null) {

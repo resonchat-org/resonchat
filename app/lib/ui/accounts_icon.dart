@@ -10,11 +10,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 ///
 /// Prefer a single-color silhouette SVG; [color] tints it via [BlendMode.srcIn].
 class AccountsIcon extends StatelessWidget {
-  const AccountsIcon({
-    super.key,
-    this.color = Colors.white,
-    this.size = 24,
-  });
+  const AccountsIcon({super.key, this.color = Colors.white, this.size = 24});
 
   final Color color;
   final double size;

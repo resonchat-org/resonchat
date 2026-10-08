@@ -76,10 +76,7 @@ class _JoinRoomSheetState extends ConsumerState<JoinRoomSheet> {
     final features = await xmpp.queryRoomFeatures(roomJid);
     final encryptable = isPrivateAndNonAnonymous(features);
     // Conversations fetchMembers after join when private+non-anonymous.
-    await xmpp.refreshRoomMembership(
-      roomJid,
-      privateNonAnonymous: encryptable,
-    );
+    await xmpp.refreshRoomMembership(roomJid, privateNonAnonymous: encryptable);
     await db.upsertChat(
       roomJid,
       isGroup: true,
@@ -145,10 +142,7 @@ class _JoinRoomSheetState extends ConsumerState<JoinRoomSheet> {
           ),
           if (_error != null) ...[
             const SizedBox(height: 12),
-            Text(
-              _error!,
-              style: TextStyle(color: tg.danger, fontSize: 13),
-            ),
+            Text(_error!, style: TextStyle(color: tg.danger, fontSize: 13)),
           ],
           const SizedBox(height: 16),
           FilledButton(
@@ -174,7 +168,8 @@ class MemberList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tg = context.tg;
-    final sorted = [...chat.occupants]..sort((a, b) {
+    final sorted = [...chat.occupants]
+      ..sort((a, b) {
         if (a.isModerator != b.isModerator) return a.isModerator ? -1 : 1;
         return a.nick.toLowerCase().compareTo(b.nick.toLowerCase());
       });
@@ -232,10 +227,7 @@ class MemberList extends StatelessWidget {
 /// private conversation with them. Returns 'leave' as a sentinel for the leave
 /// button — a string overload is not elegant, but the alternative is a result
 /// enum threaded through a modal sheet, and both callers are in this file.
-Future<RoomSheetResult?> showRoomSheet(
-  BuildContext context,
-  GroupChat chat,
-) {
+Future<RoomSheetResult?> showRoomSheet(BuildContext context, GroupChat chat) {
   return showModalBottomSheet<RoomSheetResult>(
     context: context,
     isScrollControlled: true,
@@ -330,8 +322,7 @@ class PinnedSheet extends ConsumerWidget {
                 style: Theme.of(context).textTheme.titleMedium,
               ),
             ),
-            for (final id in pinnedIds)
-              _pinnedTile(context, ref, tg, id),
+            for (final id in pinnedIds) _pinnedTile(context, ref, tg, id),
           ],
         );
       },

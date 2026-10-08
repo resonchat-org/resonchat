@@ -51,11 +51,7 @@ Future<void> main() async {
 
   await hub.connectAll();
 
-  runApp(
-    ProviderScope(
-      child: App(hasAccounts: hub.hasAccounts),
-    ),
-  );
+  runApp(ProviderScope(child: App(hasAccounts: hub.hasAccounts)));
 }
 
 class App extends ConsumerWidget {
@@ -89,9 +85,8 @@ class App extends ConsumerWidget {
         }
         return const Locale('en');
       },
-      builder: (context, child) => AppWiring(
-        child: child ?? const SizedBox.shrink(),
-      ),
+      builder: (context, child) =>
+          AppWiring(child: child ?? const SizedBox.shrink()),
       initialRoute: hasAccounts ? '/chats' : '/login',
       onGenerateRoute: (settings) {
         switch (settings.name) {
@@ -108,9 +103,7 @@ class App extends ConsumerWidget {
             );
           case '/chat':
             final arg = settings.arguments;
-            final key = arg is ChatRef
-                ? arg.key
-                : (arg is String ? arg : '');
+            final key = arg is ChatRef ? arg.key : (arg is String ? arg : '');
             return MaterialPageRoute<void>(
               settings: settings,
               builder: (_) => ChatPage(chatJid: key),
@@ -118,16 +111,14 @@ class App extends ConsumerWidget {
           case '/profile':
             return MaterialPageRoute<void>(
               settings: settings,
-              builder: (_) => ProfilePage(
-                chatJid: settings.arguments! as String,
-              ),
+              builder: (_) =>
+                  ProfilePage(chatJid: settings.arguments! as String),
             );
           case '/encryption':
             return MaterialPageRoute<void>(
               settings: settings,
-              builder: (_) => SecurityPage(
-                chatJid: settings.arguments! as String,
-              ),
+              builder: (_) =>
+                  SecurityPage(chatJid: settings.arguments! as String),
             );
           case '/settings':
             return MaterialPageRoute<void>(

@@ -72,8 +72,7 @@ class SearchResults extends StatelessWidget {
     }
     return ListView.separated(
       itemCount: hits.length,
-      separatorBuilder: (_, _) =>
-          Divider(height: 0.5, color: tg.separator),
+      separatorBuilder: (_, _) => Divider(height: 0.5, color: tg.separator),
       itemBuilder: (context, i) {
         final hit = hits[i];
         return ListTile(
@@ -130,10 +129,7 @@ TextSpan highlightNeedle(
       spans.add(TextSpan(text: text.substring(cursor, at), style: base));
     }
     spans.add(
-      TextSpan(
-        text: text.substring(at, at + lowerNeedle.length),
-        style: match,
-      ),
+      TextSpan(text: text.substring(at, at + lowerNeedle.length), style: match),
     );
     cursor = at + lowerNeedle.length;
   }
@@ -177,10 +173,8 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     if (!mounted) return;
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => ChatPage(
-          chatJid: key,
-          focusMessageAnchor: hit.messageAnchor,
-        ),
+        builder: (_) =>
+            ChatPage(chatJid: key, focusMessageAnchor: hit.messageAnchor),
       ),
     );
   }
@@ -192,9 +186,10 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     final results = widget.chatJid == null
         ? ref.watch(messageSearchProvider(_needle))
         : ref.watch(
-            chatMessageSearchProvider(
-              (chatJid: widget.chatJid!, needle: _needle),
-            ),
+            chatMessageSearchProvider((
+              chatJid: widget.chatJid!,
+              needle: _needle,
+            )),
           );
 
     return Scaffold(
@@ -238,17 +233,10 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                 messageAnchor: unreadAnchorOf(m),
               ),
           ];
-          return SearchResults(
-            hits: hits,
-            running: false,
-            onOpen: _openHit,
-          );
+          return SearchResults(hits: hits, running: false, onOpen: _openHit);
         },
-        loading: () => SearchResults(
-          hits: const [],
-          running: true,
-          onOpen: (_) {},
-        ),
+        loading: () =>
+            SearchResults(hits: const [], running: true, onOpen: (_) {}),
         error: (e, _) => Center(
           child: Text(
             l10n.searchFailed('$e'),
@@ -315,12 +303,14 @@ class ForwardTargetSheet extends ConsumerWidget {
                         itemBuilder: (context, i) {
                           final entry = list[i];
                           final chat = entry.chat;
-                          final title =
-                              chat.title.isEmpty ? chat.jid : chat.title;
+                          final title = chat.title.isEmpty
+                              ? chat.jid
+                              : chat.title;
                           return ListTile(
                             leading: CircleAvatar(
-                              backgroundColor:
-                                  tg.accent.withValues(alpha: 0.18),
+                              backgroundColor: tg.accent.withValues(
+                                alpha: 0.18,
+                              ),
                               child: Text(
                                 title.isEmpty ? '?' : title[0].toUpperCase(),
                                 style: TextStyle(color: tg.accent),
@@ -339,8 +329,7 @@ class ForwardTargetSheet extends ConsumerWidget {
                           );
                         },
                       ),
-                loading: () =>
-                    const Center(child: CircularProgressIndicator()),
+                loading: () => const Center(child: CircularProgressIndicator()),
                 error: (e, _) => Center(child: Text('$e')),
               ),
             ),

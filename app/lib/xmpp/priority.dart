@@ -279,9 +279,9 @@ class PublishLists {
 
   /// Both nodes were read and hold nothing: the user publishes no lists.
   const PublishLists.empty()
-      : ignore = const [],
-        priorities = const [],
-        complete = true;
+    : ignore = const [],
+      priorities = const [],
+      complete = true;
 
   /// Neither node could be read.
   ///
@@ -290,9 +290,9 @@ class PublishLists {
   /// nothing" is a fact about the user and "we did not look" is a fact about
   /// us, and only the first is worth telling the user.
   const PublishLists.unread()
-      : ignore = const [],
-        priorities = const [],
-        complete = false;
+    : ignore = const [],
+      priorities = const [],
+      complete = false;
 
   final List<IgnoreEntry> ignore;
   final List<PriorityEntry> priorities;

@@ -27,10 +27,7 @@ void main() {
 
     test('drops the resource, since the roster is per account', () {
       expect(bareJidOf('user@example.org/phone'), 'user@example.org');
-      expect(
-        bareJidOf('user@example.org/Some.Resource'),
-        'user@example.org',
-      );
+      expect(bareJidOf('user@example.org/Some.Resource'), 'user@example.org');
     });
 
     test('trims surrounding whitespace', () {
@@ -70,14 +67,13 @@ void main() {
       bool carbon = false,
       String from = 'peer@example.org/phone',
       Track? track,
-    }) =>
-        InboundMessage(
-          from: JID.fromString(from),
-          body: body,
-          stanzaId: stanzaId,
-          isCarbonCopy: carbon,
-          track: track,
-        );
+    }) => InboundMessage(
+      from: JID.fromString(from),
+      body: body,
+      stanzaId: stanzaId,
+      isCarbonCopy: carbon,
+      track: track,
+    );
 
     test('an ordinary message is stored once', () async {
       await storeInbound(db, message(body: 'hello'));
@@ -90,7 +86,10 @@ void main() {
     });
 
     test('a carbon is not stored at all', () async {
-      await storeInbound(db, message(body: 'mine', stanzaId: 'c1', carbon: true));
+      await storeInbound(
+        db,
+        message(body: 'mine', stanzaId: 'c1', carbon: true),
+      );
       final rows = await db.watchMessages('peer@example.org').first;
       expect(rows, isEmpty);
       // The chat itself is still created, so the conversation appears.
@@ -119,21 +118,23 @@ void main() {
       expect(self, isEmpty);
     });
 
-    test('an undecryptable message stores a placeholder, never ciphertext',
-        () async {
-      await storeInbound(
-        db,
-        InboundMessage(
-          from: JID.fromString('peer@example.org/phone'),
-          body: '',
-          stanzaId: 's2',
-          encryptionError: 'no session',
-        ),
-      );
-      final rows = await db.watchMessages('peer@example.org').first;
-      expect(rows.single.body, isEmpty);
-      expect(rows.single.encMode, 'error');
-    });
+    test(
+      'an undecryptable message stores a placeholder, never ciphertext',
+      () async {
+        await storeInbound(
+          db,
+          InboundMessage(
+            from: JID.fromString('peer@example.org/phone'),
+            body: '',
+            stanzaId: 's2',
+            encryptionError: 'no session',
+          ),
+        );
+        final rows = await db.watchMessages('peer@example.org').first;
+        expect(rows.single.body, isEmpty);
+        expect(rows.single.encMode, 'error');
+      },
+    );
 
     // docs/10 §4.3. Before the track was recorded, every inbound message was
     // stored as 'none' — so a message from Conversations arrived in the UI
@@ -157,16 +158,18 @@ void main() {
         );
       });
 
-      test('a standard OMEMO message is stored as OM, not as plaintext',
-          () async {
-        expect(
-          await storedTrack(
-            'om1',
-            message(body: 'hi', stanzaId: 'om1', track: Track.standard),
-          ),
-          EncModeToken.standard.wire,
-        );
-      });
+      test(
+        'a standard OMEMO message is stored as OM, not as plaintext',
+        () async {
+          expect(
+            await storedTrack(
+              'om1',
+              message(body: 'hi', stanzaId: 'om1', track: Track.standard),
+            ),
+            EncModeToken.standard.wire,
+          );
+        },
+      );
 
       test('a message with no declaration is stored as plaintext', () async {
         // No <encryption/> element means the sender made no claim. Calling

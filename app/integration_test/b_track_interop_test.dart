@@ -53,8 +53,7 @@ void main() {
   const passA = String.fromEnvironment('RESONCHAT_A_PASS');
   const jidB = String.fromEnvironment('RESONCHAT_B_JID');
   const passB = String.fromEnvironment('RESONCHAT_B_PASS');
-  const waitSeconds =
-      int.fromEnvironment('RESONCHAT_A_WAIT', defaultValue: 90);
+  const waitSeconds = int.fromEnvironment('RESONCHAT_A_WAIT', defaultValue: 90);
 
   // Two clients on one account, rather than two accounts on two servers.
   //
@@ -72,12 +71,17 @@ void main() {
   final peerJidB = sameAccount ? jidA : jidB;
   final peerPassB = sameAccount ? passA : passB;
 
-  testWidgets('two clients exchange a post-quantum message across servers',
-      (tester) async {
+  testWidgets('two clients exchange a post-quantum message across servers', (
+    tester,
+  ) async {
     expect(jidA, isNotEmpty, reason: 'pass RESONCHAT_A_JID');
     if (!sameAccount) {
       expect(jidB, isNotEmpty, reason: 'pass RESONCHAT_B_JID');
-      expect(jidA, isNot(jidB), reason: 'the two ends must be distinct accounts');
+      expect(
+        jidA,
+        isNot(jidB),
+        reason: 'the two ends must be distinct accounts',
+      );
     }
 
     // Fine-grained logging, but only keeping what this test is about: the
@@ -100,8 +104,11 @@ void main() {
     final b = _makeClient();
 
     try {
-      final okA =
-          await a.service.connect(jid: jidA, password: passA, reconnect: false);
+      final okA = await a.service.connect(
+        jid: jidA,
+        password: passA,
+        reconnect: false,
+      );
       check('A connected', okA, a.service.lastError ?? '');
       expect(okA, isTrue);
       final okB = await b.service.connect(
@@ -132,11 +139,11 @@ void main() {
       await a.service.sendAvailablePresence();
       await b.service.sendAvailablePresence();
       if (!sameAccount) {
-        await a.service
-            .connection!.getManagerById<RosterManager>(rosterManager)!
+        await a.service.connection!
+            .getManagerById<RosterManager>(rosterManager)!
             .addToRoster(otherOfA.toString(), 'pq-interop');
-        await b.service
-            .connection!.getManagerById<RosterManager>(rosterManager)!
+        await b.service.connection!
+            .getManagerById<RosterManager>(rosterManager)!
             .addToRoster(otherOfB.toString(), 'pq-interop');
         await a.service.requestSubscription(otherOfA);
         await b.service.requestSubscription(otherOfB);
@@ -152,9 +159,12 @@ void main() {
       // --- B-track devices ----------------------------------------------
       await a.service.ensureOmemoDevice();
       await b.service.ensureOmemoDevice();
-      final pqA = await a.bTrack.initialise(JID.fromString(jidA).toBare().toString());
-      final pqB =
-          await b.bTrack.initialise(JID.fromString(peerJidB).toBare().toString());
+      final pqA = await a.bTrack.initialise(
+        JID.fromString(jidA).toBare().toString(),
+      );
+      final pqB = await b.bTrack.initialise(
+        JID.fromString(peerJidB).toBare().toString(),
+      );
       check('A published a PQ device', pqA, 'device ${a.bTrack.device?.id}');
       check('B published a PQ device', pqB, 'device ${b.bTrack.device?.id}');
       expect(pqA, isTrue);
@@ -164,19 +174,15 @@ void main() {
       // will encrypt: the track refuses to send a message the peer cannot
       // open, so "no devices yet" would silently fall back to the A track.
       var visible = false;
-      final discoverDeadline =
-          DateTime.now().add(const Duration(seconds: waitSeconds));
+      final discoverDeadline = DateTime.now().add(
+        const Duration(seconds: waitSeconds),
+      );
       while (DateTime.now().isBefore(discoverDeadline) && !visible) {
-        final devicesB =
-            await a.service.tracks!.loadPqDevices(otherOfA);
+        final devicesB = await a.service.tracks!.loadPqDevices(otherOfA);
         visible = devicesB.isNotEmpty;
         if (!visible) await Future<void>.delayed(const Duration(seconds: 2));
       }
-      check(
-        "A can see B's PQ device",
-        visible,
-        'node $pomemoDevicesXmlns',
-      );
+      check("A can see B's PQ device", visible, 'node $pomemoDevicesXmlns');
       expect(visible, isTrue, reason: 'B track would decline to send');
 
       // The send path refuses to send when it knows nothing about the peer,
@@ -191,8 +197,8 @@ void main() {
           ourDeviceId: () async => ourOmemoId,
           ourPqDevices: () async =>
               (a.bTrack.ready && a.bTrack.device?.id != null)
-                  ? {a.bTrack.device!.id}
-                  : const <int>{},
+              ? {a.bTrack.device!.id}
+              : const <int>{},
         ),
       );
       b.service.attachCapabilities(
@@ -216,14 +222,18 @@ void main() {
       final subB = b.service.inbound.listen((m) {
         toB.add(m);
         // ignore: avoid_print
-        print('[B] from=${m.from} body="${m.body}" track=${m.track} '
-            'err=${m.encryptionError} carbon=${m.isCarbonCopy}');
+        print(
+          '[B] from=${m.from} body="${m.body}" track=${m.track} '
+          'err=${m.encryptionError} carbon=${m.isCarbonCopy}',
+        );
       });
       final subA = a.service.inbound.listen((m) {
         toA.add(m);
         // ignore: avoid_print
-        print('[A] from=${m.from} body="${m.body}" track=${m.track} '
-            'err=${m.encryptionError} carbon=${m.isCarbonCopy}');
+        print(
+          '[A] from=${m.from} body="${m.body}" track=${m.track} '
+          'err=${m.encryptionError} carbon=${m.isCarbonCopy}',
+        );
       });
 
       // --- send on the B track -------------------------------------------
@@ -234,16 +244,21 @@ void main() {
       final aSees = await a.service.tracks!.loadPqDevices(otherOfA);
       final seenIds = aSees.map((d) => d.id).toSet();
       // ignore: avoid_print
-      print('A sees ${seenIds.length} B device(s); '
-          'B current ${b.bTrack.device?.id} among them: '
-          '${seenIds.contains(b.bTrack.device?.id)}');
+      print(
+        'A sees ${seenIds.length} B device(s); '
+        'B current ${b.bTrack.device?.id} among them: '
+        '${seenIds.contains(b.bTrack.device?.id)}',
+      );
 
       const body = 'pq-round-trip-Ω 42 · 后量子';
       // A control message on the A track, so "nothing arrived" can be told
       // apart from "nothing arrived *because of the PQ track*".
       const control = 'atrack-control-Ω 42 · 对照';
-      final sentPq =
-          await a.service.sendOnTrack(otherOfA, body, track: Track.pq);
+      final sentPq = await a.service.sendOnTrack(
+        otherOfA,
+        body,
+        track: Track.pq,
+      );
 
       // Whether PQ is sendable depends on the peer's *whole* device list being
       // reachable, and a long-lived test account has accumulated device ids
@@ -256,7 +271,7 @@ void main() {
       } else {
         check(
           'an unreachable device in the list blocks PQ rather than '
-          'downgrading',
+              'downgrading',
           sentPq.blocked == TrackBlocked.pqUnavailable,
           'blocked: ${sentPq.blocked?.name}',
         );
@@ -324,9 +339,7 @@ void main() {
           'the ciphertext was not also wrapped in standard OMEMO',
           // Double encryption would work between two copies of this client
           // and still be a protocol bug: a PQ-only reader would see nothing.
-          !pqStanzas.any(
-            (s) => s.contains(emeOmemo) || s.contains(emeOmemo2),
-          ),
+          !pqStanzas.any((s) => s.contains(emeOmemo) || s.contains(emeOmemo2)),
         );
         check(
           'no plaintext body leaked alongside the ciphertext',
@@ -350,7 +363,7 @@ void main() {
           toB.isEmpty
               ? 'nothing arrived (${sent.length} stanza(s) sent)'
               : '${toB.length} inbound, bodies '
-                  '${toB.map((m) => m.body).toSet().toList()}',
+                    '${toB.map((m) => m.body).toSet().toList()}',
         );
         // The label comes off the EME declaration, so it is independent of
         // whether we opened the payload: a PQ message that failed to decrypt
@@ -358,7 +371,9 @@ void main() {
         check(
           'B labelled it as the PQ track',
           toB.any((m) => m.track == Track.pq),
-          toB.isEmpty ? 'nothing arrived' : '${toB.map((m) => m.track).toList()}',
+          toB.isEmpty
+              ? 'nothing arrived'
+              : '${toB.map((m) => m.track).toList()}',
         );
       }
       // Our own carbon copy coming back decrypted proves the local half too.
@@ -396,8 +411,10 @@ void main() {
     } finally {
       await a.service.disconnect();
       await b.service.disconnect();
-      final failed =
-          results.entries.where((e) => !e.value).map((e) => e.key).toList();
+      final failed = results.entries
+          .where((e) => !e.value)
+          .map((e) => e.key)
+          .toList();
       if (failed.isNotEmpty) {
         // ignore: avoid_print
         print('FAILED CHECKS: ${failed.join(', ')}');

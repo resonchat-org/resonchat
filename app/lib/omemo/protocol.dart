@@ -41,7 +41,7 @@ enum EncMode {
 
 /// Short UI label for [mode], without emoji (icons draw the lock).
 String encModeLabel(EncMode mode) => switch (mode) {
-      EncMode.pqOmemo => 'PQ',
-      EncMode.standardOmemo => 'OMEMO',
-      EncMode.none => 'Unencrypted',
-    };
+  EncMode.pqOmemo => 'PQ',
+  EncMode.standardOmemo => 'OMEMO',
+  EncMode.none => 'Unencrypted',
+};

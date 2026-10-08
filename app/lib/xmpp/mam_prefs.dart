@@ -122,12 +122,12 @@ enum MamRetention {
 
   /// The token this policy appears as on the wire.
   String get token => switch (this) {
-        MamRetention.never => 'never',
-        MamRetention.onlyMuc => 'only-muc',
-        MamRetention.roster => 'roster',
-        MamRetention.always => 'always',
-        MamRetention.unlimited => 'unlimited',
-      };
+    MamRetention.never => 'never',
+    MamRetention.onlyMuc => 'only-muc',
+    MamRetention.roster => 'roster',
+    MamRetention.always => 'always',
+    MamRetention.unlimited => 'unlimited',
+  };
 
   /// Reads a wire token, or null for one we do not know.
   ///
@@ -137,13 +137,13 @@ enum MamRetention {
   /// never chose — and one chosen on their behalf, which is the only kind of
   /// choice that is worse than no choice at all.
   static MamRetention? parse(String token) => switch (token) {
-        'never' => MamRetention.never,
-        'only-muc' => MamRetention.onlyMuc,
-        'roster' => MamRetention.roster,
-        'always' => MamRetention.always,
-        'unlimited' => MamRetention.unlimited,
-        _ => null,
-      };
+    'never' => MamRetention.never,
+    'only-muc' => MamRetention.onlyMuc,
+    'roster' => MamRetention.roster,
+    'always' => MamRetention.always,
+    'unlimited' => MamRetention.unlimited,
+    _ => null,
+  };
 }
 
 /// What the server has been told to keep, and for how long.
@@ -157,15 +157,9 @@ enum MamRetention {
 ///   * [unrecognised] only — the server said what, in words we do not have.
 ///   * neither — the server stated nothing here.
 class RetentionPolicy {
-  RetentionPolicy({
-    this.policy,
-    this.unrecognised,
-    this.maxDays,
-  }) {
+  RetentionPolicy({this.policy, this.unrecognised, this.maxDays}) {
     if (policy != null && unrecognised != null) {
-      throw ArgumentError(
-        'a policy is either understood or not, not both',
-      );
+      throw ArgumentError('a policy is either understood or not, not both');
     }
     final days = maxDays;
     if (days != null && days < 1) {
@@ -233,7 +227,8 @@ class RetentionPolicy {
   int get hashCode => Object.hash(policy, unrecognised, maxDays);
 
   @override
-  String toString() => 'RetentionPolicy(policy: $policy, '
+  String toString() =>
+      'RetentionPolicy(policy: $policy, '
       'unrecognised: $unrecognised, maxDays: $maxDays)';
 }
 
@@ -254,14 +249,13 @@ class MamPrefs {
     String? resource,
     RetentionPolicy? defaultRetention,
     Map<String, RetentionPolicy> overrides = const {},
-  }) =>
-      MamPrefs._(
-        resource: resource,
-        defaultRetention: defaultRetention,
-        overrides: {
-          for (final entry in overrides.entries) bareJid(entry.key): entry.value,
-        },
-      );
+  }) => MamPrefs._(
+    resource: resource,
+    defaultRetention: defaultRetention,
+    overrides: {
+      for (final entry in overrides.entries) bareJid(entry.key): entry.value,
+    },
+  );
 
   const MamPrefs._({
     this.resource,
@@ -300,10 +294,10 @@ class MamPrefs {
 
   /// This account's preferences with the default replaced.
   MamPrefs withDefault(RetentionPolicy? policy) => MamPrefs(
-        resource: resource,
-        defaultRetention: policy,
-        overrides: overrides,
-      );
+    resource: resource,
+    defaultRetention: policy,
+    overrides: overrides,
+  );
 
   /// This account's preferences with [conversation]'s override set or removed.
   ///
@@ -345,8 +339,7 @@ class MamPrefs {
 RetentionPolicy? effectiveRetention({
   required MamPrefs prefs,
   required String conversation,
-}) =>
-    prefs.overrideFor(conversation) ?? prefs.defaultRetention;
+}) => prefs.overrideFor(conversation) ?? prefs.defaultRetention;
 
 /// Whether [prefs] may be used as the picture for [resource].
 ///
@@ -441,8 +434,7 @@ class MamPrefsElement {
   /// asserted.
   String toXml() {
     final attrs = [
-      for (final entry in attributes.entries)
-        "${entry.key}='${entry.value}'",
+      for (final entry in attributes.entries) "${entry.key}='${entry.value}'",
     ];
     final open = "<$name${attrs.isEmpty ? '' : ' ${attrs.join(' ')}'}";
     if (children.isEmpty) return '$open/>';
@@ -460,10 +452,7 @@ class MamPrefsElement {
 /// server cannot do this at all, the other says everything is at its default —
 /// and conflating them either hides a control that works or invents one that
 /// does not.
-MamPrefs? parseMamPrefs(
-  MamPrefsElement element, {
-  String? resource,
-}) {
+MamPrefs? parseMamPrefs(MamPrefsElement element, {String? resource}) {
   if (element.name != MamPrefsForm.prefsElement) return null;
   if (element.namespace != MamPrefsForm.namespace) return null;
 
@@ -494,7 +483,8 @@ MamPrefs? parseMamPrefs(
     );
   }
 
-  final stated = element.attributes.containsKey(MamPrefsForm.attrDefault) ||
+  final stated =
+      element.attributes.containsKey(MamPrefsForm.attrDefault) ||
       element.attributes.containsKey(MamPrefsForm.attrMax);
   return MamPrefs(
     // The IQ's `to` is authoritative; the element's own `to` is a fallback for
@@ -571,16 +561,15 @@ MamPrefsElement toPrefsElement(MamPrefs prefs) {
 }
 
 Map<String, String> _policyAttributes(RetentionPolicy policy) => {
-      // An unrecognised token goes back out as itself rather than being dropped.
-      // Dropping it would turn the server's word into silence on the round trip
-      // and, if the caller echoed the result back, into a `set` that quietly
-      // removes a setting this client cannot even name.
-      if (policy.unrecognised != null)
-        MamPrefsForm.attrDefault: policy.unrecognised!,
-      if (policy.policy != null)
-        MamPrefsForm.attrDefault: policy.policy!.token,
-      if (policy.maxDays != null) MamPrefsForm.attrMax: '${policy.maxDays}',
-    };
+  // An unrecognised token goes back out as itself rather than being dropped.
+  // Dropping it would turn the server's word into silence on the round trip
+  // and, if the caller echoed the result back, into a `set` that quietly
+  // removes a setting this client cannot even name.
+  if (policy.unrecognised != null)
+    MamPrefsForm.attrDefault: policy.unrecognised!,
+  if (policy.policy != null) MamPrefsForm.attrDefault: policy.policy!.token,
+  if (policy.maxDays != null) MamPrefsForm.attrMax: '${policy.maxDays}',
+};
 
 /// What we know about whether this server stores these preferences.
 ///
@@ -652,8 +641,7 @@ MamPrefsSupport supportFromFeatures(
 bool mayWritePreferences({
   required MamPrefsSupport support,
   required MamPrefs? current,
-}) =>
-    support == MamPrefsSupport.supported && current != null;
+}) => support == MamPrefsSupport.supported && current != null;
 
 /// Why a change needs saying out loud before it is applied.
 enum MamChangeKind {
@@ -672,7 +660,10 @@ enum MamChangeKind {
 
 /// Something the user must be told before a retention change is applied.
 class MamChangeWarning {
-  const MamChangeWarning(this.kind, this.title, this.consequence, {
+  const MamChangeWarning(
+    this.kind,
+    this.title,
+    this.consequence, {
     required this.needsConfirmation,
   });
 
@@ -681,25 +672,25 @@ class MamChangeWarning {
   /// this file allowed to be certain about the server's future behaviour, and
   /// even here it says what the server was *asked* to do.
   const MamChangeWarning.shorterRetention()
-      : this(
-          MamChangeKind.shorterRetention,
-          'Shortening retention does not delete what the server already has',
-          'This applies from now on. Messages the server has already stored are '
-              'not deleted because of it — the server drops them only as they '
-              'age past the new limit, in its own time, and it may never do '
-              'that at all.',
-          needsConfirmation: true,
-        );
+    : this(
+        MamChangeKind.shorterRetention,
+        'Shortening retention does not delete what the server already has',
+        'This applies from now on. Messages the server has already stored are '
+            'not deleted because of it — the server drops them only as they '
+            'age past the new limit, in its own time, and it may never do '
+            'that at all.',
+        needsConfirmation: true,
+      );
 
   const MamChangeWarning.unknownCurrent()
-      : this(
-          MamChangeKind.unknownCurrent,
-          'We do not know what this server is already keeping',
-          'It did not answer when we asked, so this change cannot be called an '
-              'increase or a decrease. Nothing on this screen tells you what '
-              'is already stored.',
-          needsConfirmation: false,
-        );
+    : this(
+        MamChangeKind.unknownCurrent,
+        'We do not know what this server is already keeping',
+        'It did not answer when we asked, so this change cannot be called an '
+            'increase or a decrease. Nothing on this screen tells you what '
+            'is already stored.',
+        needsConfirmation: false,
+      );
 
   /// [support] distinguishes "cannot" from "have not found out", because the
   /// user's next move is different: for one there is no setting to change, for
@@ -707,26 +698,26 @@ class MamChangeWarning {
   factory MamChangeWarning.mayNotTakeEffect(MamPrefsSupport support) =>
       switch (support) {
         MamPrefsSupport.unsupported => const MamChangeWarning(
-            MamChangeKind.mayNotTakeEffect,
-            'This server does not keep archive preferences',
-            'It did not advertise the feature, so there is no setting here to '
-                'change. This app cannot tell the server to keep less; only '
-                'whoever runs the server can.',
-            needsConfirmation: true,
-          ),
+          MamChangeKind.mayNotTakeEffect,
+          'This server does not keep archive preferences',
+          'It did not advertise the feature, so there is no setting here to '
+              'change. This app cannot tell the server to keep less; only '
+              'whoever runs the server can.',
+          needsConfirmation: true,
+        ),
         // An unknown-support warning is deliberately not asking for
         // confirmation. It is not confirming a change, it is reporting that we
         // cannot confirm one, and a dialog that blocks every edit while the
         // server is quiet trains the user to dismiss dialogs — including the
         // one above, which is the one that matters.
         _ => const MamChangeWarning(
-            MamChangeKind.mayNotTakeEffect,
-            'We could not find out whether this server keeps archive '
-                'preferences',
-            'The setting may not be doing anything. Ask again when you are '
-                'connected: if this still says so, it did not take effect.',
-            needsConfirmation: false,
-          ),
+          MamChangeKind.mayNotTakeEffect,
+          'We could not find out whether this server keeps archive '
+              'preferences',
+          'The setting may not be doing anything. Ask again when you are '
+              'connected: if this still says so, it did not take effect.',
+          needsConfirmation: false,
+        ),
       };
 
   final MamChangeKind kind;
@@ -783,13 +774,12 @@ const String mamPrefsCaveat =
 /// easy to lose in a string literal.
 extension MamRetentionWording on MamRetention {
   String get archives => switch (this) {
-        MamRetention.never => 'none of your messages',
-        MamRetention.onlyMuc => 'only your group chat messages',
-        MamRetention.roster =>
-          'only messages with people on your contact list',
-        MamRetention.always => 'a copy of all your messages',
-        MamRetention.unlimited => 'a copy of all your messages',
-      };
+    MamRetention.never => 'none of your messages',
+    MamRetention.onlyMuc => 'only your group chat messages',
+    MamRetention.roster => 'only messages with people on your contact list',
+    MamRetention.always => 'a copy of all your messages',
+    MamRetention.unlimited => 'a copy of all your messages',
+  };
 }
 
 /// One sentence about the whole account: what the server has been told to keep,
@@ -827,7 +817,7 @@ String conversationPrivacySummary(MamPrefs prefs, String conversation) {
       : _summarise(
           prefs.defaultRetention,
           'In this conversation, as everywhere else, the server has been told '
-              'to keep',
+          'to keep',
         );
 }
 

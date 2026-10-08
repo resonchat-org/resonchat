@@ -13,7 +13,6 @@
 // both ends are code we control, so the mutual subscription conversations.im
 // insists on is established automatically instead of by hand in a GUI.
 
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:logging/logging.dart';
@@ -41,11 +40,11 @@ void main() {
   const passA = String.fromEnvironment('RESONCHAT_A_PASS');
   const jidB = String.fromEnvironment('RESONCHAT_B_JID');
   const passB = String.fromEnvironment('RESONCHAT_B_PASS');
-  const waitSeconds =
-      int.fromEnvironment('RESONCHAT_A_WAIT', defaultValue: 90);
+  const waitSeconds = int.fromEnvironment('RESONCHAT_A_WAIT', defaultValue: 90);
 
-  testWidgets('two clients exchange an OMEMO message across servers',
-      (tester) async {
+  testWidgets('two clients exchange an OMEMO message across servers', (
+    tester,
+  ) async {
     expect(jidA, isNotEmpty, reason: 'pass RESONCHAT_A_JID');
     expect(jidB, isNotEmpty, reason: 'pass RESONCHAT_B_JID');
     expect(jidA, isNot(jidB), reason: 'the two ends must be distinct accounts');
@@ -89,10 +88,12 @@ void main() {
       // delivery failure rather than a setup mistake.
       final otherOfA = JID.fromString(jidB);
       final otherOfB = JID.fromString(jidA);
-      final rosterA =
-          a.connection!.getManagerById<RosterManager>(rosterManager)!;
-      final rosterB =
-          b.connection!.getManagerById<RosterManager>(rosterManager)!;
+      final rosterA = a.connection!.getManagerById<RosterManager>(
+        rosterManager,
+      )!;
+      final rosterB = b.connection!.getManagerById<RosterManager>(
+        rosterManager,
+      )!;
       await rosterA.addToRoster(otherOfB.toBare().toString(), 'interop');
       await rosterB.addToRoster(otherOfA.toBare().toString(), 'interop');
       await a.sendAvailablePresence();
@@ -199,16 +200,20 @@ void main() {
       check(
         'A can read the bundle B published',
         bundleB != null && omemoBundleLooksSane(bundleB),
-        bundleB == null ? 'nothing' : 'spkId ${bundleB.spkId}, '
-            '${bundleB.opksEncoded.length} prekeys',
+        bundleB == null
+            ? 'nothing'
+            : 'spkId ${bundleB.spkId}, '
+                  '${bundleB.opksEncoded.length} prekeys',
       );
       expect(bundleB, isNotNull);
       final bundleA = await _fetchBundle(a, otherOfB, idA);
       check(
         'B can read the bundle A published',
         bundleA != null && omemoBundleLooksSane(bundleA),
-        bundleA == null ? 'nothing' : 'spkId ${bundleA.spkId}, '
-            '${bundleA.opksEncoded.length} prekeys',
+        bundleA == null
+            ? 'nothing'
+            : 'spkId ${bundleA.spkId}, '
+                  '${bundleA.opksEncoded.length} prekeys',
       );
       expect(bundleA, isNotNull);
 
@@ -275,7 +280,7 @@ void main() {
         toB.isEmpty
             ? 'nothing arrived (${traces.length} stanza(s) seen)'
             : '${toB.length} inbound, bodies '
-                '${toB.map((m) => m.body).toSet().toList()}',
+                  '${toB.map((m) => m.body).toSet().toList()}',
       );
       check(
         'A decrypted the message B sent',
@@ -283,7 +288,7 @@ void main() {
         toA.isEmpty
             ? 'nothing arrived'
             : '${toA.length} inbound, bodies '
-                '${toA.map((m) => m.body).toSet().toList()}',
+                  '${toA.map((m) => m.body).toSet().toList()}',
       );
       // A carbon copy of our own message arriving back and decrypting proves
       // the full local path too: our ciphertext, our ratchet, our device.
@@ -292,7 +297,7 @@ void main() {
         toA.every((m) => m.encryptionError == null) &&
             toB.every((m) => m.encryptionError == null),
         'A: ${toA.map((m) => m.encryptionError).toList()} '
-        'B: ${toB.map((m) => m.encryptionError).toList()}',
+            'B: ${toB.map((m) => m.encryptionError).toList()}',
       );
     } finally {
       await a.disconnect();

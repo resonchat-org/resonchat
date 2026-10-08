@@ -60,18 +60,19 @@ void main() {
     }
 
     Stanza messageFrom(String jid) => Stanza.message(
-          from: jid,
-          to: 'me@example.org/phone',
-          id: 'm1',
-          type: 'chat',
-        );
+      from: jid,
+      to: 'me@example.org/phone',
+      id: 'm1',
+      type: 'chat',
+    );
 
     test('cancels and skips, so nothing downstream can open it', () async {
       // `cancel` alone stops the remaining pre-handlers but the incoming
       // handlers still run, and MessageManager would emit an event for a
       // message nothing decrypted. `skip` is what actually stops it.
-      final state =
-          await run(messageFrom('bad@example.org'), {'bad@example.org'});
+      final state = await run(messageFrom('bad@example.org'), {
+        'bad@example.org',
+      });
       expect(state.cancel, isTrue);
       expect(state.skip, isTrue);
     });
@@ -80,15 +81,15 @@ void main() {
       // The OMEMO handler decrypts. A handler that runs after it has already
       // used the keys, and the guarantee is gone however the rest reads.
       final manager = BlockedInboundManager(() => const {}, (_) {});
-      final priority =
-          manager.getIncomingPreStanzaHandlers().single.priority;
+      final priority = manager.getIncomingPreStanzaHandlers().single.priority;
       // moxxmpp's OmemoManager registers its incoming pre-handler at 0.
       expect(priority, greaterThan(0));
     });
 
     test('leaves everyone else alone', () async {
-      final state =
-          await run(messageFrom('good@example.org'), {'bad@example.org'});
+      final state = await run(messageFrom('good@example.org'), {
+        'bad@example.org',
+      });
       expect(state.cancel, isFalse);
       expect(state.skip, isFalse);
     });
@@ -96,10 +97,9 @@ void main() {
     test('matches on the bare JID, not the resource', () async {
       // Blocking is about a person. Blocking `bad@example.org/phone` and being
       // let through by `bad@example.org/laptop` would be no protection at all.
-      final state = await run(
-        messageFrom('bad@example.org/phone'),
-        {'bad@example.org'},
-      );
+      final state = await run(messageFrom('bad@example.org/phone'), {
+        'bad@example.org',
+      });
       expect(state.skip, isTrue);
     });
 
@@ -133,8 +133,7 @@ void main() {
         (await handler.callback(
           stanza,
           StanzaHandlerData(false, false, stanza, TypedMap()),
-        ))
-            .skip,
+        )).skip,
         isTrue,
       );
       blocked = {};
@@ -142,8 +141,7 @@ void main() {
         (await handler.callback(
           stanza,
           StanzaHandlerData(false, false, stanza, TypedMap()),
-        ))
-            .skip,
+        )).skip,
         isFalse,
       );
     });

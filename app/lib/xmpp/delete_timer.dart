@@ -93,12 +93,12 @@ enum DeleteInterval {
 
   /// The short name for a picker row.
   String get label => switch (this) {
-        DeleteInterval.off => 'Off',
-        DeleteInterval.thirtySeconds => '30 seconds',
-        DeleteInterval.oneHour => '1 hour',
-        DeleteInterval.oneDay => '1 day',
-        DeleteInterval.oneWeek => '1 week',
-      };
+    DeleteInterval.off => 'Off',
+    DeleteInterval.thirtySeconds => '30 seconds',
+    DeleteInterval.oneHour => '1 hour',
+    DeleteInterval.oneDay => '1 day',
+    DeleteInterval.oneWeek => '1 week',
+  };
 
   /// Reads a stored token, resolving anything unrecognised to [off].
   ///
@@ -109,12 +109,12 @@ enum DeleteInterval {
   /// spelling all land on "off", which is the state a fresh install is in
   /// anyway.
   static DeleteInterval fromStored(String? value) => switch (value) {
-        '30s' => DeleteInterval.thirtySeconds,
-        '1h' => DeleteInterval.oneHour,
-        '1d' => DeleteInterval.oneDay,
-        '1w' => DeleteInterval.oneWeek,
-        _ => DeleteInterval.off,
-      };
+    '30s' => DeleteInterval.thirtySeconds,
+    '1h' => DeleteInterval.oneHour,
+    '1d' => DeleteInterval.oneDay,
+    '1w' => DeleteInterval.oneWeek,
+    _ => DeleteInterval.off,
+  };
 }
 
 /// Wording for the interval picker.
@@ -126,17 +126,17 @@ enum DeleteInterval {
 /// privacy story.
 extension DeleteIntervalText on DeleteInterval {
   String get description => switch (this) {
-        DeleteInterval.off =>
-          'Keep everything. Nothing is ever deleted from this device.',
-        DeleteInterval.thirtySeconds =>
-          'Delete each message from this device 30 seconds after it arrives.',
-        DeleteInterval.oneHour =>
-          'Delete each message from this device an hour after it arrives.',
-        DeleteInterval.oneDay =>
-          'Delete each message from this device a day after it arrives.',
-        DeleteInterval.oneWeek =>
-          'Delete each message from this device a week after it arrives.',
-      };
+    DeleteInterval.off =>
+      'Keep everything. Nothing is ever deleted from this device.',
+    DeleteInterval.thirtySeconds =>
+      'Delete each message from this device 30 seconds after it arrives.',
+    DeleteInterval.oneHour =>
+      'Delete each message from this device an hour after it arrives.',
+    DeleteInterval.oneDay =>
+      'Delete each message from this device a day after it arrives.',
+    DeleteInterval.oneWeek =>
+      'Delete each message from this device a week after it arrives.',
+  };
 
   /// The consequence a user cannot guess on their own.
   ///
@@ -297,9 +297,7 @@ class DeleteBatch {
   const DeleteBatch({required this.ids, required this.moreRemaining});
 
   /// Nothing to delete, without having looked at anything.
-  const DeleteBatch.empty()
-      : ids = const <int>[],
-        moreRemaining = false;
+  const DeleteBatch.empty() : ids = const <int>[], moreRemaining = false;
 
   /// The rows to delete in this sweep, at most [kMaxDeleteBatch] of them.
   ///

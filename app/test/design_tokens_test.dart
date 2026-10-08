@@ -23,9 +23,7 @@ import 'package:resonchat/ui/design_tokens.dart';
 double _luminance(Color c) {
   double channel(double v) =>
       v <= 0.03928 ? v / 12.92 : math.pow((v + 0.055) / 1.055, 2.4).toDouble();
-  return 0.2126 * channel(c.r) +
-      0.7152 * channel(c.g) +
-      0.0722 * channel(c.b);
+  return 0.2126 * channel(c.r) + 0.7152 * channel(c.g) + 0.0722 * channel(c.b);
 }
 
 /// Contrast ratio between two opaque colours, 1.0 to 21.0.
@@ -229,8 +227,14 @@ void main() {
 
   group('the spacing scale is a scale', () {
     test('every step is a multiple of the unit', () {
-      const steps = [XDimens.xs, XDimens.sm, XDimens.md, XDimens.lg,
-        XDimens.xl, XDimens.xxl];
+      const steps = [
+        XDimens.xs,
+        XDimens.sm,
+        XDimens.md,
+        XDimens.lg,
+        XDimens.xl,
+        XDimens.xxl,
+      ];
       for (final step in steps) {
         expect(step % XDimens.unit, 0, reason: '$step is off-grid');
       }
@@ -238,8 +242,14 @@ void main() {
 
     test('and strictly increasing', () {
       // A scale that is not monotonic means one of the two names is lying.
-      const steps = [XDimens.xs, XDimens.sm, XDimens.md, XDimens.lg,
-        XDimens.xl, XDimens.xxl];
+      const steps = [
+        XDimens.xs,
+        XDimens.sm,
+        XDimens.md,
+        XDimens.lg,
+        XDimens.xl,
+        XDimens.xxl,
+      ];
       for (var i = 1; i < steps.length; i++) {
         expect(steps[i], greaterThan(steps[i - 1]));
       }
@@ -250,11 +260,20 @@ void main() {
       // smallest. The assertion was originally written the other way round,
       // which would have passed for any scale that happened to be increasing —
       // including one whose names were shuffled.
-      const type = [XDimens.typeDisplay, XDimens.typeTitle, XDimens.typeHeadline,
-        XDimens.typeBody, XDimens.typeLabel, XDimens.typeCaption];
+      const type = [
+        XDimens.typeDisplay,
+        XDimens.typeTitle,
+        XDimens.typeHeadline,
+        XDimens.typeBody,
+        XDimens.typeLabel,
+        XDimens.typeCaption,
+      ];
       for (var i = 1; i < type.length; i++) {
-        expect(type[i], lessThan(type[i - 1]),
-            reason: 'step $i is not smaller than the one before it');
+        expect(
+          type[i],
+          lessThan(type[i - 1]),
+          reason: 'step $i is not smaller than the one before it',
+        );
       }
     });
 

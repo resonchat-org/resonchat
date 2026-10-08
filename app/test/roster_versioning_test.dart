@@ -51,13 +51,10 @@ class _SeededRosterStateManager extends BaseRosterStateManager {
 void main() {
   group('roster versioning does not look like an empty roster', () {
     test('an unchanged roster still yields the cached entries', () async {
-      final manager = _SeededRosterStateManager(
-        const [
-          XmppRosterItem(jid: 'a@example.org', subscription: 'both'),
-          XmppRosterItem(jid: 'b@example.org', subscription: 'from'),
-        ],
-        'v1',
-      );
+      final manager = _SeededRosterStateManager(const [
+        XmppRosterItem(jid: 'a@example.org', subscription: 'both'),
+        XmppRosterItem(jid: 'b@example.org', subscription: 'from'),
+      ], 'v1');
 
       // This is exactly what moxxmpp reports when the server says
       // "nothing changed": an empty delta carrying the same version.
@@ -70,23 +67,25 @@ void main() {
       // the app must render.
       final cached = await manager.loadRosterCache();
       expect(cached.roster.length, 2);
-      expect(
-        cached.roster.map((i) => i.jid).toSet(),
-        {'a@example.org', 'b@example.org'},
-      );
+      expect(cached.roster.map((i) => i.jid).toSet(), {
+        'a@example.org',
+        'b@example.org',
+      });
       expect(cached.version, 'v1');
     });
 
     test('a removal is applied to the cached roster', () async {
-      final manager = _SeededRosterStateManager(
-        const [
-          XmppRosterItem(jid: 'a@example.org', subscription: 'both'),
-          XmppRosterItem(jid: 'gone@example.org', subscription: 'both'),
-        ],
-        'v1',
-      );
+      final manager = _SeededRosterStateManager(const [
+        XmppRosterItem(jid: 'a@example.org', subscription: 'both'),
+        XmppRosterItem(jid: 'gone@example.org', subscription: 'both'),
+      ], 'v1');
 
-      await manager.commitRoster('v2', const ['gone@example.org'], const [], const []);
+      await manager.commitRoster(
+        'v2',
+        const ['gone@example.org'],
+        const [],
+        const [],
+      );
 
       final cached = await manager.loadRosterCache();
       expect(cached.roster.map((i) => i.jid), ['a@example.org']);
@@ -94,35 +93,35 @@ void main() {
     });
 
     test('an update replaces rather than duplicates', () async {
-      final manager = _SeededRosterStateManager(
-        const [XmppRosterItem(jid: 'a@example.org', subscription: 'from')],
-        'v1',
-      );
+      final manager = _SeededRosterStateManager(const [
+        XmppRosterItem(jid: 'a@example.org', subscription: 'from'),
+      ], 'v1');
 
-      await manager.commitRoster(
-        'v2',
-        const [],
-        const [XmppRosterItem(jid: 'a@example.org', subscription: 'both')],
-        const [],
-      );
+      await manager.commitRoster('v2', const [], const [
+        XmppRosterItem(jid: 'a@example.org', subscription: 'both'),
+      ], const []);
 
       final cached = await manager.loadRosterCache();
       expect(cached.roster.length, 1);
       expect(cached.roster.single.subscription, 'both');
     });
 
-    test('the store returns its own copy, so callers cannot corrupt it',
-        () async {
-      final manager = _SeededRosterStateManager(
-        const [XmppRosterItem(jid: 'a@example.org', subscription: 'both')],
-        'v1',
-      );
-      final first = await manager.loadRosterCache();
-      first.roster.add(
-        const XmppRosterItem(jid: 'intruder@example.org', subscription: 'both'),
-      );
-      final second = await manager.loadRosterCache();
-      expect(second.roster.length, 1);
-    });
+    test(
+      'the store returns its own copy, so callers cannot corrupt it',
+      () async {
+        final manager = _SeededRosterStateManager(const [
+          XmppRosterItem(jid: 'a@example.org', subscription: 'both'),
+        ], 'v1');
+        final first = await manager.loadRosterCache();
+        first.roster.add(
+          const XmppRosterItem(
+            jid: 'intruder@example.org',
+            subscription: 'both',
+          ),
+        );
+        final second = await manager.loadRosterCache();
+        expect(second.roster.length, 1);
+      },
+    );
   });
 }

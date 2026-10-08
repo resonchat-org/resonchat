@@ -27,7 +27,6 @@ import 'package:resonchat/omemo/pq_session.dart';
 import 'package:resonchat/omemo/protocol.dart';
 import 'package:resonchat/pq/liboqs_mlkem.dart';
 
-
 /// Number of failed checks; module-level so [finish] can report it from
 /// the `finally` block.
 int failures = 0;
@@ -61,11 +60,15 @@ Future<void> main(List<String> args) async {
 
   final kem = MlKem768Provider.instance.kem;
   // ignore: avoid_print
-  print('KEM backend: ${MlKem768Provider.instance.isNative ? 'liboqs (native)' : 'pqcrypto (dart)'}');
+  print(
+    'KEM backend: ${MlKem768Provider.instance.isNative ? 'liboqs (native)' : 'pqcrypto (dart)'}',
+  );
 
   void check(String name, bool ok, [String detail = '']) {
     // ignore: avoid_print
-    print('${ok ? "PASS" : "FAIL"}  $name${detail.isEmpty ? "" : " — $detail"}');
+    print(
+      '${ok ? "PASS" : "FAIL"}  $name${detail.isEmpty ? "" : " — $detail"}',
+    );
     if (!ok) failures++;
   }
 
@@ -134,10 +137,7 @@ Future<void> main(List<String> args) async {
 
     // Round-trip through the XML that would go on the wire.
     final onWire = PqEncryptedMessage.fromXml(outgoing.stanza.toXml());
-    check(
-      'message survives the XML wire format',
-      onWire.keys.length == 1,
-    );
+    check('message survives the XML wire format', onWire.keys.length == 1);
 
     final recovered = await layerB.decrypt(onWire, senderBareJid: a.device.jid);
     check(
@@ -147,7 +147,10 @@ Future<void> main(List<String> args) async {
     );
 
     // A second message must reuse the session, not re-handshake.
-    final second = await layerA.encrypt(plaintext: 'second', recipients: [bundleB]);
+    final second = await layerA.encrypt(
+      plaintext: 'second',
+      recipients: [bundleB],
+    );
     final secondEntry = second!.stanza.keys.single;
     check('subsequent message skips the handshake', !secondEntry.kex);
     final back2 = await layerB.decrypt(
@@ -267,7 +270,11 @@ Future<PqBundle> publish(Peer peer, PqDevice device) async {
   );
 
   // Read it back so we prove the server stored what we think it did.
-  final item = await peer.pubsub.getItem(bare, pomemoBundlesXmlns, '${device.id}');
+  final item = await peer.pubsub.getItem(
+    bare,
+    pomemoBundlesXmlns,
+    '${device.id}',
+  );
   if (!item.isType<PubSubItem>()) {
     throw StateError('server did not return our bundle for ${peer.jid}');
   }
@@ -278,7 +285,9 @@ Future<PqBundle> publish(Peer peer, PqDevice device) async {
 }
 
 /// Placeholder A-track manager; the B track does not consult it.
-OmemoManager _noopOmemo() =>
-    OmemoManager(() async => throw StateError('unreachable'), (_, _) async => false);
+OmemoManager _noopOmemo() => OmemoManager(
+  () async => throw StateError('unreachable'),
+  (_, _) async => false,
+);
 
 String _b64(List<int> bytes) => base64Encode(bytes);

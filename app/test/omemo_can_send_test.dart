@@ -31,8 +31,7 @@ void main() {
     List<String> recipients,
     Map<String, int> successes, [
     Map<String, List<EncryptToJidError>> errors = const {},
-  ]) =>
-      canSendAllDevicesReached(recipients, successes, errors);
+  ]) => canSendAllDevicesReached(recipients, successes, errors);
 
   group('a result nobody could reach is not sendable', () {
     test('no recipients at all is not a success', () {
@@ -79,20 +78,18 @@ void main() {
       // one that failed. On the sending side it looked completely healthy: a
       // bubble, a delivery receipt, a track label saying OMEMO.
       expect(
-        canSend(
-          [peer],
-          {peer: 39},
-          {
-            peer: [failure(40)],
-          },
-        ),
+        canSend([peer], {peer: 39}, {
+          peer: [failure(40)],
+        }),
         isFalse,
       );
     });
 
     test('1 of 2 is not sendable', () {
       expect(
-        canSend([peer], {peer: 1}, {peer: [failure(2)]}),
+        canSend([peer], {peer: 1}, {
+          peer: [failure(2)],
+        }),
         isFalse,
       );
     });
@@ -103,7 +100,9 @@ void main() {
       // carbons copy used to reach a null-check crash; the refusal has to hold
       // for the whole stanza either way.
       expect(
-        canSend([peer, mine], {peer: 2, mine: 1}, {mine: [failure(7)]}),
+        canSend([peer, mine], {peer: 2, mine: 1}, {
+          mine: [failure(7)],
+        }),
         isFalse,
       );
     });
@@ -112,7 +111,9 @@ void main() {
       // `NoKeyMaterialAvailableError` is recorded with a null device id, so the
       // entry exists and must not be filtered out by inspecting its contents.
       expect(
-        canSend([peer], {peer: 1}, {peer: [failure()]}),
+        canSend([peer], {peer: 1}, {
+          peer: [failure()],
+        }),
         isFalse,
       );
     });
@@ -129,7 +130,11 @@ void main() {
             final verdict = canSend(
               [peer, mine],
               {peer: p, mine: m},
-              withErrors ? {peer: [failure(9)]} : const {},
+              withErrors
+                  ? {
+                      peer: [failure(9)],
+                    }
+                  : const {},
             );
             expect(
               verdict,

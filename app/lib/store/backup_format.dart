@@ -230,7 +230,11 @@ final class BackupColumn {
 
 /// One table's place in the allow-list: its columns, and how they are typed.
 final class BackupTableSpec {
-  const BackupTableSpec(this.table, this.columns, {this.metaKeyPrefixes = const []});
+  const BackupTableSpec(
+    this.table,
+    this.columns, {
+    this.metaKeyPrefixes = const [],
+  });
 
   final BackupTable table;
   final List<BackupColumn> columns;
@@ -245,8 +249,7 @@ final class BackupTableSpec {
     return null;
   }
 
-  bool allowsMetaKey(String key) =>
-      metaKeyPrefixes.any(key.startsWith);
+  bool allowsMetaKey(String key) => metaKeyPrefixes.any(key.startsWith);
 }
 
 /// Everything an archive may contain, as data.
@@ -333,12 +336,15 @@ const Map<BackupTable, BackupTableSpec> kBackupTables = {
       BackupColumn('asked_at', BackupColumnKind.stamp),
     ],
   ),
-  BackupTable.pendingCorrections: BackupTableSpec(BackupTable.pendingCorrections, [
-    BackupColumn('target_id', BackupColumnKind.text),
-    BackupColumn('body', BackupColumnKind.text),
-    BackupColumn('enc_mode', BackupColumnKind.text),
-    BackupColumn('corrected_at', BackupColumnKind.stamp),
-  ]),
+  BackupTable.pendingCorrections: BackupTableSpec(
+    BackupTable.pendingCorrections,
+    [
+      BackupColumn('target_id', BackupColumnKind.text),
+      BackupColumn('body', BackupColumnKind.text),
+      BackupColumn('enc_mode', BackupColumnKind.text),
+      BackupColumn('corrected_at', BackupColumnKind.stamp),
+    ],
+  ),
   BackupTable.reactions: BackupTableSpec(BackupTable.reactions, [
     BackupColumn('target_id', BackupColumnKind.text),
     BackupColumn('emoji', BackupColumnKind.text),
@@ -696,8 +702,7 @@ final class BackupManifest {
 
   int get messageCount => countOf(BackupTable.messages);
 
-  bool get isEmpty =>
-      BackupTable.values.every((table) => countOf(table) == 0);
+  bool get isEmpty => BackupTable.values.every((table) => countOf(table) == 0);
 
   /// Whether this manifest describes [other].
   ///
@@ -726,8 +731,9 @@ final class BackupManifest {
 /// `DateTime` equality also compares the time zone, so two descriptions of the
 /// same instant in different zones would otherwise look like a mismatch and
 /// every archive written on a device that was not set to UTC would be refused.
-bool _sameInstant(DateTime? left, DateTime? right) =>
-    left == null ? right == null : right != null && left.toUtc() == right.toUtc();
+bool _sameInstant(DateTime? left, DateTime? right) => left == null
+    ? right == null
+    : right != null && left.toUtc() == right.toUtc();
 
 /// A backup that has been read, checked and validated.
 ///
@@ -863,18 +869,17 @@ Uint8List encodeBackupBytes({
   required int schemaVersion,
   required String accountJid,
   DateTime? createdAt,
-}) =>
-    Uint8List.fromList(
-      utf8.encode(
-        encodeBackup(
-          tables: tables,
-          appVersion: appVersion,
-          schemaVersion: schemaVersion,
-          accountJid: accountJid,
-          createdAt: createdAt,
-        ),
-      ),
-    );
+}) => Uint8List.fromList(
+  utf8.encode(
+    encodeBackup(
+      tables: tables,
+      appVersion: appVersion,
+      schemaVersion: schemaVersion,
+      accountJid: accountJid,
+      createdAt: createdAt,
+    ),
+  ),
+);
 
 /// Reads an archive written in a different format version.
 ///
@@ -941,7 +946,10 @@ BackupOutcome decodeBackupText(String text, {BackupMigration? migrate}) {
     return BackupTruncated(byteLength: total, detail: 'the header is cut off');
   }
   if (header is! Map<String, Object?>) {
-    return BackupTruncated(byteLength: total, detail: 'the header is not an object');
+    return BackupTruncated(
+      byteLength: total,
+      detail: 'the header is not an object',
+    );
   }
 
   final formatVersion = header['formatVersion'];
@@ -975,9 +983,9 @@ BackupOutcome decodeBackupText(String text, {BackupMigration? migrate}) {
   // is exactly what a damaged file gets wrong, so a version check first would
   // answer "made by a newer app" for a half-written file and send the user to
   // install an update that cannot help.
-  final payloadStart = utf8.encode(
-    text.substring(0, split < 0 ? 0 : split + 1),
-  ).length;
+  final payloadStart = utf8
+      .encode(text.substring(0, split < 0 ? 0 : split + 1))
+      .length;
   final declaredTotal = payloadStart + payloadLength;
   if (total < declaredTotal) {
     return BackupTruncated(
@@ -1033,10 +1041,7 @@ BackupOutcome decodeBackupText(String text, {BackupMigration? migrate}) {
     // a restore have to be the numbers that will exist after it.
     return _archiveFromTables(
       migrated,
-      manifest: BackupManifest.of(
-        migrated,
-        accountJid: _accountJidOf(payload),
-      ),
+      manifest: BackupManifest.of(migrated, accountJid: _accountJidOf(payload)),
       createdAt: when,
       appVersion: appVersion,
       schemaVersion: schemaVersion,
@@ -1108,10 +1113,7 @@ BackupOutcome _adoptChecked(
   for (final entry in raw.entries) {
     final table = _tableNamed(entry.key);
     if (table == null) {
-      throw BackupRejected(
-        BackupRejectionKind.unknownTable,
-        table: entry.key,
-      );
+      throw BackupRejected(BackupRejectionKind.unknownTable, table: entry.key);
     }
     if (entry.value is! List) {
       throw BackupRejected(
@@ -1202,10 +1204,7 @@ BackupManifest _manifestFromJson(Map<String, Object?> json) {
   for (final entry in raw.entries) {
     final table = _tableNamed(entry.key);
     if (table == null) {
-      throw BackupRejected(
-        BackupRejectionKind.unknownTable,
-        table: entry.key,
-      );
+      throw BackupRejected(BackupRejectionKind.unknownTable, table: entry.key);
     }
     final count = entry.value;
     if (count is! int || count < 0) {
@@ -1414,8 +1413,7 @@ final class BackupMigrationFailed extends BackupOutcome {
   final Object error;
 
   @override
-  String get problem =>
-      'could not read backup format $found: $error';
+  String get problem => 'could not read backup format $found: $error';
 }
 
 /// The payload is not the bytes the header described.

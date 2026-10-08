@@ -40,17 +40,15 @@ void main() {
       );
     }
 
-    Future<List<Message>> messages() => db.watchMessages('peer@example.org').first;
+    Future<List<Message>> messages() =>
+        db.watchMessages('peer@example.org').first;
 
     test('the first message after the read marker', () async {
       await seed('m1', 1);
       await seed('m2', 2);
       await seed('m3', 3);
       final list = await messages();
-      expect(
-        firstUnreadId(list, at(1).add(const Duration(seconds: 30))),
-        'm2',
-      );
+      expect(firstUnreadId(list, at(1).add(const Duration(seconds: 30))), 'm2');
     });
 
     test('the marker exactly on a message leaves that message read', () async {

@@ -54,8 +54,11 @@ void main() {
 
     test('the attribution names the origin', () async {
       final r = _Recorder();
-      final outcome =
-          await runForward(items: _items, track: Track.standard, send: r.send);
+      final outcome = await runForward(
+        items: _items,
+        track: Track.standard,
+        send: r.send,
+      );
       expect(outcome.ok, isTrue);
       expect(r.calls.first.body, forwardAttribution('a@b.example'));
       expect(r.calls.first.body, contains('a@b.example'));
@@ -82,8 +85,11 @@ void main() {
       // An empty forward reporting success leaves the user believing a message
       // was passed on when nothing was.
       final r = _Recorder();
-      final outcome =
-          await runForward(items: const [], track: Track.standard, send: r.send);
+      final outcome = await runForward(
+        items: const [],
+        track: Track.standard,
+        send: r.send,
+      );
       expect(outcome.ok, isFalse);
       expect(outcome.refused, ForwardRefusal.nothingSelected);
       expect(outcome.forwarded, 0);
@@ -94,8 +100,11 @@ void main() {
   group('a refused track', () {
     test('stops at the first failure', () async {
       final r = _Recorder()..failAfter = 0;
-      final outcome =
-          await runForward(items: _items, track: Track.pq, send: r.send);
+      final outcome = await runForward(
+        items: _items,
+        track: Track.pq,
+        send: r.send,
+      );
       expect(outcome.ok, isFalse);
       expect(outcome.refused, ForwardRefusal.trackBlocked);
       expect(outcome.forwarded, 0);
@@ -106,8 +115,11 @@ void main() {
       // A partial forward the user is not told about is indistinguishable from
       // one that failed completely.
       final r = _Recorder()..failAfter = 1;
-      final outcome =
-          await runForward(items: _items, track: Track.standard, send: r.send);
+      final outcome = await runForward(
+        items: _items,
+        track: Track.standard,
+        send: r.send,
+      );
       expect(outcome.forwarded, 1);
       expect(outcome.ok, isFalse);
       expect(outcome.stanzaId, ['stanza-1']);
@@ -115,8 +127,11 @@ void main() {
 
     test('never falls back to another track', () async {
       final r = _Recorder()..failAfter = 0;
-      final outcome =
-          await runForward(items: _items, track: Track.pq, send: r.send);
+      final outcome = await runForward(
+        items: _items,
+        track: Track.pq,
+        send: r.send,
+      );
       expect(outcome.stanzaId, isEmpty);
     });
   });

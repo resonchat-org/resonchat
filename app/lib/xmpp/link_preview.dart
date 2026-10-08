@@ -139,13 +139,13 @@ class OutOfBandThumbnail {
     int? height,
     int? size,
   }) : this(
-          uri: uri,
-          bytes: Uint8List.fromList(bytes),
-          type: type,
-          width: width,
-          height: height,
-          size: size,
-        );
+         uri: uri,
+         bytes: Uint8List.fromList(bytes),
+         type: type,
+         width: width,
+         height: height,
+         size: size,
+       );
 
   @override
   String toString() => 'OutOfBandThumbnail($uri)';
@@ -309,7 +309,8 @@ class LinkPreview {
   String get displayTitle => _cap(title, kMaxPreviewTitleChars);
 
   /// The description, cut to [kMaxPreviewDescriptionChars].
-  String get displayDescription => _cap(description, kMaxPreviewDescriptionChars);
+  String get displayDescription =>
+      _cap(description, kMaxPreviewDescriptionChars);
 
   /// This preview with anything [fetched] knew and this one did not.
   ///
@@ -401,15 +402,21 @@ LinkPreview? mergePreview({
   final detected = _trimToNull(detectedUrl);
   if (detected != null && isFetchableUrl(detected)) {
     final agrees = announced != null && announced.url == detected;
+    if (agrees) {
+      return LinkPreview._(
+        url: detected,
+        title: announced.title,
+        description: announced.description,
+        type: announced.type,
+        size: announced.size,
+        thumbnail: announced.thumbnail,
+        urlFromStanza: false,
+      );
+    }
     return LinkPreview._(
       url: detected,
-      title: agrees ? announced?.title : null,
-      description: agrees ? announced?.description : null,
-      type: agrees ? announced?.type : null,
-      size: agrees ? announced?.size : null,
-      thumbnail: agrees ? announced?.thumbnail : null,
       urlFromStanza: false,
-      announcedUrl: (announced != null && !agrees) ? announced.url : null,
+      announcedUrl: announced?.url,
     );
   }
   if (announced == null) return null;
@@ -471,9 +478,9 @@ class UrlScan {
     required List<String> insideQuote,
     required this.distinctFound,
     required this.droppedForCap,
-  })  : links = List.unmodifiable(links),
-        insideCode = List.unmodifiable(insideCode),
-        insideQuote = List.unmodifiable(insideQuote);
+  }) : links = List.unmodifiable(links),
+       insideCode = List.unmodifiable(insideCode),
+       insideQuote = List.unmodifiable(insideQuote);
 
   /// The message's own links: in the order written, de-duplicated, capped at
   /// [scanUrls]'s `limit`. The only list a preview may be fetched for without
@@ -505,7 +512,8 @@ class UrlScan {
   bool get isEmpty => links.isEmpty;
 
   @override
-  String toString() => 'UrlScan(${links.length} links, '
+  String toString() =>
+      'UrlScan(${links.length} links, '
       '${insideCode.length} in code, ${insideQuote.length} in quotes, '
       '$distinctFound found)';
 }
@@ -646,29 +654,29 @@ enum PreviewRefusal {
 /// information; these read as a decision the app made, which is what it is.
 extension PreviewRefusalWording on PreviewRefusal {
   String get title => switch (this) {
-        PreviewRefusal.noUrl => 'This link cannot be previewed',
-        PreviewRefusal.unknownSender => 'This message has no sender',
-        PreviewRefusal.senderBlocked => 'No previews from this contact',
-        PreviewRefusal.unreadableMessage => 'This message could not be opened',
-        PreviewRefusal.previewsDisabled => 'Link previews are off',
-      };
+    PreviewRefusal.noUrl => 'This link cannot be previewed',
+    PreviewRefusal.unknownSender => 'This message has no sender',
+    PreviewRefusal.senderBlocked => 'No previews from this contact',
+    PreviewRefusal.unreadableMessage => 'This message could not be opened',
+    PreviewRefusal.previewsDisabled => 'Link previews are off',
+  };
 
   /// The consequence, in terms of what happens on the network.
   String get consequence => switch (this) {
-        PreviewRefusal.noUrl =>
-          'The address in this message is not one this app will fetch.',
-        PreviewRefusal.unknownSender =>
-          'This app does not fetch links from a message it cannot attribute to '
-              'anybody.',
-        PreviewRefusal.senderBlocked =>
-          'Opening a link from somebody you blocked would contact a third party '
-              'on their behalf, without telling you.',
-        PreviewRefusal.unreadableMessage =>
-          'The address comes from a message this device could not decrypt, so '
-              'we will not visit it.',
-        PreviewRefusal.previewsDisabled =>
-          'Turn link previews on in Settings to fetch this.',
-      };
+    PreviewRefusal.noUrl =>
+      'The address in this message is not one this app will fetch.',
+    PreviewRefusal.unknownSender =>
+      'This app does not fetch links from a message it cannot attribute to '
+          'anybody.',
+    PreviewRefusal.senderBlocked =>
+      'Opening a link from somebody you blocked would contact a third party '
+          'on their behalf, without telling you.',
+    PreviewRefusal.unreadableMessage =>
+      'The address comes from a message this device could not decrypt, so '
+          'we will not visit it.',
+    PreviewRefusal.previewsDisabled =>
+      'Turn link previews on in Settings to fetch this.',
+  };
 }
 
 /// The answer to "may this device fetch this?".
@@ -806,8 +814,7 @@ class LinkPreviewPolicy {
   PreviewVerdict mayFetchPreview({
     required PreviewContext context,
     required LinkPreview preview,
-  }) =>
-      mayFetch(context: context, url: preview.url);
+  }) => mayFetch(context: context, url: preview.url);
 
   /// How much of [preview] to draw without the reader asking.
   ///
@@ -835,7 +842,9 @@ class LinkPreviewPolicy {
     // picture of something the sender chose and the message did not.
     if (preview.urlFromStanza) return PreviewDisplay.onDemand;
     if (!preview.hasSomethingToShow) return PreviewDisplay.onDemand;
-    return _drawableInline(preview) ? PreviewDisplay.inline : PreviewDisplay.onDemand;
+    return _drawableInline(preview)
+        ? PreviewDisplay.inline
+        : PreviewDisplay.onDemand;
   }
 }
 
@@ -915,9 +924,9 @@ Future<LinkPreview?> loadPreview({
     // The whole `PreviewAllowed`, not the url it carries: handing the fetcher a
     // bare string would mean the approval is checked once and then thrown away,
     // so the fetcher would be free to fetch anything it liked with it.
-    PreviewAllowed allowed => (await fetcher.fetch(allowed)).withFallback(
-        preview,
-      ),
+    PreviewAllowed allowed => (await fetcher.fetch(
+      allowed,
+    )).withFallback(preview),
     PreviewRefused() => null,
   };
 }
@@ -956,7 +965,8 @@ Future<LinkPreview?> loadPreview({
 /// file, which is precisely why it is written down here.
 bool isFetchableUrl(String url) {
   final lower = url.toLowerCase();
-  if (!lower.startsWith('http://') && !lower.startsWith('https://')) return false;
+  if (!lower.startsWith('http://') && !lower.startsWith('https://'))
+    return false;
   if (url.length > kMaxUrlLength) return false;
 
   final schemeEnd = lower.indexOf('://') + 3;
@@ -1188,7 +1198,8 @@ String _dedupeKey(String url) {
   // From the end of the authority, so a `#` cannot cut the key short inside it.
   final rest = url.substring(i);
   final fragment = rest.indexOf('#');
-  return lower.substring(0, i) + (fragment < 0 ? rest : rest.substring(0, fragment));
+  return lower.substring(0, i) +
+      (fragment < 0 ? rest : rest.substring(0, fragment));
 }
 
 String? _trimToNull(String? text) {

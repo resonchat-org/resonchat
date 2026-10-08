@@ -49,11 +49,7 @@ void main() {
             role: 'visitor',
             realJid: 'v@example.org',
           ),
-          Occupant(
-            nick: 'anon',
-            affiliation: 'member',
-            role: 'participant',
-          ),
+          Occupant(nick: 'anon', affiliation: 'member', role: 'participant'),
         ],
       );
       expect(targets, ['alice@example.org']);
@@ -150,24 +146,26 @@ void main() {
   });
 
   group('addresses', () {
-    test('presence and PMs use room@server/nick; groupchat uses the bare room',
-        () {
-      // Join presence is full JID; group messages are type=groupchat to bare
-      // (XEP-0045 / Conversations). myAddress is the occupant address only.
-      const chat = GroupChat(
-        roomJid: 'room@conference.example.org',
-        nick: 'me',
-        occupants: [],
-      );
-      expect(chat.myAddress, 'room@conference.example.org/me');
-      expect(chat.roomJid, 'room@conference.example.org');
-    });
+    test(
+      'presence and PMs use room@server/nick; groupchat uses the bare room',
+      () {
+        // Join presence is full JID; group messages are type=groupchat to bare
+        // (XEP-0045 / Conversations). myAddress is the occupant address only.
+        const chat = GroupChat(
+          roomJid: 'room@conference.example.org',
+          nick: 'me',
+          occupants: [],
+        );
+        expect(chat.myAddress, 'room@conference.example.org/me');
+        expect(chat.roomJid, 'room@conference.example.org');
+      },
+    );
 
     test('the room JID and the occupant address are the same conversation', () {
-      expect(
-        GroupChat.parseAddress('room@conference.example.org/me'),
-        (roomJid: 'room@conference.example.org', nick: 'me'),
-      );
+      expect(GroupChat.parseAddress('room@conference.example.org/me'), (
+        roomJid: 'room@conference.example.org',
+        nick: 'me',
+      ));
     });
 
     test('a bare JID is not a room', () {
@@ -175,10 +173,7 @@ void main() {
       // means sending a room's messages to a person.
       expect(GroupChat.parseAddress('peer@example.org'), isNull);
       expect(GroupChat.isRoomAddress('peer@example.org'), isFalse);
-      expect(
-        GroupChat.isRoomAddress('room@conference.example.org/me'),
-        isTrue,
-      );
+      expect(GroupChat.isRoomAddress('room@conference.example.org/me'), isTrue);
     });
 
     test('an empty nick is not a room either', () {
@@ -188,10 +183,10 @@ void main() {
     test('a nickname containing a slash survives', () {
       // Some clients allow it; truncating at the second slash would put the
       // message in a conversation that does not exist.
-      expect(
-        GroupChat.parseAddress('room@conference.example.org/a/b'),
-        (roomJid: 'room@conference.example.org', nick: 'a/b'),
-      );
+      expect(GroupChat.parseAddress('room@conference.example.org/a/b'), (
+        roomJid: 'room@conference.example.org',
+        nick: 'a/b',
+      ));
     });
   });
 
@@ -294,12 +289,14 @@ void main() {
   group('occupant changes', () {
     const a = Occupant(nick: 'a', affiliation: 'none', role: 'participant');
     const b = Occupant(nick: 'b', affiliation: 'none', role: 'participant');
-    const mod =
-        Occupant(nick: 'b', affiliation: 'admin', role: 'moderator');
+    const mod = Occupant(nick: 'b', affiliation: 'admin', role: 'moderator');
 
     test('a new arrival is reported as joined', () {
       final changes = diffOccupants(const [], [a, b]);
-      expect(changes.where((c) => c.change == OccupantChange.joined), hasLength(2));
+      expect(
+        changes.where((c) => c.change == OccupantChange.joined),
+        hasLength(2),
+      );
     });
 
     test('a departure is reported against the person who left', () {
@@ -328,7 +325,10 @@ void main() {
 
     test('an empty room produces a departure for everyone', () {
       final changes = diffOccupants([a, b], const []);
-      expect(changes.where((c) => c.change == OccupantChange.left), hasLength(2));
+      expect(
+        changes.where((c) => c.change == OccupantChange.left),
+        hasLength(2),
+      );
     });
   });
 }

@@ -53,8 +53,7 @@ class Chats extends Table {
   IntColumn get unreadCount => integer().withDefault(const Constant(0))();
 
   /// Where the reader had got to, so a jump lands in the right place.
-  DateTimeColumn get lastReadAt =>
-      dateTime().withDefault(currentDateAndTime)();
+  DateTimeColumn get lastReadAt => dateTime().withDefault(currentDateAndTime)();
 
   /// The track the user picked for this conversation, or empty for "use the
   /// global default" (docs/10 §3).
@@ -64,8 +63,7 @@ class Chats extends Table {
   /// override. Null also means "never chosen", which is what keeps a fresh
   /// install on the standard track instead of silently inheriting whatever a
   /// previous conversation was set to.
-  TextColumn get trackOverride =>
-      text().withDefault(const Constant(''))();
+  TextColumn get trackOverride => text().withDefault(const Constant(''))();
 
   /// True for XEP-0045 rooms (Conversations `MODE_MULTI`).
   ///
@@ -103,8 +101,7 @@ class Messages extends Table {
   /// Stanza id, used to match XEP-0184 delivery receipts.
   TextColumn get stanzaId => text().withDefault(const Constant(''))();
   TextColumn get body => text()();
-  DateTimeColumn get timestamp =>
-      dateTime().withDefault(currentDateAndTime)();
+  DateTimeColumn get timestamp => dateTime().withDefault(currentDateAndTime)();
   TextColumn get encMode => text().withDefault(const Constant('none'))();
   BoolColumn get incoming => boolean()();
 
@@ -129,8 +126,7 @@ class Messages extends Table {
   /// delivered. Showing it as an ordinary outgoing bubble is a lie: the
   /// usual causes are a server service policy, a non-mutual subscription, or
   /// a blocked account, and each needs a different thing from the user.
-  TextColumn get deliveryError =>
-      text().withDefault(const Constant(''))();
+  TextColumn get deliveryError => text().withDefault(const Constant(''))();
 
   /// True once the sender retracted this message for everyone (XEP-0424).
   ///
@@ -211,8 +207,7 @@ class RosterEntries extends Table {
 /// which is the part that actually matters for a messenger.
 class BlockedContacts extends Table {
   TextColumn get jid => text()();
-  DateTimeColumn get blockedAt =>
-      dateTime().withDefault(currentDateAndTime)();
+  DateTimeColumn get blockedAt => dateTime().withDefault(currentDateAndTime)();
 
   @override
   Set<Column> get primaryKey => {jid};
@@ -230,8 +225,7 @@ class SubscriptionRequests extends Table {
   /// False for a request from somebody, true for one we sent.
   BoolColumn get outgoing => boolean().withDefault(const Constant(false))();
 
-  DateTimeColumn get askedAt =>
-      dateTime().withDefault(currentDateAndTime)();
+  DateTimeColumn get askedAt => dateTime().withDefault(currentDateAndTime)();
 
   @override
   Set<Column> get primaryKey => {jid, outgoing};
@@ -248,8 +242,7 @@ class PinnedMessages extends Table {
   TextColumn get stanzaId => text()();
 
   /// Highest first in the UI, so the most recently pinned is the one found.
-  DateTimeColumn get pinnedAt =>
-      dateTime().withDefault(currentDateAndTime)();
+  DateTimeColumn get pinnedAt => dateTime().withDefault(currentDateAndTime)();
 
   /// Tiebreaker for [pinnedAt], descending.
   ///
@@ -307,8 +300,7 @@ class Reactions extends Table {
   TextColumn get reactor => text()();
 
   /// When we first saw it; only used for ordering the chip strip.
-  DateTimeColumn get reactedAt =>
-      dateTime().withDefault(currentDateAndTime)();
+  DateTimeColumn get reactedAt => dateTime().withDefault(currentDateAndTime)();
 
   @override
   Set<Column> get primaryKey => {targetId, emoji, reactor};
@@ -324,18 +316,18 @@ class Meta extends Table {
 }
 
 @DriftDatabase(
-    tables: [
-      Chats,
-      Messages,
-      RosterEntries,
-      BlockedContacts,
-      PinnedMessages,
-      SubscriptionRequests,
-      PendingCorrections,
-      Reactions,
-      Meta,
-    ],
-  )
+  tables: [
+    Chats,
+    Messages,
+    RosterEntries,
+    BlockedContacts,
+    PinnedMessages,
+    SubscriptionRequests,
+    PendingCorrections,
+    Reactions,
+    Meta,
+  ],
+)
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
@@ -344,238 +336,238 @@ class AppDatabase extends _$AppDatabase {
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
-        onUpgrade: (m, from, to) async {
-          if (from < 19) {
-            await customStatement(
-              'ALTER TABLE chats ADD COLUMN muc_private_non_anonymous '
-              'INTEGER NOT NULL DEFAULT 0',
-            );
-          }
-          if (from < 18) {
-            await customStatement(
-              'ALTER TABLE chats ADD COLUMN is_group INTEGER NOT NULL '
-              'DEFAULT 0',
-            );
-            await customStatement(
-              "ALTER TABLE chats ADD COLUMN muc_nick TEXT NOT NULL "
-              "DEFAULT ''",
-            );
-          }
-          if (from < 17) {
-            await customStatement(
-              "ALTER TABLE messages ADD COLUMN media_url TEXT NOT NULL "
-              "DEFAULT ''",
-            );
-            await customStatement(
-              "ALTER TABLE messages ADD COLUMN media_mime TEXT NOT NULL "
-              "DEFAULT ''",
-            );
-            await customStatement(
-              "ALTER TABLE messages ADD COLUMN media_name TEXT NOT NULL "
-              "DEFAULT ''",
-            );
-            await customStatement(
-              "ALTER TABLE messages ADD COLUMN local_path TEXT NOT NULL "
-              "DEFAULT ''",
-            );
-          }
-          if (from < 16) {
-            await customStatement(
-              'ALTER TABLE messages ADD COLUMN displayed INTEGER NOT NULL '
-              'DEFAULT 0',
-            );
-            await customStatement(
-              'ALTER TABLE messages ADD COLUMN markable INTEGER NOT NULL '
-              'DEFAULT 0',
-            );
-          }
-          if (from < 2) {
-            // Only additive changes so far; drift still expects an explicit
-            // step per version so a future destructive change has a place to
-            // go. Raw SQL because addColumn's generic bound is
-            // GeneratedColumn<Object> and will not take a TextColumn.
-            await customStatement(
-              "ALTER TABLE messages ADD COLUMN delivery_error TEXT NOT NULL "
-              "DEFAULT ''",
-            );
-          }
-          if (from < 15) {
-            await customStatement(
-              "ALTER TABLE chats ADD COLUMN appearance TEXT NOT NULL DEFAULT ''",
-            );
-          }
-          if (from < 14) {
-            await customStatement(
-              'CREATE TABLE IF NOT EXISTS subscription_requests ('
-              'jid TEXT NOT NULL, '
-              'outgoing INTEGER NOT NULL DEFAULT 0, '
-              'asked_at INTEGER NOT NULL DEFAULT 0, '
-              'PRIMARY KEY (jid, outgoing))',
-            );
-          }
-          if (from < 13) {
-            await customStatement(
-              'ALTER TABLE pinned_messages ADD COLUMN sequence INTEGER NOT NULL '
-              'DEFAULT 0',
-            );
-          }
-          if (from < 12) {
-            await customStatement(
-              'CREATE TABLE IF NOT EXISTS pinned_messages ('
-              'chat_jid TEXT NOT NULL, '
-              'stanza_id TEXT NOT NULL, '
-              'pinned_at INTEGER NOT NULL DEFAULT 0, '
-              'PRIMARY KEY (chat_jid, stanza_id))',
-            );
-          }
-          if (from < 11) {
-            await customStatement(
-              'CREATE TABLE IF NOT EXISTS blocked_contacts ('
-              'jid TEXT NOT NULL PRIMARY KEY, '
-              'blocked_at INTEGER NOT NULL DEFAULT 0)',
-            );
-          }
-          if (from < 10) {
-            await customStatement(
-              'ALTER TABLE chats ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0',
-            );
-            await customStatement(
-              'ALTER TABLE chats ADD COLUMN muted INTEGER NOT NULL DEFAULT 0',
-            );
-            await customStatement(
-              'ALTER TABLE chats ADD COLUMN archived INTEGER NOT NULL DEFAULT 0',
-            );
-            await customStatement(
-              'ALTER TABLE chats ADD COLUMN unread_count INTEGER NOT NULL '
-              'DEFAULT 0',
-            );
-            await customStatement(
-              'ALTER TABLE chats ADD COLUMN last_read_at INTEGER NOT NULL '
-              'DEFAULT 0',
-            );
-          }
-          if (from < 9) {
-            // retracted_at was created with a NOT NULL default, so every row
-            // has a value and the column cannot say whether the message was
-            // actually retracted. drift cannot change a column's nullability in
-            // place, and SQLite cannot either, so the column is rebuilt.
-            await customStatement('ALTER TABLE messages RENAME TO messages_old');
-            await customStatement(
-              'CREATE TABLE messages ('
-              'id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, '
-              'chat_jid TEXT NOT NULL REFERENCES chats (jid), '
-              'sender TEXT NOT NULL, '
-              'stanza_id TEXT NOT NULL DEFAULT \'\', '
-              'body TEXT NOT NULL, '
-              'timestamp INTEGER NOT NULL, '
-              'enc_mode TEXT NOT NULL DEFAULT \'none\', '
-              'incoming INTEGER NOT NULL, '
-              'delivered INTEGER NOT NULL DEFAULT 0, '
-              'is_carbon INTEGER NOT NULL DEFAULT 0, '
-              'delivery_error TEXT NOT NULL DEFAULT \'\', '
-              'retracted INTEGER NOT NULL DEFAULT 0, '
-              'retracted_at INTEGER, '
-              'reply_to TEXT NOT NULL DEFAULT \'\', '
-              'reply_body TEXT NOT NULL DEFAULT \'\', '
-              'reply_author TEXT NOT NULL DEFAULT \'\', '
-              'edited_at INTEGER)',
-            );
-            // `retracted` rather than `retracted_at` decides what counts: an
-            // existing row with retracted = 1 keeps a timestamp, and one with 0
-            // gets none.
-            await customStatement(
-              'INSERT INTO messages '
-              'SELECT id, chat_jid, sender, stanza_id, body, timestamp, '
-              'enc_mode, incoming, delivered, is_carbon, delivery_error, '
-              'retracted, '
-              'CASE WHEN retracted = 1 THEN \'2026-01-01 00:00:00\' ELSE NULL END, '
-              'reply_to, reply_body, reply_author, edited_at '
-              'FROM messages_old',
-            );
-            await customStatement('DROP TABLE messages_old');
-            await customStatement(
-              'CREATE INDEX IF NOT EXISTS messages_chat_time '
-              'ON messages (chat_jid, timestamp)',
-            );
-          }
-          if (from < 8) {
-            // The chat-list and message-list queries both filter on chat_jid and
-            // order by timestamp. Without this every conversation open scans the
-            // whole messages table.
-            await customStatement(
-              'CREATE INDEX IF NOT EXISTS messages_chat_time '
-              'ON messages (chat_jid, timestamp)',
-            );
-          }
-          if (from < 7) {
-            // XEP-0461 reply quote, copied onto the replying row so it
-            // survives its target being retracted or never loaded.
-            await customStatement(
-              "ALTER TABLE messages ADD COLUMN reply_to TEXT NOT NULL DEFAULT ''",
-            );
-            await customStatement(
-              "ALTER TABLE messages ADD COLUMN reply_body TEXT NOT NULL DEFAULT ''",
-            );
-            await customStatement(
-              "ALTER TABLE messages ADD COLUMN reply_author TEXT NOT NULL DEFAULT ''",
-            );
-          }
-          if (from < 6) {
-            await customStatement(
-              'CREATE TABLE IF NOT EXISTS pending_corrections ('
-              'target_id TEXT NOT NULL PRIMARY KEY, '
-              'body TEXT NOT NULL, '
-              'enc_mode TEXT NOT NULL DEFAULT \'none\', '
-              'corrected_at INTEGER NOT NULL DEFAULT 0)',
-            );
-          }
-          if (from < 5) {
-            // XEP-0424 retraction + XEP-0308 correction markers.
-            await customStatement(
-              'ALTER TABLE messages ADD COLUMN retracted INTEGER NOT NULL '
-              'DEFAULT 0',
-            );
-            await customStatement(
-              'ALTER TABLE messages ADD COLUMN retracted_at INTEGER',
-            );
-            await customStatement(
-              'ALTER TABLE messages ADD COLUMN edited_at INTEGER',
-            );
-          }
-          if (from < 4) {
-            // XEP-0444 reactions. Created empty and populated from live traffic:
-            // reactions are ephemeral by nature and there is nothing to
-            // migrate from an earlier build, because none of them existed.
-            await customStatement(
-              'CREATE TABLE IF NOT EXISTS reactions ('
-              'target_id TEXT NOT NULL, '
-              'emoji TEXT NOT NULL, '
-              'reactor TEXT NOT NULL, '
-              'reacted_at INTEGER NOT NULL DEFAULT 0, '
-              'PRIMARY KEY (target_id, emoji, reactor))',
-            );
-            await customStatement(
-              'CREATE INDEX IF NOT EXISTS reactions_target '
-              'ON reactions (target_id)',
-            );
-          }
-          if (from < 3) {
-            // Per-conversation track choice. Empty string means "no override",
-            // which is also the right answer for every conversation that
-            // existed before this column: nobody had chosen yet.
-            //
-            // No rewrite of messages.enc_mode here: that column stores what a
-            // message *actually used*, which is a fact about the past and does
-            // not change because we renamed the vocabulary. The rename lives
-            // in EncModeToken.parse, which still understands the old words
-            // ('pq', 'standard', ...).
-            await customStatement(
-              "ALTER TABLE chats ADD COLUMN track_override TEXT NOT NULL "
-              "DEFAULT ''",
-            );
-          }
-        },
-      );
+    onUpgrade: (m, from, to) async {
+      if (from < 19) {
+        await customStatement(
+          'ALTER TABLE chats ADD COLUMN muc_private_non_anonymous '
+          'INTEGER NOT NULL DEFAULT 0',
+        );
+      }
+      if (from < 18) {
+        await customStatement(
+          'ALTER TABLE chats ADD COLUMN is_group INTEGER NOT NULL '
+          'DEFAULT 0',
+        );
+        await customStatement(
+          "ALTER TABLE chats ADD COLUMN muc_nick TEXT NOT NULL "
+          "DEFAULT ''",
+        );
+      }
+      if (from < 17) {
+        await customStatement(
+          "ALTER TABLE messages ADD COLUMN media_url TEXT NOT NULL "
+          "DEFAULT ''",
+        );
+        await customStatement(
+          "ALTER TABLE messages ADD COLUMN media_mime TEXT NOT NULL "
+          "DEFAULT ''",
+        );
+        await customStatement(
+          "ALTER TABLE messages ADD COLUMN media_name TEXT NOT NULL "
+          "DEFAULT ''",
+        );
+        await customStatement(
+          "ALTER TABLE messages ADD COLUMN local_path TEXT NOT NULL "
+          "DEFAULT ''",
+        );
+      }
+      if (from < 16) {
+        await customStatement(
+          'ALTER TABLE messages ADD COLUMN displayed INTEGER NOT NULL '
+          'DEFAULT 0',
+        );
+        await customStatement(
+          'ALTER TABLE messages ADD COLUMN markable INTEGER NOT NULL '
+          'DEFAULT 0',
+        );
+      }
+      if (from < 2) {
+        // Only additive changes so far; drift still expects an explicit
+        // step per version so a future destructive change has a place to
+        // go. Raw SQL because addColumn's generic bound is
+        // GeneratedColumn<Object> and will not take a TextColumn.
+        await customStatement(
+          "ALTER TABLE messages ADD COLUMN delivery_error TEXT NOT NULL "
+          "DEFAULT ''",
+        );
+      }
+      if (from < 15) {
+        await customStatement(
+          "ALTER TABLE chats ADD COLUMN appearance TEXT NOT NULL DEFAULT ''",
+        );
+      }
+      if (from < 14) {
+        await customStatement(
+          'CREATE TABLE IF NOT EXISTS subscription_requests ('
+          'jid TEXT NOT NULL, '
+          'outgoing INTEGER NOT NULL DEFAULT 0, '
+          'asked_at INTEGER NOT NULL DEFAULT 0, '
+          'PRIMARY KEY (jid, outgoing))',
+        );
+      }
+      if (from < 13) {
+        await customStatement(
+          'ALTER TABLE pinned_messages ADD COLUMN sequence INTEGER NOT NULL '
+          'DEFAULT 0',
+        );
+      }
+      if (from < 12) {
+        await customStatement(
+          'CREATE TABLE IF NOT EXISTS pinned_messages ('
+          'chat_jid TEXT NOT NULL, '
+          'stanza_id TEXT NOT NULL, '
+          'pinned_at INTEGER NOT NULL DEFAULT 0, '
+          'PRIMARY KEY (chat_jid, stanza_id))',
+        );
+      }
+      if (from < 11) {
+        await customStatement(
+          'CREATE TABLE IF NOT EXISTS blocked_contacts ('
+          'jid TEXT NOT NULL PRIMARY KEY, '
+          'blocked_at INTEGER NOT NULL DEFAULT 0)',
+        );
+      }
+      if (from < 10) {
+        await customStatement(
+          'ALTER TABLE chats ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0',
+        );
+        await customStatement(
+          'ALTER TABLE chats ADD COLUMN muted INTEGER NOT NULL DEFAULT 0',
+        );
+        await customStatement(
+          'ALTER TABLE chats ADD COLUMN archived INTEGER NOT NULL DEFAULT 0',
+        );
+        await customStatement(
+          'ALTER TABLE chats ADD COLUMN unread_count INTEGER NOT NULL '
+          'DEFAULT 0',
+        );
+        await customStatement(
+          'ALTER TABLE chats ADD COLUMN last_read_at INTEGER NOT NULL '
+          'DEFAULT 0',
+        );
+      }
+      if (from < 9) {
+        // retracted_at was created with a NOT NULL default, so every row
+        // has a value and the column cannot say whether the message was
+        // actually retracted. drift cannot change a column's nullability in
+        // place, and SQLite cannot either, so the column is rebuilt.
+        await customStatement('ALTER TABLE messages RENAME TO messages_old');
+        await customStatement(
+          'CREATE TABLE messages ('
+          'id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, '
+          'chat_jid TEXT NOT NULL REFERENCES chats (jid), '
+          'sender TEXT NOT NULL, '
+          'stanza_id TEXT NOT NULL DEFAULT \'\', '
+          'body TEXT NOT NULL, '
+          'timestamp INTEGER NOT NULL, '
+          'enc_mode TEXT NOT NULL DEFAULT \'none\', '
+          'incoming INTEGER NOT NULL, '
+          'delivered INTEGER NOT NULL DEFAULT 0, '
+          'is_carbon INTEGER NOT NULL DEFAULT 0, '
+          'delivery_error TEXT NOT NULL DEFAULT \'\', '
+          'retracted INTEGER NOT NULL DEFAULT 0, '
+          'retracted_at INTEGER, '
+          'reply_to TEXT NOT NULL DEFAULT \'\', '
+          'reply_body TEXT NOT NULL DEFAULT \'\', '
+          'reply_author TEXT NOT NULL DEFAULT \'\', '
+          'edited_at INTEGER)',
+        );
+        // `retracted` rather than `retracted_at` decides what counts: an
+        // existing row with retracted = 1 keeps a timestamp, and one with 0
+        // gets none.
+        await customStatement(
+          'INSERT INTO messages '
+          'SELECT id, chat_jid, sender, stanza_id, body, timestamp, '
+          'enc_mode, incoming, delivered, is_carbon, delivery_error, '
+          'retracted, '
+          'CASE WHEN retracted = 1 THEN \'2026-01-01 00:00:00\' ELSE NULL END, '
+          'reply_to, reply_body, reply_author, edited_at '
+          'FROM messages_old',
+        );
+        await customStatement('DROP TABLE messages_old');
+        await customStatement(
+          'CREATE INDEX IF NOT EXISTS messages_chat_time '
+          'ON messages (chat_jid, timestamp)',
+        );
+      }
+      if (from < 8) {
+        // The chat-list and message-list queries both filter on chat_jid and
+        // order by timestamp. Without this every conversation open scans the
+        // whole messages table.
+        await customStatement(
+          'CREATE INDEX IF NOT EXISTS messages_chat_time '
+          'ON messages (chat_jid, timestamp)',
+        );
+      }
+      if (from < 7) {
+        // XEP-0461 reply quote, copied onto the replying row so it
+        // survives its target being retracted or never loaded.
+        await customStatement(
+          "ALTER TABLE messages ADD COLUMN reply_to TEXT NOT NULL DEFAULT ''",
+        );
+        await customStatement(
+          "ALTER TABLE messages ADD COLUMN reply_body TEXT NOT NULL DEFAULT ''",
+        );
+        await customStatement(
+          "ALTER TABLE messages ADD COLUMN reply_author TEXT NOT NULL DEFAULT ''",
+        );
+      }
+      if (from < 6) {
+        await customStatement(
+          'CREATE TABLE IF NOT EXISTS pending_corrections ('
+          'target_id TEXT NOT NULL PRIMARY KEY, '
+          'body TEXT NOT NULL, '
+          'enc_mode TEXT NOT NULL DEFAULT \'none\', '
+          'corrected_at INTEGER NOT NULL DEFAULT 0)',
+        );
+      }
+      if (from < 5) {
+        // XEP-0424 retraction + XEP-0308 correction markers.
+        await customStatement(
+          'ALTER TABLE messages ADD COLUMN retracted INTEGER NOT NULL '
+          'DEFAULT 0',
+        );
+        await customStatement(
+          'ALTER TABLE messages ADD COLUMN retracted_at INTEGER',
+        );
+        await customStatement(
+          'ALTER TABLE messages ADD COLUMN edited_at INTEGER',
+        );
+      }
+      if (from < 4) {
+        // XEP-0444 reactions. Created empty and populated from live traffic:
+        // reactions are ephemeral by nature and there is nothing to
+        // migrate from an earlier build, because none of them existed.
+        await customStatement(
+          'CREATE TABLE IF NOT EXISTS reactions ('
+          'target_id TEXT NOT NULL, '
+          'emoji TEXT NOT NULL, '
+          'reactor TEXT NOT NULL, '
+          'reacted_at INTEGER NOT NULL DEFAULT 0, '
+          'PRIMARY KEY (target_id, emoji, reactor))',
+        );
+        await customStatement(
+          'CREATE INDEX IF NOT EXISTS reactions_target '
+          'ON reactions (target_id)',
+        );
+      }
+      if (from < 3) {
+        // Per-conversation track choice. Empty string means "no override",
+        // which is also the right answer for every conversation that
+        // existed before this column: nobody had chosen yet.
+        //
+        // No rewrite of messages.enc_mode here: that column stores what a
+        // message *actually used*, which is a fact about the past and does
+        // not change because we renamed the vocabulary. The rename lives
+        // in EncModeToken.parse, which still understands the old words
+        // ('pq', 'standard', ...).
+        await customStatement(
+          "ALTER TABLE chats ADD COLUMN track_override TEXT NOT NULL "
+          "DEFAULT ''",
+        );
+      }
+    },
+  );
 
   /// True when the user has acknowledged, for this conversation, that
   /// plaintext is readable by anyone with server access.
@@ -602,17 +594,16 @@ class AppDatabase extends _$AppDatabase {
     if (targetId.isEmpty) return false;
     // Never un-retract: a second retraction for the same message is a replay,
     // and honouring it would flip the marker back off.
-    final changed = await (update(messages)
-          ..where((
-            m,
-          ) =>
-              m.stanzaId.equals(targetId) & m.retracted.equals(false)))
-        .write(
-      MessagesCompanion(
-        retracted: const Value(true),
-        retractedAt: Value(DateTime.now()),
-      ),
-    );
+    final changed =
+        await (update(messages)..where(
+              (m) => m.stanzaId.equals(targetId) & m.retracted.equals(false),
+            ))
+            .write(
+              MessagesCompanion(
+                retracted: const Value(true),
+                retractedAt: Value(DateTime.now()),
+              ),
+            );
     return changed > 0;
   }
 
@@ -637,18 +628,19 @@ class AppDatabase extends _$AppDatabase {
   }) async {
     if (targetId.isEmpty) return;
     final now = DateTime.now();
-    final updated = await (update(messages)
-          ..where((m) => m.stanzaId.equals(targetId)))
-        .write(
-      MessagesCompanion(
-        body: Value(body),
-        editedAt: Value(now),
-        // Kept in step with a correction of a retracted message: the sender
-        // un-deleted it by correcting it, and a placeholder that outlives its
-        // message is the wrong history.
-        retracted: const Value(false),
-      ),
-    );
+    final updated =
+        await (update(
+          messages,
+        )..where((m) => m.stanzaId.equals(targetId))).write(
+          MessagesCompanion(
+            body: Value(body),
+            editedAt: Value(now),
+            // Kept in step with a correction of a retracted message: the sender
+            // un-deleted it by correcting it, and a placeholder that outlives its
+            // message is the wrong history.
+            retracted: const Value(false),
+          ),
+        );
     if (updated > 0) {
       await upsertChat(chatJid);
       return;
@@ -671,16 +663,15 @@ class AppDatabase extends _$AppDatabase {
   ///
   /// Exposed because the failure worth testing for is a held correction being
   /// silently dropped, which leaves a permanently stale message on screen.
-  Future<PendingCorrection?> pendingCorrection(String targetId) =>
-      (select(pendingCorrections)
-            ..where((p) => p.targetId.equals(targetId)))
-          .getSingleOrNull();
+  Future<PendingCorrection?> pendingCorrection(String targetId) => (select(
+    pendingCorrections,
+  )..where((p) => p.targetId.equals(targetId))).getSingleOrNull();
 
   /// Drops a held correction, once it has been applied.
   Future<void> clearPendingCorrection(String targetId) async {
-    await (delete(pendingCorrections)
-          ..where((p) => p.targetId.equals(targetId)))
-        .go();
+    await (delete(
+      pendingCorrections,
+    )..where((p) => p.targetId.equals(targetId))).go();
   }
 
   /// Records one reactor's full set of emojis on [targetId].
@@ -695,9 +686,9 @@ class AppDatabase extends _$AppDatabase {
     required List<String> emojis,
   }) async {
     await transaction(() async {
-      await (delete(reactions)
-            ..where((r) =>
-                r.targetId.equals(targetId) & r.reactor.equals(reactor)))
+      await (delete(reactions)..where(
+            (r) => r.targetId.equals(targetId) & r.reactor.equals(reactor),
+          ))
           .go();
       // Two identical rows in one broadcast are a client bug or a replayed
       // stanza; the primary key would throw, and one emoji is what it means.
@@ -721,14 +712,13 @@ class AppDatabase extends _$AppDatabase {
   ///
   /// Sorted by count so the common reaction leads, which is the order every
   /// other client uses and the one a user reads fastest.
-  Future<List<({String emoji, Set<String> reactors, bool mine})>> reactionGroups(
-    String targetId, {
-    required String myJid,
-  }) async {
-    final rows = await (select(reactions)
-          ..where((r) => r.targetId.equals(targetId))
-          ..orderBy([(r) => OrderingTerm.desc(r.reactedAt)]))
-        .get();
+  Future<List<({String emoji, Set<String> reactors, bool mine})>>
+  reactionGroups(String targetId, {required String myJid}) async {
+    final rows =
+        await (select(reactions)
+              ..where((r) => r.targetId.equals(targetId))
+              ..orderBy([(r) => OrderingTerm.desc(r.reactedAt)]))
+            .get();
     final byEmoji = <String, Set<String>>{};
     final mine = <String>{};
     for (final row in rows) {
@@ -737,11 +727,7 @@ class AppDatabase extends _$AppDatabase {
     }
     final groups = byEmoji.entries
         .map(
-          (e) => (
-            emoji: e.key,
-            reactors: e.value,
-            mine: mine.contains(e.key),
-          ),
+          (e) => (emoji: e.key, reactors: e.value, mine: mine.contains(e.key)),
         )
         .toList();
     groups.sort((a, b) {
@@ -773,9 +759,9 @@ class AppDatabase extends _$AppDatabase {
   /// The track the user chose for [chatJid], or null to use the global
   /// default.
   Future<Track?> trackOverride(String chatJid) async {
-    final row = (await (select(chats)..where((c) => c.jid.equals(chatJid)))
-            .getSingleOrNull())
-        ?.trackOverride;
+    final row = (await (select(
+      chats,
+    )..where((c) => c.jid.equals(chatJid))).getSingleOrNull())?.trackOverride;
     if (row == null || row.isEmpty) return null;
     return Track.fromStored(row);
   }
@@ -794,13 +780,13 @@ class AppDatabase extends _$AppDatabase {
         ChatsCompanion(jid: Value(chatJid), trackOverride: Value(value)),
         mode: InsertMode.insertOrIgnore,
       );
-      await (update(chats)..where((c) => c.jid.equals(chatJid)))
-          .write(ChatsCompanion(trackOverride: Value(value)));
+      await (update(chats)..where((c) => c.jid.equals(chatJid))).write(
+        ChatsCompanion(trackOverride: Value(value)),
+      );
     }
   }
 
-  Future<List<RosterEntry>> allRosterEntries() =>
-      (select(rosterEntries)).get();
+  Future<List<RosterEntry>> allRosterEntries() => (select(rosterEntries)).get();
 
   /// Records that the server refused the message sent with [stanzaId].
   ///
@@ -808,21 +794,22 @@ class AppDatabase extends _$AppDatabase {
   /// failure belonged to a message it still holds.
   Future<bool> markDeliveryFailure(String stanzaId, String reason) async {
     if (stanzaId.isEmpty) return false;
-    final changed = await (update(messages)
-          ..where((m) => m.stanzaId.equals(stanzaId)))
-        .write(MessagesCompanion(deliveryError: Value(reason)));
+    final changed =
+        await (update(messages)..where((m) => m.stanzaId.equals(stanzaId)))
+            .write(MessagesCompanion(deliveryError: Value(reason)));
     return changed > 0;
   }
 
   /// One contact's subscription state, for the "will this be delivered?"
   /// hint.
-  Future<RosterEntry?> rosterEntry(String jid) =>
-      (select(rosterEntries)..where((r) => r.jid.equals(jid)))
-          .getSingleOrNull();
+  Future<RosterEntry?> rosterEntry(String jid) => (select(
+    rosterEntries,
+  )..where((r) => r.jid.equals(jid))).getSingleOrNull();
 
   Future<String?> metaValue(String key) async {
-    final row = await (select(meta)..where((m) => m.key.equals(key)))
-        .getSingleOrNull();
+    final row = await (select(
+      meta,
+    )..where((m) => m.key.equals(key))).getSingleOrNull();
     return row?.value;
   }
 
@@ -837,9 +824,9 @@ class AppDatabase extends _$AppDatabase {
   }
 
   Future<String?> rosterVersion() async {
-    final row = await (select(meta)
-          ..where((m) => m.key.equals('roster_version')))
-        .getSingleOrNull();
+    final row = await (select(
+      meta,
+    )..where((m) => m.key.equals('roster_version'))).getSingleOrNull();
     return row?.value;
   }
 
@@ -852,9 +839,7 @@ class AppDatabase extends _$AppDatabase {
   }) async {
     await transaction(() async {
       if (removed.isNotEmpty) {
-        await (delete(rosterEntries)
-              ..where((r) => r.jid.isIn(removed)))
-            .go();
+        await (delete(rosterEntries)..where((r) => r.jid.isIn(removed))).go();
       }
       for (final item in [...modified, ...added]) {
         await into(rosterEntries).insertOnConflictUpdate(
@@ -918,10 +903,8 @@ class AppDatabase extends _$AppDatabase {
 
   /// Every pending subscription request, newest first.
   Stream<List<SubscriptionRequest>> watchSubscriptionRequests() => (select(
-        subscriptionRequests,
-      )
-            ..orderBy([(r) => OrderingTerm.desc(r.askedAt)]))
-          .watch();
+    subscriptionRequests,
+  )..orderBy([(r) => OrderingTerm.desc(r.askedAt)])).watch();
 
   /// Records that [jid] asked to subscribe.
   ///
@@ -937,18 +920,19 @@ class AppDatabase extends _$AppDatabase {
   /// Records that we asked [jid] to let us see their presence.
   Future<void> addOutgoingRequest(String jid) async {
     await into(subscriptionRequests).insert(
-      SubscriptionRequestsCompanion.insert(jid: jid, outgoing: const Value(true)),
+      SubscriptionRequestsCompanion.insert(
+        jid: jid,
+        outgoing: const Value(true),
+      ),
       mode: InsertMode.insertOrIgnore,
     );
   }
 
   /// Records that [jid]'s request was answered, in either direction.
   Future<void> resolveRequest(String jid, {required bool outgoing}) async {
-    await (delete(subscriptionRequests)
-          ..where(
-            (r) => r.jid.equals(jid) & r.outgoing.equals(outgoing),
-          ))
-        .go();
+    await (delete(
+      subscriptionRequests,
+    )..where((r) => r.jid.equals(jid) & r.outgoing.equals(outgoing))).go();
   }
 
   /// Every OMEMO device id this installation has published.
@@ -995,8 +979,9 @@ class AppDatabase extends _$AppDatabase {
       // Appearance set before the conversation has a row — the same case as
       // pinning a chat that has never had a message.
       await upsertChat(chatJid);
-      await (update(chats)..where((c) => c.jid.equals(chatJid)))
-          .write(ChatsCompanion(appearance: Value(value)));
+      await (update(chats)..where((c) => c.jid.equals(chatJid))).write(
+        ChatsCompanion(appearance: Value(value)),
+      );
     }
   }
 
@@ -1022,18 +1007,15 @@ class AppDatabase extends _$AppDatabase {
   /// Pins a message, or unpins it when already pinned.
   Future<void> togglePinned(String chatJid, String stanzaId) async {
     if (stanzaId.isEmpty) return;
-    final existing = await (select(pinnedMessages)
-          ..where(
-            (p) =>
-                p.chatJid.equals(chatJid) & p.stanzaId.equals(stanzaId),
-          ))
-        .getSingleOrNull();
-    if (existing != null) {
-      await (delete(pinnedMessages)
-            ..where(
-              (p) =>
-                  p.chatJid.equals(chatJid) & p.stanzaId.equals(stanzaId),
+    final existing =
+        await (select(pinnedMessages)..where(
+              (p) => p.chatJid.equals(chatJid) & p.stanzaId.equals(stanzaId),
             ))
+            .getSingleOrNull();
+    if (existing != null) {
+      await (delete(pinnedMessages)..where(
+            (p) => p.chatJid.equals(chatJid) & p.stanzaId.equals(stanzaId),
+          ))
           .go();
       return;
     }
@@ -1042,10 +1024,11 @@ class AppDatabase extends _$AppDatabase {
     // The expression is what gets read, not the column: with `max()` the result
     // set carries the aggregate, not a plain column.
     final highestExpr = pinnedMessages.sequence.max();
-    final highest = await (selectOnly(pinnedMessages)
-          ..addColumns([highestExpr])
-          ..where(pinnedMessages.chatJid.equals(chatJid)))
-        .getSingle();
+    final highest =
+        await (selectOnly(pinnedMessages)
+              ..addColumns([highestExpr])
+              ..where(pinnedMessages.chatJid.equals(chatJid)))
+            .getSingle();
     final next = (highest.read(highestExpr) ?? 0) + 1;
     await into(pinnedMessages).insert(
       PinnedMessagesCompanion.insert(
@@ -1057,24 +1040,23 @@ class AppDatabase extends _$AppDatabase {
   }
 
   Future<bool> isPinned(String chatJid, String stanzaId) async =>
-      (await (select(pinnedMessages)
-            ..where(
-              (p) =>
-                  p.chatJid.equals(chatJid) & p.stanzaId.equals(stanzaId),
-            ))
+      (await (select(pinnedMessages)..where(
+            (p) => p.chatJid.equals(chatJid) & p.stanzaId.equals(stanzaId),
+          ))
           .getSingleOrNull()) !=
       null;
 
   /// Pinned messages in [chatJid], most recently pinned first.
-  Stream<List<String>> watchPinned(String chatJid) => (select(pinnedMessages)
-        ..where((p) => p.chatJid.equals(chatJid))
-        ..orderBy([
-          (p) => OrderingTerm.desc(p.sequence),
-          (p) => OrderingTerm.desc(p.pinnedAt),
-          (p) => OrderingTerm.desc(p.stanzaId),
-        ]))
-      .watch()
-      .map((rows) => rows.map((r) => r.stanzaId).toList());
+  Stream<List<String>> watchPinned(String chatJid) =>
+      (select(pinnedMessages)
+            ..where((p) => p.chatJid.equals(chatJid))
+            ..orderBy([
+              (p) => OrderingTerm.desc(p.sequence),
+              (p) => OrderingTerm.desc(p.pinnedAt),
+              (p) => OrderingTerm.desc(p.stanzaId),
+            ]))
+          .watch()
+          .map((rows) => rows.map((r) => r.stanzaId).toList());
 
   /// The JIDs currently blocked (XEP-0191).
   Future<Set<String>> blockedJids() async =>
@@ -1082,8 +1064,9 @@ class AppDatabase extends _$AppDatabase {
 
   /// True when [jid] is blocked.
   Future<bool> isBlocked(String jid) async =>
-      (await (select(blockedContacts)..where((b) => b.jid.equals(jid)))
-          .getSingleOrNull()) !=
+      (await (select(
+        blockedContacts,
+      )..where((b) => b.jid.equals(jid))).getSingleOrNull()) !=
       null;
 
   /// Records that [jid] is blocked.
@@ -1154,12 +1137,12 @@ class AppDatabase extends _$AppDatabase {
   }) async {
     final updated = await (update(chats)..where((c) => c.jid.equals(chatJid)))
         .write(
-      ChatsCompanion(
-        pinned: pinned == null ? const Value.absent() : Value(pinned),
-        muted: muted == null ? const Value.absent() : Value(muted),
-        archived: archived == null ? const Value.absent() : Value(archived),
-      ),
-    );
+          ChatsCompanion(
+            pinned: pinned == null ? const Value.absent() : Value(pinned),
+            muted: muted == null ? const Value.absent() : Value(muted),
+            archived: archived == null ? const Value.absent() : Value(archived),
+          ),
+        );
     if (updated == 0) {
       // Pinning a conversation that has no row yet — opening a chat from a JID
       // and pinning it before any message exists. Creating the row keeps
@@ -1302,21 +1285,16 @@ class AppDatabase extends _$AppDatabase {
       (select(chats)..where((c) => c.jid.equals(jid))).getSingleOrNull();
 
   /// Rooms with a nick to rejoin after login (Conversations connectMultiMode).
-  Future<List<Chat>> groupChatsForJoin() =>
-      (select(chats)
-            ..where(
-              (c) => c.isGroup.equals(true) & c.mucNick.equals('').not(),
-            ))
-          .get();
+  Future<List<Chat>> groupChatsForJoin() => (select(
+    chats,
+  )..where((c) => c.isGroup.equals(true) & c.mucNick.equals('').not())).get();
 
   Future<void> insertMessage(MessagesCompanion message) async {
     await transaction(() async {
       // A correction that arrived before its message is applied here rather
       // than stored as a message of its own: showing the same text twice — once
       // stale, once correct — is worse than showing nothing for a moment.
-      final targetId = message.stanzaId.present
-          ? message.stanzaId.value
-          : '';
+      final targetId = message.stanzaId.present ? message.stanzaId.value : '';
       PendingCorrection? pending;
       if (targetId.isNotEmpty) {
         pending = await pendingCorrection(targetId);
@@ -1341,10 +1319,11 @@ class AppDatabase extends _$AppDatabase {
       final ts = message.timestamp.present
           ? message.timestamp.value
           : DateTime.now();
-      await (update(chats)
-            ..where((c) =>
+      await (update(chats)..where(
+            (c) =>
                 c.jid.equals(message.chatJid.value) &
-                c.lastActivity.isSmallerThanValue(ts)))
+                c.lastActivity.isSmallerThanValue(ts),
+          ))
           .write(ChatsCompanion(lastActivity: Value(ts)));
     });
   }
@@ -1359,18 +1338,20 @@ class AppDatabase extends _$AppDatabase {
 
   /// Records the local cache path after a successful download.
   Future<int> setMessageLocalPath(int messageId, String path) {
-    return (update(messages)..where((m) => m.id.equals(messageId)))
-        .write(MessagesCompanion(localPath: Value(path)));
+    return (update(messages)..where((m) => m.id.equals(messageId))).write(
+      MessagesCompanion(localPath: Value(path)),
+    );
   }
 
   /// Marks one of our outgoing messages as delivered (XEP-0184).
   /// Returns the number of rows updated (0 when the id is unknown).
   Future<int> markDelivered(String chatJid, String stanzaId) {
-    return (update(messages)
-          ..where((m) =>
+    return (update(messages)..where(
+          (m) =>
               m.chatJid.equals(chatJid) &
               m.stanzaId.equals(stanzaId) &
-              m.incoming.equals(false)))
+              m.incoming.equals(false),
+        ))
         .write(const MessagesCompanion(delivered: Value(true)));
   }
 
@@ -1380,34 +1361,39 @@ class AppDatabase extends _$AppDatabase {
   /// every preceding `STATUS_SEND_RECEIVED` become `STATUS_SEND_DISPLAYED`.
   Future<int> markDisplayed(String chatJid, String stanzaId) async {
     if (stanzaId.isEmpty) return 0;
-    final target = await (select(messages)
-          ..where((m) =>
-              m.chatJid.equals(chatJid) &
-              m.stanzaId.equals(stanzaId) &
-              m.incoming.equals(false)))
-        .getSingleOrNull();
+    final target =
+        await (select(messages)..where(
+              (m) =>
+                  m.chatJid.equals(chatJid) &
+                  m.stanzaId.equals(stanzaId) &
+                  m.incoming.equals(false),
+            ))
+            .getSingleOrNull();
     if (target == null) return 0;
-    return (update(messages)
-          ..where((m) =>
+    return (update(messages)..where(
+          (m) =>
               m.chatJid.equals(chatJid) &
               m.incoming.equals(false) &
-              m.timestamp.isSmallerOrEqualValue(target.timestamp)))
+              m.timestamp.isSmallerOrEqualValue(target.timestamp),
+        ))
         .write(
-      const MessagesCompanion(
-        delivered: Value(true),
-        displayed: Value(true),
-      ),
-    );
+          const MessagesCompanion(
+            delivered: Value(true),
+            displayed: Value(true),
+          ),
+        );
   }
 
   /// Newest incoming markable message in [chatJid], for sending `<displayed/>`.
   Future<Message?> lastIncomingMarkable(String chatJid) {
     return (select(messages)
-          ..where((m) =>
-              m.chatJid.equals(chatJid) &
-              m.incoming.equals(true) &
-              m.markable.equals(true) &
-              m.stanzaId.isNotValue(''))
+          ..where(
+            (m) =>
+                m.chatJid.equals(chatJid) &
+                m.incoming.equals(true) &
+                m.markable.equals(true) &
+                m.stanzaId.isNotValue(''),
+          )
           ..orderBy([
             (m) => OrderingTerm.desc(m.timestamp),
             (m) => OrderingTerm.desc(m.id),
@@ -1448,8 +1434,10 @@ class AppDatabase extends _$AppDatabase {
   Future<void> setSocks5ProxyEnabled(bool enabled) =>
       setMetaValue('pref_socks5_enabled', enabled ? '1' : '0');
 
-  Future<void> setSocks5ProxyHost(String host) =>
-      setMetaValue('pref_socks5_host', host.trim().isEmpty ? '127.0.0.1' : host.trim());
+  Future<void> setSocks5ProxyHost(String host) => setMetaValue(
+    'pref_socks5_host',
+    host.trim().isEmpty ? '127.0.0.1' : host.trim(),
+  );
 
   Future<void> setSocks5ProxyPort(int port) =>
       setMetaValue('pref_socks5_port', '$port');
@@ -1459,13 +1447,14 @@ class AppDatabase extends _$AppDatabase {
   /// Conversations `getLastMessageReceived` — used as the MAM catch-up
   /// `start` when no archive id cursor is stored yet.
   Future<DateTime?> latestMessageTimestamp() async {
-    final row = await (select(messages)
-          ..orderBy([
-            (m) => OrderingTerm.desc(m.timestamp),
-            (m) => OrderingTerm.desc(m.id),
-          ])
-          ..limit(1))
-        .getSingleOrNull();
+    final row =
+        await (select(messages)
+              ..orderBy([
+                (m) => OrderingTerm.desc(m.timestamp),
+                (m) => OrderingTerm.desc(m.id),
+              ])
+              ..limit(1))
+            .getSingleOrNull();
     return row?.timestamp;
   }
 
@@ -1491,11 +1480,13 @@ class AppDatabase extends _$AppDatabase {
   /// second copy (e.g. carbon + direct delivery) is not duplicated.
   Future<int?> findByStanzaId(String chatJid, String stanzaId) async {
     if (stanzaId.isEmpty) return null;
-    final row = await (select(messages)
-          ..where((m) =>
-              m.chatJid.equals(chatJid) & m.stanzaId.equals(stanzaId))
-          ..limit(1))
-        .getSingleOrNull();
+    final row =
+        await (select(messages)
+              ..where(
+                (m) => m.chatJid.equals(chatJid) & m.stanzaId.equals(stanzaId),
+              )
+              ..limit(1))
+            .getSingleOrNull();
     return row?.id;
   }
 }

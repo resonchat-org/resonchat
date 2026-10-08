@@ -19,8 +19,7 @@ void main() {
 
   DateTime clock(int seconds) => DateTime(2026).add(Duration(seconds: seconds));
 
-  Future<void> touch(String jid, int at) =>
-      db.upsertChat(jid, at: clock(at));
+  Future<void> touch(String jid, int at) => db.upsertChat(jid, at: clock(at));
 
   group('ordering', () {
     test('pinned conversations come first, then most recent', () async {
@@ -63,10 +62,9 @@ void main() {
       await touch('kept@example.org', 10);
       await touch('hidden@example.org', 20);
       await db.setChatFlag('hidden@example.org', archived: true);
-      expect(
-        (await db.watchChats().first).map((c) => c.jid),
-        ['kept@example.org'],
-      );
+      expect((await db.watchChats().first).map((c) => c.jid), [
+        'kept@example.org',
+      ]);
       // Same order as the main list: the archived one is the more recent.
       expect(
         (await db.watchChats(includeArchived: true).first).map((c) => c.jid),
@@ -81,20 +79,21 @@ void main() {
       await touch('kept@example.org', 10);
       await touch('hidden@example.org', 20);
       await db.setChatFlag('hidden@example.org', archived: true);
-      expect(
-        (await db.watchArchivedChats().first).map((c) => c.jid),
-        ['hidden@example.org'],
-      );
+      expect((await db.watchArchivedChats().first).map((c) => c.jid), [
+        'hidden@example.org',
+      ]);
     });
 
-    test('archiving everything leaves an empty archive, not an empty list',
-        () async {
-      await touch('a@example.org', 10);
-      await db.setChatFlag('a@example.org', archived: true);
-      expect(await db.watchChats().first, isEmpty);
-      expect(await db.watchArchivedChats().first, hasLength(1));
-      expect(await db.watchChats(includeArchived: true).first, hasLength(1));
-    });
+    test(
+      'archiving everything leaves an empty archive, not an empty list',
+      () async {
+        await touch('a@example.org', 10);
+        await db.setChatFlag('a@example.org', archived: true);
+        expect(await db.watchChats().first, isEmpty);
+        expect(await db.watchArchivedChats().first, hasLength(1));
+        expect(await db.watchChats(includeArchived: true).first, hasLength(1));
+      },
+    );
 
     test('a pinned conversation can also be archived', () async {
       // Pin and archive are independent: a user may want a busy conversation
@@ -112,7 +111,9 @@ void main() {
       await touch('a@example.org', 10);
       await touch('b@example.org', 10);
       await db.setChatFlag('a@example.org', muted: true);
-      final rows = {for (final c in await db.watchChats().first) c.jid: c.muted};
+      final rows = {
+        for (final c in await db.watchChats().first) c.jid: c.muted,
+      };
       expect(rows['a@example.org'], isTrue);
       expect(rows['b@example.org'], isFalse);
     });

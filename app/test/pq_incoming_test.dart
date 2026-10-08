@@ -16,22 +16,23 @@ import 'package:resonchat/xmpp/pq_incoming.dart';
 import 'package:resonchat/xmpp/pq_stanza.dart';
 
 PqEncryptedMessage _payload() => PqEncryptedMessage(
-      senderDeviceId: 1,
-      keys: const [],
-      iv: 'aXYtaGVyZQ==',
-      payload: 'Y2lwaGVydGV4dA==',
-    );
+  senderDeviceId: 1,
+  keys: const [],
+  iv: 'aXYtaGVyZQ==',
+  payload: 'Y2lwaGVydGV4dA==',
+);
 
 Stanza _pqMessage({String? id = 'm1'}) => Stanza.message(
-      id: id,
-      type: 'chat',
-      children: [
-        MessageBodyData('This message is encrypted. Use a supported client to '
-                'read it.')
-            .toXML(),
-        PqEncryptedData(_payload()).toXml(),
-      ],
-    );
+  id: id,
+  type: 'chat',
+  children: [
+    MessageBodyData(
+      'This message is encrypted. Use a supported client to '
+      'read it.',
+    ).toXML(),
+    PqEncryptedData(_payload()).toXml(),
+  ],
+);
 
 ({PqIncomingManager manager, List<PqDecryptFailure> failures}) _manager(
   PqIncomingCallback decrypt,
@@ -95,34 +96,38 @@ void main() {
       expect(left, isEmpty);
     });
 
-    test('it is marked encrypted, so carbons are not mistaken for failures',
-        () async {
-      // Our own message mirrored back from another resource was encrypted for
-      // the *peer's* devices. Reporting that as a failed delivery would be
-      // inventing a problem.
-      final m = _manager((_) async => 'the real message').manager;
-      final state = await _run(m, _pqMessage());
-      expect(state.encrypted, isTrue);
-    });
+    test(
+      'it is marked encrypted, so carbons are not mistaken for failures',
+      () async {
+        // Our own message mirrored back from another resource was encrypted for
+        // the *peer's* devices. Reporting that as a failed delivery would be
+        // inventing a problem.
+        final m = _manager((_) async => 'the real message').manager;
+        final state = await _run(m, _pqMessage());
+        expect(state.encrypted, isTrue);
+      },
+    );
 
-    test('the EME declaration survives, because it carries the label',
-        () async {
-      final m = _manager((_) async => 'the real message').manager;
-      final stanza = Stanza.message(
-        children: [
-          MessageBodyData('fallback').toXML(),
-          XMLNode.xmlns(
-            tag: 'encryption',
-            xmlns: emeXmlns,
-            attributes: {'namespace': emePomemo0},
-          ),
-          PqEncryptedData(_payload()).toXml(),
-        ],
-      );
-      final state = await _run(m, stanza);
-      final eme = state.stanza.firstTag('encryption', xmlns: emeXmlns);
-      expect(eme?.attributes['namespace'], emePomemo0);
-    });
+    test(
+      'the EME declaration survives, because it carries the label',
+      () async {
+        final m = _manager((_) async => 'the real message').manager;
+        final stanza = Stanza.message(
+          children: [
+            MessageBodyData('fallback').toXML(),
+            XMLNode.xmlns(
+              tag: 'encryption',
+              xmlns: emeXmlns,
+              attributes: {'namespace': emePomemo0},
+            ),
+            PqEncryptedData(_payload()).toXml(),
+          ],
+        );
+        final state = await _run(m, stanza);
+        final eme = state.stanza.firstTag('encryption', xmlns: emeXmlns);
+        expect(eme?.attributes['namespace'], emePomemo0);
+      },
+    );
 
     test('the stanza id is carried through', () async {
       // Without the id a delivery receipt or a carbon cannot be matched back
@@ -148,15 +153,17 @@ void main() {
       );
     });
 
-    test('carries an error, so the placeholder is not shown as the message',
-        () async {
-      // Without this the user reads "This message is encrypted. Use a
-      // supported client to read it." as if it were what their contact sent.
-      // Only the second of those is actionable.
-      final m = _manager((_) async => null).manager;
-      final state = await _run(m, _pqMessage());
-      expect(state.encryptionError, isNotNull);
-    });
+    test(
+      'carries an error, so the placeholder is not shown as the message',
+      () async {
+        // Without this the user reads "This message is encrypted. Use a
+        // supported client to read it." as if it were what their contact sent.
+        // Only the second of those is actionable.
+        final m = _manager((_) async => null).manager;
+        final state = await _run(m, _pqMessage());
+        expect(state.encryptionError, isNotNull);
+      },
+    );
 
     test('and says so out loud', () async {
       final m = _manager((_) async => null);
@@ -166,18 +173,20 @@ void main() {
       expect(m.failures.single.reason, isNotEmpty);
     });
 
-    test('a throw from the crypto layer does not take the session down',
-        () async {
-      // One malformed message must not cost the user the whole connection.
-      final m = _manager((_) async => throw StateError('bad key'));
-      Object? caught;
-      try {
-        await _run(m.manager, _pqMessage());
-      } catch (e) {
-        caught = e;
-      }
-      expect(caught, isNull, reason: 'the pipeline has no place to put this');
-    });
+    test(
+      'a throw from the crypto layer does not take the session down',
+      () async {
+        // One malformed message must not cost the user the whole connection.
+        final m = _manager((_) async => throw StateError('bad key'));
+        Object? caught;
+        try {
+          await _run(m.manager, _pqMessage());
+        } catch (e) {
+          caught = e;
+        }
+        expect(caught, isNull, reason: 'the pipeline has no place to put this');
+      },
+    );
 
     test('a throw is reported as an error, not swallowed', () async {
       final m = _manager((_) async => throw StateError('bad key'));

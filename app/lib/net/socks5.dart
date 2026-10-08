@@ -39,7 +39,9 @@ class SocksSocket extends Stream<Uint8List> implements Socket {
     void Function()? onDone,
     bool? cancelOnError,
   }) {
-    return _broadcast.map(Uint8List.fromList).listen(
+    return _broadcast
+        .map(Uint8List.fromList)
+        .listen(
           onData,
           onError: onError,
           onDone: onDone,
@@ -81,8 +83,7 @@ class SocksSocket extends Stream<Uint8List> implements Socket {
   bool setOption(SocketOption option, bool enabled) =>
       _inner.setOption(option, enabled);
   @override
-  Uint8List getRawOption(RawSocketOption option) =>
-      _inner.getRawOption(option);
+  Uint8List getRawOption(RawSocketOption option) => _inner.getRawOption(option);
   @override
   void setRawOption(RawSocketOption option) => _inner.setRawOption(option);
 
@@ -186,7 +187,7 @@ String _statusMessage(int status) {
 
 class _SocketByteReader {
   _SocketByteReader(Stream<List<int>> stream)
-      : _iterator = StreamIterator<List<int>>(stream);
+    : _iterator = StreamIterator<List<int>>(stream);
 
   final StreamIterator<List<int>> _iterator;
   final List<int> _buf = <int>[];

@@ -36,11 +36,7 @@ void main() {
 
     test('mixed devices fall back to standard OMEMO', () {
       expect(
-        decideEncMode(
-          allDevices: {1, 2},
-          pqCapable: {1},
-          omemoCapable: {1, 2},
-        ),
+        decideEncMode(allDevices: {1, 2}, pqCapable: {1}, omemoCapable: {1, 2}),
         EncMode.standardOmemo,
       );
     });
@@ -59,30 +55,18 @@ void main() {
     test('capability sets must not include devices outside the chat', () {
       // A stale cache listing extra PQ devices must not upgrade the track.
       expect(
-        decideEncMode(
-          allDevices: {1},
-          pqCapable: {1, 9},
-          omemoCapable: {1},
-        ),
+        decideEncMode(allDevices: {1}, pqCapable: {1, 9}, omemoCapable: {1}),
         EncMode.pqOmemo,
       );
       expect(
-        decideEncMode(
-          allDevices: {1},
-          pqCapable: {9},
-          omemoCapable: {1},
-        ),
+        decideEncMode(allDevices: {1}, pqCapable: {9}, omemoCapable: {1}),
         EncMode.standardOmemo,
       );
     });
 
     test('untrusted devices force the safer fallback, never the B track', () {
       expect(
-        decideEncMode(
-          allDevices: {1, 2},
-          pqCapable: {1},
-          omemoCapable: {1},
-        ),
+        decideEncMode(allDevices: {1, 2}, pqCapable: {1}, omemoCapable: {1}),
         EncMode.none,
       );
     });

@@ -219,12 +219,14 @@ class MessageBubble extends StatelessWidget {
       // The selection tint is on the row, not the bubble: tinting the bubble
       // itself would hide the text it is tinting behind the highlight.
       color: selected
-          ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.5)
+          ? Theme.of(context).colorScheme.primaryContainer
+                .withValues(alpha: 0.5)
           : null,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
       child: Column(
-        crossAxisAlignment:
-            mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        crossAxisAlignment: mine
+            ? CrossAxisAlignment.end
+            : CrossAxisAlignment.start,
         children: [
           if (senderName != null)
             Padding(
@@ -238,10 +240,8 @@ class MessageBubble extends StatelessWidget {
                 ),
               ),
             ),
-          if (replyTo.isNotEmpty && !retracted) _ReplyQuote(
-              body: replyBody,
-              author: replyAuthor,
-            ),
+          if (replyTo.isNotEmpty && !retracted)
+            _ReplyQuote(body: replyBody, author: replyAuthor),
           GestureDetector(
             onTap: onTap,
             onLongPress: onLongPress,
@@ -292,15 +292,15 @@ class MessageBubble extends StatelessWidget {
                                   ),
                                 )
                               : _shouldHideUrlBody(message, text)
-                                  ? const SizedBox.shrink()
-                                  : Text(
-                                      text,
-                                      style: TextStyle(
-                                        fontSize: TgDimens.messageFontSize,
-                                        color: tg.textPrimary,
-                                        height: 1.3,
-                                      ),
-                                    ),
+                              ? const SizedBox.shrink()
+                              : Text(
+                                  text,
+                                  style: TextStyle(
+                                    fontSize: TgDimens.messageFontSize,
+                                    color: tg.textPrimary,
+                                    height: 1.3,
+                                  ),
+                                ),
                         ),
                         if (edited && !retracted)
                           Padding(
@@ -372,11 +372,7 @@ class _ReplyQuote extends StatelessWidget {
   Widget build(BuildContext context) {
     final tg = context.tg;
     return Padding(
-      padding: EdgeInsets.only(
-        left: 12,
-        right: 12,
-        bottom: 3,
-      ),
+      padding: EdgeInsets.only(left: 12, right: 12, bottom: 3),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -429,11 +425,7 @@ class _ReplyQuote extends StatelessWidget {
 /// The count is on the chip rather than hidden behind a long press because the
 /// question a reader asks first is "is this what I thought", not "who".
 class ReactionChip extends StatelessWidget {
-  const ReactionChip({
-    super.key,
-    required this.reaction,
-    this.onTap,
-  });
+  const ReactionChip({super.key, required this.reaction, this.onTap});
 
   final ReactionGroup reaction;
   final VoidCallback? onTap;
@@ -516,15 +508,15 @@ class _MetaRow extends StatelessWidget {
     final ticks = !mine
         ? null
         : failed
-            ? Icons.error_outline
-            : (delivered || displayed)
-                ? Icons.done_all
-                : Icons.done;
+        ? Icons.error_outline
+        : (delivered || displayed)
+        ? Icons.done_all
+        : Icons.done;
     final tickColor = failed
         ? tg.danger
         : displayed
-            ? tg.accent
-            : tg.textSecondary;
+        ? tg.accent
+        : tg.textSecondary;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -537,11 +529,7 @@ class _MetaRow extends StatelessWidget {
         ),
         if (ticks != null) ...[
           const SizedBox(width: 3),
-          Icon(
-            ticks,
-            size: 14,
-            color: tickColor,
-          ),
+          Icon(ticks, size: 14, color: tickColor),
         ],
         // Before the ticks on outgoing messages, after on incoming ones, so
         // the track lines up on the outer edge of the bubble either way.

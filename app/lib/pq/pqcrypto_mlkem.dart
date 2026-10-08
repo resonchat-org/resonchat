@@ -24,8 +24,7 @@ class PqcryptoMlKem768 implements MlKem768 {
 
   @override
   KemEncapsulation encapsulate(List<int> publicKey) {
-    final (ct, ss) =
-        _kem.encapsulate(Uint8List.fromList(publicKey));
+    final (ct, ss) = _kem.encapsulate(Uint8List.fromList(publicKey));
     return KemEncapsulation(ciphertext: ct, sharedSecret: ss);
   }
 

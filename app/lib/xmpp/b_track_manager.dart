@@ -36,10 +36,7 @@ class BTrackSession {
 }
 
 class BTrackManager {
-  BTrackManager({
-    required this.tracks,
-    required this.pubsubOf,
-  });
+  BTrackManager({required this.tracks, required this.pubsubOf});
 
   final Logger _log = Logger('BTrackManager');
   final DualTrackManager Function() tracks;
@@ -78,8 +75,10 @@ class BTrackManager {
       ownDevice: device,
       sessions: sessions,
       senderIkOf: (senderBare, deviceId) async {
-        final d = await tracks()
-            .deviceById(JID.fromString(senderBare), deviceId);
+        final d = await tracks().deviceById(
+          JID.fromString(senderBare),
+          deviceId,
+        );
         if (d == null) {
           throw StateError('no PQ bundle for $senderBare/$deviceId');
         }
@@ -89,9 +88,7 @@ class BTrackManager {
     _session = BTrackSession(device: device, sessions: sessions, layer: layer);
 
     final published = await publish();
-    _log.info(
-      published ? 'PQ bundle published' : 'PQ bundle publish failed',
-    );
+    _log.info(published ? 'PQ bundle published' : 'PQ bundle publish failed');
     if (published) {
       // Ensure the PQ one-time pool matches [pqOpkCount].
       await replenishPrekeys(target: pqCount);
@@ -114,8 +111,9 @@ class BTrackManager {
     final existing = await pm.getItems(bare, pomemoDevicesXmlns);
     if (existing.isType<List<PubSubItem>>()) {
       for (final item in existing.get<List<PubSubItem>>()) {
-        for (final dev in item.payload.children
-            .where((c) => c.tag == 'device')) {
+        for (final dev in item.payload.children.where(
+          (c) => c.tag == 'device',
+        )) {
           final id = int.tryParse('${dev.attributes['id']}');
           if (id != null) ids.add(id);
         }
@@ -159,8 +157,7 @@ class BTrackManager {
   Future<PqEncryptedMessage?> encryptIfPossible({
     required String peerJid,
     required String plaintext,
-  }) =>
-      encryptForPeers(peerJids: [peerJid], plaintext: plaintext);
+  }) => encryptForPeers(peerJids: [peerJid], plaintext: plaintext);
 
   /// Encrypts [plaintext] for every PQ device of each bare JID in [peerJids]
   /// (1:1 peer, or MUC member real JIDs + our own bare for multi-device).
@@ -203,10 +200,7 @@ class BTrackManager {
     if (!message.keys.any((k) => k.recipientDeviceId == session.device.id)) {
       return null;
     }
-    return session.layer.decrypt(
-      message,
-      senderBareJid: senderBareJid,
-    );
+    return session.layer.decrypt(message, senderBareJid: senderBareJid);
   }
 
   /// Refills the ML-KEM one-time prekey pool back up to [target] and

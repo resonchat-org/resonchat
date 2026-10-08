@@ -98,9 +98,7 @@ class AesGcmUrl {
   /// Fresh 12-byte IV + 32-byte key (Conversations `ofKeyAndIv`).
   static Uint8List newKeyAndIv() {
     final rnd = Random.secure();
-    return Uint8List.fromList(
-      List<int>.generate(44, (_) => rnd.nextInt(256)),
-    );
+    return Uint8List.fromList(List<int>.generate(44, (_) => rnd.nextInt(256)));
   }
 }
 
@@ -111,10 +109,7 @@ class AesGcmFileCrypto {
   static final _algo = AesGcm.with256bits();
 
   /// Encrypt [clear]; returns ciphertext ‖ 16-byte tag (upload body size = n+16).
-  static Future<Uint8List> encrypt(
-    Uint8List clear,
-    Uint8List ivAndKey,
-  ) async {
+  static Future<Uint8List> encrypt(Uint8List clear, Uint8List ivAndKey) async {
     final parts = AesGcmUrl.parseAnchor(HEX.encode(ivAndKey));
     final secretKey = await _algo.newSecretKeyFromBytes(parts.key);
     final box = await _algo.encrypt(

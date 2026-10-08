@@ -17,21 +17,18 @@ class DriftRosterStateManager extends BaseRosterStateManager {
   @override
   Future<RosterCacheLoadResult> loadRosterCache() async {
     final rows = await _db.allRosterEntries();
-    return RosterCacheLoadResult(
-      await _db.rosterVersion(),
-      [
-        for (final r in rows)
-          XmppRosterItem(
-            jid: r.jid,
-            name: r.name.isEmpty ? null : r.name,
-            subscription: r.subscription,
-            ask: r.ask.isEmpty ? null : r.ask,
-            groups: r.groups.isEmpty
-                ? const []
-                : (r.groups as List<dynamic>).cast<String>().toList(),
-          ),
-      ],
-    );
+    return RosterCacheLoadResult(await _db.rosterVersion(), [
+      for (final r in rows)
+        XmppRosterItem(
+          jid: r.jid,
+          name: r.name.isEmpty ? null : r.name,
+          subscription: r.subscription,
+          ask: r.ask.isEmpty ? null : r.ask,
+          groups: r.groups.isEmpty
+              ? const []
+              : (r.groups as List<dynamic>).cast<String>().toList(),
+        ),
+    ]);
   }
 
   @override

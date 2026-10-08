@@ -39,8 +39,8 @@ void main() {
       ),
     );
     return (await db.watchMessages(chat).first).firstWhere(
-          (m) => m.stanzaId == stanzaId,
-        );
+      (m) => m.stanzaId == stanzaId,
+    );
   }
 
   group('retraction', () {
@@ -95,14 +95,8 @@ void main() {
       await store(stanzaId: 'b');
       await db.markRetracted('a');
       final rows = await db.watchMessages(chat).first;
-      expect(
-        rows.firstWhere((m) => m.stanzaId == 'a').retracted,
-        isTrue,
-      );
-      expect(
-        rows.firstWhere((m) => m.stanzaId == 'b').retracted,
-        isFalse,
-      );
+      expect(rows.firstWhere((m) => m.stanzaId == 'a').retracted, isTrue);
+      expect(rows.firstWhere((m) => m.stanzaId == 'b').retracted, isFalse);
     });
   });
 
@@ -164,8 +158,7 @@ void main() {
       expect((await db.watchMessages(chat).first).single.encMode, 'OM');
     });
 
-    test('a held correction supersedes a retraction of the same message',
-        () async {
+    test('a held correction supersedes a retraction of the same message', () async {
       // The sender un-deleted it by correcting it; a placeholder that outlives
       // its message is the wrong history.
       await store(stanzaId: id);

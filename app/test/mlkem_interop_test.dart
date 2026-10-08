@@ -33,10 +33,10 @@ final _keySeed = List<int>.generate(64, (i) => i);
 final _encSeed = List<int>.generate(32, (i) => 0xFF - i);
 
 Map<String, String> _parseRef(String raw) => {
-      for (final line in raw.split('\n'))
-        if (line.contains('='))
-          line.split(':')[0].split('=')[0].trim(): line.split('=')[1].trim(),
-    };
+  for (final line in raw.split('\n'))
+    if (line.contains('='))
+      line.split(':')[0].split('=')[0].trim(): line.split('=')[1].trim(),
+};
 
 void main() {
   group('FIPS 203 contract', () {
@@ -71,10 +71,7 @@ void main() {
       final enc = kem.encapsulate(bob.publicKey);
       final tampered = List<int>.from(enc.ciphertext);
       tampered[0] ^= 0xFF;
-      expect(
-        kem.decapsulate(bob.secretKey, tampered),
-        isNot(enc.sharedSecret),
-      );
+      expect(kem.decapsulate(bob.secretKey, tampered), isNot(enc.sharedSecret));
     });
   });
 
@@ -104,36 +101,53 @@ void main() {
     final helper = File(_refHelper);
     final available = helper.existsSync();
 
-    test(
-      'Dart backend reproduces liboqs deterministic KAT values',
-      () {
-        final proc = Process.runSync(_refHelper, const []);
-        expect(proc.exitCode, 0, reason: '${proc.stderr}');
-        final ref = _parseRef('${proc.stdout}');
+    test('Dart backend reproduces liboqs deterministic KAT values', () {
+      final proc = Process.runSync(_refHelper, const []);
+      expect(proc.exitCode, 0, reason: '${proc.stderr}');
+      final ref = _parseRef('${proc.stdout}');
 
-        expect(ref['roundtrip'], '1',
-            reason: 'liboqs encaps/decaps disagreed with itself');
+      expect(
+        ref['roundtrip'],
+        '1',
+        reason: 'liboqs encaps/decaps disagreed with itself',
+      );
 
-        final kem = PqcKem.kyber768;
-        final (pk, sk) = kem.generateKeyPair(Uint8List.fromList(_keySeed));
-        final (ct, ss) = kem.encapsulate(
-          Uint8List.fromList(pk),
-          Uint8List.fromList(_encSeed),
-        );
-        final back = kem.decapsulate(Uint8List.fromList(sk), Uint8List.fromList(ct));
+      final kem = PqcKem.kyber768;
+      final (pk, sk) = kem.generateKeyPair(Uint8List.fromList(_keySeed));
+      final (ct, ss) = kem.encapsulate(
+        Uint8List.fromList(pk),
+        Uint8List.fromList(_encSeed),
+      );
+      final back = kem.decapsulate(
+        Uint8List.fromList(sk),
+        Uint8List.fromList(ct),
+      );
 
-        expect(HEX.encode(pk), ref['pk'],
-            reason: 'public keys differ from liboqs');
-        expect(HEX.encode(sk), ref['sk'],
-            reason: 'secret keys differ from liboqs');
-        expect(HEX.encode(ct), ref['ct'],
-            reason: 'ciphertexts differ from liboqs');
-        expect(HEX.encode(ss), ref['ss'],
-            reason: 'shared secrets differ from liboqs');
-        expect(HEX.encode(back), ref['ss'],
-            reason: 'Dart decapsulation differs from liboqs');
-      },
-      skip: available ? false : 'liboqs reference helper not built',
-    );
+      expect(
+        HEX.encode(pk),
+        ref['pk'],
+        reason: 'public keys differ from liboqs',
+      );
+      expect(
+        HEX.encode(sk),
+        ref['sk'],
+        reason: 'secret keys differ from liboqs',
+      );
+      expect(
+        HEX.encode(ct),
+        ref['ct'],
+        reason: 'ciphertexts differ from liboqs',
+      );
+      expect(
+        HEX.encode(ss),
+        ref['ss'],
+        reason: 'shared secrets differ from liboqs',
+      );
+      expect(
+        HEX.encode(back),
+        ref['ss'],
+        reason: 'Dart decapsulation differs from liboqs',
+      );
+    }, skip: available ? false : 'liboqs reference helper not built');
   });
 }

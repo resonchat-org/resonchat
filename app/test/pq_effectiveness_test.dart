@@ -167,7 +167,8 @@ void main() {
     test('KEX carries one or two full 1088-byte ML-KEM ciphertexts', () async {
       final alice = await makeDevice('alice@example.org');
       final bob = await makeDevice('bob@example.org');
-      final kex = await PqSessionManager(kem: kem).initiate(own: alice, peer: bob);
+      final kex = await PqSessionManager(kem: kem)
+          .initiate(own: alice, peer: bob);
 
       expect(kex.pqCiphertexts, isNotEmpty);
       for (final ct in kex.pqCiphertexts) {
@@ -191,8 +192,7 @@ void main() {
   });
 
   group('4. post-quantum claim: classical secrets are not enough', () {
-    test('knowing every X25519 key does not yield the session key',
-        () async {
+    test('knowing every X25519 key does not yield the session key', () async {
       // This is the store-and-forward / "future compromise" scenario: the
       // attacker records the exchange and later obtains IK, SPK, EK and
       // the one-time prekey from both sides. In pure X3DH that is enough
@@ -211,10 +211,7 @@ void main() {
       // The honest session key.
       final enc = kem.encapsulate(bob.pqSpk);
       final honest = await derivePqxdh(
-        dh1: await x25519Agree(
-          aliceIkBytes,
-          await bob.spk.pk.getBytes(),
-        ),
+        dh1: await x25519Agree(aliceIkBytes, await bob.spk.pk.getBytes()),
         dh2: await x25519Agree(
           await aliceEk.sk.getBytes(),
           await bob.ikDh.pk.getBytes(),
@@ -230,10 +227,7 @@ void main() {
       // cannot produce the ML-KEM shared secret without the KEM key, so
       // the best they can do is guess.
       final attacker = await derivePqxdh(
-        dh1: await x25519Agree(
-          aliceIkBytes,
-          await bob.spk.pk.getBytes(),
-        ),
+        dh1: await x25519Agree(aliceIkBytes, await bob.spk.pk.getBytes()),
         dh2: await x25519Agree(
           await aliceEk.sk.getBytes(),
           await bob.ikDh.pk.getBytes(),
@@ -285,8 +279,7 @@ void main() {
         pkId: kex.pkId,
         pqSpkId: kex.pqSpkId,
         pqPkId: kex.pqPkId,
-        pqCiphertexts:
-            kex.pqCiphertexts.map((c) => base64Encode(c)).toList(),
+        pqCiphertexts: kex.pqCiphertexts.map((c) => base64Encode(c)).toList(),
       );
 
       // Go through the XML codec so the test also proves the KEX survives

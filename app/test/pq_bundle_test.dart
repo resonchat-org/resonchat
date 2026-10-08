@@ -75,10 +75,7 @@ void main() {
     expect(restored.jid, alice.jid);
     expect(restored.spkId, alice.spkId);
     expect(await restored.spk.pk.getBytes(), await alice.spk.pk.getBytes());
-    expect(
-      await restored.ikDh.pk.getBytes(),
-      await alice.ikDh.pk.getBytes(),
-    );
+    expect(await restored.ikDh.pk.getBytes(), await alice.ikDh.pk.getBytes());
     expect(restored.pqSpk.length, MlKem768.publicKeyLength);
     expect(restored.opks.length, alice.opks.length);
     expect(restored.pqOpks.length, alice.pqOpks.length);
@@ -86,10 +83,8 @@ void main() {
     // A real handshake against the restored public material must work:
     // this is exactly what happens when we encrypt to a peer.
     final bob = await device('bob@example.org');
-    final kex = await PqSessionManager(kem: kem).initiate(
-      own: bob,
-      peer: restored,
-    );
+    final kex = await PqSessionManager(kem: kem)
+        .initiate(own: bob, peer: restored);
     expect(kex.pqCiphertexts.length, 2);
     expect(kex.pqCiphertexts.first.length, MlKem768.ciphertextLength);
   });
@@ -147,19 +142,24 @@ void main() {
     expect(await DualTrackManager.deviceFromBundle(bad), isNull);
   });
 
-  test('a restored device cannot be used to decrypt (no private half)',
-      () async {
-    final alice = await device('alice@example.org');
-    final restored = await DualTrackManager.deviceFromBundle(
-      PqBundle.fromXml((await toBundle(alice)).toXml(), jidOfBundle: alice.jid),
-    );
-    expect(restored, isNotNull);
-    // Private material is intentionally zero-filled: it must not match the
-    // real device, so nobody can be fooled into treating it as a local key.
-    expect(
-      await restored!.ikDh.sk.getBytes(),
-      isNot(await alice.ikDh.sk.getBytes()),
-    );
-    expect(restored.pqSpkSecret, isEmpty);
-  });
+  test(
+    'a restored device cannot be used to decrypt (no private half)',
+    () async {
+      final alice = await device('alice@example.org');
+      final restored = await DualTrackManager.deviceFromBundle(
+        PqBundle.fromXml(
+          (await toBundle(alice)).toXml(),
+          jidOfBundle: alice.jid,
+        ),
+      );
+      expect(restored, isNotNull);
+      // Private material is intentionally zero-filled: it must not match the
+      // real device, so nobody can be fooled into treating it as a local key.
+      expect(
+        await restored!.ikDh.sk.getBytes(),
+        isNot(await alice.ikDh.sk.getBytes()),
+      );
+      expect(restored.pqSpkSecret, isEmpty);
+    },
+  );
 }

@@ -49,10 +49,7 @@ void main() {
     });
 
     test('our post-quantum namespace maps to PO', () {
-      expect(
-        Track.fromEme(ExplicitEncryptionType.pomemo0),
-        Track.pq,
-      );
+      expect(Track.fromEme(ExplicitEncryptionType.pomemo0), Track.pq);
       expect(Track.pq.emeNamespace, 'urn:xmpp:pomemo:0');
     });
 
@@ -80,7 +77,10 @@ void main() {
     });
 
     test('our own tracks are not treated as foreign', () {
-      expect(Track.isForeignEncryption(ExplicitEncryptionType.pomemo0), isFalse);
+      expect(
+        Track.isForeignEncryption(ExplicitEncryptionType.pomemo0),
+        isFalse,
+      );
       expect(Track.isForeignEncryption(ExplicitEncryptionType.omemo), isFalse);
       expect(Track.isForeignEncryption(null), isFalse);
     });
@@ -141,8 +141,7 @@ void main() {
       expect(EncModeToken.parse('pqOmemo'), EncModeToken.pq);
     });
 
-    test('an unrecognised value falls back to none rather than throwing',
-        () {
+    test('an unrecognised value falls back to none rather than throwing', () {
       expect(EncModeToken.parse(null), EncModeToken.none);
       expect(EncModeToken.parse('something-else'), EncModeToken.none);
       expect(EncModeToken.parse(''), EncModeToken.none);

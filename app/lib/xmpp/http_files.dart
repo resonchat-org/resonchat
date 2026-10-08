@@ -52,8 +52,8 @@ class HttpFileService {
 
   final XmppConnection? Function() _connection;
 
-  HttpFileUploadManager? get _upload =>
-      _connection()?.getManagerById<HttpFileUploadManager>(httpFileUploadManager);
+  HttpFileUploadManager? get _upload => _connection()
+      ?.getManagerById<HttpFileUploadManager>(httpFileUploadManager);
 
   /// Delegates to [HttpFileUploadManager.isSupported].
   Future<bool> isAvailable() async {
@@ -78,9 +78,8 @@ class HttpFileService {
     if (m == null) throw StateError('HttpFileUploadManager not registered');
 
     final name = p.basename(fileName);
-    final mime = mimeOverride ??
-        lookupMimeType(fileName) ??
-        'application/octet-stream';
+    final mime =
+        mimeOverride ?? lookupMimeType(fileName) ?? 'application/octet-stream';
 
     late final Uint8List body;
     Uint8List? keyIv;
@@ -161,7 +160,8 @@ class HttpFileService {
       bytes = await AesGcmFileCrypto.decrypt(Uint8List.fromList(bytes), frag);
     }
 
-    final base = preferredName ??
+    final base =
+        preferredName ??
         p.basename(https.path).replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
     final path = await mediaStore.writeBytes(
       Uint8List.fromList(bytes),

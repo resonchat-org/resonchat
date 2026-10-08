@@ -17,7 +17,10 @@ class KemKeyPair {
 
 /// Result of encapsulating to a peer's public key.
 class KemEncapsulation {
-  const KemEncapsulation({required this.ciphertext, required this.sharedSecret});
+  const KemEncapsulation({
+    required this.ciphertext,
+    required this.sharedSecret,
+  });
 
   /// Ciphertext to send to the peer (1088 bytes for ML-KEM-768).
   final List<int> ciphertext;

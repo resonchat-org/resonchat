@@ -36,9 +36,7 @@ class PqEncryptedData implements StanzaHandlerExtension {
 /// Emits nothing when no B-track payload is attached, so A-track and
 /// plaintext messages are untouched: moxxmpp's OmemoManager declares their
 /// encryption itself.
-List<XMLNode> pqSendingCallback(
-  TypedMap<StanzaHandlerExtension> extensions,
-) {
+List<XMLNode> pqSendingCallback(TypedMap<StanzaHandlerExtension> extensions) {
   final payload = extensions.get<PqEncryptedData>();
   if (payload == null) return [];
   final eme = extensions.get<EmeData>();

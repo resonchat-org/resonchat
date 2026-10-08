@@ -29,20 +29,21 @@ void main() {
     List<IgnoreEntry>? ignore,
     List<PriorityEntry>? priorities,
     bool complete = true,
-  }) =>
-      PublishLists(
-        ignore: ignore ?? const [],
-        priorities: priorities ?? const [],
-        complete: complete,
-      );
+  }) => PublishLists(
+    ignore: ignore ?? const [],
+    priorities: priorities ?? const [],
+    complete: complete,
+  );
 
   group('the names', () {
     test('a resource is not part of the key', () {
       // The list is about a person. Keying on the full JID would leave the
       // whole protection defeatable by changing device.
       expect(publishJidKey('juliet@example.org/phone'), 'juliet@example.org');
-      expect(publishJidKey('juliet@example.org/phone/laptop'),
-          'juliet@example.org');
+      expect(
+        publishJidKey('juliet@example.org/phone/laptop'),
+        'juliet@example.org',
+      );
     });
 
     test('case does not make a second entry', () {
@@ -168,8 +169,7 @@ void main() {
         prioritised('a@example.org', subscription: 'both').itemId,
         'a@example.org/both',
       );
-      expect(PriorityEntry.fromWire('a@example.org')!.itemId,
-          'a@example.org');
+      expect(PriorityEntry.fromWire('a@example.org')!.itemId, 'a@example.org');
     });
 
     test('an item id is split at the last slash', () {
@@ -230,8 +230,11 @@ void main() {
       );
       expect(bucketFor(both, 'a@example.org'), PublishBucket.ignored);
       expect(
-        rosterViewFor(both, 'a@example.org',
-            subscription: SubscriptionState.both),
+        rosterViewFor(
+          both,
+          'a@example.org',
+          subscription: SubscriptionState.both,
+        ),
         RosterView.hidden,
       );
     });
@@ -292,8 +295,7 @@ void main() {
       final published = lists(
         ignore: [ignored('bad@example.org', subscription: 'pending')],
       );
-      expect(bucketFor(published, 'bad@example.org'),
-          PublishBucket.ignored);
+      expect(bucketFor(published, 'bad@example.org'), PublishBucket.ignored);
       expect(bucketFor(published, 'busy@example.org'), PublishBucket.contact);
     });
 
@@ -315,10 +317,7 @@ void main() {
         ignore: [ignored('bad@example.org')],
         priorities: [prioritised('busy@example.org', subscription: 'both')],
       );
-      expect(
-        rosterViewFor(published, 'friend@example.org'),
-        RosterView.listed,
-      );
+      expect(rosterViewFor(published, 'friend@example.org'), RosterView.listed);
     });
 
     test('a priority entry naming this state promotes the contact', () {
@@ -326,8 +325,11 @@ void main() {
         priorities: [prioritised('a@example.org', subscription: 'both')],
       );
       expect(
-        rosterViewFor(published, 'a@example.org',
-            subscription: SubscriptionState.both),
+        rosterViewFor(
+          published,
+          'a@example.org',
+          subscription: SubscriptionState.both,
+        ),
         RosterView.listedFirst,
       );
     });
@@ -344,13 +346,19 @@ void main() {
         ],
       );
       expect(
-        rosterViewFor(published, 'a@example.org',
-            subscription: SubscriptionState.both),
+        rosterViewFor(
+          published,
+          'a@example.org',
+          subscription: SubscriptionState.both,
+        ),
         RosterView.listed,
       );
       expect(
-        rosterViewFor(published, 'b@example.org',
-            subscription: SubscriptionState.both),
+        rosterViewFor(
+          published,
+          'b@example.org',
+          subscription: SubscriptionState.both,
+        ),
         RosterView.listed,
       );
     });
@@ -364,8 +372,11 @@ void main() {
         ignore: [ignored('bad@example.org', subscription: 'none')],
       );
       expect(
-        rosterViewFor(published, 'bad@example.org',
-            subscription: SubscriptionState.both),
+        rosterViewFor(
+          published,
+          'bad@example.org',
+          subscription: SubscriptionState.both,
+        ),
         RosterView.hidden,
       );
     });
@@ -387,8 +398,11 @@ void main() {
         ],
       );
       expect(
-        rosterViewFor(published, 'a@example.org',
-            subscription: SubscriptionState.both),
+        rosterViewFor(
+          published,
+          'a@example.org',
+          subscription: SubscriptionState.both,
+        ),
         RosterView.listedFirst,
       );
     });
@@ -407,10 +421,7 @@ void main() {
     test('a list we did read still decides while the other is missing', () {
       // `complete` is about both nodes together; the entries we do have are
       // still ours to act on.
-      final half = lists(
-        ignore: [ignored('bad@example.org')],
-        complete: false,
-      );
+      final half = lists(ignore: [ignored('bad@example.org')], complete: false);
       expect(rosterViewFor(half, 'bad@example.org'), RosterView.hidden);
     });
   });
@@ -477,10 +488,7 @@ void main() {
 
     test('two entries that normalise alike are one add', () {
       final patch = ignorePatch(
-        desired: [
-          ignored('a@example.org'),
-          ignored('A@Example.org/laptop'),
-        ],
+        desired: [ignored('a@example.org'), ignored('A@Example.org/laptop')],
         published: null,
       );
       expect(patch.toAdd, {'a@example.org'});
@@ -529,10 +537,10 @@ void main() {
       // one pins the other half — a patch that re-published unchanged entries
       // would still satisfy the intersection check, and would turn every save
       // into a rewrite of the whole list.
-      expect(
-        patch.toAdd.union(patch.toRemove),
-        {'a@example.org', 'c@example.org'},
-      );
+      expect(patch.toAdd.union(patch.toRemove), {
+        'a@example.org',
+        'c@example.org',
+      });
     });
 
     test('a patch that only takes things away says so', () {

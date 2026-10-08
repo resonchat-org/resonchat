@@ -137,7 +137,9 @@ void main() {
     test('the cap counts characters, not UTF-16 units', () {
       // One emoji is two units and a flag is four, so a cap measured in units
       // would refuse a name the user reads as 64 characters.
-      final emoji = LocalNickname.tryParse('\u{1F389}' * LocalNickname.maxRunes);
+      final emoji = LocalNickname.tryParse(
+        '\u{1F389}' * LocalNickname.maxRunes,
+      );
       expect(emoji, isNotNull);
       expect(emoji!.value.length, 2 * LocalNickname.maxRunes);
       expect(emoji.value.runes.length, LocalNickname.maxRunes);
@@ -162,9 +164,7 @@ void main() {
       // and refusing them would refuse the emoji. What keeps a name made only
       // of them out is the rule above.
       expect(
-        LocalNickname.tryParse(
-          '\u{1F468}\u200D\u{1F469}\u200D\u{1F467}',
-        ),
+        LocalNickname.tryParse('\u{1F468}\u200D\u{1F469}\u200D\u{1F467}'),
         isNotNull,
       );
       expect(LocalNickname.tryParse('\u{1F44D}\u{1F3FD}'), isNotNull);
@@ -279,8 +279,10 @@ void main() {
 
     test('a name at the length limit survives the byte', () {
       final long = LocalNickname.tryParse('a' * LocalNickname.maxRunes)!;
-      expect(LocalNickname.decode(long.encode())?.value.length,
-          LocalNickname.maxRunes);
+      expect(
+        LocalNickname.decode(long.encode())?.value.length,
+        LocalNickname.maxRunes,
+      );
     });
   });
 
@@ -449,12 +451,14 @@ void main() {
           jid: 'team@a.example',
           isRoom: true,
         ),
-        isNot(displayName(
-          localNickname: null,
-          rosterTitle: '',
-          jid: 'team@b.example',
-          isRoom: true,
-        )),
+        isNot(
+          displayName(
+            localNickname: null,
+            rosterTitle: '',
+            jid: 'team@b.example',
+            isRoom: true,
+          ),
+        ),
       );
     });
 
@@ -486,10 +490,7 @@ void main() {
     });
 
     test('a mention is the whole nick behind an @', () {
-      expect(
-        mentionFor(nick: 'Bob', occupants: const ['carol'])!.text,
-        '@Bob',
-      );
+      expect(mentionFor(nick: 'Bob', occupants: const ['carol'])!.text, '@Bob');
       expect(
         mentionFor(nick: 'Bob Smith', occupants: const ['Bob Smith'])!.text,
         '@Bob Smith',
@@ -619,9 +620,9 @@ void main() {
       expect(alone.runes.length, 1);
       expect(alone.length, 2);
       // Stopping on it rather than past it is the part that was broken.
-      expect(firstInitial('${ideograph}天下', 'x@y.example'), ideograph);
+      expect(firstInitial('$ideograph天下', 'x@y.example'), ideograph);
       // And a name that starts elsewhere still starts there.
-      expect(firstInitial('天${ideograph}', 'x@y.example'), '天');
+      expect(firstInitial('天$ideograph', 'x@y.example'), '天');
       // It is upper case already, so what comes back is the character and not
       // some other member of its block.
       expect(firstInitial(ideograph, ''), ideograph);
@@ -740,10 +741,7 @@ void main() {
       expect(initial, conjunct);
       expect(initial.runes.length, 3);
       // And the sequence ends where the word does.
-      expect(
-        firstInitial('$conjunct कमल', 'x@y.example'),
-        conjunct,
-      );
+      expect(firstInitial('$conjunct कमल', 'x@y.example'), conjunct);
       expect(firstInitial('कमल $conjunct', 'x@y.example'), 'क');
     });
 
@@ -804,7 +802,10 @@ void main() {
         '\u{1D400}',
       );
       // An invisible one between them is skipped rather than preferred.
-      expect(firstInitial('\u{1F600}\u200B\u{20BB7}', 'x@y.example'), '\u{20BB7}');
+      expect(
+        firstInitial('\u{1F600}\u200B\u{20BB7}', 'x@y.example'),
+        '\u{20BB7}',
+      );
     });
 
     test('a script with no letter ranges falls back to its own character', () {

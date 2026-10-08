@@ -107,7 +107,7 @@ void main() {
     test('every element failing still completes', () async {
       await forEachBounded(List<int>.filled(10, 0), 2, (_) async {
         throw StateError('all of them');
-      },);
+      });
     });
 
     test('the failure does not arrive before the work is done', () async {

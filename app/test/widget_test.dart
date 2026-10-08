@@ -10,20 +10,19 @@ import 'package:resonchat/omemo/protocol.dart';
 import 'package:resonchat/ui/theme.dart';
 
 Widget wrap(Widget child) => MaterialApp(
-      debugShowCheckedModeBanner: false,
-      theme: AppThemeTokens.light(),
-      // A Scaffold supplies the Material ancestor that InkWell-based widgets
-      // (such as EncBadge) require.
-      home: Scaffold(body: Center(child: child)),
-    );
+  debugShowCheckedModeBanner: false,
+  theme: AppThemeTokens.light(),
+  // A Scaffold supplies the Material ancestor that InkWell-based widgets
+  // (such as EncBadge) require.
+  home: Scaffold(body: Center(child: child)),
+);
 
 void main() {
   group('EncBadge', () {
-    testWidgets('shows the track and a closed lock when encrypted',
-        (tester) async {
-      await tester.pumpWidget(
-        wrap(const EncBadge(label: 'PQ', locked: true)),
-      );
+    testWidgets('shows the track and a closed lock when encrypted', (
+      tester,
+    ) async {
+      await tester.pumpWidget(wrap(const EncBadge(label: 'PQ', locked: true)));
       expect(find.text('PQ'), findsOneWidget);
       expect(find.byIcon(Icons.lock_outline), findsOneWidget);
     });
@@ -48,9 +47,8 @@ void main() {
 
     test('body text stays readable against its bubble in both themes', () {
       double luminance(Color c) {
-        double f(double v) => v <= 0.03928
-            ? v / 12.92
-            : _pow((v + 0.055) / 1.055, 2.4);
+        double f(double v) =>
+            v <= 0.03928 ? v / 12.92 : _pow((v + 0.055) / 1.055, 2.4);
         return f(c.r) * 0.2126 + f(c.g) * 0.7152 + f(c.b) * 0.0722;
       }
 
@@ -72,9 +70,7 @@ void main() {
 
   group('track labels', () {
     test('each mode maps to a distinct, honest label', () {
-      final labels = {
-        for (final m in EncMode.values) m: encModeLabel(m),
-      };
+      final labels = {for (final m in EncMode.values) m: encModeLabel(m)};
       expect(labels[EncMode.none], 'Unencrypted');
       expect(labels[EncMode.standardOmemo], 'OMEMO');
       expect(labels[EncMode.pqOmemo], 'PQ');

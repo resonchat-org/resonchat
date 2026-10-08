@@ -17,20 +17,15 @@ const String omemoDefactoDevicesNode =
 
 /// PEP node prefix for Conversations' per-device bundles. The full node is
 /// this plus the device id.
-const String omemoDefactoBundlesNode =
-    'eu.siacs.conversations.axolotl.bundles';
+const String omemoDefactoBundlesNode = 'eu.siacs.conversations.axolotl.bundles';
 
 /// Namespace of the de-facto bundle and device-list payloads.
 const String omemoDefactoXmlns = 'eu.siacs.conversations.axolotl';
 
 /// The XEP-0384 v2 node names, published and read as well.
-const List<String> omemoSpecDevicesNodes = <String>[
-  'urn:xmpp:omemo:2:devices',
-];
+const List<String> omemoSpecDevicesNodes = <String>['urn:xmpp:omemo:2:devices'];
 
-const List<String> omemoSpecBundlesNodes = <String>[
-  'urn:xmpp:omemo:2:bundles',
-];
+const List<String> omemoSpecBundlesNodes = <String>['urn:xmpp:omemo:2:bundles'];
 
 /// Signal public-key type byte (Curve25519).
 const int keyTypePrefix = 0x05;
@@ -65,15 +60,18 @@ XmlElement bundleToDefactoXml(AxolotlBundle bundle) {
         'identityKey',
         nest: ensureKeyTypeByte(bundle.identityKeyEncoded),
       );
-      builder.element('prekeys', nest: () {
-        for (final e in bundle.preKeysEncoded.entries) {
-          builder.element(
-            'preKeyPublic',
-            attributes: {'preKeyId': '${e.key}'},
-            nest: ensureKeyTypeByte(e.value),
-          );
-        }
-      });
+      builder.element(
+        'prekeys',
+        nest: () {
+          for (final e in bundle.preKeysEncoded.entries) {
+            builder.element(
+              'preKeyPublic',
+              attributes: {'preKeyId': '${e.key}'},
+              nest: ensureKeyTypeByte(e.value),
+            );
+          }
+        },
+      );
     },
   );
   return builder.buildDocument().rootElement;
@@ -149,12 +147,15 @@ AxolotlBundle parseOmemoBundle(
     jid: jid,
     deviceId: deviceId,
     signedPreKeyId: int.parse(spkIdText),
-    signedPreKeyPublicEncoded:
-        ensureKeyTypeByte(text(const ['spk', 'signedPreKeyPublic'])),
-    signedPreKeySignatureEncoded:
-        text(const ['spks', 'spsk', 'signedPreKeySignature']),
-    identityKeyEncoded:
-        ensureKeyTypeByte(text(const ['ik', 'identityKey'])),
+    signedPreKeyPublicEncoded: ensureKeyTypeByte(
+      text(const ['spk', 'signedPreKeyPublic']),
+    ),
+    signedPreKeySignatureEncoded: text(const [
+      'spks',
+      'spsk',
+      'signedPreKeySignature',
+    ]),
+    identityKeyEncoded: ensureKeyTypeByte(text(const ['ik', 'identityKey'])),
     preKeysEncoded: opks,
     registrationId: deviceId,
   );

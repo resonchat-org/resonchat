@@ -29,7 +29,7 @@ typedef BlockedLookup = Set<String> Function();
 
 class BlockedInboundManager extends XmppManagerBase {
   BlockedInboundManager(this._blocked, this._onDropped)
-      : super(blockedInboundManagerId);
+    : super(blockedInboundManagerId);
 
   final BlockedLookup _blocked;
   final void Function(JID from) _onDropped;
@@ -39,14 +39,14 @@ class BlockedInboundManager extends XmppManagerBase {
 
   @override
   List<StanzaHandler> getIncomingPreStanzaHandlers() => [
-        StanzaHandler(
-          stanzaTag: 'message',
-          // Ahead of the OMEMO handler, which is the whole point: this has to
-          // run before anything decrypts.
-          priority: 300,
-          callback: _onMessage,
-        ),
-      ];
+    StanzaHandler(
+      stanzaTag: 'message',
+      // Ahead of the OMEMO handler, which is the whole point: this has to
+      // run before anything decrypts.
+      priority: 300,
+      callback: _onMessage,
+    ),
+  ];
 
   Future<StanzaHandlerData> _onMessage(
     Stanza stanza,
@@ -56,7 +56,6 @@ class BlockedInboundManager extends XmppManagerBase {
     if (from == null) return state;
     final bare = JID.fromString(from).toBare().toString();
     if (!_blocked().contains(bare)) return state;
-
 
     _onDropped(JID.fromString(from));
     return state

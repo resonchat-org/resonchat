@@ -66,10 +66,7 @@ class ProfilePage extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(height: 12),
-                Text(
-                  title,
-                  style: const TextStyle(fontSize: 20),
-                ),
+                Text(title, style: const TextStyle(fontSize: 20)),
                 const SizedBox(height: 4),
                 Text(
                   peer,
@@ -83,22 +80,23 @@ class ProfilePage extends ConsumerWidget {
           ListTile(
             leading: Icon(
               contact?.isMutual ?? false ? Icons.how_to_reg : Icons.person_add,
-              color: contact?.isMutual ?? false ? tg.unreadBadge : tg.unreadBadge,
+              color: contact?.isMutual ?? false
+                  ? tg.unreadBadge
+                  : tg.unreadBadge,
             ),
             title: Text(contact?.summary ?? 'unknown'),
             subtitle: Text(
               contact?.isMutual ?? false
                   ? 'Messages are delivered both ways.'
                   : 'Many servers refuse messages until both sides have '
-                      'accepted each other.',
+                        'accepted each other.',
               style: TextStyle(fontSize: 12, color: tg.textSecondary),
             ),
             trailing: (contact?.isMutual ?? true) || !connected
                 ? null
                 : TextButton(
-                    onPressed: () => xmpp.requestSubscription(
-                      JID.fromString(peer),
-                    ),
+                    onPressed: () =>
+                        xmpp.requestSubscription(JID.fromString(peer)),
                     child: const Text('Ask again'),
                   ),
           ),
@@ -110,9 +108,7 @@ class ProfilePage extends ConsumerWidget {
               color: track == Track.none ? tg.textSecondary : tg.accent,
             ),
             title: Text('This conversation: ${track.label}'),
-            subtitle: Text(
-              protectionSentence(track, caps, context),
-            ),
+            subtitle: Text(protectionSentence(track, caps, context)),
           ),
           ListTile(
             leading: const Icon(Icons.devices_other),
@@ -123,7 +119,7 @@ class ProfilePage extends ConsumerWidget {
               caps == null || caps.recipientDevices.isEmpty
                   ? 'No device list has been resolved yet.'
                   : 'A message must be readable by all of them, so this is '
-                      'what decides whether it can be sent at all.',
+                        'what decides whether it can be sent at all.',
               style: TextStyle(fontSize: 12, color: tg.textSecondary),
             ),
           ),
@@ -133,7 +129,8 @@ class ProfilePage extends ConsumerWidget {
             subtitle: const Text('Fingerprint and verification'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () =>
-                Navigator.of(context).pushNamed('/encryption', arguments: chatJid),
+                Navigator.of(context)
+                    .pushNamed('/encryption', arguments: chatJid),
           ),
 
           _section(tg, 'Actions'),
@@ -145,7 +142,10 @@ class ProfilePage extends ConsumerWidget {
           ),
           ListTile(
             leading: Icon(Icons.delete_outline, color: tg.danger),
-            title: Text('Clear history on this device', style: TextStyle(color: tg.danger)),
+            title: Text(
+              'Clear history on this device',
+              style: TextStyle(color: tg.danger),
+            ),
             subtitle: const Text('Does not delete anything on the server'),
             onTap: () => _confirmClear(context, resolved.session.db, peer),
           ),
@@ -228,14 +228,14 @@ class ProfilePage extends ConsumerWidget {
   }
 
   static Widget _section(TgColors tg, String title) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
-        child: Text(
-          title,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: tg.textSecondary,
-          ),
-        ),
-      );
+    padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+    child: Text(
+      title,
+      style: TextStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.w600,
+        color: tg.textSecondary,
+      ),
+    ),
+  );
 }

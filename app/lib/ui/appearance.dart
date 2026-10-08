@@ -77,9 +77,7 @@ class ChatAppearance {
   /// the stored form is deliberately not a full colour so that a palette
   /// change in a future version can reinterpret it.
   String encode() {
-    final hue = accent == null
-        ? '---'
-        : _hueDigits(accent!);
+    final hue = accent == null ? '---' : _hueDigits(accent!);
     return '${wallpaper.index}${bubble.index}$hue';
   }
 
@@ -90,12 +88,14 @@ class ChatAppearance {
   /// by a build that had a bug, must not make a conversation unopenable.
   static ChatAppearance decode(String? raw) {
     if (raw == null || raw.length < 2) return const ChatAppearance();
-    final wallpaper = Wallpaper.values.asNameMap()[raw[0]] ??
+    final wallpaper =
+        Wallpaper.values.asNameMap()[raw[0]] ??
         (int.tryParse(raw[0]) != null &&
                 int.tryParse(raw[0])! < Wallpaper.values.length
             ? Wallpaper.values[int.parse(raw[0])]
             : Wallpaper.none);
-    final bubble = BubbleStyle.values.asNameMap()[raw[1]] ??
+    final bubble =
+        BubbleStyle.values.asNameMap()[raw[1]] ??
         (int.tryParse(raw[1]) != null &&
                 int.tryParse(raw[1])! < BubbleStyle.values.length
             ? BubbleStyle.values[int.parse(raw[1])]
@@ -190,10 +190,7 @@ class WallpaperPainter extends CustomPainter {
         paint.style = PaintingStyle.fill;
         const step = 44.0;
         for (var x = ox % step; x < size.width; x += step * 2) {
-          canvas.drawRect(
-            Rect.fromLTWH(x, 0, step, size.height),
-            paint,
-          );
+          canvas.drawRect(Rect.fromLTWH(x, 0, step, size.height), paint);
         }
 
       case Wallpaper.gradient:
@@ -203,10 +200,7 @@ class WallpaperPainter extends CustomPainter {
             ..shader = LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
-              colors: [
-                accent.withValues(alpha: 0.10),
-                base,
-              ],
+              colors: [accent.withValues(alpha: 0.10), base],
             ).createShader(Offset.zero & size),
         );
     }
@@ -231,21 +225,22 @@ BorderRadius bubbleRadii(BubbleStyle style, bool mine) {
   return switch (style) {
     BubbleStyle.rounded => BorderRadius.circular(r),
     BubbleStyle.square => BorderRadius.circular(small),
-    BubbleStyle.asymmetric => mine
-        // Our own bubble: rounded on the right, square on the left, so the
-        // corner nearest the other party is the pointed one.
-        ? const BorderRadius.only(
-            topLeft: Radius.circular(small),
-            topRight: Radius.circular(r),
-            bottomRight: Radius.circular(r),
-            bottomLeft: Radius.circular(small),
-          )
-        : const BorderRadius.only(
-            topLeft: Radius.circular(r),
-            topRight: Radius.circular(small),
-            bottomRight: Radius.circular(small),
-            bottomLeft: Radius.circular(r),
-          ),
+    BubbleStyle.asymmetric =>
+      mine
+          // Our own bubble: rounded on the right, square on the left, so the
+          // corner nearest the other party is the pointed one.
+          ? const BorderRadius.only(
+              topLeft: Radius.circular(small),
+              topRight: Radius.circular(r),
+              bottomRight: Radius.circular(r),
+              bottomLeft: Radius.circular(small),
+            )
+          : const BorderRadius.only(
+              topLeft: Radius.circular(r),
+              topRight: Radius.circular(small),
+              bottomRight: Radius.circular(small),
+              bottomLeft: Radius.circular(r),
+            ),
   };
 }
 
@@ -332,8 +327,13 @@ class _AppearancePickerState extends State<AppearancePicker> {
               ),
             ],
             selected: {_current.bubble},
-            onSelectionChanged: (s) =>
-                _update(ChatAppearance(wallpaper: _current.wallpaper, bubble: s.first, accent: _current.accent)),
+            onSelectionChanged: (s) => _update(
+              ChatAppearance(
+                wallpaper: _current.wallpaper,
+                bubble: s.first,
+                accent: _current.accent,
+              ),
+            ),
           ),
           const SizedBox(height: 16),
           Text('Colour', style: theme.textTheme.titleSmall),
@@ -344,9 +344,9 @@ class _AppearancePickerState extends State<AppearancePicker> {
                 Padding(
                   padding: const EdgeInsets.only(right: 8),
                   child: _Swatch(
-                    selected: _current.accent != null &&
-                        (HSLColor.fromColor(_current.accent!).hue.round() -
-                                    hue)
+                    selected:
+                        _current.accent != null &&
+                        (HSLColor.fromColor(_current.accent!).hue.round() - hue)
                                 .abs() <
                             4,
                     child: InkWell(

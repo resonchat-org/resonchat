@@ -18,8 +18,7 @@ import 'package:resonchat/store/database.dart';
 
 /// Applies the SQLCipher key pragma, mirroring what openAppDatabase does.
 void applyKey(Database db, List<int> passphrase) {
-  final hex =
-      passphrase.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+  final hex = passphrase.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
   db.execute("PRAGMA key = \"x'$hex'\";");
   db.select('SELECT count(*) FROM sqlite_master;');
 }
@@ -56,9 +55,12 @@ void main() {
     final key = List<int>.generate(32, (i) => i + 1);
 
     final db = AppDatabase(
-      NativeDatabase.createInBackground(file, setup: (raw) {
-        applyKey(raw, key);
-      }),
+      NativeDatabase.createInBackground(
+        file,
+        setup: (raw) {
+          applyKey(raw, key);
+        },
+      ),
     );
     await db.upsertChat('bob@example.org', title: 'Bob');
     await db.insertMessage(
@@ -94,9 +96,12 @@ void main() {
 
     // With the key it works.
     final reopened = AppDatabase(
-      NativeDatabase.createInBackground(file, setup: (raw) {
-        applyKey(raw, key);
-      }),
+      NativeDatabase.createInBackground(
+        file,
+        setup: (raw) {
+          applyKey(raw, key);
+        },
+      ),
     );
     final rows = await reopened.watchMessages('bob@example.org').first;
     expect(rows.single.body, 'plaintext-canary-9f3a2b');
@@ -108,25 +113,25 @@ void main() {
     final key = List<int>.generate(32, (i) => i);
 
     final db = AppDatabase(
-      NativeDatabase.createInBackground(file, setup: (raw) {
-        applyKey(raw, key);
-      }),
+      NativeDatabase.createInBackground(
+        file,
+        setup: (raw) {
+          applyKey(raw, key);
+        },
+      ),
     );
     await db.upsertChat('carol@example.org');
     await db.close();
 
-    expect(
-      () {
-        final raw = sqlite3.open(file.path);
-        try {
-          final wrong = List<int>.filled(32, 9);
-          applyKey(raw, wrong);
-        } finally {
-          raw.close();
-        }
-      },
-      throwsA(anything),
-    );
+    expect(() {
+      final raw = sqlite3.open(file.path);
+      try {
+        final wrong = List<int>.filled(32, 9);
+        applyKey(raw, wrong);
+      } finally {
+        raw.close();
+      }
+    }, throwsA(anything));
   });
 
   test('an unkeyed database does leak, proving the test can fail', () async {
@@ -146,8 +151,10 @@ void main() {
     await db.close();
 
     final bytes = file.readAsBytesSync();
-    expect(_containsSublist(bytes, utf8.encode('plaintext-canary-9f3a2b')),
-        isTrue);
+    expect(
+      _containsSublist(bytes, utf8.encode('plaintext-canary-9f3a2b')),
+      isTrue,
+    );
   });
 }
 

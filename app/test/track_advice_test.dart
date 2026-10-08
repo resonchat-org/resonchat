@@ -37,10 +37,7 @@ void main() {
     test('vacuous every() must not read as "post-quantum works"', () {
       // The classic bug: `devices.every(pq.contains)` is true for an empty
       // set, so a contact with no devices looks fully PQ-capable.
-      expect(
-        everyDeviceIsPq(caps(devices: const {})),
-        isFalse,
-      );
+      expect(everyDeviceIsPq(caps(devices: const {})), isFalse);
     });
 
     test('and the resolver blocks PQ on it too', () {
@@ -112,20 +109,22 @@ void main() {
       expect(advice.message, isNotEmpty);
     });
 
-    test('a device lost on the track the user did not choose is not reported',
-        () {
-      // Losing PQ while the user is on OM: nothing about their messages
-      // changes, so interrupting them would be noise.
-      expect(
-        compareCapabilities(
-          chatJid: 'peer@example.org',
-          chosen: Track.standard,
-          previous: caps(devices: {1, 2}, pq: {1, 2}),
-          current: caps(devices: {1, 2}, pq: {1}),
-        ),
-        isNull,
-      );
-    });
+    test(
+      'a device lost on the track the user did not choose is not reported',
+      () {
+        // Losing PQ while the user is on OM: nothing about their messages
+        // changes, so interrupting them would be noise.
+        expect(
+          compareCapabilities(
+            chatJid: 'peer@example.org',
+            chosen: Track.standard,
+            previous: caps(devices: {1, 2}, pq: {1, 2}),
+            current: caps(devices: {1, 2}, pq: {1}),
+          ),
+          isNull,
+        );
+      },
+    );
 
     test('a downgrade does not offer plaintext as the remedy', () {
       final advice = compareCapabilities(

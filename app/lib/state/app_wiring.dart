@@ -111,58 +111,68 @@ class _AppWiringState extends ConsumerState<AppWiring> {
         },
       );
       xmpp.attachCapabilities(caps);
-      _subs.add(xmpp.capabilityChanges.listen((jid) {
-        caps.invalidate(jid);
-        unawaited(_noticeCapabilityChange(ref, session, jid));
-      }));
+      _subs.add(
+        xmpp.capabilityChanges.listen((jid) {
+          caps.invalidate(jid);
+          unawaited(_noticeCapabilityChange(ref, session, jid));
+        }),
+      );
     } else {
-      _subs.add(xmpp.capabilityChanges.listen((jid) {
-        unawaited(_noticeCapabilityChange(ref, session, jid));
-      }));
+      _subs.add(
+        xmpp.capabilityChanges.listen((jid) {
+          unawaited(_noticeCapabilityChange(ref, session, jid));
+        }),
+      );
     }
     unawaited(_loadPrivacyPrefs(session));
-    _subs.add(xmpp.deliveryReceipts.listen((receipt) {
-      unawaited(
-        db.markDelivered(
-          receipt.from.toBare().toString(),
-          receipt.stanzaId,
-        ),
-      );
-    }));
-    _subs.add(xmpp.readReceipts.listen((receipt) {
-      unawaited(
-        db.markDisplayed(
-          receipt.from.toBare().toString(),
-          receipt.stanzaId,
-        ),
-      );
-    }));
+    _subs.add(
+      xmpp.deliveryReceipts.listen((receipt) {
+        unawaited(
+          db.markDelivered(receipt.from.toBare().toString(), receipt.stanzaId),
+        );
+      }),
+    );
+    _subs.add(
+      xmpp.readReceipts.listen((receipt) {
+        unawaited(
+          db.markDisplayed(receipt.from.toBare().toString(), receipt.stanzaId),
+        );
+      }),
+    );
     unawaited(_syncPendingRequests(session));
     for (final jid in xmpp.pendingOutgoingRequests) {
       unawaited(db.addOutgoingRequest(jid));
     }
-    _subs.add(xmpp.outgoingRequests.listen((jid) async {
-      await db.addOutgoingRequest(jid.toBare().toString());
-    }));
-    _subs.add(xmpp.incomingRequests.listen((jid) async {
-      await db.addIncomingRequest(jid.toBare().toString());
-    }));
+    _subs.add(
+      xmpp.outgoingRequests.listen((jid) async {
+        await db.addOutgoingRequest(jid.toBare().toString());
+      }),
+    );
+    _subs.add(
+      xmpp.incomingRequests.listen((jid) async {
+        await db.addIncomingRequest(jid.toBare().toString());
+      }),
+    );
     unawaited(_loadBlocked(ref, session));
-    _subs.add(xmpp.blocklistChanges.listen((pushed) async {
-      if (pushed.isEmpty) {
-        for (final jid in await db.blockedJids()) {
-          await db.removeBlocked(jid);
+    _subs.add(
+      xmpp.blocklistChanges.listen((pushed) async {
+        if (pushed.isEmpty) {
+          for (final jid in await db.blockedJids()) {
+            await db.removeBlocked(jid);
+          }
+        } else {
+          await applyBlockPush(db, pushed);
         }
-      } else {
-        await applyBlockPush(db, pushed);
-      }
-      await _loadBlocked(ref, session);
-    }));
-    _subs.add(xmpp.reactions.listen((msg) {
-      final update = msg.reactions;
-      if (update == null) return;
-      unawaited(storeReaction(db, update));
-    }));
+        await _loadBlocked(ref, session);
+      }),
+    );
+    _subs.add(
+      xmpp.reactions.listen((msg) {
+        final update = msg.reactions;
+        if (update == null) return;
+        unawaited(storeReaction(db, update));
+      }),
+    );
     _subs.add(
       xmpp.inbound.listen(
         (msg) => unawaited(_acceptInbound(ref, session, msg)),
@@ -197,7 +207,6 @@ class _AppWiringState extends ConsumerState<AppWiring> {
   Widget build(BuildContext context) => widget.child;
 }
 
-
 /// Re-resolves one conversation after a PEP change and records any advice
 /// worth showing (docs/10 §8).
 ///
@@ -220,7 +229,8 @@ Future<void> _noticeCapabilityChange(
     final after = await session.xmpp.capabilitiesFor(jid);
     if (after == null) return;
     _lastCapabilities[cacheKey] = after;
-    final chosen = await session.db.trackOverride(bare) ??
+    final chosen =
+        await session.db.trackOverride(bare) ??
         await ref.read(globalTrackProvider.future);
     final track = chosen ?? Track.standard;
     final advice = compareCapabilities(
@@ -344,10 +354,7 @@ Future<void> storeInbound(
   final isGroupchat = msg.type == 'groupchat';
   // Conversations MODE_MULTI: a groupchat stanza marks the conversation as a
   // room. Never infer from the JID alone — that is how rooms become "contacts".
-  await db.upsertChat(
-    chatJid,
-    isGroup: isGroupchat ? true : null,
-  );
+  await db.upsertChat(chatJid, isGroup: isGroupchat ? true : null);
 
   // A carbon duplicates a message we already hold locally.
   if (msg.isCarbonCopy) return;

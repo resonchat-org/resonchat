@@ -29,26 +29,30 @@ void main() {
         bytes: Uint8List.fromList(utf8.encode('hello')),
         mimeType: 'image/png',
       );
-      expect(
-        await a.hash,
-        'aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d',
-      );
+      expect(await a.hash, 'aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d');
     });
 
-    test('identical bytes hash identically, so a republish is a no-op', () async {
-      // The pubsub item id is how a change is detected at all; a hash that
-      // varied for identical input would notify on every republish.
-      final bytes = Uint8List.fromList([1, 2, 3]);
-      final one = AvatarData(bytes: bytes, mimeType: 'image/png');
-      final two = AvatarData(bytes: bytes, mimeType: 'image/png');
-      expect(await one.hash, await two.hash);
-    });
+    test(
+      'identical bytes hash identically, so a republish is a no-op',
+      () async {
+        // The pubsub item id is how a change is detected at all; a hash that
+        // varied for identical input would notify on every republish.
+        final bytes = Uint8List.fromList([1, 2, 3]);
+        final one = AvatarData(bytes: bytes, mimeType: 'image/png');
+        final two = AvatarData(bytes: bytes, mimeType: 'image/png');
+        expect(await one.hash, await two.hash);
+      },
+    );
 
     test('one changed byte changes the hash', () async {
-      final one =
-          AvatarData(bytes: Uint8List.fromList([1, 2, 3]), mimeType: 'image/png');
-      final two =
-          AvatarData(bytes: Uint8List.fromList([1, 2, 4]), mimeType: 'image/png');
+      final one = AvatarData(
+        bytes: Uint8List.fromList([1, 2, 3]),
+        mimeType: 'image/png',
+      );
+      final two = AvatarData(
+        bytes: Uint8List.fromList([1, 2, 4]),
+        mimeType: 'image/png',
+      );
       expect(await one.hash, isNot(await two.hash));
     });
 
@@ -129,22 +133,28 @@ void main() {
     test('is stable for a JID', () {
       // A circle that changes colour when nothing changed reads as a different
       // person having arrived.
-      expect(tintFor('bob@x.example', Colors.blue),
-          tintFor('bob@x.example', Colors.blue));
+      expect(
+        tintFor('bob@x.example', Colors.blue),
+        tintFor('bob@x.example', Colors.blue),
+      );
     });
 
     test('is stable across a rename', () {
       // Derived from the address, not the display name: a contact renaming
       // themselves must not change colour.
-      expect(tintFor('bob@x.example', Colors.blue),
-          tintFor('bob@x.example', Colors.red));
+      expect(
+        tintFor('bob@x.example', Colors.blue),
+        tintFor('bob@x.example', Colors.red),
+      );
     });
 
     test('differs between two ordinary contacts', () {
       // The placeholder's job is to make two people in a list distinguishable
       // without a photo.
-      expect(tintFor('bob@x.example', Colors.blue),
-          isNot(tintFor('carol@x.example', Colors.blue)));
+      expect(
+        tintFor('bob@x.example', Colors.blue),
+        isNot(tintFor('carol@x.example', Colors.blue)),
+      );
     });
 
     test('is opaque, so it is legible on the page background', () {

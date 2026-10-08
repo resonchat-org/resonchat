@@ -56,7 +56,7 @@ void main() {
           Secret(bytes),
         ),
       );
-      final printed = '${rejection} ${rejection.problem}';
+      final printed = '$rejection ${rejection.problem}';
       for (final byte in bytes) {
         final hex = byte.toRadixString(16).padLeft(2, '0');
         expect(printed, isNot(contains(hex)));
@@ -98,7 +98,8 @@ void main() {
             expect(
               column.name.contains(term),
               isFalse,
-              reason: '${column.name} (${spec.table.tableName}) looks like key '
+              reason:
+                  '${column.name} (${spec.table.tableName}) looks like key '
                   'material, and an allow-list that names it is a leak with a '
                   'test suite attached',
             );
@@ -180,8 +181,8 @@ void main() {
     test('a column nobody allow-listed is refused', () {
       final rejection = rowRejection(
         BackupTable.chats,
-        _chatRow('juliet@example.org')..['password'] =
-            const BackupText('hunter2'),
+        _chatRow('juliet@example.org')
+          ..['password'] = const BackupText('hunter2'),
       );
       expect(rejection?.kind, BackupRejectionKind.unknownColumn);
       expect(rejection?.column, 'password');
@@ -234,8 +235,8 @@ void main() {
     test('a value of the wrong kind is refused, not coerced', () {
       final rejection = rowRejection(
         BackupTable.chats,
-        _chatRow('juliet@example.org')..['unread_count'] =
-            const BackupText('2'),
+        _chatRow('juliet@example.org')
+          ..['unread_count'] = const BackupText('2'),
       );
       expect(rejection?.kind, BackupRejectionKind.wrongType);
     });
@@ -347,9 +348,11 @@ void main() {
       expect(manifest.newest, isNull);
 
       final outcomeWithChats = decodeBackupText(
-        _archive(tables: {
-          BackupTable.chats: [_chatRow('juliet@example.org')],
-        }),
+        _archive(
+          tables: {
+            BackupTable.chats: [_chatRow('juliet@example.org')],
+          },
+        ),
       );
       expect(outcomeWithChats, isA<BackupOk>());
       expect(outcomeWithChats.archive!.manifest.chatCount, 1);
@@ -403,8 +406,10 @@ void main() {
       final text = _archive();
       // Characters and bytes agree up to the first newline here because the
       // header is ASCII — magic, two integers, a UTC timestamp and a semver.
-      final List<int> headerOnly =
-          _archiveBytes().sublist(0, text.indexOf('\n') + 1);
+      final List<int> headerOnly = _archiveBytes().sublist(
+        0,
+        text.indexOf('\n') + 1,
+      );
       final outcome = decodeBackup(headerOnly);
       expect(outcome, isA<BackupTruncated>());
       expect(outcome.problem, contains('early'));
@@ -502,9 +507,10 @@ void main() {
         },
       );
       expect(outcome, isA<BackupOk>(), reason: outcome.problem);
-      expect((outcome as BackupOk).migratedFrom, 7);
-      expect(outcome.archive!.manifest.chatCount, 1);
-      expect(outcome.archive!.manifest.messageCount, 2);
+      final ok = outcome as BackupOk;
+      expect(ok.migratedFrom, 7);
+      expect(ok.archive.manifest.chatCount, 1);
+      expect(ok.archive.manifest.messageCount, 2);
     });
 
     test('a migration that throws is our bug, not a corrupt file', () {
@@ -541,7 +547,9 @@ void main() {
         migrate: (payload, {required fromVersion}) {
           final row = _chatRow('juliet@example.org');
           row['sealing_key'] = const BackupText('AAAA');
-          return {BackupTable.chats: [row]};
+          return {
+            BackupTable.chats: [row],
+          };
         },
       );
       expect(outcome, isA<BackupContentRejected>());

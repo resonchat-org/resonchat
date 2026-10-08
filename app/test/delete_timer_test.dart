@@ -26,13 +26,12 @@ void main() {
     bool pinned = false,
     bool outgoing = false,
     DateTime? at,
-  }) =>
-      (
-        id: id,
-        timestamp: at ?? now.subtract(ago),
-        pinned: pinned,
-        outgoing: outgoing,
-      );
+  }) => (
+    id: id,
+    timestamp: at ?? now.subtract(ago),
+    pinned: pinned,
+    outgoing: outgoing,
+  );
 
   /// The duration a caller would hand to the eligibility rule.
   ///
@@ -149,7 +148,9 @@ void main() {
         armedAt: now.subtract(const Duration(days: 30)),
         now: now,
         hasDraft: false,
-        rows: [for (var i = 1; i <= 500; i++) row(i, ago: const Duration(days: 29))],
+        rows: [
+          for (var i = 1; i <= 500; i++) row(i, ago: const Duration(days: 29)),
+        ],
       );
       expect(batch.ids, isEmpty);
     });
@@ -183,24 +184,26 @@ void main() {
   });
 
   group('arming is not the same thing as the interval', () {
-    test('a message older than the interval but newer than arming is exempt',
-        () {
-      // The user set the timer an hour ago, having just read a day-old
-      // conversation. A one-hour timer must not reach back over what they
-      // were reading when they opted in.
-      expect(
-        isEligibleForDeletion(
-          interval: ageOf(DeleteInterval.oneHour),
-          armedAt: now.subtract(const Duration(hours: 1)),
-          timestamp: now.subtract(const Duration(hours: 3)),
-          now: now,
-          pinned: false,
-          outgoing: false,
-          hasDraft: false,
-        ),
-        isFalse,
-      );
-    });
+    test(
+      'a message older than the interval but newer than arming is exempt',
+      () {
+        // The user set the timer an hour ago, having just read a day-old
+        // conversation. A one-hour timer must not reach back over what they
+        // were reading when they opted in.
+        expect(
+          isEligibleForDeletion(
+            interval: ageOf(DeleteInterval.oneHour),
+            armedAt: now.subtract(const Duration(hours: 1)),
+            timestamp: now.subtract(const Duration(hours: 3)),
+            now: now,
+            pinned: false,
+            outgoing: false,
+            hasDraft: false,
+          ),
+          isFalse,
+        );
+      },
+    );
 
     test('nothing that predates the arming instant is deletable', () {
       // The rule that makes *changing* the interval safe. [armedAt] is a
@@ -229,8 +232,7 @@ void main() {
       );
     });
 
-    test('a message that arrived after arming does age out on the new interval',
-        () {
+    test('a message that arrived after arming does age out on the new interval', () {
       // The other half, and the reason the rule above is a floor rather than a
       // blanket refusal. Reading it the other way — "nothing that was ever
       // present when the setting changed" — would make the feature delete
@@ -287,7 +289,6 @@ void main() {
         isTrue,
       );
     });
-
   });
 
   group('a pin is an exemption, not a delay', () {
@@ -311,14 +312,14 @@ void main() {
       // pass the pin test on its own. Every other exemption is off above, so a
       // failure here means the pin is not being read.
       bool eligible({required bool pinned}) => isEligibleForDeletion(
-            interval: ageOf(DeleteInterval.thirtySeconds),
-            armedAt: now.subtract(const Duration(days: 400)),
-            timestamp: now.subtract(const Duration(days: 400)),
-            now: now,
-            pinned: pinned,
-            outgoing: false,
-            hasDraft: false,
-          );
+        interval: ageOf(DeleteInterval.thirtySeconds),
+        armedAt: now.subtract(const Duration(days: 400)),
+        timestamp: now.subtract(const Duration(days: 400)),
+        now: now,
+        pinned: pinned,
+        outgoing: false,
+        hasDraft: false,
+      );
       expect(eligible(pinned: true), isFalse);
       expect(eligible(pinned: false), isTrue);
     });
@@ -427,8 +428,7 @@ void main() {
         now: now,
         hasDraft: true,
         rows: [
-          for (var i = 1; i <= 1000; i++)
-            row(i, ago: const Duration(days: 1)),
+          for (var i = 1; i <= 1000; i++) row(i, ago: const Duration(days: 1)),
         ],
       );
       expect(batch.ids, isEmpty);
@@ -438,12 +438,12 @@ void main() {
     test('clearing the draft releases the backlog', () {
       final rows = [row(1, ago: const Duration(days: 1))];
       DeleteBatch sweep({required bool hasDraft}) => deleteBatchFor(
-            interval: ageOf(DeleteInterval.thirtySeconds),
-            armedAt: now.subtract(const Duration(days: 2)),
-            now: now,
-            hasDraft: hasDraft,
-            rows: rows,
-          );
+        interval: ageOf(DeleteInterval.thirtySeconds),
+        armedAt: now.subtract(const Duration(days: 2)),
+        now: now,
+        hasDraft: hasDraft,
+        rows: rows,
+      );
       expect(sweep(hasDraft: true).ids, isEmpty);
       expect(sweep(hasDraft: false).ids, [1]);
     });
@@ -541,9 +541,8 @@ void main() {
     /// A thousand due incoming messages, all inside one second so the id
     /// tiebreaker is the only thing ordering them.
     List<StoredMessage> dueRows(int count) => [
-          for (var i = 1; i <= count; i++)
-            row(i, ago: const Duration(days: 1)),
-        ];
+      for (var i = 1; i <= count; i++) row(i, ago: const Duration(days: 1)),
+    ];
 
     test('an empty message list yields an empty batch', () {
       final batch = deleteBatchFor(
@@ -613,8 +612,7 @@ void main() {
         rows: [
           // Age grows with the id, so id 10 is the oldest row by a whole day
           // and the capped batch has to reach past id 1 to get to it.
-          for (var i = 1; i <= 10; i++)
-            row(i, ago: Duration(days: i)),
+          for (var i = 1; i <= 10; i++) row(i, ago: Duration(days: i)),
         ],
         limit: 3,
       );
@@ -692,11 +690,7 @@ void main() {
           outgoing: r.outgoing,
           hasDraft: false,
         );
-        expect(
-          batch.ids.contains(r.id),
-          individually,
-          reason: 'row ${r.id}',
-        );
+        expect(batch.ids.contains(r.id), individually, reason: 'row ${r.id}');
       }
     });
   });
@@ -708,10 +702,7 @@ void main() {
       // something it cannot undo is found out at the moment the user relies on
       // it, when the message is already gone.
       expect(canUndelete(messageId: 1), isFalse);
-      expect(
-        undeleteRefusal(),
-        UndeleteRefusal.unaddressable,
-      );
+      expect(undeleteRefusal(), UndeleteRefusal.unaddressable);
     });
 
     test('a pinned message has nothing to undo', () {
@@ -719,7 +710,10 @@ void main() {
       // timer had taken a message the app plainly still holds.
       expect(
         undeleteRefusal(
-            pinned: true, addressable: true, copyExistsElsewhere: true),
+          pinned: true,
+          addressable: true,
+          copyExistsElsewhere: true,
+        ),
         UndeleteRefusal.stillHere,
       );
       expect(
@@ -756,10 +750,7 @@ void main() {
 
     test('an addressable message with a copy elsewhere may be recovered', () {
       expect(
-        undeleteRefusal(
-          addressable: true,
-          copyExistsElsewhere: true,
-        ),
+        undeleteRefusal(addressable: true, copyExistsElsewhere: true),
         isNull,
       );
       expect(
@@ -779,7 +770,14 @@ void main() {
         canUndelete(messageId: 0, addressable: true, copyExistsElsewhere: true),
         isFalse,
       );
-      expect(canUndelete(messageId: -3, addressable: true, copyExistsElsewhere: true), isFalse);
+      expect(
+        canUndelete(
+          messageId: -3,
+          addressable: true,
+          copyExistsElsewhere: true,
+        ),
+        isFalse,
+      );
     });
 
     test('recovery does not read the timer setting at all', () {
@@ -788,11 +786,7 @@ void main() {
       // input — the two questions cannot be confused for one another, and a
       // caller cannot quietly make one decide the other.
       expect(
-        canUndelete(
-          messageId: 7,
-          addressable: true,
-          copyExistsElsewhere: true,
-        ),
+        canUndelete(messageId: 7, addressable: true, copyExistsElsewhere: true),
         isTrue,
       );
       expect(
@@ -823,10 +817,7 @@ void main() {
           reason: '${interval.stored} must not read as a global deletion',
         );
       }
-      expect(
-        DeleteIntervalText.locality,
-        contains('not told'),
-      );
+      expect(DeleteIntervalText.locality, contains('not told'));
     });
 
     test('off describes keeping everything', () {
@@ -843,15 +834,12 @@ void main() {
       // interval, which would remove a message before it could be read, cannot
       // happen quietly.
       expect(DeleteInterval.values.length, 5);
-      expect(
-        DeleteInterval.values.where((i) => i.deletes).map((i) => i.age),
-        [
-          const Duration(seconds: 30),
-          const Duration(hours: 1),
-          const Duration(days: 1),
-          const Duration(days: 7),
-        ],
-      );
+      expect(DeleteInterval.values.where((i) => i.deletes).map((i) => i.age), [
+        const Duration(seconds: 30),
+        const Duration(hours: 1),
+        const Duration(days: 1),
+        const Duration(days: 7),
+      ]);
     });
   });
 }

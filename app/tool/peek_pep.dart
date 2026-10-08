@@ -72,8 +72,10 @@ Future<void> main(List<String> args) async {
     // The full failure, not the runtime type: `Result<bool, XmppError>` says
     // nothing about *which* error, and the whole point of this tool is that a
     // refusal is never allowed to be a shrug.
-    stderr.writeln('FAIL  could not log in as ${jid.toString()}: '
-        '${result.isType<XmppError>() ? result.get<XmppError>() : result}');
+    stderr.writeln(
+      'FAIL  could not log in as ${jid.toString()}: '
+      '${result.isType<XmppError>() ? result.get<XmppError>() : result}',
+    );
     exitCode = 1;
     return;
   }
@@ -144,11 +146,7 @@ Future<bool> _report(JID peer, PubSubManager pubsub) async {
 }
 
 /// 'OK' or the server's refusal, spelled out.
-Future<String> _bundleState(
-  PubSubManager pubsub,
-  JID peer,
-  String node,
-) async {
+Future<String> _bundleState(PubSubManager pubsub, JID peer, String node) async {
   final res = await pubsub.getItems(peer, node);
   if (res.isType<List<PubSubItem>>()) {
     final items = res.get<List<PubSubItem>>();

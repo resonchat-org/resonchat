@@ -22,10 +22,10 @@ import '../omemo/track.dart';
 /// worse than silence, because it reads as a claim we cannot back up.
 class EmeData implements StanzaHandlerExtension {
   const EmeData(this.track, {this.name})
-      : assert(
-          track != Track.none,
-          'a plaintext message must not carry an encryption declaration',
-        );
+    : assert(
+        track != Track.none,
+        'a plaintext message must not carry an encryption declaration',
+      );
 
   /// The track actually applied to the message.
   ///

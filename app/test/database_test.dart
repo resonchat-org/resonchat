@@ -50,8 +50,7 @@ void main() {
     expect(after, clock(60));
   });
 
-  test('importing older history does not regress the chat activity',
-      () async {
+  test('importing older history does not regress the chat activity', () async {
     await db.upsertChat('bob@example.org', at: clock(100));
     await db.insertMessage(
       MessagesCompanion(
@@ -77,14 +76,8 @@ void main() {
 
   test('findByStanzaId detects an already-stored message', () async {
     await seedOutgoing('stanza-1');
-    expect(
-      await db.findByStanzaId('bob@example.org', 'stanza-1'),
-      isNotNull,
-    );
-    expect(
-      await db.findByStanzaId('bob@example.org', 'stanza-2'),
-      isNull,
-    );
+    expect(await db.findByStanzaId('bob@example.org', 'stanza-1'), isNotNull);
+    expect(await db.findByStanzaId('bob@example.org', 'stanza-2'), isNull);
   });
 
   test('findByStanzaId ignores empty ids', () async {

@@ -91,7 +91,8 @@ class OccupantDevice {
   int get hashCode => Object.hash(nick, realJid, bundleReachable);
 
   @override
-  String toString() => 'OccupantDevice($nick, realJid: $realJid, '
+  String toString() =>
+      'OccupantDevice($nick, realJid: $realJid, '
       'reachable: $bundleReachable)';
 }
 
@@ -151,8 +152,7 @@ class OccupantSnapshot {
   bool describesRoomNow(
     DateTime now, {
     Duration maxAge = OccupantSnapshot.maxAge,
-  }) =>
-      joined && complete && !isStale(now, maxAge: maxAge);
+  }) => joined && complete && !isStale(now, maxAge: maxAge);
 }
 
 /// Resolves what a room message may be sent on, against one snapshot.
@@ -221,8 +221,9 @@ TrackResolution resolveRoomSend({
   // Our own devices are excluded: the service delivers to every occupant
   // except the sender, so a room whose only reachable device is ours has
   // nobody to encrypt to.
-  final reachable = snapshot.occupants
-      .any((o) => o.nick != ourNick && o.isReachable);
+  final reachable = snapshot.occupants.any(
+    (o) => o.nick != ourNick && o.isReachable,
+  );
   if (!reachable) {
     return TrackResolution(
       track: requested,
@@ -235,10 +236,7 @@ TrackResolution resolveRoomSend({
 
 /// The occupants of one room who cannot read a message sent now.
 class RoomUnreadable {
-  const RoomUnreadable({
-    required this.occupants,
-    required this.knowsEveryone,
-  });
+  const RoomUnreadable({required this.occupants, required this.knowsEveryone});
 
   /// Occupants with no usable bundle, or no published JID to encrypt to.
   final List<OccupantDevice> occupants;
@@ -265,14 +263,14 @@ class RoomUnreadable {
     if (!knowsEveryone) {
       return occupants.isEmpty
           ? 'We could not read the whole room, so we cannot say who can read '
-              'this.'
+                'this.'
           : 'At least ${occupants.length} in this room cannot read this, and '
-              'we could not check the rest.';
+                'we could not check the rest.';
     }
     return occupants.isEmpty
         ? 'Everyone in the room can read this.'
         : '${occupants.length} ${occupants.length == 1 ? 'person' : 'people'} '
-            'in this room cannot read this: ${nicks.join(', ')}.';
+              'in this room cannot read this: ${nicks.join(', ')}.';
   }
 }
 
@@ -391,16 +389,13 @@ PrivateRoomSend resolvePrivateToOccupant({
   // [PrivateRoomSend.canSend], and a promise kept in one function is a promise
   // that survives the next branch somebody adds.
   PrivateRoomSend refused(PrivateRefusal why) => PrivateRoomSend(
-        address: null,
-        toJid: null,
-        resolution: resolution,
-        refusal: why,
-      );
+    address: null,
+    toJid: null,
+    resolution: resolution,
+    refusal: why,
+  );
 
-  PrivateRoomSend allowed({
-    required String address,
-    required String? toJid,
-  }) {
+  PrivateRoomSend allowed({required String address, required String? toJid}) {
     // Belt and braces on top of `refused`: a resolution can block on its own,
     // with no branch having anything to say about it.
     if (!resolution.canSend) {

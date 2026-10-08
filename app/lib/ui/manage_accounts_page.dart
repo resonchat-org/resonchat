@@ -42,15 +42,13 @@ class ManageAccountsPage extends ConsumerWidget {
               ? Center(child: Text(l10n.noAccountsYet))
               : ListView.separated(
                   itemCount: accounts.length,
-                  separatorBuilder: (_, _) => Divider(
-                    height: 0.5,
-                    color: tg.separator,
-                  ),
+                  separatorBuilder: (_, _) =>
+                      Divider(height: 0.5, color: tg.separator),
                   itemBuilder: (context, i) {
                     final a = accounts[i];
                     final session = hub.session(a.id);
-                    final state = session?.xmpp.state ??
-                        XmppConnectionState.disconnected;
+                    final state =
+                        session?.xmpp.state ?? XmppConnectionState.disconnected;
                     final accent = accountAccent(a.bareJid);
                     return ListTile(
                       onLongPress: () =>
@@ -58,9 +56,7 @@ class ManageAccountsPage extends ConsumerWidget {
                       leading: CircleAvatar(
                         backgroundColor: accent.withValues(alpha: 0.2),
                         child: Text(
-                          a.bareJid.isEmpty
-                              ? '?'
-                              : a.bareJid[0].toUpperCase(),
+                          a.bareJid.isEmpty ? '?' : a.bareJid[0].toUpperCase(),
                           style: TextStyle(
                             color: accent,
                             fontWeight: FontWeight.w700,

@@ -48,10 +48,7 @@ class PqKeyEntry {
   void buildXml(XmlBuilder builder) {
     builder.element(
       'key',
-      attributes: {
-        'rid': '$recipientDeviceId',
-        if (kex) 'kex': 'true',
-      },
+      attributes: {'rid': '$recipientDeviceId', if (kex) 'kex': 'true'},
       nest: () {
         if (kex) {
           if (ek != null) builder.element('ek', nest: ek);
@@ -77,8 +74,7 @@ class PqKeyEntry {
   }
 
   static PqKeyEntry fromXml(XmlElement el) {
-    String? one(String tag) =>
-        el.findElements(tag).singleOrNull?.innerText;
+    String? one(String tag) => el.findElements(tag).singleOrNull?.innerText;
     int? oneInt(String tag) {
       final v = one(tag);
       return v == null ? null : int.parse(v);
@@ -93,8 +89,7 @@ class PqKeyEntry {
       pkId: oneInt('pkid'),
       pqSpkId: oneInt('pqspkid'),
       pqPkId: oneInt('pqpkid'),
-      pqCiphertexts:
-          el.findElements('pqct').map((e) => e.innerText).toList(),
+      pqCiphertexts: el.findElements('pqct').map((e) => e.innerText).toList(),
     );
   }
 }
@@ -127,11 +122,14 @@ class PqEncryptedMessage {
           'header',
           attributes: {'sid': '$senderDeviceId'},
           nest: () {
-            builder.element('keys', nest: () {
-              for (final k in keys) {
-                k.buildXml(builder);
-              }
-            });
+            builder.element(
+              'keys',
+              nest: () {
+                for (final k in keys) {
+                  k.buildXml(builder);
+                }
+              },
+            );
             builder.element('iv', nest: iv);
           },
         );
@@ -146,8 +144,7 @@ class PqEncryptedMessage {
     final keysEl = header.findElements('keys').single;
     return PqEncryptedMessage(
       senderDeviceId: int.parse(header.getAttribute('sid')!),
-      keys:
-          keysEl.findElements('key').map(PqKeyEntry.fromXml).toList(),
+      keys: keysEl.findElements('key').map(PqKeyEntry.fromXml).toList(),
       iv: header.findElements('iv').single.innerText,
       payload: el.findElements('payload').single.innerText,
     );

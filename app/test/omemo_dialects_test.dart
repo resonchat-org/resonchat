@@ -226,10 +226,10 @@ void main() {
             jid: 'a@b',
             deviceId: 1,
             signedPreKeyId: 1,
-            signedPreKeyPublicEncoded:
-                base64Encode(List<int>.filled(31, 0)), // too short
-            signedPreKeySignatureEncoded:
-                base64Encode(List<int>.filled(64, 0)),
+            signedPreKeyPublicEncoded: base64Encode(
+              List<int>.filled(31, 0),
+            ), // too short
+            signedPreKeySignatureEncoded: base64Encode(List<int>.filled(64, 0)),
             identityKeyEncoded: base64Encode(List<int>.filled(32, 0)),
             preKeysEncoded: {1: base64Encode(List<int>.filled(32, 0))},
           ),
@@ -246,8 +246,7 @@ void main() {
             deviceId: 1,
             signedPreKeyId: 1,
             signedPreKeyPublicEncoded: base64Encode(List<int>.filled(32, 0)),
-            signedPreKeySignatureEncoded:
-                base64Encode(List<int>.filled(64, 0)),
+            signedPreKeySignatureEncoded: base64Encode(List<int>.filled(64, 0)),
             identityKeyEncoded: base64Encode(List<int>.filled(32, 0)),
             preKeysEncoded: const {},
           ),
@@ -336,10 +335,7 @@ void main() {
         jid: 'a@b',
         deviceId: 1,
       );
-      expect(
-        parsed.signedPreKeyPublicEncoded,
-        ensureKeyTypeByte(_k32),
-      );
+      expect(parsed.signedPreKeyPublicEncoded, ensureKeyTypeByte(_k32));
       expect(parsed.identityKeyEncoded, ensureKeyTypeByte(_ik32));
       expect(parsed.preKeysEncoded[88], ensureKeyTypeByte(_pk88));
       expect(omemoBundleLooksSane(parsed), isTrue);

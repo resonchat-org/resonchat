@@ -111,7 +111,8 @@ class MessageVersion {
   int get hashCode => Object.hash(body, track, replacedAt);
 
   @override
-  String toString() => 'MessageVersion($track, $replacedAt, '
+  String toString() =>
+      'MessageVersion($track, $replacedAt, '
       '${body.isEmpty ? '<empty>' : body})';
 }
 
@@ -132,11 +133,11 @@ class EditHistory {
 
   /// Destroyed on purpose. See [onRetraction].
   const EditHistory.redacted()
-      : this._(const <MessageVersion>[], state: EditHistoryState.redacted);
+    : this._(const <MessageVersion>[], state: EditHistoryState.redacted);
 
   /// Stored, but not readable by this build.
   const EditHistory.unreadable()
-      : this._(const <MessageVersion>[], state: EditHistoryState.unreadable);
+    : this._(const <MessageVersion>[], state: EditHistoryState.unreadable);
 
   /// Builds a history, applying the bound.
   ///
@@ -184,21 +185,20 @@ class EditHistory {
   /// [_hasReadableText]: the reader still has to be told that an edit happened
   /// even when we cannot show any of it.
   bool get _isEdited => switch (state) {
-        EditHistoryState.readable => versions.isNotEmpty,
-        // Nothing to open. The "edited" marker on a bubble comes from
-        // `messages.edited_at`, which survives a retraction on purpose, so the
-        // two disagreeing here is correct rather than a bug to paper over.
-        EditHistoryState.redacted => false,
-        EditHistoryState.unreadable => true,
-      };
+    EditHistoryState.readable => versions.isNotEmpty,
+    // Nothing to open. The "edited" marker on a bubble comes from
+    // `messages.edited_at`, which survives a retraction on purpose, so the
+    // two disagreeing here is correct rather than a bug to paper over.
+    EditHistoryState.redacted => false,
+    EditHistoryState.unreadable => true,
+  };
 
   /// The oldest version still held, for display.
   ///
   /// Deliberately separate from [originalBody]: after truncation there *is* an
   /// oldest surviving version, and hiding it would throw away real text — but it
   /// has to be rendered as what it is, which is the gap between the two.
-  MessageVersion? get oldestVersion =>
-      _hasReadableText ? versions.first : null;
+  MessageVersion? get oldestVersion => _hasReadableText ? versions.first : null;
 
   @override
   bool operator ==(Object other) {
@@ -217,11 +217,8 @@ class EditHistory {
   }
 
   @override
-  int get hashCode => Object.hash(
-        Object.hashAll(versions),
-        droppedOldest,
-        state,
-      );
+  int get hashCode =>
+      Object.hash(Object.hashAll(versions), droppedOldest, state);
 
   @override
   String toString() =>
@@ -273,8 +270,7 @@ bool isNoOpCorrection({
   required String currentTrack,
   required String newBody,
   required String newTrack,
-}) =>
-    currentBody == newBody && currentTrack == newTrack;
+}) => currentBody == newBody && currentTrack == newTrack;
 
 /// The body this message had before [displacedAt], as a new history.
 ///
@@ -341,8 +337,8 @@ EditHistory recordEdit(
 /// Terminal. A later correction un-deletes the message, not the history.
 EditHistory onRetraction(EditHistory history) =>
     history.state == EditHistoryState.redacted
-        ? history
-        : const EditHistory.redacted();
+    ? history
+    : const EditHistory.redacted();
 
 /// Words for the history panel, including when there is nothing to show.
 ///
@@ -420,12 +416,12 @@ const kTrackUnknownLabel = 'unrecognised track';
 /// and the history panel is a place where that implication would be made about
 /// a message that has already left the device.
 String trackLabel(String token) => switch (token.trim().toLowerCase()) {
-      'no' || 'none' => 'plaintext',
-      'om' || 'standard' || 'standardomemo' => 'standard OMEMO',
-      'po' || 'pq' || 'pqomemo' => 'post-quantum',
-      'error' => 'encrypted by something this app cannot read',
-      _ => kTrackUnknownLabel,
-    };
+  'no' || 'none' => 'plaintext',
+  'om' || 'standard' || 'standardomemo' => 'standard OMEMO',
+  'po' || 'pq' || 'pqomemo' => 'post-quantum',
+  'error' => 'encrypted by something this app cannot read',
+  _ => kTrackUnknownLabel,
+};
 
 /// The column value for [history].
 ///
@@ -439,17 +435,17 @@ String trackLabel(String token) => switch (token.trim().toLowerCase()) {
 /// text stays in the column until the next write, and from then on this build
 /// says "could not be read" rather than inventing a chain it does not have.
 String encodeEditHistory(EditHistory history) => switch (history.state) {
-      EditHistoryState.redacted => '{"redacted":true}',
-      EditHistoryState.unreadable => '{"unreadable":true}',
-      EditHistoryState.readable => jsonEncode([
-          for (final v in history.versions)
-            {
-              'body': v.body,
-              'track': v.track,
-              'at': v.replacedAt.toUtc().toIso8601String(),
-            },
-        ]),
-    };
+  EditHistoryState.redacted => '{"redacted":true}',
+  EditHistoryState.unreadable => '{"unreadable":true}',
+  EditHistoryState.readable => jsonEncode([
+    for (final v in history.versions)
+      {
+        'body': v.body,
+        'track': v.track,
+        'at': v.replacedAt.toUtc().toIso8601String(),
+      },
+  ]),
+};
 
 /// Reads back what [encodeEditHistory] wrote.
 ///

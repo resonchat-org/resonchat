@@ -7,8 +7,8 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:moxxmpp/moxxmpp.dart'
-    show JID, RosterManager, rosterManager;
+import 'package:moxxmpp/moxxmpp.dart' show JID, RosterManager, rosterManager;
+
 import '../xmpp/connection.dart';
 
 import '../account/account_hub.dart';
@@ -51,9 +51,8 @@ class _ChatsPageState extends ConsumerState<ChatsPage> {
     final jid = bareJidOf(raw);
     if (jid == null) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.l10n.invalidJid)),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(context.l10n.invalidJid)));
       return;
     }
 
@@ -66,8 +65,9 @@ class _ChatsPageState extends ConsumerState<ChatsPage> {
 
     final xmpp = session.xmpp;
     if (xmpp.state == XmppConnectionState.connected) {
-      final roster =
-          xmpp.connection?.getManagerById<RosterManager>(rosterManager);
+      final roster = xmpp.connection?.getManagerById<RosterManager>(
+        rosterManager,
+      );
       final added = await roster?.addToRoster(jid, jid) ?? false;
       if (added) {
         await xmpp.requestSubscription(JID.fromString(jid));
@@ -88,7 +88,6 @@ class _ChatsPageState extends ConsumerState<ChatsPage> {
     }
   }
 
-
   @override
   Widget build(BuildContext context) {
     final chats = ref.watch(chatsProvider);
@@ -100,9 +99,9 @@ class _ChatsPageState extends ConsumerState<ChatsPage> {
           IconButton(
             icon: const Icon(Icons.search),
             tooltip: l10n.searchMessages,
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const SearchPage()),
-            ),
+            onPressed: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute<void>(builder: (_) => const SearchPage())),
           ),
           IconButton(
             icon: const Icon(Icons.person_add_alt),
@@ -152,21 +151,22 @@ class _ChatsPageState extends ConsumerState<ChatsPage> {
                       itemCount: list.length,
                       separatorBuilder: (_, _) => Padding(
                         padding: const EdgeInsets.only(left: 82),
-                        child: Divider(height: 0.5, color: context.tg.separator),
+                        child: Divider(
+                          height: 0.5,
+                          color: context.tg.separator,
+                        ),
                       ),
                       itemBuilder: (context, i) {
                         final entry = list[i];
                         return ChatRow(
                           entry: entry,
-                          onOpen: () => Navigator.of(context).pushNamed(
-                            '/chat',
-                            arguments: entry.ref.key,
-                          ),
+                          onOpen: () =>
+                              Navigator.of(context)
+                                  .pushNamed('/chat', arguments: entry.ref.key),
                         );
                       },
                     ),
-              loading: () =>
-                  const Center(child: CircularProgressIndicator()),
+              loading: () => const Center(child: CircularProgressIndicator()),
               error: (e, _) => Center(child: Text('$e')),
             ),
           ),
@@ -205,8 +205,10 @@ class _OpenChatBar extends StatelessWidget {
           prefixIcon: Icon(Icons.search, size: 18, color: tg.textSecondary),
           filled: true,
           fillColor: tg.separator.withValues(alpha: 0.35),
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 8,
+          ),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(18),
             borderSide: BorderSide.none,
@@ -222,7 +224,6 @@ class _OpenChatBar extends StatelessWidget {
 }
 
 /// One conversation row.
-
 
 /// Reduces whatever the user typed to a bare JID, or null if it is not one.
 ///

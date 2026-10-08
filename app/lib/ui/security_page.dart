@@ -68,16 +68,15 @@ class _SecurityPageState extends ConsumerState<SecurityPage> {
     if (fp == null) return;
     await Clipboard.setData(ClipboardData(text: formatFingerprint(fp)));
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Fingerprint copied')),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('Fingerprint copied')));
   }
 
   @override
   Widget build(BuildContext context) {
     final tg = context.tg;
-    final track = ref.watch(chatTrackProvider(widget.chatJid)).value ??
-        Track.standard;
+    final track =
+        ref.watch(chatTrackProvider(widget.chatJid)).value ?? Track.standard;
     final caps = ref.watch(chatCapabilitiesProvider(widget.chatJid)).value;
 
     return Scaffold(
@@ -103,9 +102,7 @@ class _SecurityPageState extends ConsumerState<SecurityPage> {
           if (caps != null)
             ListTile(
               leading: const Icon(Icons.devices_other),
-              title: Text(
-                'Recipient devices: ${caps.recipientDevices.length}',
-              ),
+              title: Text('Recipient devices: ${caps.recipientDevices.length}'),
               subtitle: Text(
                 caps.recipientDevices.isEmpty
                     ? 'None published yet'
@@ -172,16 +169,16 @@ class _SecurityPageState extends ConsumerState<SecurityPage> {
   }
 
   static Widget _section(TgColors tg, String title) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
-        child: Text(
-          title,
-          style: TextStyle(
-            color: tg.accent,
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      );
+    padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+    child: Text(
+      title,
+      style: TextStyle(
+        color: tg.accent,
+        fontSize: 13,
+        fontWeight: FontWeight.w600,
+      ),
+    ),
+  );
 
   /// The chosen track, and separately whether it can currently be used.
   static String _describe(Track track, ChatCapabilities? caps) {

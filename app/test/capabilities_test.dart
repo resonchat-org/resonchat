@@ -39,8 +39,7 @@ void main() {
       );
     });
 
-    test('upgrades only when every device, ours included, is PQ-capable',
-        () {
+    test('upgrades only when every device, ours included, is PQ-capable', () {
       expect(
         decideEncMode(
           allDevices: {100, 7},
@@ -51,8 +50,7 @@ void main() {
       );
     });
 
-    test('adding a non-PQ peer device downgrades to OMEMO, not to none',
-        () {
+    test('adding a non-PQ peer device downgrades to OMEMO, not to none', () {
       // Regression guard for docs/02 §6 "模式变更": the chat must stay
       // encrypted for everyone, just on the interoperable track.
       expect(

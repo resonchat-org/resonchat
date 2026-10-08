@@ -18,9 +18,7 @@ Future<void> showSocks5ProxySheet(BuildContext context, WidgetRef ref) {
     isScrollControlled: true,
     showDragHandle: true,
     builder: (ctx) => Padding(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.viewInsetsOf(ctx).bottom,
-      ),
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
       child: _Socks5ProxySheet(ref: ref),
     ),
   );
@@ -69,9 +67,8 @@ class _Socks5ProxySheetState extends State<_Socks5ProxySheet> {
     final nextEnabled = enabled ?? _enabled;
     final parsed = int.tryParse(_port.text.trim());
     if (parsed == null || parsed < 1 || parsed > 65535) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.socks5ProxyInvalidPort)),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(l10n.socks5ProxyInvalidPort)));
       return;
     }
     final db = widget.ref.read(databaseProvider);
@@ -88,9 +85,8 @@ class _Socks5ProxySheetState extends State<_Socks5ProxySheet> {
       _enabled = nextEnabled;
       _port.text = '$parsed';
     });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(l10n.socks5ProxyApplied)),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(l10n.socks5ProxyApplied)));
   }
 
   @override

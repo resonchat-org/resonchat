@@ -114,8 +114,7 @@ Future<void> applyUnblockPush(AppDatabase db, Set<String> pushed) async {
 /// not to open. Checking here rather than at the decryption call site means
 /// there is exactly one place that can say no, and it is the place that reads
 /// the block list.
-bool mayDecrypt(Set<String> blocked, String from) =>
-    !blocked.contains(from);
+bool mayDecrypt(Set<String> blocked, String from) => !blocked.contains(from);
 
 /// Whether a message from [from] may be acknowledged.
 ///

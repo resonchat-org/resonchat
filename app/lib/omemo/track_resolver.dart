@@ -56,69 +56,64 @@ enum TrackBlocked {
 /// the *recipient*, since that is the part the sender cannot see.
 extension TrackBlockedMessage on TrackBlocked {
   String get title => switch (this) {
-        TrackBlocked.unknownPeers => 'Cannot check what they support',
-        TrackBlocked.unreachableDevices => 'They have no reachable device',
-        TrackBlocked.standardUnavailable =>
-          'Standard encryption is not possible here',
-        TrackBlocked.pqUnavailable =>
-          'They cannot read post-quantum messages',
-      };
+    TrackBlocked.unknownPeers => 'Cannot check what they support',
+    TrackBlocked.unreachableDevices => 'They have no reachable device',
+    TrackBlocked.standardUnavailable =>
+      'Standard encryption is not possible here',
+    TrackBlocked.pqUnavailable => 'They cannot read post-quantum messages',
+  };
 
   String get consequence => switch (this) {
-        TrackBlocked.unknownPeers =>
-          "We could not read this contact's device list, so we do not know "
-              'what they can open.',
-        TrackBlocked.unreachableDevices =>
-          'This contact publishes no encryption device we can encrypt to, so '
-              'any message we send would go out readable.',
-        TrackBlocked.standardUnavailable =>
-          'At least one of their devices has no standard OMEMO bundle, so an '
-              'encrypted message would be unreadable on that device.',
-        TrackBlocked.pqUnavailable =>
-          'At least one of their devices is not an resonchat device, and it '
-              'cannot read post-quantum messages.',
-      };
+    TrackBlocked.unknownPeers =>
+      "We could not read this contact's device list, so we do not know "
+          'what they can open.',
+    TrackBlocked.unreachableDevices =>
+      'This contact publishes no encryption device we can encrypt to, so '
+          'any message we send would go out readable.',
+    TrackBlocked.standardUnavailable =>
+      'At least one of their devices has no standard OMEMO bundle, so an '
+          'encrypted message would be unreadable on that device.',
+    TrackBlocked.pqUnavailable =>
+      'At least one of their devices is not an resonchat device, and it '
+          'cannot read post-quantum messages.',
+  };
 
   /// The line that must not be softened.
   ///
   /// Not "they may not be able to read it" — the concrete consequence, so
   /// there is nothing left for the reader to interpret.
   String get outcome => switch (this) {
-        TrackBlocked.unknownPeers =>
-          'This message will not be sent until we can tell what they support.',
-        TrackBlocked.unreachableDevices =>
-          'The only way to send is in the clear, readable by anyone with '
-              'access to the server.',
-        TrackBlocked.standardUnavailable =>
-          'Sending in the clear is the only way this message gets read.',
-        TrackBlocked.pqUnavailable =>
-          'The other person will not be able to read this message at all.',
-      };
+    TrackBlocked.unknownPeers =>
+      'This message will not be sent until we can tell what they support.',
+    TrackBlocked.unreachableDevices =>
+      'The only way to send is in the clear, readable by anyone with '
+          'access to the server.',
+    TrackBlocked.standardUnavailable =>
+      'Sending in the clear is the only way this message gets read.',
+    TrackBlocked.pqUnavailable =>
+      'The other person will not be able to read this message at all.',
+  };
 
   String localizedTitle(AppLocalizations l10n) => switch (this) {
-        TrackBlocked.unknownPeers => l10n.trackBlockedUnknownPeersTitle,
-        TrackBlocked.unreachableDevices => l10n.trackBlockedUnreachableTitle,
-        TrackBlocked.standardUnavailable => l10n.trackBlockedStandardTitle,
-        TrackBlocked.pqUnavailable => l10n.trackBlockedPqTitle,
-      };
+    TrackBlocked.unknownPeers => l10n.trackBlockedUnknownPeersTitle,
+    TrackBlocked.unreachableDevices => l10n.trackBlockedUnreachableTitle,
+    TrackBlocked.standardUnavailable => l10n.trackBlockedStandardTitle,
+    TrackBlocked.pqUnavailable => l10n.trackBlockedPqTitle,
+  };
 
   String localizedConsequence(AppLocalizations l10n) => switch (this) {
-        TrackBlocked.unknownPeers =>
-          l10n.trackBlockedUnknownPeersConsequence,
-        TrackBlocked.unreachableDevices =>
-          l10n.trackBlockedUnreachableConsequence,
-        TrackBlocked.standardUnavailable =>
-          l10n.trackBlockedStandardConsequence,
-        TrackBlocked.pqUnavailable => l10n.trackBlockedPqConsequence,
-      };
+    TrackBlocked.unknownPeers => l10n.trackBlockedUnknownPeersConsequence,
+    TrackBlocked.unreachableDevices => l10n.trackBlockedUnreachableConsequence,
+    TrackBlocked.standardUnavailable => l10n.trackBlockedStandardConsequence,
+    TrackBlocked.pqUnavailable => l10n.trackBlockedPqConsequence,
+  };
 
   String localizedOutcome(AppLocalizations l10n) => switch (this) {
-        TrackBlocked.unknownPeers => l10n.trackBlockedUnknownPeersOutcome,
-        TrackBlocked.unreachableDevices =>
-          l10n.trackBlockedUnreachableOutcome,
-        TrackBlocked.standardUnavailable => l10n.trackBlockedStandardOutcome,
-        TrackBlocked.pqUnavailable => l10n.trackBlockedPqOutcome,
-      };
+    TrackBlocked.unknownPeers => l10n.trackBlockedUnknownPeersOutcome,
+    TrackBlocked.unreachableDevices => l10n.trackBlockedUnreachableOutcome,
+    TrackBlocked.standardUnavailable => l10n.trackBlockedStandardOutcome,
+    TrackBlocked.pqUnavailable => l10n.trackBlockedPqOutcome,
+  };
 }
 
 /// The outcome of resolving a choice against what the peer supports.
@@ -129,10 +124,7 @@ class TrackResolution {
   /// enforced by tests rather than by visibility, which is the right way round:
   /// a compile error would not have stopped anyone from getting it wrong
   /// inside this file either.
-  const TrackResolution({
-    required this.track,
-    required this.blocked,
-  });
+  const TrackResolution({required this.track, required this.blocked});
 
   /// The track to actually use.
   ///
@@ -151,13 +143,12 @@ class TrackResolution {
   /// Offered as a *suggestion in a dialog the user has to answer*, never
   /// applied on their behalf.
   Track? get alternative => switch (blocked) {
-        null => null,
-        TrackBlocked.unknownPeers ||
-        TrackBlocked.unreachableDevices ||
-        TrackBlocked.standardUnavailable =>
-          Track.standard,
-        TrackBlocked.pqUnavailable => Track.standard,
-      };
+    null => null,
+    TrackBlocked.unknownPeers ||
+    TrackBlocked.unreachableDevices ||
+    TrackBlocked.standardUnavailable => Track.standard,
+    TrackBlocked.pqUnavailable => Track.standard,
+  };
 }
 
 /// Resolves a requested track against a capability snapshot.
@@ -186,7 +177,8 @@ TrackResolution resolveTrack({
   }
 
   final allReachable = caps.recipientDevices.every(caps.omemoDevices.contains);
-  final allPq = caps.recipientDevices.isNotEmpty &&
+  final allPq =
+      caps.recipientDevices.isNotEmpty &&
       caps.recipientDevices.every(caps.pqDevices.contains);
 
   switch (requested) {

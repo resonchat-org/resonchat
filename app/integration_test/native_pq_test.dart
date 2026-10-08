@@ -19,7 +19,9 @@ void main() {
     final provider = MlKem768Provider.instance;
     final kem = provider.kem;
     // ignore: avoid_print
-    print('backend: ${provider.isNative ? 'liboqs (native)' : 'pqcrypto (Dart)'}');
+    print(
+      'backend: ${provider.isNative ? 'liboqs (native)' : 'pqcrypto (Dart)'}',
+    );
     // ignore: avoid_print
     print('loadError: ${LiboqsMlKem768.loadError ?? 'none'}');
     // ignore: avoid_print

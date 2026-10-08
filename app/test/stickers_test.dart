@@ -43,7 +43,8 @@ const _sha1 = StickerIntegrity(
 const _packItemId = 'EpRv28DHHzFrE4zd+xaNpVb4';
 
 /// The pack URI from XEP-0449 §4.6, verbatim.
-const _xepPackUri = 'xmpp:romeo@montague.lit?pubsub;action=retrieve;'
+const _xepPackUri =
+    'xmpp:romeo@montague.lit?pubsub;action=retrieve;'
     'node=urn:xmpp:stickers:0;item=EpRv28DHHzFrE4zd%2BxaNpVb4';
 
 StickerItem _item({
@@ -77,7 +78,8 @@ StickerCandidate _candidate(List<int> bytes, {StickerItem? item}) {
   );
 }
 
-String _repeat(String unit, int times) => List<String>.filled(times, unit).join();
+String _repeat(String unit, int times) =>
+    List<String>.filled(times, unit).join();
 
 List<int> _chunk(String type, List<int> data) {
   return <int>[
@@ -105,11 +107,33 @@ List<int> _png({bool animated = false, int fill = 0}) {
   return bytes;
 }
 
-List<int> _jpeg() =>
-    <int>[0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0, 0];
+List<int> _jpeg() => <int>[
+  0xFF,
+  0xD8,
+  0xFF,
+  0xE0,
+  0x00,
+  0x10,
+  0x4A,
+  0x46,
+  0x49,
+  0x46,
+  0,
+  0,
+];
 
-List<int> _gif() =>
-    <int>[0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01, 0x00, 0x01, 0x00];
+List<int> _gif() => <int>[
+  0x47,
+  0x49,
+  0x46,
+  0x38,
+  0x39,
+  0x61,
+  0x01,
+  0x00,
+  0x01,
+  0x00,
+];
 
 List<int> _webp({bool animated = false}) {
   final bytes = <int>[
@@ -248,10 +272,20 @@ void main() {
       // Long enough to pass a length rule, so what refuses it is the space: one
       // item id, not two readings of it.
       expect(
-        buildPackUri(publisher: 'romeo@montague.lit', itemId: 'aaaaaaaaa aaaaaaaaa'),
+        buildPackUri(
+          publisher: 'romeo@montague.lit',
+          itemId: 'aaaaaaaaa aaaaaaaaa',
+        ),
         isNull,
       );
-      expect(buildPackUri(publisher: 'romeo@montague.lit', itemId: _packItemId, node: '  '), isNull);
+      expect(
+        buildPackUri(
+          publisher: 'romeo@montague.lit',
+          itemId: _packItemId,
+          node: '  ',
+        ),
+        isNull,
+      );
     });
 
     test('a pack remembers where it came from', () {
@@ -307,16 +341,28 @@ void main() {
     });
 
     test('something unrecognised is not guessed at', () {
-      expect(sniffStickerFormat(<int>[0, 1, 2, 3, 4]).mediaType, kUnknownMediaType);
+      expect(
+        sniffStickerFormat(<int>[0, 1, 2, 3, 4]).mediaType,
+        kUnknownMediaType,
+      );
       expect(sniffStickerFormat(const <int>[]).mediaType, kUnknownMediaType);
     });
 
     test('a truncated signature is not a picture', () {
       // Two bytes of a PNG signature is not a PNG, and treating it as one would
       // hand those bytes to the PNG decoder.
-      expect(sniffStickerFormat(<int>[0x89, 0x50]).mediaType, kUnknownMediaType);
-      expect(sniffStickerFormat(<int>[0x47, 0x49, 0x46]).mediaType, kUnknownMediaType);
-      expect(sniffStickerFormat(List<int>.filled(11, 0x41)).mediaType, kUnknownMediaType);
+      expect(
+        sniffStickerFormat(<int>[0x89, 0x50]).mediaType,
+        kUnknownMediaType,
+      );
+      expect(
+        sniffStickerFormat(<int>[0x47, 0x49, 0x46]).mediaType,
+        kUnknownMediaType,
+      );
+      expect(
+        sniffStickerFormat(List<int>.filled(11, 0x41)).mediaType,
+        kUnknownMediaType,
+      );
     });
 
     test('a hostile chunk length does not walk off the end', () {
@@ -345,7 +391,8 @@ void main() {
       expect(
         const StickerIntegrity(
           algorithm: 'sha-256',
-          value: '0123456789abcdef0123456789abcdef'
+          value:
+              '0123456789abcdef0123456789abcdef'
               '0123456789abcdef0123456789abcdef',
         ).isWellFormed,
         isTrue,
@@ -371,7 +418,10 @@ void main() {
       );
       expect(truncated.isWellFormed, isFalse);
       expect(
-        const StickerIntegrity(algorithm: 'md5', value: 'deadbeef').isWellFormed,
+        const StickerIntegrity(
+          algorithm: 'md5',
+          value: 'deadbeef',
+        ).isWellFormed,
         isFalse,
       );
       expect(
@@ -381,11 +431,15 @@ void main() {
     });
 
     test('a pack with no hash is not the same as a pack with a bad one', () {
-      final none = StickerSafety.check(_candidate(_png(), item: _item(integrity: null)));
+      final none = StickerSafety.check(
+        _candidate(_png(), item: _item(integrity: null)),
+      );
       final bad = StickerSafety.check(
         _candidate(
           _png(),
-          item: _item(integrity: const StickerIntegrity(algorithm: 'sha-256', value: 'x')),
+          item: _item(
+            integrity: const StickerIntegrity(algorithm: 'sha-256', value: 'x'),
+          ),
         ),
       );
       expect(none.refusals, contains(StickerRefusal.missingIntegrity));
@@ -408,7 +462,10 @@ void main() {
       final candidate = _candidate(
         _png(),
         item: _item(
-          integrity: const StickerIntegrity(algorithm: 'sha-256', value: 'nope'),
+          integrity: const StickerIntegrity(
+            algorithm: 'sha-256',
+            value: 'nope',
+          ),
         ),
       );
       expect(isSafeToSend(candidate), isTrue);
@@ -445,7 +502,12 @@ void main() {
       // here to police how somebody spells a file extension.
       final bytes = _jpeg();
       expect(
-        isSafeToSend(_candidate(bytes, item: _item(mediaType: 'image/jpg', size: bytes.length))),
+        isSafeToSend(
+          _candidate(
+            bytes,
+            item: _item(mediaType: 'image/jpg', size: bytes.length),
+          ),
+        ),
         isTrue,
       );
       expect(
@@ -469,7 +531,10 @@ void main() {
       // happen.
       final bytes = _gif();
       final verdict = StickerSafety.check(
-        _candidate(bytes, item: _item(mediaType: 'image/gif', size: bytes.length)),
+        _candidate(
+          bytes,
+          item: _item(mediaType: 'image/gif', size: bytes.length),
+        ),
       );
       expect(verdict.refusals, [StickerRefusal.animated]);
     });
@@ -480,7 +545,10 @@ void main() {
       // reporting only the second hides the first.
       final bytes = _gif();
       final verdict = StickerSafety.check(
-        _candidate(bytes, item: _item(mediaType: 'image/png', size: bytes.length)),
+        _candidate(
+          bytes,
+          item: _item(mediaType: 'image/png', size: bytes.length),
+        ),
       );
       expect(
         verdict.refusals,
@@ -497,7 +565,10 @@ void main() {
       // knowledge we do not have, and it would be quoted back at the sender.
       final bytes = <int>[0x00, 0x11, 0x22, 0x33, 0x44, 0x55];
       final verdict = StickerSafety.check(
-        _candidate(bytes, item: _item(mediaType: 'image/png', size: bytes.length)),
+        _candidate(
+          bytes,
+          item: _item(mediaType: 'image/png', size: bytes.length),
+        ),
       );
       expect(verdict.refusals, [StickerRefusal.undecodableMediaType]);
     });
@@ -505,10 +576,16 @@ void main() {
     test('a format we recognise but do not decode is refused by name', () {
       final bytes = _avif();
       final verdict = StickerSafety.check(
-        _candidate(bytes, item: _item(mediaType: 'image/avif', size: bytes.length)),
+        _candidate(
+          bytes,
+          item: _item(mediaType: 'image/avif', size: bytes.length),
+        ),
       );
       expect(verdict.refusals, [StickerRefusal.undecodableMediaType]);
-      expect(isSafeToDisplay(StickerCandidate(item: _item(), bytes: bytes)), isFalse);
+      expect(
+        isSafeToDisplay(StickerCandidate(item: _item(), bytes: bytes)),
+        isFalse,
+      );
     });
   });
 
@@ -546,7 +623,10 @@ void main() {
       // equality rather than a ceiling: 40 MB announced as 2 KB.
       final bytes = _png(fill: 40 * 1024);
       final candidate = _candidate(bytes, item: _item(size: 2048));
-      expect(StickerSafety.check(candidate).refusals, contains(StickerRefusal.declaredSizeDisagrees));
+      expect(
+        StickerSafety.check(candidate).refusals,
+        contains(StickerRefusal.declaredSizeDisagrees),
+      );
       expect(isSafeToSend(candidate), isFalse);
     });
 
@@ -581,12 +661,21 @@ void main() {
       // A decoder allocates w x h x 4 before it reads a pixel, so this is a
       // memory claim rather than a cosmetic one.
       final bytes = _png();
-      final tall = _candidate(bytes, item: _item(size: bytes.length, width: 1, height: 100000));
-      expect(StickerSafety.check(tall).refusals, contains(StickerRefusal.absurdDimensions));
+      final tall = _candidate(
+        bytes,
+        item: _item(size: bytes.length, width: 1, height: 100000),
+      );
+      expect(
+        StickerSafety.check(tall).refusals,
+        contains(StickerRefusal.absurdDimensions),
+      );
       expect(isSafeToSend(tall), isFalse);
       expect(isSafeToDisplay(tall), isFalse);
 
-      final huge = _candidate(bytes, item: _item(size: bytes.length, width: 40000, height: 40000));
+      final huge = _candidate(
+        bytes,
+        item: _item(size: bytes.length, width: 40000, height: 40000),
+      );
       expect(isSafeToDisplay(huge), isFalse);
     });
 
@@ -594,7 +683,10 @@ void main() {
       // An empty `<desc/>` is an empty bubble on every client that cannot draw
       // the sticker, including the one that asked for it.
       final bytes = _png();
-      final candidate = _candidate(bytes, item: _item(size: bytes.length, description: '   '));
+      final candidate = _candidate(
+        bytes,
+        item: _item(size: bytes.length, description: '   '),
+      );
       final verdict = StickerSafety.check(candidate);
       expect(verdict.refusals, contains(StickerRefusal.noFallbackText));
       expect(isSafeToSend(candidate), isFalse);
@@ -614,7 +706,10 @@ void main() {
         <String>['https://cdn.example/a.png\r\nX-Evil: 1'],
         <String>[],
       ]) {
-        final candidate = _candidate(bytes, item: _item(size: bytes.length, sources: sources));
+        final candidate = _candidate(
+          bytes,
+          item: _item(size: bytes.length, sources: sources),
+        );
         expect(
           StickerSafety.check(candidate).refusals,
           contains(StickerRefusal.unusableSource),
@@ -632,7 +727,10 @@ void main() {
         isSafeToDisplay(
           _candidate(
             bytes,
-            item: _item(size: bytes.length, sources: <String>['http://cdn.example/a.png']),
+            item: _item(
+              size: bytes.length,
+              sources: <String>['http://cdn.example/a.png'],
+            ),
           ),
         ),
         isTrue,
@@ -665,7 +763,7 @@ void main() {
       for (final refusal in StickerRefusal.values) {
         final isHashRule =
             refusal == StickerRefusal.missingIntegrity ||
-                refusal == StickerRefusal.malformedIntegrity;
+            refusal == StickerRefusal.malformedIntegrity;
         expect(refusal.blocksSend, isNot(isHashRule), reason: '$refusal');
       }
       // Nothing but our own metadata and our own budgets may stop a display.
@@ -721,8 +819,7 @@ void main() {
       expect(isCacheable(candidate), isFalse);
     });
 
-    test('a sticker that is not square is refused as a sticker, not as a picture',
-        () {
+    test('a sticker that is not square is refused as a sticker, not as a picture', () {
       // send: no. A conforming client draws stickers in a fixed box, so a 3:2
       // sticker is letterboxed however we label it. The right outcome for a
       // picture the user chose that is not square is to send it as the photo it
@@ -730,11 +827,17 @@ void main() {
       //
       // display: yes. It is a perfectly good image and they picked it.
       final bytes = _png();
-      final candidate = _candidate(bytes, item: _item(size: bytes.length, width: 512, height: 341));
+      final candidate = _candidate(
+        bytes,
+        item: _item(size: bytes.length, width: 512, height: 341),
+      );
 
       expect(isSafeToSend(candidate), isFalse, reason: 'send');
       expect(isSafeToDisplay(candidate), isTrue, reason: 'display');
-      expect(StickerSafety.check(candidate).blockedSend, StickerRefusal.notSquare);
+      expect(
+        StickerSafety.check(candidate).blockedSend,
+        StickerRefusal.notSquare,
+      );
     });
 
     test('an animation is refused on both sides', () {
@@ -743,11 +846,17 @@ void main() {
       // flickering stickers can induce seizures, and an animation is the one
       // image feature whose cost the sender does not get to choose.
       final bytes = _gif();
-      final candidate = _candidate(bytes, item: _item(mediaType: 'image/gif', size: bytes.length));
+      final candidate = _candidate(
+        bytes,
+        item: _item(mediaType: 'image/gif', size: bytes.length),
+      );
 
       expect(isSafeToSend(candidate), isFalse);
       expect(isSafeToDisplay(candidate), isFalse);
-      expect(StickerSafety.check(candidate).blockedDisplay, StickerRefusal.animated);
+      expect(
+        StickerSafety.check(candidate).blockedDisplay,
+        StickerRefusal.animated,
+      );
     });
   });
 
@@ -844,7 +953,10 @@ void main() {
     test('the only cleartext is the fallback the sender chose', () {
       final shape = stickerSendShape(candidate: candidate)!;
       expect(shape.cleartextBody, '😘');
-      expect(shape.cleartextBody, shape.fileSharing.child('file')!.child('desc')!.text);
+      expect(
+        shape.cleartextBody,
+        shape.fileSharing.child('file')!.child('desc')!.text,
+      );
     });
 
     test('is not available for a sticker this file will not send', () {
@@ -860,7 +972,10 @@ void main() {
       final noHash = _candidate(bytes, item: _item(integrity: null));
       expect(stickerSendShape(candidate: noHash), isNull);
 
-      final noSource = _candidate(bytes, item: _item(sources: const <String>[]));
+      final noSource = _candidate(
+        bytes,
+        item: _item(sources: const <String>[]),
+      );
       expect(stickerSendShape(candidate: noSource), isNull);
 
       final noText = _candidate(bytes, item: _item(description: ''));
@@ -879,10 +994,7 @@ void main() {
         isNull,
       );
       expect(
-        stickerSendShape(
-          candidate: candidate,
-          sourceUris: const <String>[],
-        ),
+        stickerSendShape(candidate: candidate, sourceUris: const <String>[]),
         isNull,
       );
       expect(

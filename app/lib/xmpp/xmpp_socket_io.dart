@@ -10,7 +10,7 @@ import '../net/app_network.dart';
 ///
 /// [websocketUrl] is ignored — desktop/mobile keep Conversations-style TCP.
 BaseSocketWrapper createXmppSocket({String? websocketUrl}) => TCPSocketWrapper(
-      false,
-      connectSocket: appNetwork.openTcp,
-      secureSocket: appNetwork.secureSocket,
-    );
+  false,
+  connectSocket: appNetwork.openTcp,
+  secureSocket: appNetwork.secureSocket,
+);

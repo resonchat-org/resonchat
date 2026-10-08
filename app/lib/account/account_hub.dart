@@ -25,10 +25,7 @@ import 'chat_ref.dart';
 
 /// One chat row in the unified inbox.
 class AccountChat {
-  const AccountChat({
-    required this.account,
-    required this.chat,
-  });
+  const AccountChat({required this.account, required this.chat});
 
   final StoredAccount account;
   final Chat chat;
@@ -41,11 +38,7 @@ class AccountChat {
 
 /// Live session for one account.
 class AccountSession {
-  AccountSession({
-    required this.account,
-    required this.db,
-    required this.xmpp,
-  });
+  AccountSession({required this.account, required this.db, required this.xmpp});
 
   StoredAccount account;
   final AppDatabase db;
@@ -217,10 +210,7 @@ class AccountHub extends ChangeNotifier {
     try {
       final items = await xmpp.requestRoster();
       for (final item in items) {
-        await db.upsertChat(
-          item.jid,
-          title: item.name ?? item.jid,
-        );
+        await db.upsertChat(item.jid, title: item.name ?? item.jid);
       }
       await xmpp.ensureOmemoDevice();
       await xmpp.replenishPrekeys();
@@ -231,8 +221,7 @@ class AccountHub extends ChangeNotifier {
       ]);
       final afterId = await db.metaValue(XmppService.mamCatchupIdKey);
       final startRaw = await db.metaValue(XmppService.mamCatchupTsKey);
-      final metaTs =
-          startRaw != null ? DateTime.tryParse(startRaw) : null;
+      final metaTs = startRaw != null ? DateTime.tryParse(startRaw) : null;
       final dbTs = await db.latestMessageTimestamp();
       DateTime? start;
       if (afterId == null || afterId.isEmpty) {
@@ -267,10 +256,7 @@ class AccountHub extends ChangeNotifier {
     final moxxOmemo = xmpp.moxxOmemo;
     final pubsub = xmpp.pubsub;
     if (moxxOmemo == null || pubsub == null) return;
-    final tracks = DualTrackManager(
-      aTrack: moxxOmemo,
-      pubsubOf: () => pubsub,
-    );
+    final tracks = DualTrackManager(aTrack: moxxOmemo, pubsubOf: () => pubsub);
     xmpp.tracks = tracks;
     session.tracks = tracks;
     tracks.deviceMemory = PublishedDeviceMemory(

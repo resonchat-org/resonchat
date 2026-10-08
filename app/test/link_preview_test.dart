@@ -41,10 +41,7 @@ void main() {
         url: 'https://example.com/post',
       );
       expect(verdict, isA<PreviewRefused>());
-      expect(
-        (verdict as PreviewRefused).reason,
-        PreviewRefusal.senderBlocked,
-      );
+      expect((verdict as PreviewRefused).reason, PreviewRefusal.senderBlocked);
     });
 
     test('and the refusal is not an empty one', () {
@@ -74,17 +71,20 @@ void main() {
       );
     });
 
-    test('the fetcher is never reached, so nothing leaves the device', () async {
-      final fetcher = RecordingFetcher();
-      final loaded = await loadPreview(
-        policy: onPolicy,
-        fetcher: fetcher,
-        body: 'look at this https://example.com/post',
-        context: blocked,
-      );
-      expect(loaded, isNull);
-      expect(fetcher.asked, isEmpty);
-    });
+    test(
+      'the fetcher is never reached, so nothing leaves the device',
+      () async {
+        final fetcher = RecordingFetcher();
+        final loaded = await loadPreview(
+          policy: onPolicy,
+          fetcher: fetcher,
+          body: 'look at this https://example.com/post',
+          context: blocked,
+        );
+        expect(loaded, isNull);
+        expect(fetcher.asked, isEmpty);
+      },
+    );
 
     test('even when the block arrives after the message was stored', () {
       // The usual path drops blocked messages before they are stored at all
@@ -138,10 +138,7 @@ void main() {
       // address came out of a blob this device never opened, so there is no way
       // to know whose it is or whether it is even the address that was sent.
       expect(
-        onPolicy.mayFetch(
-          context: unread,
-          url: 'https://example.com/post',
-        ),
+        onPolicy.mayFetch(context: unread, url: 'https://example.com/post'),
         isA<PreviewRefused>(),
       );
     });
@@ -152,10 +149,7 @@ void main() {
       // decryption attempt left text in the column.
       final scan = scanUrls('https://example.com/post');
       expect(scan.links, isNotEmpty);
-      final verdict = onPolicy.mayFetch(
-        context: unread,
-        url: scan.links.first,
-      );
+      final verdict = onPolicy.mayFetch(context: unread, url: scan.links.first);
       expect(verdict, isA<PreviewRefused>());
     });
   });
@@ -197,10 +191,7 @@ void main() {
         context: const PreviewContext(sender: 'p@example.org', blocked: true),
         url: 'https://example.com/',
       );
-      expect(
-        (verdict as PreviewRefused).reason,
-        PreviewRefusal.senderBlocked,
-      );
+      expect((verdict as PreviewRefused).reason, PreviewRefusal.senderBlocked);
     });
   });
 
@@ -241,7 +232,10 @@ void main() {
         isA<PreviewRefused>(),
       );
       expect(
-        policy.mayFetch(context: plainContext, url: 'https://example.com/t.jpg'),
+        policy.mayFetch(
+          context: plainContext,
+          url: 'https://example.com/t.jpg',
+        ),
         isA<PreviewAllowed>(),
       );
     });
@@ -253,10 +247,7 @@ void main() {
         context: const PreviewContext(sender: ''),
         url: 'https://example.com/post',
       );
-      expect(
-        (verdict as PreviewRefused).reason,
-        PreviewRefusal.unknownSender,
-      );
+      expect((verdict as PreviewRefused).reason, PreviewRefusal.unknownSender);
     });
 
     test('and whitespace is not a sender either', () {
@@ -307,10 +298,7 @@ void main() {
       // the refusal here is not about the address, it is that the sender's
       // description of a *different* address is not evidence about this one.
       expect(
-        onPolicy.mayFetchPreview(
-          context: plainContext,
-          preview: preview,
-        ),
+        onPolicy.mayFetchPreview(context: plainContext, preview: preview),
         isA<PreviewAllowed>(),
       );
     });
@@ -331,10 +319,7 @@ void main() {
       expect(preview.title, isNull);
       expect(preview.hasSomethingToShow, isFalse);
       expect(
-        onPolicy.display(
-          context: plainContext,
-          preview: preview,
-        ),
+        onPolicy.display(context: plainContext, preview: preview),
         PreviewDisplay.onDemand,
       );
       expect(preview.announcedUrl, 'https://tracker.example/pixel');
@@ -424,7 +409,9 @@ void main() {
     test('but case in the path does', () {
       // Paths are case-sensitive: /Post and /post are two documents and folding
       // them would show the preview of the wrong one.
-      final scan = scanUrls('https://example.com/Post https://example.com/post');
+      final scan = scanUrls(
+        'https://example.com/Post https://example.com/post',
+      );
       expect(scan.links.length, 2);
     });
 
@@ -485,7 +472,8 @@ void main() {
     test('a reply is previewed for its own link, not the quoted one', () {
       // The reply is what this message is; the quote is a copy of an earlier
       // one that somebody else chose to put a URL in.
-      final reply = '> https://tracker.example/p\nlook at https://example.org/a';
+      final reply =
+          '> https://tracker.example/p\nlook at https://example.org/a';
       final scan = scanUrls(reply);
       expect(scan.links, ['https://example.org/a']);
       expect(scan.insideQuote, ['https://tracker.example/p']);
@@ -535,11 +523,16 @@ void main() {
         '```\nhttps://example.com/a\nhttps://example.com/b\n```',
       );
       expect(scan.links, isEmpty);
-      expect(scan.insideCode, ['https://example.com/a', 'https://example.com/b']);
+      expect(scan.insideCode, [
+        'https://example.com/a',
+        'https://example.com/b',
+      ]);
     });
 
     test('a link after the fence is the message\'s own', () {
-      final scan = scanUrls('```\nhttps://example.com/a\n```\nhttps://b.example/c');
+      final scan = scanUrls(
+        '```\nhttps://example.com/a\n```\nhttps://b.example/c',
+      );
       expect(scan.links, ['https://b.example/c']);
     });
 
@@ -657,7 +650,10 @@ void main() {
       // `https://archive.example@tracker.example` reads as archive.example to
       // anybody skimming it, and the request goes to tracker.example. Stripping
       // the userinfo would leave a URL we fetched that is not the one written.
-      expect(scanUrls('https://archive.example@tracker.example/').links, isEmpty);
+      expect(
+        scanUrls('https://archive.example@tracker.example/').links,
+        isEmpty,
+      );
     });
 
     test('an address longer than the limit is refused, not shortened', () {
@@ -666,10 +662,7 @@ void main() {
     });
 
     test('an element naming a private address is refused outright', () {
-      expect(
-        OutOfBandData.tryParse(url: 'http://192.168.0.1/'),
-        isNull,
-      );
+      expect(OutOfBandData.tryParse(url: 'http://192.168.0.1/'), isNull);
     });
 
     test('an empty or whitespace address is not an address', () {
@@ -702,7 +695,10 @@ void main() {
     test('a huge body does not produce a huge request count', () {
       // The cap is a bound on what one message can make the device do, so a body
       // full of links must not be a body full of fetches.
-      final body = List.generate(2000, (i) => 'https://example.com/$i').join('\n');
+      final body = List.generate(
+        2000,
+        (i) => 'https://example.com/$i',
+      ).join('\n');
       final scan = scanUrls(body);
       expect(scan.links.length, kMaxPreviewUrls);
       expect(scan.distinctFound, 2000);
@@ -762,53 +758,51 @@ void main() {
         ),
         isNull,
       );
+      expect(thumbnailBytes(const OutOfBandThumbnail(uri: 'data:,')), isNull);
       expect(
-        thumbnailBytes(const OutOfBandThumbnail(uri: 'data:,')),
-        isNull,
-      );
-      expect(
-        thumbnailBytes(const OutOfBandThumbnail(uri: 'https://x.example/t.png')),
+        thumbnailBytes(
+          const OutOfBandThumbnail(uri: 'https://x.example/t.png'),
+        ),
         isNull,
       );
       expect(thumbnailBytes(null), isNull);
     });
 
-    test('a thumbnail too big to decode is refused on the bytes, not the claim',
-        () {
-      // The claim and the bytes disagree often enough that the claim has to
-      // lose: the limit bounds what this client allocates, and only the bytes
-      // say what that is.
-      final lying = OutOfBandThumbnail.inline(
-        uri: 'https://x.example/t.png',
-        bytes: List<int>.filled(kMaxInlineThumbnailBytes + 1, 0),
-        size: 1,
-      );
-      expect(thumbnailBytes(lying), isNull);
+    test(
+      'a thumbnail too big to decode is refused on the bytes, not the claim',
+      () {
+        // The claim and the bytes disagree often enough that the claim has to
+        // lose: the limit bounds what this client allocates, and only the bytes
+        // say what that is.
+        final lying = OutOfBandThumbnail.inline(
+          uri: 'https://x.example/t.png',
+          bytes: List<int>.filled(kMaxInlineThumbnailBytes + 1, 0),
+          size: 1,
+        );
+        expect(thumbnailBytes(lying), isNull);
 
-      final modest = OutOfBandThumbnail.inline(
-        uri: 'https://x.example/t.png',
-        bytes: const [1, 2, 3],
-        size: kMaxInlineThumbnailBytes * 100,
-      );
-      expect(thumbnailBytes(modest), isNotNull);
-    });
+        final modest = OutOfBandThumbnail.inline(
+          uri: 'https://x.example/t.png',
+          bytes: const [1, 2, 3],
+          size: kMaxInlineThumbnailBytes * 100,
+        );
+        expect(thumbnailBytes(modest), isNotNull);
+      },
+    );
   });
 
   group('inline, on demand, or nothing', () {
     LinkPreview withTitle() => mergePreview(
-          detectedUrl: 'https://example.com/a',
-          announced: OutOfBandData.tryParse(
-            url: 'https://example.com/a',
-            title: 'Something',
-          ),
-        )!;
+      detectedUrl: 'https://example.com/a',
+      announced: OutOfBandData.tryParse(
+        url: 'https://example.com/a',
+        title: 'Something',
+      ),
+    )!;
 
     test('a card that says more than the message is drawn inline', () {
       expect(
-        onPolicy.display(
-          context: plainContext,
-          preview: withTitle(),
-        ),
+        onPolicy.display(context: plainContext, preview: withTitle()),
         PreviewDisplay.inline,
       );
     });
@@ -818,16 +812,12 @@ void main() {
       // costs the reader a screen to learn nothing.
       final bare = mergePreview(detectedUrl: 'https://example.com/a')!;
       expect(
-        onPolicy.display(
-          context: plainContext,
-          preview: bare,
-        ),
+        onPolicy.display(context: plainContext, preview: bare),
         PreviewDisplay.onDemand,
       );
     });
 
-    test('a card for an address the body never mentioned is not drawn inline',
-        () {
+    test('a card for an address the body never mentioned is not drawn inline', () {
       // The body is what the message is about. A picture drawn under a sentence
       // that never named the address is a picture of something the sender chose.
       final fromElement = mergePreview(
@@ -838,10 +828,7 @@ void main() {
         ),
       )!;
       expect(
-        onPolicy.display(
-          context: plainContext,
-          preview: fromElement,
-        ),
+        onPolicy.display(context: plainContext, preview: fromElement),
         PreviewDisplay.onDemand,
       );
     });
@@ -880,16 +867,11 @@ void main() {
         announced: OutOfBandData.tryParse(
           url: 'https://example.com/a',
           title: 'Something',
-          thumbnail: const OutOfBandThumbnail(
-            uri: 'https://cdn.example/t.png',
-          ),
+          thumbnail: const OutOfBandThumbnail(uri: 'https://cdn.example/t.png'),
         ),
       )!;
       expect(
-        onPolicy.display(
-          context: plainContext,
-          preview: preview,
-        ),
+        onPolicy.display(context: plainContext, preview: preview),
         PreviewDisplay.onDemand,
       );
     });
@@ -906,10 +888,7 @@ void main() {
         ),
       )!;
       expect(
-        onPolicy.display(
-          context: plainContext,
-          preview: preview,
-        ),
+        onPolicy.display(context: plainContext, preview: preview),
         PreviewDisplay.inline,
       );
     });
@@ -999,8 +978,10 @@ void main() {
       // because it is the kind of default that gets quietly flipped to match the
       // rest of the industry. A feature whose whole job is to request a host a
       // stranger typed, from the user's phone, does not ship switched on.
-      final verdict = LinkPreviewPolicy()
-          .mayFetch(context: plainContext, url: 'https://example.com/');
+      final verdict = LinkPreviewPolicy().mayFetch(
+        context: plainContext,
+        url: 'https://example.com/',
+      );
       expect(verdict, isA<PreviewRefused>());
       expect(
         (verdict as PreviewRefused).reason,

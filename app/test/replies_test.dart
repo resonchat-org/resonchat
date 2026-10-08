@@ -57,12 +57,11 @@ void main() {
       final fallback = buildReplyFallback('quoted', 'reply');
       expect(fallback.start, 0);
       expect(fallback.end, '> quoted\n'.length);
-      expect(fallback.wireBody.substring(fallback.start, fallback.end),
-          '> quoted\n');
       expect(
-        fallback.wireBody.substring(fallback.end),
-        'reply',
+        fallback.wireBody.substring(fallback.start, fallback.end),
+        '> quoted\n',
       );
+      expect(fallback.wireBody.substring(fallback.end), 'reply');
     });
 
     test('a multi-line quote ends after its last line', () {

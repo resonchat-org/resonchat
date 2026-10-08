@@ -66,9 +66,12 @@ void main() {
       final history = edited(2);
       expect(history.versions.map((v) => v.body), ['v0', 'v1']);
       expect(originalBody(history), 'v0');
-      expect(history.versions.first.replacedAt.isBefore(
-            history.versions.last.replacedAt,
-          ), isTrue);
+      expect(
+        history.versions.first.replacedAt.isBefore(
+          history.versions.last.replacedAt,
+        ),
+        isTrue,
+      );
     });
 
     test('an out-of-order timestamp is kept, not used to reorder', () {
@@ -95,10 +98,9 @@ void main() {
 
     test('the next edit drops the oldest and keeps the newest', () {
       final history = edited(kEditHistoryLimit + 1);
-      expect(
-        history.versions.map((v) => v.body),
-        [for (var i = 1; i <= kEditHistoryLimit; i++) 'v$i'],
-      );
+      expect(history.versions.map((v) => v.body), [
+        for (var i = 1; i <= kEditHistoryLimit; i++) 'v$i',
+      ]);
       expect(history.droppedOldest, isTrue);
     });
 
@@ -110,7 +112,7 @@ void main() {
       final bodies = history.versions.map((v) => v.body).toList();
 
       expect(bodies, isNot(contains('v0')), reason: 'the oldest is dropped');
-      expect(bodies, contains('v${kEditHistoryLimit}'));
+      expect(bodies, contains('v$kEditHistoryLimit'));
       expect(bodies, hasLength(kEditHistoryLimit));
     });
 
@@ -129,7 +131,7 @@ void main() {
     test('truncation is sticky', () {
       final history = recordEdit(
         edited(kEditHistoryLimit + 1),
-        'v${kEditHistoryLimit}',
+        'v$kEditHistoryLimit',
         'OM',
         at(90),
       );
@@ -326,8 +328,11 @@ void main() {
   group('a history we cannot read', () {
     test('garbage does not throw', () {
       for (final raw in ['{', 'not json at all', '"a string"', '42', '[1,2]']) {
-        expect(decodeEditHistory(raw).state, EditHistoryState.unreadable,
-            reason: raw);
+        expect(
+          decodeEditHistory(raw).state,
+          EditHistoryState.unreadable,
+          reason: raw,
+        );
       }
     });
 
@@ -380,8 +385,10 @@ void main() {
         at(1),
       );
       expect(history.versions.single.track, 'pqomemo');
-      expect(decodeEditHistory(encodeEditHistory(history)).versions.single
-          .track, 'pqomemo');
+      expect(
+        decodeEditHistory(encodeEditHistory(history)).versions.single.track,
+        'pqomemo',
+      );
     });
 
     test('no unrecognised token is ever called plaintext', () {
@@ -394,8 +401,10 @@ void main() {
     });
 
     test('a missing track in a stored version stays missing', () {
-      final history = decodeEditHistory('[{"body":"text","at":'
-          '"2026-03-01T12:00:00.000Z"}]');
+      final history = decodeEditHistory(
+        '[{"body":"text","at":'
+        '"2026-03-01T12:00:00.000Z"}]',
+      );
       expect(history.state, EditHistoryState.readable);
       expect(history.versions.single.track, '');
       expect(trackLabel(history.versions.single.track), kTrackUnknownLabel);
@@ -418,9 +427,9 @@ void main() {
     test('re-bounds a stored list that is too long', () {
       // A column edited by hand, or written by a build with a bigger limit,
       // must not be able to blow past ours.
-      final raw = '[${List.generate(9, (i) => '{"body":"b$i","track":"OM",'
-              '"at":"2026-03-01T12:0${i % 9}:00.000Z"}')
-          .join(',')}]';
+      final raw =
+          '[${List.generate(9, (i) => '{"body":"b$i","track":"OM",'
+              '"at":"2026-03-01T12:0${i % 9}:00.000Z"}').join(',')}]';
       final read = decodeEditHistory(raw);
       expect(read.versions, hasLength(kEditHistoryLimit));
       expect(read.droppedOldest, isTrue);

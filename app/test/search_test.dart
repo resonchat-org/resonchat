@@ -49,14 +49,17 @@ void main() {
       expect(hits.map((m) => m.body), ['the meeting is at noon']);
     });
 
-    test('is case-insensitive, because a user typing ok means OK too', () async {
-      // Making someone reach for a capitals toggle to find their own message
-      // is the kind of friction that gets reported as "search is broken".
-      await seed('a@example.org', 'OK thanks');
-      expect(await db.searchMessages('ok').first, hasLength(1));
-      await seed('a@example.org', 'MIXED Case');
-      expect(await db.searchMessages('mixed').first, hasLength(1));
-    });
+    test(
+      'is case-insensitive, because a user typing ok means OK too',
+      () async {
+        // Making someone reach for a capitals toggle to find their own message
+        // is the kind of friction that gets reported as "search is broken".
+        await seed('a@example.org', 'OK thanks');
+        expect(await db.searchMessages('ok').first, hasLength(1));
+        await seed('a@example.org', 'MIXED Case');
+        expect(await db.searchMessages('mixed').first, hasLength(1));
+      },
+    );
 
     test('an empty needle returns nothing rather than everything', () async {
       // The dangerous failure: an empty query matching all rows turns "I typed
@@ -66,13 +69,15 @@ void main() {
       expect(await db.searchMessages('   ').first, isEmpty);
     });
 
-    test('a needle of only wildcards matches nothing rather than everything',
-        () async {
-      // `LIKE '%%%'` is true of every row. Same failure as above, reached by
-      // typing three percent signs.
-      await seed('a@example.org', 'anything');
-      expect(await db.searchMessages('%%%').first, isEmpty);
-    });
+    test(
+      'a needle of only wildcards matches nothing rather than everything',
+      () async {
+        // `LIKE '%%%'` is true of every row. Same failure as above, reached by
+        // typing three percent signs.
+        await seed('a@example.org', 'anything');
+        expect(await db.searchMessages('%%%').first, isEmpty);
+      },
+    );
 
     test('results are newest first', () async {
       await seed('a@example.org', 'needle one', at: 10);
@@ -109,8 +114,10 @@ void main() {
           encMode: Value('error'),
         ),
       );
-      expect(await db.searchMessages('this message is encrypted').first,
-          isEmpty);
+      expect(
+        await db.searchMessages('this message is encrypted').first,
+        isEmpty,
+      );
     });
 
     test('the encrypted placeholder itself', () async {

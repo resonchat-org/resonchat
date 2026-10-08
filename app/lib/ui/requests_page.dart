@@ -34,10 +34,12 @@ class RequestsPage extends ConsumerWidget {
       appBar: AppBar(title: Text(l10n.contactRequests)),
       body: requests.when(
         data: (rows) {
-          final incoming =
-              rows.where((r) => !r.outgoing).toList(growable: false);
-          final outgoing =
-              rows.where((r) => r.outgoing).toList(growable: false);
+          final incoming = rows
+              .where((r) => !r.outgoing)
+              .toList(growable: false);
+          final outgoing = rows
+              .where((r) => r.outgoing)
+              .toList(growable: false);
           if (rows.isEmpty) {
             return Center(
               child: Text(
@@ -82,16 +84,16 @@ class RequestsPage extends ConsumerWidget {
   }
 
   static Widget _header(TgColors tg, String title) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 20, 20, 4),
-        child: Text(
-          title,
-          style: TextStyle(
-            color: tg.textSecondary,
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      );
+    padding: const EdgeInsets.fromLTRB(20, 20, 20, 4),
+    child: Text(
+      title,
+      style: TextStyle(
+        color: tg.textSecondary,
+        fontSize: 13,
+        fontWeight: FontWeight.w600,
+      ),
+    ),
+  );
 }
 
 class _IncomingRow extends ConsumerStatefulWidget {
@@ -131,7 +133,10 @@ class _IncomingRowState extends ConsumerState<_IncomingRow> {
     final tg = context.tg;
     final l10n = context.l10n;
     return ListTile(
-      leading: ContactAvatar(jid: widget.request.jid, title: widget.request.jid),
+      leading: ContactAvatar(
+        jid: widget.request.jid,
+        title: widget.request.jid,
+      ),
       title: Text(widget.request.jid),
       subtitle: Text(
         l10n.incomingRequestSubtitle,

@@ -55,10 +55,9 @@ class ArchivePage extends ConsumerWidget {
                 },
                 child: ChatRow(
                   entry: entry,
-                  onOpen: () => Navigator.of(context).pushNamed(
-                    '/chat',
-                    arguments: entry.ref.key,
-                  ),
+                  onOpen: () =>
+                      Navigator.of(context)
+                          .pushNamed('/chat', arguments: entry.ref.key),
                 ),
               );
             },

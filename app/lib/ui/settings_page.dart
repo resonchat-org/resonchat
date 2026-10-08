@@ -71,9 +71,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final nextEnabled = enabled ?? _socks5Enabled;
     final parsed = port ?? int.tryParse(_socks5Port.text.trim());
     if (parsed == null || parsed < 1 || parsed > 65535) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.socks5ProxyInvalidPort)),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(l10n.socks5ProxyInvalidPort)));
       return;
     }
     final db = ref.read(databaseProvider);
@@ -90,9 +89,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       _socks5Enabled = nextEnabled;
       _socks5Port.text = '$parsed';
     });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(l10n.socks5ProxyApplied)),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(l10n.socks5ProxyApplied)));
   }
 
   @override
@@ -130,9 +128,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                       ),
                       secondary: Icon(
                         track.icon,
-                        color: track == Track.none
-                            ? tg.danger
-                            : tg.accent,
+                        color: track == Track.none ? tg.danger : tg.accent,
                       ),
                     ),
                 ],
@@ -253,9 +249,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           ListTile(
             leading: const Icon(Icons.memory),
             title: Text(l10n.postQuantumBackend),
-            subtitle: Text(
-              native ? l10n.backendNative : l10n.backendDart,
-            ),
+            subtitle: Text(native ? l10n.backendNative : l10n.backendDart),
             trailing: Text(
               native ? 'native' : 'dart',
               style: TextStyle(color: tg.textSecondary, fontSize: 12),
@@ -313,22 +307,22 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       ),
     );
     if (chosen == null || !mounted) return;
-    await ref.read(localeOverrideProvider.notifier).setOverride(
-          localeFromPref(chosen.isEmpty ? null : chosen),
-        );
+    await ref
+        .read(localeOverrideProvider.notifier)
+        .setOverride(localeFromPref(chosen.isEmpty ? null : chosen));
   }
 
   static Widget _header(TgColors tg, String title) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
-        child: Text(
-          title,
-          style: TextStyle(
-            color: tg.accent,
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      );
+    padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+    child: Text(
+      title,
+      style: TextStyle(
+        color: tg.accent,
+        fontSize: 13,
+        fontWeight: FontWeight.w600,
+      ),
+    ),
+  );
 
   static String _status(AppLocalizations l10n, XmppService xmpp) =>
       switch (xmpp.state) {

@@ -120,13 +120,7 @@ class StructuredName {
   /// this (see [preferredDisplayName]) is what stops one contact appearing
   /// under two different names in two different screens.
   String? get formatted {
-    final parts = <String>[
-      if (prefix != null) prefix!,
-      if (given != null) given!,
-      if (additional != null) additional!,
-      if (family != null) family!,
-      if (suffix != null) suffix!,
-    ];
+    final parts = <String>[?prefix, ?given, ?additional, ?family, ?suffix];
     return parts.isEmpty ? null : parts.join(' ');
   }
 }
@@ -169,13 +163,13 @@ class PostalAddress {
   /// publisher's choice; the spec order is the only one both ends agree on.
   String? get oneLine {
     final parts = <String>[
-      if (poBox != null) poBox!,
-      if (extended != null) extended!,
-      if (street != null) street!,
-      if (locality != null) locality!,
-      if (region != null) region!,
-      if (postalCode != null) postalCode!,
-      if (country != null) country!,
+      ?poBox,
+      ?extended,
+      ?street,
+      ?locality,
+      ?region,
+      ?postalCode,
+      ?country,
     ];
     return parts.isEmpty ? null : parts.join(', ');
   }
@@ -344,9 +338,7 @@ String preferredDisplayName(VCard vcard, String fallbackJid) {
 ///     the Latin Extended Additional that Vietnamese names live in.
 ///   * A leading combining mark, in any of the cases above.
 String vcardInitial(String name, String fallbackJid) {
-  return _firstDrawableRune(name) ??
-      _firstDrawableRune(fallbackJid) ??
-      '?';
+  return _firstDrawableRune(name) ?? _firstDrawableRune(fallbackJid) ?? '?';
 }
 
 /// The first letter in [source], or failing that its first digit.
@@ -472,7 +464,7 @@ String? _sanitise(
 ///
 /// The bidi controls are the sharp end of this list and the reason it exists:
 /// U+202E makes everything after it render in reverse, so a contact whose name
-/// is `gnp‮txt.exe` is shown as `exe.txt`. A name that displays as something
+/// is `gnp\u202Etxt.exe` is shown as `exe.txt`. A name that displays as something
 /// other than what it says is the one field in a messenger that cannot be
 /// treated as decoration.
 ///
@@ -483,7 +475,8 @@ bool _isNeverDrawn(int r) {
   if (r < 0x20 || r == 0x7F) return true; // C0 controls and DEL
   if (r >= 0x80 && r <= 0x9F) return true; // C1 controls, including NEL
   if (r >= 0xD800 && r <= 0xDFFF) return true; // unpaired surrogate
-  if (r == 0x00AD || r == 0x061C || r == 0x180E) return true; // soft hyphen, ALM
+  if (r == 0x00AD || r == 0x061C || r == 0x180E)
+    return true; // soft hyphen, ALM
   if (r >= 0x200B && r <= 0x200F) return true; // ZWSP, ZWNJ, ZWJ, LRM, RLM
   if (r >= 0x202A && r <= 0x202E) return true; // bidi embedding and override
   if (r >= 0x2060 && r <= 0x2064) return true; // word joiner, invisible maths
@@ -849,7 +842,10 @@ String? _sniffImageType(List<int> bytes) {
       bytes[2] == 0x4E) {
     return 'image/png';
   }
-  if (bytes.length >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF) {
+  if (bytes.length >= 3 &&
+      bytes[0] == 0xFF &&
+      bytes[1] == 0xD8 &&
+      bytes[2] == 0xFF) {
     return 'image/jpeg';
   }
   if (bytes.length >= 6 &&

@@ -42,27 +42,29 @@ enum Track {
 
   /// The EME namespace declared for this track (XEP-0380).
   String? get emeNamespace => switch (this) {
-        Track.none => null,
-        Track.standard => emeOmemo,
-        Track.pq => emePomemo0,
-      };
+    Track.none => null,
+    Track.standard => emeOmemo,
+    Track.pq => emePomemo0,
+  };
 
   /// Human-readable label for the track picker (English; tests / logs).
   String get description => switch (this) {
-        Track.none => 'Plaintext — anyone with access to the server can read '
-            'this.',
-        Track.standard =>
-          'Standard OMEMO — readable by other XMPP apps such as Conversations.',
-        Track.pq => 'Post-quantum — strongest, but only resonchat apps can read '
-            'it.',
-      };
+    Track.none =>
+      'Plaintext — anyone with access to the server can read '
+          'this.',
+    Track.standard =>
+      'Standard OMEMO — readable by other XMPP apps such as Conversations.',
+    Track.pq =>
+      'Post-quantum — strongest, but only resonchat apps can read '
+          'it.',
+  };
 
   /// Localized description for UI.
   String localizedDescription(AppLocalizations l10n) => switch (this) {
-        Track.none => l10n.trackDescriptionNone,
-        Track.standard => l10n.trackDescriptionStandard,
-        Track.pq => l10n.trackDescriptionPq,
-      };
+    Track.none => l10n.trackDescriptionNone,
+    Track.standard => l10n.trackDescriptionStandard,
+    Track.pq => l10n.trackDescriptionPq,
+  };
 
   /// Recovers the track from a received EME declaration.
   ///
@@ -70,19 +72,18 @@ enum Track {
   /// plaintext — the only honest reading, since a sender that omits EME has
   /// not claimed encryption.
   static Track? fromEme(ExplicitEncryptionType? type) => switch (type) {
-        null => Track.none,
-        ExplicitEncryptionType.pomemo0 => Track.pq,
-        // `omemo` is the namespace Conversations and Signal actually send;
-        // `omemo1`/`omemo2` are the XEP-0384 spellings.
-        ExplicitEncryptionType.omemo ||
-        ExplicitEncryptionType.omemo1 ||
-        ExplicitEncryptionType.omemo2 =>
-          Track.standard,
-        // OTR, OpenPGP and anything unknown land here. They are encrypted,
-        // just not by us, and we cannot read them — which the caller signals
-        // separately as a decryption failure rather than a track.
-        _ => null,
-      };
+    null => Track.none,
+    ExplicitEncryptionType.pomemo0 => Track.pq,
+    // `omemo` is the namespace Conversations and Signal actually send;
+    // `omemo1`/`omemo2` are the XEP-0384 spellings.
+    ExplicitEncryptionType.omemo ||
+    ExplicitEncryptionType.omemo1 ||
+    ExplicitEncryptionType.omemo2 => Track.standard,
+    // OTR, OpenPGP and anything unknown land here. They are encrypted,
+    // just not by us, and we cannot read them — which the caller signals
+    // separately as a decryption failure rather than a track.
+    _ => null,
+  };
 
   /// True when [type] is an encryption namespace we do not implement.
   static bool isForeignEncryption(ExplicitEncryptionType? type) =>
@@ -91,8 +92,7 @@ enum Track {
         ExplicitEncryptionType.otr ||
         ExplicitEncryptionType.legacyOpenPGP ||
         ExplicitEncryptionType.openPGP ||
-        ExplicitEncryptionType.unknown =>
-          true,
+        ExplicitEncryptionType.unknown => true,
         _ => false,
       };
 
@@ -110,11 +110,11 @@ enum Track {
   /// downgrading a stored choice to "no encryption" would send messages in
   /// the clear because of a typo.
   static Track? fromStored(String value) => switch (value.toLowerCase()) {
-        'po' || 'pq' || 'pqomemo' => Track.pq,
-        'om' || 'standard' || 'standardomemo' => Track.standard,
-        'no' || 'none' => Track.none,
-        _ => null,
-      };
+    'po' || 'pq' || 'pqomemo' => Track.pq,
+    'om' || 'standard' || 'standardomemo' => Track.standard,
+    'no' || 'none' => Track.none,
+    _ => null,
+  };
 }
 
 /// The token stored in `messages.enc_mode`.
@@ -144,10 +144,10 @@ enum EncModeToken {
 
   /// The token for [track].
   static EncModeToken of(Track track) => switch (track) {
-        Track.none => EncModeToken.none,
-        Track.standard => EncModeToken.standard,
-        Track.pq => EncModeToken.pq,
-      };
+    Track.none => EncModeToken.none,
+    Track.standard => EncModeToken.standard,
+    Track.pq => EncModeToken.pq,
+  };
 
   /// Reads a stored value, including every spelling earlier builds wrote.
   ///
@@ -158,10 +158,10 @@ enum EncModeToken {
   /// left to protect by being uncertain about it. The same uncertainty on the
   /// send path is not acceptable, which is why [fromStored] returns null.
   static EncModeToken parse(String? value) => switch (value?.toLowerCase()) {
-        'po' || 'pq' || 'pqomemo' => EncModeToken.pq,
-        'om' || 'standard' || 'standardomemo' => EncModeToken.standard,
-        'no' || 'none' => EncModeToken.none,
-        'error' => EncModeToken.error,
-        _ => EncModeToken.none,
-      };
+    'po' || 'pq' || 'pqomemo' => EncModeToken.pq,
+    'om' || 'standard' || 'standardomemo' => EncModeToken.standard,
+    'no' || 'none' => EncModeToken.none,
+    'error' => EncModeToken.error,
+    _ => EncModeToken.none,
+  };
 }

@@ -78,7 +78,8 @@ class Occupant {
   /// Present in the room now (Conversations `ranks(Role.PARTICIPANT)`).
   ///
   /// Affiliation stubs from `muc#admin` use `role=none` until presence arrives.
-  bool get isOnline => role == 'moderator' || role == 'participant' || role == 'visitor';
+  bool get isOnline =>
+      role == 'moderator' || role == 'participant' || role == 'visitor';
 
   /// Whether this occupant may be addressed by others in the room.
   ///
@@ -93,11 +94,11 @@ class Occupant {
       affiliation == 'member';
 
   factory Occupant.from(RoomMember member) => Occupant(
-        nick: member.nick,
-        affiliation: member.affiliation.value,
-        role: member.role.value,
-        realJid: member.realJid?.toBare().toString(),
-      );
+    nick: member.nick,
+    affiliation: member.affiliation.value,
+    role: member.role.value,
+    realJid: member.realJid?.toBare().toString(),
+  );
 
   @override
   bool operator ==(Object other) =>
@@ -319,24 +320,27 @@ enum OccupantChange { joined, left, renamed, promoted, demoted, unchanged }
 /// presence storm on every reconnect and a log of all of it is unreadable. The
 /// user cares about who is *new* and who *left*.
 List<({OccupantChange change, Occupant occupant, String? previousNick})>
-    diffOccupants(
-  List<Occupant> before,
-  List<Occupant> after,
-) {
-  final changes = <({OccupantChange change, Occupant occupant, String? previousNick})>[];
+diffOccupants(List<Occupant> before, List<Occupant> after) {
+  final changes =
+      <({OccupantChange change, Occupant occupant, String? previousNick})>[];
   final beforeByNick = {for (final o in before) o.nick: o};
 
   for (final occupant in after) {
     final previous = beforeByNick[occupant.nick];
     if (previous == null) {
-      changes.add((change: OccupantChange.joined, occupant: occupant, previousNick: null));
-    } else if (previous.role != occupant.role || previous.affiliation != occupant.affiliation) {
+      changes.add((
+        change: OccupantChange.joined,
+        occupant: occupant,
+        previousNick: null,
+      ));
+    } else if (previous.role != occupant.role ||
+        previous.affiliation != occupant.affiliation) {
       changes.add((
         change: occupant.role == 'moderator' && previous.role != 'moderator'
             ? OccupantChange.promoted
             : occupant.role != 'moderator' && previous.role == 'moderator'
-                ? OccupantChange.demoted
-                : OccupantChange.unchanged,
+            ? OccupantChange.demoted
+            : OccupantChange.unchanged,
         occupant: occupant,
         previousNick: null,
       ));

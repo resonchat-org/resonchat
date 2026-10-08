@@ -25,11 +25,7 @@ bool isImageMime(String mime, String pathOrName) {
 
 /// Renders a downloaded image or a download affordance for a file message.
 class MediaAttachment extends ConsumerStatefulWidget {
-  const MediaAttachment({
-    super.key,
-    required this.message,
-    this.chatKey,
-  });
+  const MediaAttachment({super.key, required this.message, this.chatKey});
 
   final Message message;
 
@@ -112,9 +108,8 @@ class _MediaAttachmentState extends ConsumerState<MediaAttachment> {
     // Web / desktop: opening OS handlers is best-effort; images already
     // render inline. Non-images show a snackbar with the path key.
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(context.l10n.tapToOpen)),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(context.l10n.tapToOpen)));
   }
 
   @override
@@ -123,8 +118,10 @@ class _MediaAttachmentState extends ConsumerState<MediaAttachment> {
     final name = m.mediaName.isNotEmpty
         ? m.mediaName
         : (m.mediaUrl.isNotEmpty ? l10n.fileAttachment : '');
-    final image =
-        isImageMime(m.mediaMime, m.localPath.isNotEmpty ? m.localPath : name);
+    final image = isImageMime(
+      m.mediaMime,
+      m.localPath.isNotEmpty ? m.localPath : name,
+    );
 
     if (_hasLocal && image && _imageBytes != null) {
       return Material(

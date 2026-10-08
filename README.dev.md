@@ -66,10 +66,21 @@ flutter pub get
 dart run build_runner build          # 生成 drift 代码（database.g.dart）
 dart analyze lib test                # flutter analyze 在本机会崩，改用 dart analyze
 flutter test
-./tool/build_android.sh              # mipmap ← assets/icons + flutter build apk --debug
+./tool/build_android.sh              # mipmap + liboqs NDK libs + flutter build apk
 ./tool/build_web.sh                  # Drift WASM → web/ + flutter build web
 ./tool/build_appimage.sh             # Linux AppImage（需 GTK 3 等桌面依赖）
 ```
+
+### 发布（CD）
+
+GitHub 上 **Publish a release**（或 `gh release create vX.Y.Z`）会触发
+`.github/workflows/cd.yml`：打 release APK + x86_64 AppImage，并挂到该
+Release 的 Assets（网页下载区）。产物名形如
+`resonchat-<tag>-android.apk` / `resonchat-<tag>-x86_64.AppImage`。
+
+> 当前 release APK 仍用 debug 签名（`android/app/build.gradle.kts`）；上架
+> 商店前需换成正式 keystore。
+
 
 ### 应用图标
 
@@ -159,6 +170,6 @@ RFC 7395 framing / `WebSocketXmppSocket` 与 XEP-0156 在 `packages/moxxmpp`（`
 | `integration_test/m2_interop_test.dart` | 与真实客户端的能力协商全流程：读它的 bundle、判定轨道、发消息、等入站 |
 | `tool/interop_probe.dart <jid> <pass> [peer]` | A 轨 bundle 线格式与 PEP 发布校验 |
 | `tool/pq_interop.dart <jidA> <passA> <jidB> <passB>` | **B 轨双账号真实互测**：PQ 加解密 + PEP 能力发现 |
-| `tool/build_liboqs.sh` | 构建 liboqs 静态库与 KAT 参考程序 |
+| `tool/build_liboqs.sh` | 构建 liboqs（`--android-only` 给 APK；完整含 KAT 参考程序）。`build_android.sh` 缺库时会自动调用 |
 | `tool/previews/` | 把 UI 渲染成 PNG 供设计评审 |
 | `integration_test/native_pq_test.dart` | 设备上确认实际加载的是 native liboqs 还是纯 Dart |
