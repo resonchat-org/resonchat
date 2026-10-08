@@ -16,6 +16,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../account/account_color.dart';
+import '../account/account_hub.dart';
+import '../account/resolve.dart';
 import '../l10n/l10n.dart';
 import '../omemo/track.dart';
 import '../state/providers.dart';
@@ -35,32 +38,35 @@ enum ChatSwipeAction {
 class ChatRow extends ConsumerWidget {
   const ChatRow({
     super.key,
-    required this.chat,
+    required this.entry,
     required this.onOpen,
+    this.showAccountChrome = true,
   });
 
-  final Chat chat;
+  final AccountChat entry;
   final VoidCallback onOpen;
+
+  /// Left stripe + via label when more than one account is configured.
+  final bool showAccountChrome;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tg = context.tg;
+    final chat = entry.chat;
+    final chatKey = entry.ref.key;
+    final accent = entry.accent;
+    final multi = ref.watch(accountHubProvider).accounts.length > 1;
     final title = chat.isGroup
         ? (chat.title.isEmpty ? chat.jid : chat.title)
         : (chat.title.isEmpty ? chat.jid : chat.title);
-    // The chosen track, not the negotiated one: a row says what the user
-    // picked. Public rooms stay plaintext; private non-anonymous may use OMEMO.
     final track = chat.isGroup && !chat.mucPrivateNonAnonymous
         ? Track.none
-        : ref.watch(chatTrackProvider(chat.jid)).value ?? Track.standard;
-    final preview = ref.watch(lastMessageProvider(chat.jid));
+        : ref.watch(chatTrackProvider(chatKey)).value ?? Track.standard;
+    final preview = ref.watch(lastMessageProvider(chatKey));
     final locked = track != Track.none;
 
     return Dismissible(
-      // Required, and correct anyway: every dismissible in a list needs an
-      // identity of its own, and the conversation's JID is exactly that.
-      key: ValueKey('chat-row-${chat.jid}'),
-      // Both directions, so the row is swipeable with either thumb.
+      key: ValueKey('chat-row-$chatKey'),
       direction: DismissDirection.horizontal,
       background: SwipeBackground(
         alignment: Alignment.centerLeft,
@@ -74,40 +80,36 @@ class ChatRow extends ConsumerWidget {
         color: tg.accent,
       ),
       confirmDismiss: (direction) async {
-        final db = ref.read(databaseProvider);
+        final db = dbForChatKey(chatKey);
         if (direction == DismissDirection.startToEnd) {
           await db.setChatFlag(chat.jid, muted: !chat.muted);
         } else {
           await db.setChatFlag(chat.jid, pinned: !chat.pinned);
         }
-        // Never actually remove the row: these actions change flags, and a
-        // dismissed row that springs back looks like the app glitched.
         return false;
       },
       child: InkWell(
         onTap: onOpen,
         child: Container(
           height: TgDimens.chatsRowHeight,
+          decoration: multi && showAccountChrome
+              ? BoxDecoration(
+                  border: Border(
+                    left: BorderSide(color: accent, width: 3),
+                  ),
+                )
+              : null,
           padding: const EdgeInsets.symmetric(
             horizontal: TgDimens.chatsHorizontalPadding,
           ),
           child: Row(
             children: [
-              chat.isGroup
-                  ? CircleAvatar(
-                      radius: TgDimens.avatarChats / 2,
-                      backgroundColor: tg.accent.withValues(alpha: 0.18),
-                      child: Icon(
-                        Icons.groups_outlined,
-                        color: tg.accent,
-                        size: TgDimens.avatarChats * 0.55,
-                      ),
-                    )
-                  : ContactAvatar(
-                      jid: chat.jid,
-                      title: title,
-                      hero: true,
-                    ),
+              _AccountAvatar(
+                chat: chat,
+                title: title,
+                accent: accent,
+                ring: multi && showAccountChrome,
+              ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -160,6 +162,17 @@ class ChatRow extends ConsumerWidget {
                       ],
                     ),
                     const SizedBox(height: TgDimens.chatsTitleGap),
+                    if (multi && showAccountChrome)
+                      Text(
+                        accountViaLabel(entry.account.bareJid),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: TgDimens.timeFontSize,
+                          color: accent,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     Row(
                       children: [
                         Expanded(
@@ -200,6 +213,50 @@ class ChatRow extends ConsumerWidget {
     final m = t.minute.toString().padLeft(2, '0');
     if (t.year == now.year && t.day == now.day) return '$h:$m';
     return '${t.day}/${t.month}';
+  }
+}
+
+/// Avatar with optional account-colored ring (not the contact name).
+class _AccountAvatar extends StatelessWidget {
+  const _AccountAvatar({
+    required this.chat,
+    required this.title,
+    required this.accent,
+    required this.ring,
+  });
+
+  final Chat chat;
+  final String title;
+  final Color accent;
+  final bool ring;
+
+  @override
+  Widget build(BuildContext context) {
+    final tg = context.tg;
+    final child = chat.isGroup
+        ? CircleAvatar(
+            radius: TgDimens.avatarChats / 2,
+            backgroundColor: tg.accent.withValues(alpha: 0.18),
+            child: Icon(
+              Icons.groups_outlined,
+              color: tg.accent,
+              size: TgDimens.avatarChats * 0.55,
+            ),
+          )
+        : ContactAvatar(
+            jid: chat.jid,
+            title: title,
+            hero: true,
+          );
+    if (!ring) return child;
+    return Container(
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: accent, width: 2),
+      ),
+      child: child,
+    );
   }
 }
 

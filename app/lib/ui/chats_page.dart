@@ -11,8 +11,11 @@ import 'package:moxxmpp/moxxmpp.dart'
     show JID, RosterManager, rosterManager;
 import '../xmpp/connection.dart';
 
+import '../account/account_hub.dart';
+import '../account/chat_ref.dart';
 import '../l10n/l10n.dart';
 import '../state/providers.dart';
+import 'accounts_icon.dart';
 import 'archive_page.dart';
 import 'chat_row.dart';
 import 'requests_page.dart';
@@ -54,11 +57,14 @@ class _ChatsPageState extends ConsumerState<ChatsPage> {
       return;
     }
 
-    final xmpp = ref.read(xmppServiceProvider);
-    final db = ref.read(databaseProvider);
-    await db.upsertChat(jid);
+    final hub = accountHub;
+    final session = hub.primarySession;
+    if (session == null) return;
+    await session.db.upsertChat(jid);
     _jid.clear();
+    final chatRef = ChatRef(accountId: session.account.id, jid: jid);
 
+    final xmpp = session.xmpp;
     if (xmpp.state == XmppConnectionState.connected) {
       final roster =
           xmpp.connection?.getManagerById<RosterManager>(rosterManager);
@@ -77,7 +83,9 @@ class _ChatsPageState extends ConsumerState<ChatsPage> {
         ),
       );
     }
-    if (mounted) Navigator.of(context).pushNamed('/chat', arguments: jid);
+    if (mounted) {
+      Navigator.of(context).pushNamed('/chat', arguments: chatRef.key);
+    }
   }
 
 
@@ -120,6 +128,13 @@ class _ChatsPageState extends ConsumerState<ChatsPage> {
             ),
           ),
           IconButton(
+            // CustomPaint: MaterialIcons in this AppBar slot paint blank on
+            // some Linux builds even when the glyph exists in the OTF.
+            icon: const AccountsIcon(),
+            tooltip: l10n.manageAccounts,
+            onPressed: () => Navigator.of(context).pushNamed('/accounts'),
+          ),
+          IconButton(
             icon: const Icon(Icons.settings),
             tooltip: l10n.settings,
             onPressed: () => Navigator.of(context).pushNamed('/settings'),
@@ -139,12 +154,16 @@ class _ChatsPageState extends ConsumerState<ChatsPage> {
                         padding: const EdgeInsets.only(left: 82),
                         child: Divider(height: 0.5, color: context.tg.separator),
                       ),
-                      itemBuilder: (context, i) =>
-                          ChatRow(
-                      chat: list[i],
-                      onOpen: () => Navigator.of(context)
-                          .pushNamed('/chat', arguments: list[i].jid),
-                    ),
+                      itemBuilder: (context, i) {
+                        final entry = list[i];
+                        return ChatRow(
+                          entry: entry,
+                          onOpen: () => Navigator.of(context).pushNamed(
+                            '/chat',
+                            arguments: entry.ref.key,
+                          ),
+                        );
+                      },
                     ),
               loading: () =>
                   const Center(child: CircularProgressIndicator()),

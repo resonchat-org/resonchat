@@ -1,0 +1,35 @@
+{
+    "name": "resonchat",
+    "short_name": "resonchat",
+    "start_url": ".",
+    "display": "standalone",
+    "background_color": "#0175C2",
+    "theme_color": "#0175C2",
+    "description": "XMPP client with dual-track OMEMO",
+    "orientation": "portrait-primary",
+    "prefer_related_applications": false,
+    "icons": [
+        {
+            "src": "assets/assets/icons/app_icon_192.png",
+            "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "assets/assets/icons/app_icon.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        },
+        {
+            "src": "assets/assets/icons/app_icon_maskable_192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "maskable"
+        },
+        {
+            "src": "assets/assets/icons/app_icon_maskable_512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable"
+        }
+    ]
+}

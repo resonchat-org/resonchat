@@ -4,6 +4,23 @@
   "settings": "Settings",
   "privacy": "Privacy",
   "connection": "Connection",
+  "socks5Proxy": "SOCKS5 proxy",
+  "socks5ProxySummary": "Send all XMPP and HTTP traffic through a local SOCKS5 proxy",
+  "socks5ProxyPort": "Proxy port",
+  "socks5ProxyPortHint": "Default 7890; Tor is often 9050",
+  "socks5ProxyApplied": "Proxy updated. Reconnect for XMPP to use the new setting.",
+  "socks5ProxyInvalidPort": "Enter a port between 1 and 65535",
+  "manageAccounts": "Accounts",
+  "addAccount": "Add account",
+  "noAccountsYet": "No accounts yet",
+  "accountDisabled": "Disabled",
+  "removeAccount": "Remove account",
+  "removeAccountConfirm": "Remove {jid} from this device? Local chat history for that account stays on disk.",
+  "@removeAccountConfirm": {
+    "placeholders": {
+      "jid": { "type": "String" }
+    }
+  },
   "encryption": "Encryption",
   "about": "About",
   "defaultEncryption": "Default encryption",
@@ -39,6 +56,7 @@
   "jid": "JID",
   "password": "Password",
   "hostOptional": "Host (optional)",
+  "hostOptionalWebHint": "Leave empty to use host-meta, or enter wss://…",
   "connect": "Connect",
   "connecting": "Connecting…",
   "authenticationFailed": "Authentication failed",

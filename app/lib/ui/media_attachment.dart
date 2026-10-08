@@ -3,15 +3,17 @@
 //
 // File / image attachment inside a chat bubble (HTTP File Upload download).
 
-import 'dart:io';
+import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mime/mime.dart';
-import 'package:open_filex/open_filex.dart';
 
+import '../account/account_hub.dart';
+import '../account/resolve.dart';
 import '../l10n/l10n.dart';
-import '../state/providers.dart';
+import '../platform/media_store.dart';
 import '../store/database.dart';
 import 'theme.dart';
 
@@ -26,9 +28,13 @@ class MediaAttachment extends ConsumerStatefulWidget {
   const MediaAttachment({
     super.key,
     required this.message,
+    this.chatKey,
   });
 
   final Message message;
+
+  /// [ChatRef.key] when known; otherwise primary session is used.
+  final String? chatKey;
 
   @override
   ConsumerState<MediaAttachment> createState() => _MediaAttachmentState();
@@ -37,12 +43,35 @@ class MediaAttachment extends ConsumerStatefulWidget {
 class _MediaAttachmentState extends ConsumerState<MediaAttachment> {
   bool _busy = false;
   String? _error;
+  Uint8List? _imageBytes;
 
   Message get m => widget.message;
 
-  bool get _hasLocal {
-    final p = m.localPath;
-    return p.isNotEmpty && File(p).existsSync();
+  bool get _hasLocal => mediaStore.existsSync(m.localPath);
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadImageBytes());
+  }
+
+  @override
+  void didUpdateWidget(covariant MediaAttachment oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.message.localPath != m.localPath) {
+      unawaited(_loadImageBytes());
+    }
+  }
+
+  Future<void> _loadImageBytes() async {
+    if (!_hasLocal) {
+      if (_imageBytes != null) setState(() => _imageBytes = null);
+      return;
+    }
+    if (!isImageMime(m.mediaMime, m.localPath)) return;
+    final bytes = await mediaStore.readBytes(m.localPath);
+    if (!mounted) return;
+    setState(() => _imageBytes = bytes);
   }
 
   Future<void> _download() async {
@@ -52,14 +81,15 @@ class _MediaAttachmentState extends ConsumerState<MediaAttachment> {
       _error = null;
     });
     try {
-      final xmpp = ref.read(xmppServiceProvider);
-      final file = await xmpp.httpFiles.downloadToCache(
+      final session = _session();
+      final file = await session.xmpp.httpFiles.downloadToCache(
         m.mediaUrl,
         preferredName: m.mediaName.isNotEmpty
             ? m.mediaName
             : (m.mediaUrl.split('/').last.split('#').first),
       );
-      await ref.read(databaseProvider).setMessageLocalPath(m.id, file.path);
+      await session.db.setMessageLocalPath(m.id, file.path);
+      await _loadImageBytes();
     } catch (e) {
       if (mounted) setState(() => _error = '$e');
     } finally {
@@ -67,16 +97,24 @@ class _MediaAttachmentState extends ConsumerState<MediaAttachment> {
     }
   }
 
+  AccountSession _session() {
+    final key = widget.chatKey;
+    if (key != null && key.isNotEmpty) {
+      return resolveChatKey(key).session;
+    }
+    final primary = accountHub.primarySession;
+    if (primary == null) throw StateError('no account session');
+    return primary;
+  }
+
   Future<void> _openLocal() async {
     if (!_hasLocal) return;
-    final result = await OpenFilex.open(
-      m.localPath,
-      type: m.mediaMime.isNotEmpty ? m.mediaMime : null,
-    );
+    // Web / desktop: opening OS handlers is best-effort; images already
+    // render inline. Non-images show a snackbar with the path key.
     if (!mounted) return;
-    if (result.type != ResultType.done) {
-      setState(() => _error = context.l10n.couldNotOpenFile);
-    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(context.l10n.tapToOpen)),
+    );
   }
 
   @override
@@ -88,7 +126,7 @@ class _MediaAttachmentState extends ConsumerState<MediaAttachment> {
     final image =
         isImageMime(m.mediaMime, m.localPath.isNotEmpty ? m.localPath : name);
 
-    if (_hasLocal && image) {
+    if (_hasLocal && image && _imageBytes != null) {
       return Material(
         color: Colors.transparent,
         borderRadius: BorderRadius.circular(8),
@@ -96,8 +134,8 @@ class _MediaAttachmentState extends ConsumerState<MediaAttachment> {
         child: InkWell(
           onTap: _openLocal,
           borderRadius: BorderRadius.circular(8),
-          child: Image.file(
-            File(m.localPath),
+          child: Image.memory(
+            _imageBytes!,
             width: 220,
             fit: BoxFit.cover,
             errorBuilder: (context, error, stackTrace) => _FileRow(

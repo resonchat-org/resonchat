@@ -1,22 +1,19 @@
 // Copyright (C) 2026 resonchat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// Unattended login for smoke tests (see tool/smoke_test.sh).
-//
-// Enabled only in debug builds via --dart-define=RESONCHAT_SMOKE=<jid>:<pass>
-// so automated runs never need to drive the on-screen keyboard, and no
-// credential can be baked into a release build. Repeated logins reuse the
-// persisted OMEMO device instead of registering a new one.
+// First-run login, or "add account" from Manage Accounts (Conversations
+// EditAccountActivity). The form itself is never a multi-account switcher.
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../account/account_hub.dart';
 import '../l10n/l10n.dart';
+import '../net/app_network.dart';
 import '../state/providers.dart';
-import '../store/account_store.dart';
-import '../store/roster_state.dart';
 import '../xmpp/connection.dart';
+import 'socks5_proxy_sheet.dart';
 import 'theme.dart';
 
 /// Parsed `--dart-define` credentials, or null when unset.
@@ -33,7 +30,10 @@ import 'theme.dart';
 }
 
 class LoginPage extends ConsumerStatefulWidget {
-  const LoginPage({super.key});
+  const LoginPage({super.key, this.addAccountMode = false});
+
+  /// When true, opened from Manage Accounts → Add account.
+  final bool addAccountMode;
 
   @override
   ConsumerState<LoginPage> createState() => _LoginPageState();
@@ -45,45 +45,22 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   final _host = TextEditingController();
   bool _busy = false;
   bool _smokeRan = false;
-  bool _restoredRan = false;
   String? _error;
 
   @override
   void initState() {
     super.initState();
+    if (widget.addAccountMode) return;
     final smoke = smokeCredentials();
     if (smoke != null) {
       _jid.text = smoke.jid;
       _password.text = smoke.password;
-      // Run once the first frame is up so Riverpod overrides are ready.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || _smokeRan) return;
         _smokeRan = true;
         _connect();
       });
-      return;
     }
-    // Restore the last account and log in without being asked.
-    //
-    // A messenger that greets you with a password box every time the socket
-    // drops is not a client you can leave running, and the drops are normal:
-    // servers close idle connections, radios switch, laptops sleep. So the
-    // keystore copy of the credential is spent here to reconnect by itself.
-    //
-    // The fields are filled first, before the attempt, so that a *failed*
-    // auto-login still leaves the form usable instead of blank — the user sees
-    // their own account and the real error, rather than an empty page and a
-    // button.
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!mounted || _restoredRan) return;
-      _restoredRan = true;
-      final stored = await AccountStore().load();
-      if (stored == null || !mounted) return;
-      _jid.text = stored.jid;
-      _password.text = stored.password;
-      if (stored.hasHost) _host.text = stored.host!;
-      await _connect();
-    });
   }
 
   @override
@@ -100,90 +77,52 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       _error = null;
     });
     try {
-      final xmpp = ref.read(xmppServiceProvider);
-      final ok = await xmpp.connect(
+      await appNetwork.waitUntilReady();
+      final hub = accountHub;
+      final ok = await hub.addAndConnect(
         jid: _jid.text.trim(),
         password: _password.text,
         host: _host.text.trim().isEmpty ? null : _host.text.trim(),
-        rosterState: DriftRosterStateManager(ref.read(databaseProvider)),
       );
       if (!ok) {
         setState(
           () => _error =
-              xmpp.lastError ?? context.l10n.authenticationFailed,
+              hub.lastConnectError ?? context.l10n.authenticationFailed,
         );
-        // A stored password that the server no longer accepts must not be
-        // retried on every launch: the user would watch the app fail the same
-        // way forever and never reach the field they could fix it in.
-        await AccountStore().clear();
         return;
       }
 
-      // Saved only after the server has accepted it, so a wrong password is
-      // never remembered — which is what makes "log in once" safe.
-      await AccountStore().save(
-        StoredAccount(
-          jid: _jid.text.trim(),
-          password: _password.text,
-          host: _host.text.trim().isEmpty ? null : _host.text.trim(),
-        ),
-      );
+      final session = hub.primarySession;
+      if (session == null) {
+        setState(() => _error = context.l10n.authenticationFailed);
+        return;
+      }
+
+      // Shared SOCKS lives on the primary DB. Reload only after first login
+      // (add-account reuses the already-loaded global proxy).
+      if (!widget.addAccountMode) {
+        await appNetwork.loadFrom(() async {
+          return Socks5ProxyConfig(
+            enabled: await session.db.socks5ProxyEnabled(),
+            host: await session.db.socks5ProxyHost(),
+            port: await session.db.socks5ProxyPort(),
+          );
+        });
+      }
+
       ref.read(connectionStateProvider.notifier).state =
           XmppConnectionState.connected;
-      final items = await xmpp.requestRoster();
-      for (final item in items) {
-        await ref.read(databaseProvider).upsertChat(
-              item.jid,
-              title: item.name ?? item.jid,
-            );
+      // Drop any cold-start "no session" provider errors from the login route.
+      ref.invalidate(databaseProvider);
+      ref.invalidate(xmppServiceProvider);
+
+      // Roster / OMEMO / MAM already ran inside [AccountHub.addAndConnect].
+      if (!mounted) return;
+      if (widget.addAccountMode) {
+        Navigator.of(context).pop();
+      } else {
+        Navigator.of(context).pushReplacementNamed('/chats');
       }
-      await xmpp.ensureOmemoDevice();
-      // Keep the one-time-prekey pool full so new inbound sessions keep
-      // forward secrecy.
-      await xmpp.replenishPrekeys();
-      // Publish our post-quantum bundle so peers can upgrade to the B track.
-      await xmpp.initialiseBTrack();
-      final db = ref.read(databaseProvider);
-      // Conversations connectMultiModeConversations: rejoin stored rooms.
-      final rooms = await db.groupChatsForJoin();
-      await xmpp.rejoinGroupChats([
-        for (final c in rooms) (roomJid: c.jid, nick: c.mucNick),
-      ]);
-      // Pull missed messages from the account archive (XEP-0313).
-      // Conversations MessageArchiveManager.catchup(): RSM after archive id
-      // when known, otherwise start from last local message timestamp
-      // (getLastMessageReceived), capped to MAM_MAX_CATCHUP (5 days).
-      final afterId = await db.metaValue(XmppService.mamCatchupIdKey);
-      final startRaw = await db.metaValue(XmppService.mamCatchupTsKey);
-      final metaTs =
-          startRaw != null ? DateTime.tryParse(startRaw) : null;
-      final dbTs = await db.latestMessageTimestamp();
-      // Prefer the later of meta cursor and last stored message — same idea
-      // as Conversations MamReference.max(...).
-      DateTime? start;
-      if (afterId == null || afterId.isEmpty) {
-        if (metaTs != null && dbTs != null) {
-          start = metaTs.isAfter(dbTs) ? metaTs : dbTs;
-        } else {
-          start = metaTs ?? dbTs;
-        }
-      }
-      await xmpp.catchUpHistory(
-        afterId: afterId,
-        start: start,
-        saveCursor: (id, ts) async {
-          if (id != null && id.isNotEmpty) {
-            await db.setMetaValue(XmppService.mamCatchupIdKey, id);
-          }
-          if (ts != null) {
-            await db.setMetaValue(
-              XmppService.mamCatchupTsKey,
-              ts.toUtc().toIso8601String(),
-            );
-          }
-        },
-      );
-      if (mounted) Navigator.of(context).pushReplacementNamed('/chats');
     } catch (e) {
       setState(() => _error = '$e');
     } finally {
@@ -195,8 +134,13 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   Widget build(BuildContext context) {
     final tg = context.tg;
     final l10n = context.l10n;
+    final proxyOn = appNetwork.config.enabled;
     return Scaffold(
-      appBar: AppBar(title: Text(l10n.appName)),
+      appBar: AppBar(
+        title: Text(
+          widget.addAccountMode ? l10n.addAccount : l10n.appName,
+        ),
+      ),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
@@ -221,11 +165,36 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                 controller: _host,
                 decoration: InputDecoration(
                   labelText: l10n.hostOptional,
+                  helperText: kIsWeb ? l10n.hostOptionalWebHint : null,
                 ),
                 textInputAction: TextInputAction.done,
                 onSubmitted: (_) => _connect(),
               ),
-              const SizedBox(height: 24),
+              // One shared SOCKS for every account (primary DB / Settings).
+              // Add-account must not offer a second proxy — that would diverge.
+              // Browsers cannot do SOCKS CONNECT, so hide the control on web.
+              if (!widget.addAccountMode && !kIsWeb) ...[
+                const SizedBox(height: 8),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(
+                    Icons.vpn_key_outlined,
+                    color: proxyOn ? tg.accent : tg.textSecondary,
+                  ),
+                  title: Text(l10n.socks5Proxy),
+                  subtitle: Text(
+                    proxyOn
+                        ? '${appNetwork.config.host}:${appNetwork.config.port}'
+                        : l10n.socks5ProxySummary,
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () async {
+                    await showSocks5ProxySheet(context, ref);
+                    if (mounted) setState(() {});
+                  },
+                ),
+              ],
+              const SizedBox(height: 16),
               if (_error != null)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 12),

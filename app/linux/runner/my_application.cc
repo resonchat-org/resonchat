@@ -58,6 +58,22 @@ static void my_application_activate(GApplication* application) {
   fl_dart_project_set_dart_entrypoint_arguments(
       project, self->dart_entrypoint_arguments);
 
+  // Window / taskbar icon from Flutter assets (synced from assets/icons/).
+  {
+    const gchar* assets = fl_dart_project_get_assets_path(project);
+    g_autofree gchar* icon_path =
+        g_build_filename(assets, "assets", "icons", "app_icon.png", nullptr);
+    if (g_file_test(icon_path, G_FILE_TEST_IS_REGULAR)) {
+      GError* icon_error = nullptr;
+      if (!gtk_window_set_icon_from_file(window, icon_path, &icon_error)) {
+        g_warning("failed to set window icon: %s",
+                  icon_error != nullptr ? icon_error->message : "unknown");
+        g_clear_error(&icon_error);
+      }
+    }
+    gtk_window_set_icon_name(window, "resonchat");
+  }
+
   FlView* view = fl_view_new(project);
   GdkRGBA background_color;
   // Background defaults to black, override it here if necessary, e.g. #00000000

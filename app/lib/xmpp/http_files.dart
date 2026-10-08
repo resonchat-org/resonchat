@@ -8,7 +8,6 @@
 // PUT/GET + Conversations aesgcm://: here (same split as Conversations
 // HttpUploadManager vs HttpUploadConnection / HttpDownloadConnection).
 
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
@@ -16,8 +15,9 @@ import 'package:logging/logging.dart';
 import 'package:mime/mime.dart';
 import 'package:moxxmpp/moxxmpp.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 
+import '../net/app_network.dart';
+import '../platform/media_store.dart';
 import 'aesgcm_url.dart';
 
 final _log = Logger('HttpFiles');
@@ -38,6 +38,12 @@ class UploadedFile {
   final String fileName;
   final int size;
   final bool encrypted;
+}
+
+/// Opaque local media handle (native file path or web memory key).
+class CachedMedia {
+  const CachedMedia(this.path);
+  final String path;
 }
 
 /// PUT/GET + aesgcm around moxxmpp [HttpFileUploadManager].
@@ -62,19 +68,19 @@ class HttpFileService {
   }
 
   /// Slot via XEP-0363, then HTTP PUT. When [encrypt], Conversations aesgcm.
-  Future<UploadedFile> uploadFile(
-    File file, {
+  Future<UploadedFile> uploadBytes(
+    Uint8List clear, {
+    required String fileName,
     required bool encrypt,
     String? mimeOverride,
   }) async {
     final m = _upload;
     if (m == null) throw StateError('HttpFileUploadManager not registered');
 
-    final name = p.basename(file.path);
+    final name = p.basename(fileName);
     final mime = mimeOverride ??
-        lookupMimeType(file.path) ??
+        lookupMimeType(fileName) ??
         'application/octet-stream';
-    final clear = await file.readAsBytes();
 
     late final Uint8List body;
     Uint8List? keyIv;
@@ -95,19 +101,25 @@ class HttpFileService {
     }
     final slot = slotResult.get<HttpFileUploadSlot>();
 
-    final put = await http.put(
-      Uri.parse(slot.putUrl),
-      headers: {
-        'Content-Type': mime,
-        'Content-Length': '${body.length}',
-        ...slot.headers,
-      },
-      body: body,
-    );
+    final client = appNetwork.createHttpClient();
+    late final http.Response put;
+    try {
+      put = await client.put(
+        Uri.parse(slot.putUrl),
+        headers: {
+          'Content-Type': mime,
+          'Content-Length': '${body.length}',
+          ...slot.headers,
+        },
+        body: body,
+      );
+    } finally {
+      client.close();
+    }
     if (put.statusCode != 200 && put.statusCode != 201) {
-      throw HttpException(
+      throw http.ClientException(
         'upload PUT failed with ${put.statusCode}',
-        uri: Uri.parse(slot.putUrl),
+        Uri.parse(slot.putUrl),
       );
     }
 
@@ -124,19 +136,23 @@ class HttpFileService {
     );
   }
 
-  /// Download [shareUrl] into the app cache; decrypt when aesgcm.
-  ///
-  /// Returns the local file path.
-  Future<File> downloadToCache(
+  /// Download [shareUrl] into the media store; decrypt when aesgcm.
+  Future<CachedMedia> downloadToCache(
     String shareUrl, {
     String? preferredName,
   }) async {
     final https = AesGcmUrl.httpsUri(shareUrl);
-    final resp = await http.get(https);
+    final client = appNetwork.createHttpClient();
+    late final http.Response resp;
+    try {
+      resp = await client.get(https);
+    } finally {
+      client.close();
+    }
     if (resp.statusCode != 200 && resp.statusCode != 206) {
-      throw HttpException(
+      throw http.ClientException(
         'download failed with ${resp.statusCode}',
-        uri: https,
+        https,
       );
     }
     var bytes = resp.bodyBytes;
@@ -145,40 +161,21 @@ class HttpFileService {
       bytes = await AesGcmFileCrypto.decrypt(Uint8List.fromList(bytes), frag);
     }
 
-    final dir = await _mediaDir();
     final base = preferredName ??
         p.basename(https.path).replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
-    final safe = base.isEmpty ? 'file' : base;
-    final out = File(
-      p.join(
-        dir.path,
-        '${DateTime.now().microsecondsSinceEpoch}_$safe',
-      ),
+    final path = await mediaStore.writeBytes(
+      Uint8List.fromList(bytes),
+      base.isEmpty ? 'file' : base,
     );
-    await out.writeAsBytes(bytes, flush: true);
-    return out;
+    return CachedMedia(path);
   }
 
-  /// Copy a local [source] into the media cache (outgoing preview / reopen).
-  Future<File> cacheLocalCopy(File source, {String? preferredName}) async {
-    final dir = await _mediaDir();
-    final base = preferredName ??
-        p.basename(source.path).replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
-    final safe = base.isEmpty ? 'file' : base;
-    final out = File(
-      p.join(
-        dir.path,
-        '${DateTime.now().microsecondsSinceEpoch}_$safe',
-      ),
-    );
-    await source.copy(out.path);
-    return out;
-  }
-
-  Future<Directory> _mediaDir() async {
-    final root = await getApplicationSupportDirectory();
-    final dir = Directory(p.join(root.path, 'media'));
-    if (!await dir.exists()) await dir.create(recursive: true);
-    return dir;
+  /// Copy local bytes into the media cache (outgoing preview / reopen).
+  Future<CachedMedia> cacheLocalBytes(
+    Uint8List bytes, {
+    String? preferredName,
+  }) async {
+    final path = await mediaStore.writeBytes(bytes, preferredName ?? 'file');
+    return CachedMedia(path);
   }
 }

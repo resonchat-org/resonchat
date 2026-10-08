@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../account/resolve.dart';
 import '../crypto/fingerprint.dart';
 import '../omemo/track.dart';
 import '../omemo/track_resolver.dart';
@@ -51,7 +52,7 @@ class _SecurityPageState extends ConsumerState<SecurityPage> {
   }
 
   Future<void> _load() async {
-    final om = ref.read(xmppServiceProvider).omemo;
+    final om = resolveChatKey(widget.chatJid).session.xmpp.omemo;
     if (om == null) return;
     final id = await om.getDeviceId();
     final fp = await (await om.getDevice()).fingerprint;

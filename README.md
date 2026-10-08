@@ -11,7 +11,7 @@
 | 零服务端改动 / 零新 XEP | 已完成 | 复用 PEP、EME 等既有标准 |
 | 数据库落盘加密 | 已完成 | SQLCipher，口令由 Android Keystore 保护 |
 | 标准协议扩展 | 已完成 | MAM（XEP-0313）历史同步、回执（XEP-0184）、输入状态（XEP-0085）、Carbons（XEP-0280） |
-| Android 平台支持 | 部分完成 | 仅 Android（arm64-v8a / x86_64）；iOS 与其他平台未做 |
+| 平台支持 | 部分完成 | Android（arm64-v8a / x86_64）；Linux 可打 AppImage（PQ 走纯 Dart `pqcrypto`）；iOS 未做 |
 | Telegram Android 观感 UI | 进行中 | 气泡、色板、列表布局已实现；动画、平板适配、资料页未做 |
 
 ## 状态
@@ -29,7 +29,7 @@
 | M6 UI | 进行中 | 按 [docs/05](docs/05-ui-telegram.md) 重做中 |
 | M7 发布 | 未开始 | — |
 
-当前验证结果：`dart analyze lib test tool integration_test` 无告警；`flutter test` 123 项通过；`flutter build apk --debug` 成功。
+当前验证结果：`dart analyze lib test tool integration_test` 无告警；`flutter test` 123 项通过；`./tool/build_android.sh` 成功。
 
 **已知限制与未完成项**（完整清单见 [`README.dev.md`](README.dev.md)）：
 
@@ -103,7 +103,17 @@ flutter run                   # 连接设备或模拟器
 
 ```bash
 cd app
-flutter build apk --debug
+./tool/build_android.sh
+```
+
+Linux AppImage（x86_64 / aarch64，需本机已装 Flutter Linux 桌面依赖：clang、cmake、ninja、GTK 3、libsecret 等）：
+
+```bash
+cd app
+./tool/build_appimage.sh
+# → build/resonchat-<version>-x86_64.AppImage
+chmod +x build/resonchat-*-x86_64.AppImage
+./build/resonchat-*-x86_64.AppImage
 ```
 
 更完整的工具链版本、分析与测试命令见 [`README.dev.md`](README.dev.md)。

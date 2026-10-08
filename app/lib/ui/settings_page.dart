@@ -1,10 +1,12 @@
 // Copyright (C) 2026 resonchat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../l10n/l10n.dart';
+import '../net/app_network.dart';
 import '../pq/liboqs_mlkem.dart';
 import '../omemo/track.dart';
 import '../state/providers.dart';
@@ -24,6 +26,8 @@ class SettingsPage extends ConsumerStatefulWidget {
 class _SettingsPageState extends ConsumerState<SettingsPage> {
   bool? _readReceipts;
   bool? _chatStates;
+  bool _socks5Enabled = false;
+  final _socks5Port = TextEditingController(text: '7890');
 
   @override
   void initState() {
@@ -37,6 +41,58 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     ref.read(databaseProvider).sendChatStatesEnabled().then((v) {
       if (mounted) setState(() => _chatStates = v);
     });
+    _loadSocks5();
+  }
+
+  Future<void> _loadSocks5() async {
+    final db = ref.read(databaseProvider);
+    final enabled = await db.socks5ProxyEnabled();
+    final port = await db.socks5ProxyPort();
+    if (!mounted) return;
+    setState(() {
+      _socks5Enabled = enabled;
+      _socks5Port.text = '$port';
+    });
+    appNetwork.config = Socks5ProxyConfig(
+      enabled: enabled,
+      host: await db.socks5ProxyHost(),
+      port: port,
+    );
+  }
+
+  @override
+  void dispose() {
+    _socks5Port.dispose();
+    super.dispose();
+  }
+
+  Future<void> _applySocks5({bool? enabled, int? port}) async {
+    final l10n = context.l10n;
+    final nextEnabled = enabled ?? _socks5Enabled;
+    final parsed = port ?? int.tryParse(_socks5Port.text.trim());
+    if (parsed == null || parsed < 1 || parsed > 65535) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.socks5ProxyInvalidPort)),
+      );
+      return;
+    }
+    final db = ref.read(databaseProvider);
+    final host = await db.socks5ProxyHost();
+    await db.setSocks5ProxyEnabled(nextEnabled);
+    await db.setSocks5ProxyPort(parsed);
+    appNetwork.config = Socks5ProxyConfig(
+      enabled: nextEnabled,
+      host: host,
+      port: parsed,
+    );
+    if (!mounted) return;
+    setState(() {
+      _socks5Enabled = nextEnabled;
+      _socks5Port.text = '$parsed';
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(l10n.socks5ProxyApplied)),
+    );
   }
 
   @override
@@ -123,6 +179,31 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           ),
 
           _header(tg, l10n.connection),
+          // SOCKS5 is a TCP CONNECT proxy — browsers cannot use it.
+          if (!kIsWeb) ...[
+            SwitchListTile(
+              secondary: const Icon(Icons.vpn_key_outlined),
+              title: Text(l10n.socks5Proxy),
+              subtitle: Text(l10n.socks5ProxySummary),
+              value: _socks5Enabled,
+              onChanged: (v) => _applySocks5(enabled: v),
+            ),
+            if (_socks5Enabled)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: TextField(
+                  controller: _socks5Port,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: l10n.socks5ProxyPort,
+                    helperText: l10n.socks5ProxyPortHint,
+                    prefixText: '127.0.0.1:',
+                  ),
+                  onSubmitted: (_) => _applySocks5(),
+                  onEditingComplete: () => _applySocks5(),
+                ),
+              ),
+          ],
           ListTile(
             leading: const Icon(Icons.cloud_outlined),
             title: Text(l10n.status),

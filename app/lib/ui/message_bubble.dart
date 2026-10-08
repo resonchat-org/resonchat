@@ -128,6 +128,7 @@ class MessageBubble extends StatelessWidget {
     this.replyBody = '',
     this.replyAuthor = '',
     this.message,
+    this.chatKey,
     this.onReact,
     this.onLongPress,
     this.onTap,
@@ -137,6 +138,9 @@ class MessageBubble extends StatelessWidget {
 
   /// When set and carrying a media URL, render download / image UI.
   final Message? message;
+
+  /// Owning conversation key ([ChatRef.key]) for media download / DB writes.
+  final String? chatKey;
   final DateTime time;
   final BubbleSide side;
 
@@ -265,7 +269,10 @@ class MessageBubble extends StatelessWidget {
                         message!.mediaUrl.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 4),
-                        child: MediaAttachment(message: message!),
+                        child: MediaAttachment(
+                          message: message!,
+                          chatKey: chatKey,
+                        ),
                       ),
                     Row(
                       mainAxisSize: MainAxisSize.min,

@@ -23,7 +23,7 @@ export PATH="$HOME/development/flutter/bin:$ANDROID_HOME/platform-tools:$PATH"
 cd "$(dirname "$0")/.."
 
 echo "==> building debug APK with smoke credentials"
-flutter build apk --debug \
+./tool/build_android.sh --debug -- \
   --dart-define="RESONCHAT_SMOKE=${JID}:${PASS}" 2>&1 | tail -2
 
 APK=build/app/outputs/flutter-apk/app-debug.apk

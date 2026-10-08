@@ -4,6 +4,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../account/account_hub.dart';
 import '../state/providers.dart';
 
 /// Meta key for the user's language override.
@@ -45,23 +46,32 @@ final localeOverrideProvider =
 
 class LocaleOverrideNotifier extends StateNotifier<Locale?> {
   LocaleOverrideNotifier(this._ref) : super(null) {
+    // Watch hub so first login (no DB at cold start) reloads prefs later.
+    _ref.listen<AccountHub>(accountHubProvider, (_, _) {
+      _load();
+    });
     _load();
   }
 
   final Ref _ref;
 
   Future<void> _load() async {
-    final raw = await _ref.read(databaseProvider).metaValue(prefLocaleKey);
+    // First-run login has no session yet — stay on system locale.
+    final db = accountHub.primaryDbOrNull;
+    if (db == null) return;
+    final raw = await db.metaValue(prefLocaleKey);
     state = localeFromPref(raw);
   }
 
   Future<void> setOverride(Locale? locale) async {
     state = locale;
+    final db = accountHub.primaryDbOrNull;
+    if (db == null) return;
     final value = prefFromLocale(locale);
     if (value.isEmpty) {
-      await _ref.read(databaseProvider).deleteMetaValue(prefLocaleKey);
+      await db.deleteMetaValue(prefLocaleKey);
     } else {
-      await _ref.read(databaseProvider).setMetaValue(prefLocaleKey, value);
+      await db.setMetaValue(prefLocaleKey, value);
     }
   }
 }

@@ -1,108 +1,174 @@
 // Copyright (C) 2026 resonchat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// The account this device last logged in with, and its password.
-//
-// ## Why the password is stored at all
-//
-// Not for convenience. Because the alternative is what this app was doing: a
-// cold start, or any dropped socket, lands on an empty login form and asks the
-// user to retype a password they cannot read from the screen. Every reconnect
-// became a manual task, which means a client that cannot be left running is a
-// client that is not actually a client.
-//
-// ## Why it is acceptable
-//
-// XMPP has no token: the credential *is* the password, and every message client
-// that keeps you logged in keeps it. So the question is not "may it be stored"
-// but "where", and the answer is the platform keystore via
-// `FlutterSecureStorage` — the same store already used for the database
-// passphrase and the OMEMO keys. Nothing here is written to the database, to
-// preferences, or to a file, so it does not travel with a backup of anything
-// else.
-//
-// ## What is deliberately absent
-//
-// No "remember me" flag and no account switcher. One account is what this build
-// supports, and a flag that can be off while the password is still on disk
-// would be a lie in one direction or the other.
+// Multi-account credentials (Conversations `accounts` table), held in the
+// platform keystore. Passwords never go into SQLite.
+
+import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-/// A stored account.
+/// One local XMPP account.
 class StoredAccount {
   const StoredAccount({
+    required this.id,
     required this.jid,
     required this.password,
     this.host,
+    this.enabled = true,
+    this.legacyDb = false,
   });
 
+  /// Stable id (Conversations account UUID).
+  final String id;
   final String jid;
   final String password;
 
-  /// Optional host override. Null means "discover the server from the JID".
+  /// Optional host override. Null means discover from the JID.
   final String? host;
 
+  /// When false, the hub does not open a session (Conversations OPTION_DISABLED).
+  final bool enabled;
+
+  /// True for the first migrated account that still uses `resonchat.sqlite3`.
+  final bool legacyDb;
+
   bool get hasHost => host != null && host!.isNotEmpty;
+
+  String get bareJid {
+    final at = jid.indexOf('/');
+    return (at < 0 ? jid : jid.substring(0, at)).toLowerCase();
+  }
+
+  StoredAccount copyWith({
+    String? id,
+    String? jid,
+    String? password,
+    String? host,
+    bool? enabled,
+    bool? legacyDb,
+    bool clearHost = false,
+  }) =>
+      StoredAccount(
+        id: id ?? this.id,
+        jid: jid ?? this.jid,
+        password: password ?? this.password,
+        host: clearHost ? null : (host ?? this.host),
+        enabled: enabled ?? this.enabled,
+        legacyDb: legacyDb ?? this.legacyDb,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'jid': jid,
+        'password': password,
+        if (hasHost) 'host': host,
+        'enabled': enabled,
+        'legacyDb': legacyDb,
+      };
+
+  factory StoredAccount.fromJson(Map<String, dynamic> json) => StoredAccount(
+        id: json['id'] as String,
+        jid: json['jid'] as String,
+        password: json['password'] as String,
+        host: json['host'] as String?,
+        enabled: json['enabled'] as bool? ?? true,
+        legacyDb: json['legacyDb'] as bool? ?? false,
+      );
 }
 
-/// Reads and writes [StoredAccount] in the platform keystore.
+/// Reads and writes the account list in the platform keystore.
 class AccountStore {
   AccountStore({FlutterSecureStorage? storage})
       : _storage = storage ?? const FlutterSecureStorage();
 
   final FlutterSecureStorage _storage;
+  static const _listKey = 'resonchat.accounts.v1';
 
+  // Legacy single-account keys (migrated on first [loadAll]).
   static const _jidKey = 'resonchat.account.jid';
   static const _passwordKey = 'resonchat.account.password';
   static const _hostKey = 'resonchat.account.host';
 
-  /// The stored account, or null when there is none or it is incomplete.
-  ///
-  /// Incomplete rather than partial: an account with no password cannot be
-  /// logged in with, and returning a half-built record would push the "which
-  /// field is missing" question into every caller instead of answering it once
-  /// here. A store that lost its password — a keystore reset, a restore onto a
-  /// new device — therefore reads as *no account*, which is exactly what it is.
-  Future<StoredAccount?> load() async {
+  Future<List<StoredAccount>> loadAll() async {
     try {
-      final jid = await _storage.read(key: _jidKey);
-      final password = await _storage.read(key: _passwordKey);
-      if (jid == null || jid.isEmpty) return null;
-      if (password == null || password.isEmpty) return null;
-      final host = await _storage.read(key: _hostKey);
-      return StoredAccount(
-        jid: jid,
-        password: password,
-        host: (host == null || host.isEmpty) ? null : host,
-      );
+      final raw = await _storage.read(key: _listKey);
+      if (raw != null && raw.isNotEmpty) {
+        final list = jsonDecode(raw) as List<dynamic>;
+        return [
+          for (final e in list)
+            StoredAccount.fromJson(Map<String, dynamic>.from(e as Map)),
+        ];
+      }
+      return await _migrateLegacy();
     } catch (_) {
-      // A keystore that cannot be read is indistinguishable, for this purpose,
-      // from one holding nothing — and neither is a reason to refuse to start.
-      // The user is asked to log in, which is the same thing that would have
-      // happened, minus a crash on the launch path.
-      return null;
+      // Must be growable: [upsert] mutates the returned list.
+      return <StoredAccount>[];
     }
   }
 
-  /// Stores [account], replacing whatever was there.
-  Future<void> save(StoredAccount account) async {
-    await _storage.write(key: _jidKey, value: account.jid);
-    await _storage.write(key: _passwordKey, value: account.password);
-    if (account.hasHost) {
-      await _storage.write(key: _hostKey, value: account.host);
-    } else {
-      // Cleared rather than left stale: a host from a previous account would
-      // send this account's traffic to a server it does not belong to, and the
-      // failure would look like a network problem rather than a stored value.
-      await _storage.delete(key: _hostKey);
+  Future<List<StoredAccount>> _migrateLegacy() async {
+    final jid = await _storage.read(key: _jidKey);
+    final password = await _storage.read(key: _passwordKey);
+    if (jid == null || jid.isEmpty || password == null || password.isEmpty) {
+      // Must be growable: [upsert] mutates the returned list.
+      return <StoredAccount>[];
     }
-  }
-
-  /// Forgets the account. Used on logout and on an authentication failure.
-  Future<void> clear() async {
+    final host = await _storage.read(key: _hostKey);
+    final account = StoredAccount(
+      id: newAccountId(),
+      jid: jid,
+      password: password,
+      host: (host == null || host.isEmpty) ? null : host,
+      legacyDb: true,
+    );
+    await saveAll([account]);
     await _storage.delete(key: _jidKey);
     await _storage.delete(key: _passwordKey);
     await _storage.delete(key: _hostKey);
+    return [account];
   }
+
+  Future<void> saveAll(List<StoredAccount> accounts) async {
+    await _storage.write(
+      key: _listKey,
+      value: jsonEncode([for (final a in accounts) a.toJson()]),
+    );
+  }
+
+  Future<void> upsert(StoredAccount account) async {
+    final all = await loadAll();
+    final i = all.indexWhere((a) => a.id == account.id);
+    if (i < 0) {
+      // Same bare JID → replace credentials (re-login).
+      final j = all.indexWhere((a) => a.bareJid == account.bareJid);
+      if (j >= 0) {
+        all[j] = account.copyWith(id: all[j].id, legacyDb: all[j].legacyDb);
+      } else {
+        all.add(account);
+      }
+    } else {
+      all[i] = account;
+    }
+    await saveAll(all);
+  }
+
+  Future<void> remove(String id) async {
+    final all = await loadAll();
+    all.removeWhere((a) => a.id == id);
+    await saveAll(all);
+  }
+
+  /// True when no accounts are stored (show first-run login).
+  Future<bool> get isEmpty async => (await loadAll()).isEmpty;
+}
+
+/// Random account id (Conversations-style UUID string).
+String newAccountId() {
+  final r = Random.secure();
+  String hex(int n) =>
+      List.generate(n, (_) => r.nextInt(256).toRadixString(16).padLeft(2, '0'))
+          .join();
+  return '${hex(4)}-${hex(2)}-${hex(2)}-${hex(2)}-${hex(6)}';
 }

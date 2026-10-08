@@ -66,13 +66,45 @@ flutter pub get
 dart run build_runner build          # 生成 drift 代码（database.g.dart）
 dart analyze lib test                # flutter analyze 在本机会崩，改用 dart analyze
 flutter test
-flutter build apk --debug
+./tool/build_android.sh              # mipmap ← assets/icons + flutter build apk --debug
+./tool/build_web.sh                  # Drift WASM → web/ + flutter build web
+./tool/build_appimage.sh             # Linux AppImage（需 GTK 3 等桌面依赖）
 ```
+
+### 应用图标
+
+单一源：`assets/icons/`。web / Linux 窗口直接读该目录；AppImage 打包时生成
+hicolor。Android mipmap 在 `./tool/build_android.sh` 里从 `app_icon.png` 生成。
+
+### Web 存储
+
+同一套 Drift `AppDatabase`（表结构与查询）在两端复用：
+
+| 平台 | 连接 | 物理存储 |
+|---|---|---|
+| 原生 | `database_connection_io.dart` → SQLCipher / SQLite 文件 | 本地文件 |
+| Web | `database_connection_web.dart` → `WasmDatabase.open` | OPFS，否则 IndexedDB |
+
+条件导入入口：`lib/store/database_connection.dart`（与 matrix-dart-sdk 的 box 切换同思路）。
+
+`sqlite3.wasm` / `drift_worker.js` **不进仓库**，由 `./tool/build_web.sh` 按
+`pubspec.lock` 拉取。本地 `flutter run -d chrome` 前可先
+`./tool/build_web.sh --prepare-only`。
+
+XMPP 传输同样条件导入（`lib/xmpp/xmpp_socket.dart`）：
+
+| 平台 | 实现 |
+|---|---|
+| 原生 | TCP + SOCKS5（`moxxmpp_socket_tcp`） |
+| Web | `moxxmpp` RFC 7395 WebSocket + XEP-0156 host-meta |
+
+RFC 7395 framing / `WebSocketXmppSocket` 与 XEP-0156 在 `packages/moxxmpp`（`rfcs/rfc_7395`、`xeps/xep_0156`），主库只做平台工厂。
+登录页「主机」可填 `wss://…` 覆盖自动发现；SOCKS5 UI 在 web 上隐藏。
 
 ## 当前实现状态
 
 验证：`dart analyze lib test tool integration_test` 无告警 · `flutter test` 123 项通过 ·
-`flutter build apk --debug` 成功 · liboqs 参考程序构建 · 设备端 native 集成测试通过 ·
+`./tool/build_android.sh` 成功 · liboqs 参考程序构建 · 设备端 native 集成测试通过 ·
 与真实 Conversations 的互通验收通过（两次运行，见 `tool/m2_verify_conversations.sh`）。
 
 ### 已踩过的坑（避免重蹈）

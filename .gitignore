@@ -77,6 +77,10 @@ Thumbs.db
 *.sqlite
 *.db
 
+# Drift web assets (fetched by app/tool/build_web.sh)
+app/web/sqlite3.wasm
+app/web/drift_worker.js
+
 # Native build artifacts
 app/android/app/.cxx/
 third_party/liboqs/build/

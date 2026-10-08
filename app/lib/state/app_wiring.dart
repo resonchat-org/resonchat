@@ -9,7 +9,9 @@ import 'package:moxxmpp/moxxmpp.dart' show JID;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../account/account_hub.dart';
 import 'providers.dart';
+import '../net/app_network.dart';
 import '../omemo/dual_track_manager.dart';
 import '../omemo/track.dart';
 import '../omemo/track_advice.dart';
@@ -55,124 +57,139 @@ class AppWiring extends ConsumerStatefulWidget {
 
 class _AppWiringState extends ConsumerState<AppWiring> {
   final List<StreamSubscription<Object?>> _subs = [];
+  StreamSubscription<void>? _hubSub;
 
   @override
   void initState() {
     super.initState();
-    final xmpp = ref.read(xmppServiceProvider);
-    xmpp.attachCapabilities(ref.read(capabilityServiceProvider));
-    // Remembered across restarts so a reinstall can clean up after itself: the
-    // stale device ids that stop this client sending at all are, in the
-    // overwhelming majority of cases, ids this installation published earlier.
-    final tracks = xmpp.tracks;
+    unawaited(_loadSocks5Proxy());
+    _bindAll();
+    _hubSub = accountHub.sessionChanges.listen((_) => _bindAll());
+  }
+
+  void _bindAll() {
+    for (final sub in _subs) {
+      sub.cancel();
+    }
+    _subs.clear();
+    for (final session in accountHub.sessions) {
+      _wireSession(session);
+    }
+    _syncConnectionState();
+  }
+
+  /// Keep [connectionStateProvider] aligned with the primary session.
+  ///
+  /// Cold start never went through the login page, so this stayed
+  /// `disconnected` even when XMPP was up — caps / upload / UI looked offline.
+  void _syncConnectionState() {
+    final xmpp = accountHub.primaryXmppOrNull;
+    if (xmpp == null) return;
+    try {
+      ref.read(connectionStateProvider.notifier).state = xmpp.state;
+    } catch (_) {}
+  }
+
+  void _wireSession(AccountSession session) {
+    final xmpp = session.xmpp;
+    final db = session.db;
+    final tracks = xmpp.tracks ?? session.tracks;
     if (tracks != null) {
       tracks.deviceMemory = PublishedDeviceMemory(
-        load: () => ref.read(databaseProvider).publishedDeviceIds(),
-        save: (ids) =>
-            ref.read(databaseProvider).savePublishedDeviceIds(ids),
+        load: () => db.publishedDeviceIds(),
+        save: (ids) => db.savePublishedDeviceIds(ids),
       );
+      // Per-session capability service — primary-only provider would resolve
+      // secondary accounts against the wrong OMEMO / PQ device set.
+      final caps = CapabilityService(
+        tracks: () => tracks,
+        ourDeviceId: () async => xmpp.omemo?.getDeviceId(),
+        ourPqDevices: () async {
+          final b = xmpp.bTrack;
+          final id = b?.device?.id;
+          return (b?.ready ?? false) && id != null ? {id} : const <int>{};
+        },
+      );
+      xmpp.attachCapabilities(caps);
+      _subs.add(xmpp.capabilityChanges.listen((jid) {
+        caps.invalidate(jid);
+        unawaited(_noticeCapabilityChange(ref, session, jid));
+      }));
+    } else {
+      _subs.add(xmpp.capabilityChanges.listen((jid) {
+        unawaited(_noticeCapabilityChange(ref, session, jid));
+      }));
     }
-    // A PEP change must drop the cached answer, not wait out the TTL.
-    _subs.add(xmpp.capabilityChanges.listen((jid) {
-      ref.read(capabilityServiceProvider).invalidate(jid);
-      // The cached answer is dropped, but the chat's own provider is not
-      // refreshed here: doing it immediately would resolve the new
-      // capabilities in the background of a PEP notification nobody asked
-      // for, and — worse — let a transient bundle-fetch failure arrive as if
-      // it were a real change. The advice below re-resolves and compares,
-      // which is the only place a change should be interpreted.
-      unawaited(_noticeCapabilityChange(ref, jid));
-    }));
-    // Privacy prefs (Conversations confirm_messages / chat_states).
-    unawaited(_loadPrivacyPrefs(ref));
-    // XEP-0184: flip our outgoing messages to "delivered".
+    unawaited(_loadPrivacyPrefs(session));
     _subs.add(xmpp.deliveryReceipts.listen((receipt) {
       unawaited(
-        ref.read(databaseProvider).markDelivered(
-              receipt.from.toBare().toString(),
-              receipt.stanzaId,
-            ),
+        db.markDelivered(
+          receipt.from.toBare().toString(),
+          receipt.stanzaId,
+        ),
       );
     }));
-    // XEP-0333 <displayed/>: two ticks / accent = read.
     _subs.add(xmpp.readReceipts.listen((receipt) {
       unawaited(
-        ref.read(databaseProvider).markDisplayed(
-              receipt.from.toBare().toString(),
-              receipt.stanzaId,
-            ),
+        db.markDisplayed(
+          receipt.from.toBare().toString(),
+          receipt.stanzaId,
+        ),
       );
     }));
-    // Subscription requests are recorded rather than approved. The list lives
-    // in the store so it survives the process being killed between the request
-    // arriving and the user opening the app to look at it.
-    // Requests the server had already sent before this listener existed, and
-    // any it re-sends after a reconnect. Synced once at startup so the list is
-    // the truth rather than "whatever arrived while we happened to be
-    // listening".
-    unawaited(_syncPendingRequests(ref));
+    unawaited(_syncPendingRequests(session));
     for (final jid in xmpp.pendingOutgoingRequests) {
-      unawaited(ref.read(databaseProvider).addOutgoingRequest(jid));
+      unawaited(db.addOutgoingRequest(jid));
     }
-
     _subs.add(xmpp.outgoingRequests.listen((jid) async {
-      await ref
-          .read(databaseProvider)
-          .addOutgoingRequest(jid.toBare().toString());
+      await db.addOutgoingRequest(jid.toBare().toString());
     }));
-
     _subs.add(xmpp.incomingRequests.listen((jid) async {
-      final db = ref.read(databaseProvider);
       await db.addIncomingRequest(jid.toBare().toString());
     }));
-
-    // XEP-0191: the blocked list lives on the server so another of our
-    // devices enforcing it also takes effect here. Loaded once at startup and
-    // pushed whenever the server sends a change.
-    unawaited(_loadBlocked(ref));
+    unawaited(_loadBlocked(ref, session));
     _subs.add(xmpp.blocklistChanges.listen((pushed) async {
-      final db = ref.read(databaseProvider);
       if (pushed.isEmpty) {
-        // An empty push means "unblock everything" (XEP-0191). Distinguishing
-        // that from "no change" matters: treating it as no-change would leave
-        // this device enforcing blocks the user lifted elsewhere.
         for (final jid in await db.blockedJids()) {
           await db.removeBlocked(jid);
         }
       } else {
         await applyBlockPush(db, pushed);
       }
-      await _loadBlocked(ref);
+      await _loadBlocked(ref, session);
     }));
-
-    // XEP-0444: reactions are stored, never inserted as messages. A reaction
-    // arrives in its own stanza; storing it would put an empty bubble above
-    // the message it belongs to.
     _subs.add(xmpp.reactions.listen((msg) {
       final update = msg.reactions;
       if (update == null) return;
-      unawaited(storeReaction(ref.read(databaseProvider), update));
+      unawaited(storeReaction(db, update));
     }));
-
-    // Persist inbound traffic. This used to live in the chat list, so a
-    // message that arrived while the user was somewhere else in the app
-    // was never written down — a silent data loss that only showed up as a
-    // conversation that looked empty when reopened.
     _subs.add(
       xmpp.inbound.listen(
-        (msg) => unawaited(_acceptInbound(ref, msg)),
+        (msg) => unawaited(_acceptInbound(ref, session, msg)),
       ),
     );
   }
 
+  Future<void> _loadSocks5Proxy() async {
+    // Prefer the load already done in main() before connectAll. Reloading
+    // here is a no-op when prefs match; still useful if main had no DB yet.
+    final db = accountHub.primaryDbOrNull;
+    if (db == null) return;
+    await appNetwork.loadFrom(() async {
+      return Socks5ProxyConfig(
+        enabled: await db.socks5ProxyEnabled(),
+        host: await db.socks5ProxyHost(),
+        port: await db.socks5ProxyPort(),
+      );
+    });
+  }
+
   @override
   void dispose() {
+    _hubSub?.cancel();
     for (final sub in _subs) {
       sub.cancel();
     }
-    // The advice stream outlives this widget on purpose: the chat page
-    // subscribes to it, and tearing it down here would close the stream under
-    // a listener that is still mounted.
     super.dispose();
   }
 
@@ -191,16 +208,19 @@ class _AppWiringState extends ConsumerState<AppWiring> {
 ///
 /// The previous snapshot is kept so only real transitions are reported. Without
 /// it, every PEP notification would re-announce the same situation.
-Future<void> _noticeCapabilityChange(WidgetRef ref, JID jid) async {
+Future<void> _noticeCapabilityChange(
+  WidgetRef ref,
+  AccountSession session,
+  JID jid,
+) async {
   final bare = jid.toBare().toString();
-  final service = ref.read(capabilityServiceProvider);
-  final before = _lastCapabilities[bare];
+  final cacheKey = '${session.account.id}\x1f$bare';
+  final before = _lastCapabilities[cacheKey];
   try {
-    final after = await service.forChat(jid);
-    _lastCapabilities[bare] = after;
-    // globalTrackProvider never resolves to null; the override may be absent,
-    // which is the case that falls through to the default.
-    final chosen = await ref.read(databaseProvider).trackOverride(bare) ??
+    final after = await session.xmpp.capabilitiesFor(jid);
+    if (after == null) return;
+    _lastCapabilities[cacheKey] = after;
+    final chosen = await session.db.trackOverride(bare) ??
         await ref.read(globalTrackProvider.future);
     final track = chosen ?? Track.standard;
     final advice = compareCapabilities(
@@ -211,44 +231,28 @@ Future<void> _noticeCapabilityChange(WidgetRef ref, JID jid) async {
     );
     if (advice != null) _advice.add(advice);
   } catch (e) {
-    // A failed re-resolve is not a change. Swallowing it here is what keeps
-    // the stream alive and the conversation's cached answer absent, so the
-    // next send refuses rather than guessing.
     Logger('AppWiring').fine('capability re-resolve for $bare failed: $e');
   }
 }
 
-/// Stores one inbound message and updates the conversation's unread state.
-///
-/// Unread is decided here rather than in the chat list, because the list is not
-/// necessarily mounted: a message that arrives with no UI on screen has to be
-/// counted somewhere, or opening the app later shows a conversation that looks
-/// read when a message was sitting there the whole time.
-Future<void> _acceptInbound(WidgetRef ref, InboundMessage msg) async {
-  final db = ref.read(databaseProvider);
-  final ownBare = ref.read(xmppServiceProvider).myJid;
+Future<void> _acceptInbound(
+  WidgetRef ref,
+  AccountSession session,
+  InboundMessage msg,
+) async {
+  final db = session.db;
+  final ownBare = session.xmpp.myJid;
   await storeInbound(db, msg, ownBare: ownBare);
   final chatJid = _chatJidFor(msg, ownBare);
-  // A carbon is a copy of one of our own messages. Counting it would show an
-  // unread badge for something the user wrote.
   if (msg.isCarbonCopy) return;
-  // Archived copies of messages we sent are outgoing, not unread.
   if (_isOwnArchive(msg, ownBare)) return;
-  // Catch-up history is already-seen mail; marking every replayed message
-  // unread would paint the chat list red after every login.
   if (msg.fromArchive) return;
   final chat = (await db.watchChats().first)
       .where((c) => c.jid == chatJid)
       .firstOrNull;
-  // Muted conversations still receive and store; they just do not get a badge,
-  // because muting is a promise that nothing will interrupt.
   if (chat?.muted ?? false) return;
   if (chat?.archived ?? false) return;
-  // A blocked contact's message should not have reached here at all — the
-  // inbound handler drops it before it is opened. Counting it defensively costs
-  // one lookup and removes a whole class of "why is there a badge for someone I
-  // blocked" reports.
-  if (ref.read(xmppServiceProvider).blockedJids.contains(chatJid)) return;
+  if (session.xmpp.blockedJids.contains(chatJid)) return;
   await db.markChatUnread(
     chatJid,
     arrivedAt: msg.archiveTimestamp ?? DateTime.now(),
@@ -268,21 +272,16 @@ bool _isOwnArchive(InboundMessage msg, String? ownBare) {
   return msg.from.toBare().toString() == ownBare;
 }
 
-Future<void> _loadPrivacyPrefs(WidgetRef ref) async {
-  final db = ref.read(databaseProvider);
-  final xmpp = ref.read(xmppServiceProvider);
+Future<void> _loadPrivacyPrefs(AccountSession session) async {
+  final db = session.db;
+  final xmpp = session.xmpp;
   xmpp.sendReadReceipts = await db.sendReadReceiptsEnabled();
   xmpp.sendTypingNotifications = await db.sendChatStatesEnabled();
 }
 
-/// Copies the service's pending requests into the store.
-///
-/// Both directions, and done unconditionally: the point is that the store ends
-/// up holding everything the service knows about, including anything that
-/// arrived before this ran.
-Future<void> _syncPendingRequests(WidgetRef ref) async {
-  final db = ref.read(databaseProvider);
-  final xmpp = ref.read(xmppServiceProvider);
+Future<void> _syncPendingRequests(AccountSession session) async {
+  final db = session.db;
+  final xmpp = session.xmpp;
   for (final jid in xmpp.pendingIncomingRequests) {
     await db.addIncomingRequest(jid);
   }
@@ -291,15 +290,12 @@ Future<void> _syncPendingRequests(WidgetRef ref) async {
   }
 }
 
-/// Reads the block list from the store into the service's in-memory copy.
-///
-/// The service keeps the list because the inbound path is on the hot path for
-/// every message, and the store is not. Keeping the two in step is this
-/// function's whole job, which is why every writer goes through here.
-Future<void> _loadBlocked(WidgetRef ref) async {
-  final db = ref.read(databaseProvider);
-  final jids = await db.blockedJids();
-  ref.read(xmppServiceProvider).blockedJids = jids;
+Future<void> _loadBlocked(WidgetRef ref, AccountSession session) async {
+  final jids = await session.db.blockedJids();
+  session.xmpp.blockedJids = jids;
+  try {
+    ref.read(blockRevisionProvider.notifier).state++;
+  } catch (_) {}
 }
 
 /// The last capability snapshot seen per conversation.

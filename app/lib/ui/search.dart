@@ -12,6 +12,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../account/account_hub.dart';
 import '../l10n/l10n.dart';
 import '../state/providers.dart';
 import '../xmpp/forwarding.dart';
@@ -163,16 +164,21 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     super.dispose();
   }
 
-  void _openHit(SearchHit hit) {
+  Future<void> _openHit(SearchHit hit) async {
     // In-chat search: return the hit so the existing page can scroll to it.
     if (widget.chatJid != null) {
       Navigator.of(context).pop(hit);
       return;
     }
-    Navigator.of(context).push(
+    // Global search stores bare JIDs; open via ChatRef when we can match a row.
+    final chats = await accountHub.snapshotChats();
+    final match = chats.where((c) => c.chat.jid == hit.chatJid).firstOrNull;
+    final key = match?.ref.key ?? hit.chatJid;
+    if (!mounted) return;
+    await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => ChatPage(
-          chatJid: hit.chatJid,
+          chatJid: key,
           focusMessageAnchor: hit.messageAnchor,
         ),
       ),
@@ -257,7 +263,8 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     final chats = ref.watch(chatsProvider).value;
     if (chats == null) return const {};
     return {
-      for (final c in chats) c.jid: c.title.isEmpty ? c.jid : c.title,
+      for (final c in chats)
+        c.chat.jid: c.chat.title.isEmpty ? c.chat.jid : c.chat.title,
     };
   }
 }
@@ -306,7 +313,8 @@ class ForwardTargetSheet extends ConsumerWidget {
                         controller: controller,
                         itemCount: list.length,
                         itemBuilder: (context, i) {
-                          final chat = list[i];
+                          final entry = list[i];
+                          final chat = entry.chat;
                           final title =
                               chat.title.isEmpty ? chat.jid : chat.title;
                           return ListTile(
@@ -319,8 +327,15 @@ class ForwardTargetSheet extends ConsumerWidget {
                               ),
                             ),
                             title: Text(title),
+                            subtitle: Text(
+                              entry.account.bareJid,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: entry.accent,
+                              ),
+                            ),
                             onTap: () =>
-                                Navigator.of(context).pop(chat.jid),
+                                Navigator.of(context).pop(entry.ref.key),
                           );
                         },
                       ),

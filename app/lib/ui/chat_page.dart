@@ -5,7 +5,6 @@
 // `ChatActivity` (GPL-2.0-or-later), translated to Flutter.
 
 import 'dart:async';
-import 'dart:io';
 
 import 'package:drift/drift.dart' hide Column;
 import 'package:file_picker/file_picker.dart';
@@ -15,6 +14,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:moxxmpp/moxxmpp.dart' show JID;
 
+import '../account/resolve.dart';
 import '../l10n/l10n.dart';
 import '../omemo/track.dart';
 import '../xmpp/muc.dart';
@@ -46,6 +46,7 @@ class ChatPage extends ConsumerStatefulWidget {
     this.focusMessageAnchor,
   });
 
+  /// [ChatRef.key] (accountId + peer JID), or legacy bare JID.
   final String chatJid;
 
   /// When set (e.g. from search), open scrolled to this message instead of
@@ -57,6 +58,13 @@ class ChatPage extends ConsumerStatefulWidget {
 }
 
 class _ChatPageState extends ConsumerState<ChatPage> {
+  /// Peer bare JID for XMPP (not the opaque [ChatRef.key]).
+  String get _peerJid => resolveChatKey(widget.chatJid).jid;
+
+  XmppService get _xmpp => resolveChatKey(widget.chatJid).session.xmpp;
+
+  AppDatabase get _db => resolveChatKey(widget.chatJid).session.db;
+
   final _input = TextEditingController();
   final _scroll = ScrollController();
   final _focus = FocusNode();
@@ -220,26 +228,23 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     super.initState();
     _scroll.addListener(_onScroll);
     // A message the server refused must stop looking sent.
-    _failureSub = ref
-        .read(xmppServiceProvider)
+    _failureSub = _xmpp
         .deliveryFailures
         .listen(_onDeliveryFailure);
     _adviceSub = trackAdvice.listen(_onAdvice);
-    _typingSub = ref
-        .read(xmppServiceProvider)
+    _typingSub = _xmpp
         .typingStates
         .listen(_onPeerTyping);
     // While this chat is open, a new inbound markable message is already
     // being read — send <displayed/> like Conversations markRead on open.
-    _inboundReadSub = ref.read(xmppServiceProvider).inbound.listen((msg) {
-      if (msg.from.toBare().toString() != widget.chatJid) return;
+    _inboundReadSub = _xmpp.inbound.listen((msg) {
+      if (msg.from.toBare().toString() != _peerJid) return;
       if (!msg.markable || msg.fromArchive) return;
       final id = msg.originId ?? msg.stanzaId;
       if (id == null || id.isEmpty) return;
       unawaited(
-        ref
-            .read(xmppServiceProvider)
-            .sendDisplayedMarker(JID.fromString(widget.chatJid), id),
+        _xmpp
+            .sendDisplayedMarker(JID.fromString(_peerJid), id),
       );
     });
     // Deliberately *not* marked read here. Marking on arrival would clear the
@@ -264,13 +269,13 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
   /// Loads MODE_MULTI state from the chat row (bare room JID + nick).
   Future<void> _bootstrapRoom() async {
-    final row = await ref.read(databaseProvider).getChat(widget.chatJid);
+    final row = await _db.getChat(_peerJid);
     if (!mounted || row == null || !row.isGroup) return;
     setState(() {
       _isGroup = true;
       _mucNick = row.mucNick;
       _mucEncryptable = row.mucPrivateNonAnonymous;
-      _roomJid = widget.chatJid;
+      _roomJid = _peerJid;
     });
     await _loadRoom();
     await _refreshRoomEncryptable();
@@ -280,7 +285,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   Future<void> _refreshRoomEncryptable() async {
     final jid = _roomJid;
     if (jid == null) return;
-    final xmpp = ref.read(xmppServiceProvider);
+    final xmpp = _xmpp;
     final features = await xmpp.queryRoomFeatures(jid);
     final encryptable = isPrivateAndNonAnonymous(features);
     // Conversations fetchMembers when private+non-anonymous.
@@ -288,7 +293,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       jid,
       privateNonAnonymous: encryptable,
     );
-    await ref.read(databaseProvider).upsertChat(
+    await _db.upsertChat(
           jid,
           isGroup: true,
           mucPrivateNonAnonymous: encryptable,
@@ -298,20 +303,20 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       setState(() => _mucEncryptable = encryptable);
     }
     // Affiliation fetch may have added offline members — reload the list.
-    ref.invalidate(roomStateProvider(jid));
-    final chat = await ref.read(roomStateProvider(jid).future);
+    ref.invalidate(roomStateProvider(widget.chatJid));
+    final chat = await ref.read(roomStateProvider(widget.chatJid).future);
     if (!mounted || chat == null) return;
     setState(() => _room = chat);
   }
 
   /// Sends XEP-0333 displayed for the newest markable inbound message.
   Future<void> _sendDisplayedForLatest() async {
-    final db = ref.read(databaseProvider);
-    final xmpp = ref.read(xmppServiceProvider);
-    final last = await db.lastIncomingMarkable(widget.chatJid);
+    final db = _db;
+    final xmpp = _xmpp;
+    final last = await db.lastIncomingMarkable(_peerJid);
     if (last == null || last.stanzaId.isEmpty) return;
     await xmpp.sendDisplayedMarker(
-      JID.fromString(widget.chatJid),
+      JID.fromString(_peerJid),
       last.stanzaId,
     );
   }
@@ -328,8 +333,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   }
 
   Future<void> _onDeliveryFailure(DeliveryFailure failure) async {
-    if (failure.from.toBare().toString() != widget.chatJid) return;
-    await ref.read(databaseProvider).markDeliveryFailure(
+    if (failure.from.toBare().toString() != _peerJid) return;
+    await _db.markDeliveryFailure(
           failure.stanzaId,
           failure.reason,
         );
@@ -399,7 +404,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   }
 
   void _onPeerTyping(TypingNotification n) {
-    if (n.from.toBare().toString() != widget.chatJid) return;
+    if (n.from.toBare().toString() != _peerJid) return;
     if (!mounted) return;
     if (n.state == _peerTyping) return;
     setState(() => _peerTyping = n.state);
@@ -408,7 +413,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   /// AppBar subtitle: peer typing (Conversations contact_is_typing) or track.
   String _peerStatusSubtitle(BuildContext context, Track track) {
     // Prefer a short local name when the JID is long.
-    final name = widget.chatJid.split('@').first;
+    final name = _peerJid.split('@').first;
     final l10n = context.l10n;
     return switch (_peerTyping) {
       TypingState.composing => l10n.contactIsTyping(name),
@@ -436,8 +441,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
     _typingTimeout?.cancel();
     final length = value.trim().length;
-    final xmpp = ref.read(xmppServiceProvider);
-    final peer = JID.fromString(widget.chatJid);
+    final xmpp = _xmpp;
+    final peer = JID.fromString(_peerJid);
 
     if (length == 0) {
       // onTextDeleted → DEFAULT_CHAT_STATE (active).
@@ -451,8 +456,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       // onTypingStopped → paused; next keystroke re-sends composing.
       _typingNotified = false;
       unawaited(
-        ref
-            .read(xmppServiceProvider)
+        _xmpp
             .sendChatState(peer, TypingState.paused),
       );
     });
@@ -465,8 +469,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
   /// Publishes leave chat state (Conversations `updateChatState`).
   Future<void> _publishComposerChatState() async {
-    final xmpp = ref.read(xmppServiceProvider);
-    final peer = JID.fromString(widget.chatJid);
+    final xmpp = _xmpp;
+    final peer = JID.fromString(_peerJid);
     final empty = _input.text.trim().isEmpty;
     _typingNotified = false;
     // Empty → active (DEFAULT); non-empty draft → paused.
@@ -479,8 +483,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   /// Marks the chat read locally and sends XEP-0333 `<displayed/>`
   /// (Conversations `markRead` → `DisplayedManager.displayed`).
   Future<void> _markReadAndSendDisplayed() async {
-    final db = ref.read(databaseProvider);
-    await db.markChatRead(widget.chatJid);
+    final db = _db;
+    await db.markChatRead(_peerJid);
     ref.read(chatRowRevisionProvider.notifier).state =
         ref.read(chatRowRevisionProvider) + 1;
     await _sendDisplayedForLatest();
@@ -584,8 +588,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     if (text.isEmpty) return null;
 
     var chosen = track;
-    final xmpp = ref.read(xmppServiceProvider);
-    final peer = JID.fromString(widget.chatJid).toBare();
+    final xmpp = _xmpp;
+    final peer = JID.fromString(_peerJid).toBare();
 
     // Public / anonymous rooms: plaintext only (Conversations).
     if (_isGroup && !_mucEncryptable) {
@@ -626,9 +630,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       return null;
     }
 
-    await ref.read(databaseProvider).insertMessage(
+    await _db.insertMessage(
           MessagesCompanion(
-            chatJid: Value(widget.chatJid),
+            chatJid: Value(_peerJid),
             sender: const Value('me'),
             stanzaId: Value(outcome.stanzaId ?? ''),
             body: Value(text),
@@ -654,7 +658,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
   Future<void> _attachFile() async {
     if (_sending || _pickingFile) return;
-    final xmpp = ref.read(xmppServiceProvider);
+    final xmpp = _xmpp;
     // Button is disabled when upload is unavailable; keep this as a guard.
     if (!await xmpp.httpFiles.isAvailable()) {
       if (!mounted) return;
@@ -668,18 +672,21 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     await WidgetsBinding.instance.endOfFrame;
     FilePickerResult? picked;
     try {
-      picked = await FilePicker.platform.pickFiles(withData: false);
+      // withData: true so web (no filesystem paths) and desktop both work.
+      picked = await FilePicker.platform.pickFiles(withData: true);
     } finally {
       if (mounted) setState(() => _pickingFile = false);
     }
     if (!mounted || picked == null || picked.files.isEmpty) return;
-    final path = picked.files.single.path;
-    if (path == null || path.isEmpty) return;
+    final file = picked.files.single;
+    final bytes = file.bytes;
+    if (bytes == null || bytes.isEmpty) return;
+    final fileName = file.name;
 
     final track = _isGroup && !_mucEncryptable
         ? Track.none
         : await ref.read(chatTrackProvider(widget.chatJid).future);
-    final peer = JID.fromString(widget.chatJid);
+    final peer = JID.fromString(_peerJid);
     _sending = true;
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -696,12 +703,13 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       }
       if (outcomeTrack == null) return;
 
-      final uploaded = await xmpp.httpFiles.uploadFile(
-        File(path),
+      final uploaded = await xmpp.httpFiles.uploadBytes(
+        Uint8List.fromList(bytes),
+        fileName: fileName,
         encrypt: outcomeTrack != Track.none,
       );
-      final cached = await xmpp.httpFiles.cacheLocalCopy(
-        File(path),
+      final cached = await xmpp.httpFiles.cacheLocalBytes(
+        Uint8List.fromList(bytes),
         preferredName: uploaded.fileName,
       );
       final outcome = await xmpp.sendOnTrack(
@@ -723,9 +731,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         }
         return;
       }
-      await ref.read(databaseProvider).insertMessage(
+      await _db.insertMessage(
             MessagesCompanion(
-              chatJid: Value(widget.chatJid),
+              chatJid: Value(_peerJid),
               sender: const Value('me'),
               stanzaId: Value(outcome.stanzaId ?? ''),
               body: Value(uploaded.shareUrl),
@@ -759,8 +767,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   /// (e.g. PQ unavailable → offer standard), never silently downgrades.
   Future<Track?> _resolveTrackForSend(Track track) async {
     var chosen = track;
-    final xmpp = ref.read(xmppServiceProvider);
-    final peer = JID.fromString(widget.chatJid).toBare();
+    final xmpp = _xmpp;
+    final peer = JID.fromString(_peerJid).toBare();
 
     final TrackResolution resolution;
     if (_isGroup) {
@@ -784,17 +792,17 @@ class _ChatPageState extends ConsumerState<ChatPage> {
           (_mucEncryptable || !_isGroup ? Track.standard : Track.none);
       if (!mounted) return null;
       // Asked once per conversation, not once per message.
-      final db = ref.read(databaseProvider);
-      final acknowledged = await db.plaintextAcknowledged(widget.chatJid);
+      final db = _db;
+      final acknowledged = await db.plaintextAcknowledged(_peerJid);
       if (!mounted) return null;
       if (!acknowledged) {
         final agreed = await confirmPlaintext(
           context,
-          contact: widget.chatJid,
+          contact: _peerJid,
           alternative: alternative,
         );
         if (!agreed || !mounted) return null;
-        await db.acknowledgePlaintext(widget.chatJid);
+        await db.acknowledgePlaintext(_peerJid);
       }
     } else if (!resolution.canSend) {
       // Refuse and explain. Nothing is sent here, and nothing is sent on
@@ -811,7 +819,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         // Deliberate downgrade to plaintext from the substitute dialog.
         final agreed = await confirmPlaintext(
           context,
-          contact: widget.chatJid,
+          contact: _peerJid,
           alternative: Track.standard,
         );
         if (!agreed || !mounted) return null;
@@ -837,10 +845,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       _typingNotified = false;
       if (!_isGroup) {
         unawaited(
-          ref
-              .read(xmppServiceProvider)
+          _xmpp
               .sendChatState(
-                JID.fromString(widget.chatJid),
+                JID.fromString(_peerJid),
                 TypingState.inactive,
               ),
         );
@@ -863,8 +870,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   /// that appears a second late feels broken, and one that stays after a
   /// failure is a lie.
   Future<void> _toggleReaction(String targetId, String emoji) async {
-    final db = ref.read(databaseProvider);
-    final myJid = ref.read(myBareJidProvider).value;
+    final db = _db;
+    final myJid = resolveChatKey(widget.chatJid).session.xmpp.myJid;
     if (myJid == null || targetId.isEmpty) return;
 
     final before = await reactionsFor(db, targetId, myJid);
@@ -876,7 +883,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       next.add(emoji);
     }
 
-    final chatJid = widget.chatJid;
+    final chatJid = _peerJid;
     await storeReaction(
       db,
       ReactionUpdate(
@@ -888,7 +895,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     _bumpReactions();
 
     final sent = await sendReaction(
-      ref.read(xmppServiceProvider),
+      _xmpp,
       to: JID.fromString(chatJid).toBare(),
       targetId: targetId,
       emojis: next.toList(),
@@ -920,26 +927,26 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     if (jid == null) return;
     var nick = _mucNick;
     if (nick.isEmpty) {
-      final row = await ref.read(databaseProvider).getChat(jid);
+      final row = await _db.getChat(jid);
       nick = row?.mucNick ?? '';
       if (nick.isNotEmpty && mounted) {
         setState(() => _mucNick = nick);
       }
     }
-    var chat = await ref.read(roomStateProvider(jid).future);
+    var chat = await ref.read(roomStateProvider(widget.chatJid).future);
     // Join with the stored nick when the MUC cache has nothing yet
     // (Conversations joinMuc on open / connect).
     if ((chat == null || !chat.joined) && nick.isNotEmpty) {
       final err =
-          await ref.read(xmppServiceProvider).joinGroupChat(jid, nick);
+          await _xmpp.joinGroupChat(jid, nick);
       if (!mounted) return;
       if (err != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('$err')),
         );
       }
-      ref.invalidate(roomStateProvider(jid));
-      chat = await ref.read(roomStateProvider(jid).future);
+      ref.invalidate(roomStateProvider(widget.chatJid));
+      chat = await ref.read(roomStateProvider(widget.chatJid).future);
     }
     if (!mounted || chat == null) return;
     setState(() => _room = chat);
@@ -948,7 +955,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   Future<void> _showPinned() async {
     if (!mounted) return;
     final ids = await ref.read(pinnedIdsProvider(widget.chatJid).future);
-    final messages = await ref.read(databaseProvider).watchMessages(widget.chatJid).first;
+    final messages = await _db.watchMessages(_peerJid).first;
     final bodies = <String, ({String body, String sender, DateTime at})>{
       for (final m in messages)
         if (ids.contains(m.stanzaId))
@@ -972,10 +979,10 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final result = await showRoomSheet(context, chat);
     if (!mounted || result == null) return;
     if (result.leaving) {
-      await ref.read(xmppServiceProvider).leaveGroupChat(chat.roomJid);
+      await _xmpp.leaveGroupChat(chat.roomJid);
       // Keep isGroup; clear nick so connect does not auto-rejoin until they
       // join again (bookmark autojoin can restore nick later).
-      await ref.read(databaseProvider).upsertChat(
+      await _db.upsertChat(
             chat.roomJid,
             isGroup: true,
             mucNick: '',
@@ -999,9 +1006,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     // Read before the dialog opens: an await here would leave a frame where a
     // tap lands on nothing, and the dialog is modal so the menu's own action
     // handler is the only thing that should be doing async work.
-    final pinned = await ref
-        .read(databaseProvider)
-        .isPinned(widget.chatJid, message.stanzaId);
+    final pinned = await _db
+        .isPinned(_peerJid, message.stanzaId);
     if (!mounted) return;
     final track = storedTrack(message.encMode);
     final actions = MessageActions.for_(
@@ -1029,7 +1035,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
             id: message.stanzaId,
             body: body,
             author: message.incoming
-                ? widget.chatJid
+                ? _peerJid
                 : 'You',
           );
         });
@@ -1068,9 +1074,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   /// round would leave a message greyed out locally while the recipient — and
   /// the user's other devices — still have it.
   Future<void> _doRetract(Message message) async {
-    final db = ref.read(databaseProvider);
+    final db = _db;
     final sent = await retractMessage(
-      ref.read(xmppServiceProvider),
+      _xmpp,
       chatJid: widget.chatJid,
       targetId: message.stanzaId,
     );
@@ -1098,16 +1104,18 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       isScrollControlled: true,
       builder: (_) => ForwardTargetSheet(
         items: [
-          ForwardItem(body: body, chatJid: widget.chatJid),
+          ForwardItem(body: body, chatJid: _peerJid),
         ],
       ),
     );
     if (target == null || !mounted) return;
+    final dest = resolveChatKey(target);
+    final destPeer = dest.jid;
     // Refuse to forward into a blocked conversation: the user blocked them,
     // and the act of forwarding is a message to them.
     if (ref.read(isBlockedProvider(target))) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Unblock $target before forwarding to them.')),
+        SnackBar(content: Text('Unblock $destPeer before forwarding to them.')),
       );
       return;
     }
@@ -1117,17 +1125,17 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
     final outcome = await forwardMessages(
-      ref.read(xmppServiceProvider),
-      toJid: JID.fromString(target).toBare(),
-      items: [ForwardItem(body: body, chatJid: widget.chatJid)],
+      dest.session.xmpp,
+      toJid: JID.fromString(destPeer).toBare(),
+      items: [ForwardItem(body: body, chatJid: _peerJid)],
       track: track,
     );
     messenger.showSnackBar(
       SnackBar(
         content: Text(
           outcome.ok
-              ? 'Forwarded to $target'
-              : 'Forwarded ${outcome.forwarded}, then stopped: the $target '
+              ? 'Forwarded to $destPeer'
+              : 'Forwarded ${outcome.forwarded}, then stopped: the $destPeer '
                   'track cannot be used right now.',
         ),
       ),
@@ -1144,11 +1152,10 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   Future<void> _submitCorrection(String body) async {
     final targetId = _editingId;
     if (targetId == null) return;
-    final db = ref.read(databaseProvider);
-    final outcome = await ref
-        .read(xmppServiceProvider)
+    final db = _db;
+    final outcome = await _xmpp
         .correctMessage(
-          JID.fromString(widget.chatJid).toBare(),
+          JID.fromString(_peerJid).toBare(),
           targetId: targetId,
           body: body,
         );
@@ -1164,7 +1171,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       return;
     }
     await db.applyCorrection(
-      chatJid: widget.chatJid,
+      chatJid: _peerJid,
       targetId: targetId,
       body: body,
       encMode: EncModeToken.of(outcome.track).wire,
@@ -1197,12 +1204,12 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   Future<void> _forwardSelection() async {
     if (!mounted) return;
     final ids = List<String>.from(_selection);
-    final messages = await ref.read(databaseProvider).watchMessages(widget.chatJid).first;
+    final messages = await _db.watchMessages(_peerJid).first;
     final byId = {for (final m in messages) m.stanzaId: m};
     final items = <ForwardItem>[
       for (final id in ids)
         if (byId[id] != null && byId[id]!.body.trim().isNotEmpty)
-          ForwardItem(body: byId[id]!.body, chatJid: widget.chatJid),
+          ForwardItem(body: byId[id]!.body, chatJid: _peerJid),
     ];
     if (!mounted) return;
     if (items.isEmpty) {
@@ -1217,9 +1224,11 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       builder: (_) => ForwardTargetSheet(items: items),
     );
     if (target == null || !mounted) return;
+    final dest = resolveChatKey(target);
+    final destPeer = dest.jid;
     if (ref.read(isBlockedProvider(target))) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Unblock $target before forwarding to them.')),
+        SnackBar(content: Text('Unblock $destPeer before forwarding to them.')),
       );
       return;
     }
@@ -1227,8 +1236,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     if (!mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     final outcome = await forwardMessages(
-      ref.read(xmppServiceProvider),
-      toJid: JID.fromString(target).toBare(),
+      dest.session.xmpp,
+      toJid: JID.fromString(destPeer).toBare(),
       items: items,
       track: track,
     );
@@ -1239,7 +1248,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         SnackBar(
           content: Text(
             'Forwarded ${outcome.forwarded} of ${items.length}, then stopped: '
-            'the $target track cannot be used right now.',
+            'the $destPeer track cannot be used right now.',
           ),
         ),
       );
@@ -1256,7 +1265,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   Future<void> _deleteSelection() async {
     if (!mounted) return;
     final ids = List<String>.from(_selection);
-    final messages = await ref.read(databaseProvider).watchMessages(widget.chatJid).first;
+    final messages = await _db.watchMessages(_peerJid).first;
     final mine = [
       for (final m in messages)
         if (ids.contains(m.stanzaId) && !m.incoming) m.stanzaId,
@@ -1272,8 +1281,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     var deleted = 0;
     for (final id in mine) {
       final ok = await retractMessage(
-        ref.read(xmppServiceProvider),
-        chatJid: widget.chatJid,
+        _xmpp,
+        chatJid: _peerJid,
         targetId: id,
       );
       if (!ok) break;
@@ -1288,7 +1297,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         ),
       );
     }
-    await ref.read(databaseProvider).markRetracted(mine.first);
+    await _db.markRetracted(mine.first);
     // Refresh the rows that were marked above; one update covers the list.
     if (mounted) setState(() => _selection.clear());
   }
@@ -1308,9 +1317,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   }
 
   Future<void> _loadHistory() async {
-    final count = await ref
-        .read(xmppServiceProvider)
-        .fetchHistory(JID.fromString(widget.chatJid));
+    final count = await _xmpp
+        .fetchHistory(JID.fromString(_peerJid));
     if (!mounted) return;
     final l10n = context.l10n;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -1335,7 +1343,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   TrackAdvice? _advice;
 
   void _onAdvice(TrackAdvice advice) {
-    if (advice.chatJid != widget.chatJid) return;
+    if (advice.chatJid != _peerJid) return;
     if (!mounted) return;
     setState(() => _advice = advice);
   }
@@ -1372,7 +1380,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final title = displayName(
       localNickname: null,
       rosterTitle: chatRow?.title ?? '',
-      jid: widget.chatJid,
+      jid: _peerJid,
       isRoom: _isGroup,
     );
     // Watched so a draft saved here is read back into the field; see
@@ -1404,7 +1412,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                       ),
                     )
                   : ContactAvatar(
-                      jid: widget.chatJid,
+                      jid: _peerJid,
                       title: title,
                       radius: TgDimens.avatarChat / 2,
                       hero: true,
@@ -1514,12 +1522,13 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                   // falls back to the theme's, so the pattern is never drawn in
                   // a colour the app does not otherwise use.
                   accent: appearance.accent ?? tg.accent,
-                  seed: widget.chatJid,
+                  seed: _peerJid,
                 ),
                 child: messages.when(
                   data: (list) {
                     if (list.isNotEmpty) _ensureInitialScroll();
                     return _MessageList(
+                      chatKey: widget.chatJid,
                       messages: list,
                       scroll: _scroll,
                       onRetryDecrypt: () =>
@@ -1643,6 +1652,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 /// Message list with day separators and an unread marker.
 class _MessageList extends StatelessWidget {
   const _MessageList({
+    required this.chatKey,
     required this.messages,
     required this.scroll,
     required this.onRetryDecrypt,
@@ -1660,6 +1670,7 @@ class _MessageList extends StatelessWidget {
     required this.isGroup,
   });
 
+  final String chatKey;
   final List<Message> messages;
   final ScrollController scroll;
   final VoidCallback onRetryDecrypt;
@@ -1764,6 +1775,7 @@ class _MessageList extends StatelessWidget {
         continue;
       }
       Widget bubble = _ReactionBubble(
+        chatKey: chatKey,
         message: m,
         selectionMode: selectionMode,
         selected: selectedIds.contains(m.stanzaId),
@@ -1934,9 +1946,12 @@ class _SubscriptionBanner extends ConsumerWidget {
             ),
             if (state.subscription != 'both')
               TextButton(
-                onPressed: () => ref
-                    .read(xmppServiceProvider)
-                    .requestSubscription(JID.fromString(chatJid)),
+                onPressed: () {
+                  final r = resolveChatKey(chatJid);
+                  r.session.xmpp.requestSubscription(
+                    JID.fromString(r.jid),
+                  );
+                },
                 child: Text(context.l10n.askAgain),
               ),
           ],
@@ -1952,6 +1967,7 @@ class _SubscriptionBanner extends ConsumerWidget {
 /// whenever anyone reacts, which is independent of the message list rebuilding.
 class _ReactionBubble extends ConsumerWidget {
   const _ReactionBubble({
+    required this.chatKey,
     required this.message,
     required this.selectionMode,
     required this.selected,
@@ -1962,6 +1978,7 @@ class _ReactionBubble extends ConsumerWidget {
     required this.onToggleSelected,
   });
 
+  final String chatKey;
   final Message message;
   final bool selectionMode;
   final bool selected;
@@ -1979,7 +1996,14 @@ class _ReactionBubble extends ConsumerWidget {
     final targetId = message.stanzaId;
     final reactions = targetId.isEmpty
         ? const <ReactionGroup>[]
-        : ref.watch(reactionGroupsProvider(targetId)).value ?? const [];
+        : ref
+                .watch(
+                  reactionGroupsProvider(
+                    (chatKey: chatKey, targetId: targetId),
+                  ),
+                )
+                .value ??
+            const [];
     final nick = isGroup && message.incoming
         ? _occupantNick(message.sender)
         : null;
@@ -2004,6 +2028,7 @@ class _ReactionBubble extends ConsumerWidget {
       selectionMode: selectionMode,
       bubbleStyle: bubbleStyle,
       message: message,
+      chatKey: chatKey,
       onReact: onReact,
       // A long press still opens the context menu when nothing is selected;
       // once a selection exists, long press adds to it, which is what a user

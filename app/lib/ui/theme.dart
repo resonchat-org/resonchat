@@ -218,6 +218,8 @@ class AppThemeTokens {
       appBarTheme: AppBarTheme(
         backgroundColor: tg.barBackground,
         foregroundColor: Colors.white,
+        iconTheme: const IconThemeData(color: Colors.white),
+        actionsIconTheme: const IconThemeData(color: Colors.white),
         elevation: 0,
         centerTitle: false,
         titleTextStyle: TextStyle(

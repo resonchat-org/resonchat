@@ -16,8 +16,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:moxxmpp/moxxmpp.dart' show JID;
 
+import '../account/resolve.dart';
 import '../omemo/track.dart';
 import '../omemo/track_resolver.dart';
+import '../store/database.dart';
 import '../xmpp/capabilities.dart';
 import '../state/providers.dart';
 import '../xmpp/connection.dart';
@@ -26,19 +28,22 @@ import 'theme.dart';
 class ProfilePage extends ConsumerWidget {
   const ProfilePage({super.key, required this.chatJid});
 
+  /// [ChatRef.key] (or legacy bare JID).
   final String chatJid;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tg = context.tg;
+    final resolved = resolveChatKey(chatJid);
+    final peer = resolved.jid;
+    final xmpp = resolved.session.xmpp;
     final chat = ref.watch(chatProvider(chatJid)).value;
     final contact = ref.watch(contactStateProvider(chatJid)).value;
     final caps = ref.watch(chatCapabilitiesProvider(chatJid)).value;
     final track = ref.watch(chatTrackProvider(chatJid)).value ?? Track.standard;
-    final xmpp = ref.watch(xmppServiceProvider);
     final connected = xmpp.state == XmppConnectionState.connected;
 
-    final title = (chat?.title.isNotEmpty ?? false) ? chat!.title : chatJid;
+    final title = (chat?.title.isNotEmpty ?? false) ? chat!.title : peer;
 
     return Scaffold(
       appBar: AppBar(title: Text(title)),
@@ -67,7 +72,7 @@ class ProfilePage extends ConsumerWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  chatJid,
+                  peer,
                   style: TextStyle(fontSize: 14, color: tg.textSecondary),
                 ),
               ],
@@ -91,9 +96,9 @@ class ProfilePage extends ConsumerWidget {
             trailing: (contact?.isMutual ?? true) || !connected
                 ? null
                 : TextButton(
-                    onPressed: () => ref
-                        .read(xmppServiceProvider)
-                        .requestSubscription(JID.fromString(chatJid)),
+                    onPressed: () => xmpp.requestSubscription(
+                      JID.fromString(peer),
+                    ),
                     child: const Text('Ask again'),
                   ),
           ),
@@ -136,24 +141,26 @@ class ProfilePage extends ConsumerWidget {
             leading: const Icon(Icons.history),
             title: const Text('Load archived messages'),
             subtitle: const Text('Ask the server for this conversation (MAM)'),
-            onTap: () => _loadHistory(context, ref),
+            onTap: () => _loadHistory(context, xmpp, peer),
           ),
           ListTile(
             leading: Icon(Icons.delete_outline, color: tg.danger),
             title: Text('Clear history on this device', style: TextStyle(color: tg.danger)),
             subtitle: const Text('Does not delete anything on the server'),
-            onTap: () => _confirmClear(context, ref),
+            onTap: () => _confirmClear(context, resolved.session.db, peer),
           ),
         ],
       ),
     );
   }
 
-  Future<void> _loadHistory(BuildContext context, WidgetRef ref) async {
+  Future<void> _loadHistory(
+    BuildContext context,
+    XmppService xmpp,
+    String peer,
+  ) async {
     final messenger = ScaffoldMessenger.of(context);
-    final count = await ref
-        .read(xmppServiceProvider)
-        .fetchHistory(JID.fromString(chatJid));
+    final count = await xmpp.fetchHistory(JID.fromString(peer));
     messenger.showSnackBar(
       SnackBar(
         content: Text(
@@ -165,7 +172,11 @@ class ProfilePage extends ConsumerWidget {
     );
   }
 
-  Future<void> _confirmClear(BuildContext context, WidgetRef ref) async {
+  Future<void> _confirmClear(
+    BuildContext context,
+    AppDatabase db,
+    String peer,
+  ) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -188,7 +199,7 @@ class ProfilePage extends ConsumerWidget {
       ),
     );
     if (confirmed != true) return;
-    await ref.read(databaseProvider).clearChatMessages(chatJid);
+    await db.clearChatMessages(peer);
   }
 
   /// What this conversation will actually do, as distinct from what the user
@@ -221,9 +232,9 @@ class ProfilePage extends ConsumerWidget {
         child: Text(
           title,
           style: TextStyle(
-            color: tg.accent,
             fontSize: 13,
             fontWeight: FontWeight.w600,
+            color: tg.textSecondary,
           ),
         ),
       );

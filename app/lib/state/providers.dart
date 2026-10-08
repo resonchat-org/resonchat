@@ -1,13 +1,14 @@
 // Copyright (C) 2026 resonchat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import 'dart:convert';
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:moxxmpp/moxxmpp.dart' show JID;
 
+import '../account/account_hub.dart';
+import '../account/resolve.dart';
 import '../omemo/dual_track_manager.dart';
 import '../omemo/protocol.dart';
 import '../omemo/track.dart';
@@ -16,23 +17,39 @@ import '../xmpp/avatar.dart';
 import '../xmpp/blocking.dart';
 import '../xmpp/muc.dart';
 import '../xmpp/reactions.dart';
-import '../store/omemo_device_store.dart';
 import '../ui/appearance.dart';
 import '../xmpp/b_track_manager.dart';
 import '../xmpp/capabilities.dart';
 import '../xmpp/connection.dart';
 
-/// Overridden in `main()` with the opened database.
-final databaseProvider = Provider<AppDatabase>(
-  (ref) => throw UnimplementedError('databaseProvider not overridden'),
-);
+/// Multi-account hub (installed in `main()`).
+///
+/// Rebuilds dependents when [AccountHub] notifies (session open/close), so
+/// [databaseProvider] / [xmppServiceProvider] are not stuck on a cold-start
+/// "no session" error after the first login.
+final accountHubProvider = Provider<AccountHub>((ref) {
+  final hub = accountHub;
+  void onChange() => ref.invalidateSelf();
+  hub.addListener(onChange);
+  ref.onDispose(() => hub.removeListener(onChange));
+  return hub;
+});
+
+/// Primary account DB (settings / SOCKS). Chat-scoped code must use
+/// [dbForChatKey] / session lookup instead.
+final databaseProvider = Provider<AppDatabase>((ref) {
+  ref.watch(accountHubProvider);
+  final db = accountHub.primaryDbOrNull;
+  if (db == null) {
+    throw StateError('databaseProvider: no account session');
+  }
+  return db;
+});
 
 final capabilityServiceProvider = Provider<CapabilityService>((ref) {
   final service = CapabilityService(
     tracks: () => ref.read(dualTrackManagerProvider)!,
     ourDeviceId: () async => ref.read(xmppServiceProvider).omemo?.getDeviceId(),
-    // Our own PQ device counts as PQ-capable only once its bundle is
-    // published; before that the chat must stay on the A track.
     ourPqDevices: () async {
       final b = ref.read(xmppServiceProvider).bTrack;
       final id = b?.device?.id;
@@ -42,8 +59,9 @@ final capabilityServiceProvider = Provider<CapabilityService>((ref) {
   return service;
 });
 
-/// The dual-track managers, available once the connection is up.
-final Provider<DualTrackManager?> dualTrackManagerProvider = Provider<DualTrackManager?>((ref) {
+/// Dual-track managers for the primary session.
+final Provider<DualTrackManager?> dualTrackManagerProvider =
+    Provider<DualTrackManager?>((ref) {
   final xmpp = ref.watch(xmppServiceProvider);
   final moxxOmemo = xmpp.moxxOmemo;
   final pubsub = xmpp.pubsub;
@@ -52,46 +70,26 @@ final Provider<DualTrackManager?> dualTrackManagerProvider = Provider<DualTrackM
     aTrack: moxxOmemo,
     pubsubOf: () => pubsub,
   );
-  // Let the service publish our A-track bundle in both wire dialects.
   xmpp.tracks = tracks;
   return tracks;
 });
 
-final Provider<XmppService> xmppServiceProvider = Provider<XmppService>((
-  ref,
-) {
-  // Device keys are sealed under a Keystore-held key and the sealed blob
-  // lives in the database (M5 groundwork).
-  return XmppService(
-    deviceStore: OmemoDeviceStore(
-      secureStorage: const FlutterSecureStorage(),
-      loadSecret: () async {
-        final v = await ref.read(databaseProvider).metaValue(_deviceBlobKey);
-        return v == null ? null : base64Decode(v);
-      },
-      saveSecret: (bytes) => ref
-          .read(databaseProvider)
-          .setMetaValue(_deviceBlobKey, base64Encode(bytes)),
-      deleteSecret: () =>
-          ref.read(databaseProvider).deleteMetaValue(_deviceBlobKey),
-    ),
-    bTrack: ref.read(bTrackManagerProvider),
-  );
+/// Primary account's [XmppService] (settings, “open chat” when one account).
+final Provider<XmppService> xmppServiceProvider = Provider<XmppService>((ref) {
+  ref.watch(accountHubProvider);
+  final xmpp = accountHub.primaryXmppOrNull;
+  if (xmpp == null) {
+    throw StateError('xmppServiceProvider: no account session');
+  }
+  return xmpp;
 });
 
-/// Owns the local PQ device, its bundle publication and PQ messaging.
-///
-/// Resolved lazily through [ref] inside the callbacks, so this provider
-/// can be created before the connection exists without a dependency cycle.
 final Provider<BTrackManager> bTrackManagerProvider = Provider<BTrackManager>(
   (ref) => BTrackManager(
     tracks: () => ref.read(dualTrackManagerProvider)!,
     pubsubOf: () => ref.read(xmppServiceProvider).pubsub,
   ),
 );
-
-/// Database key holding the sealed OMEMO device blob.
-const _deviceBlobKey = 'omemo_device_blob';
 
 final connectionStateProvider = StateProvider<XmppConnectionState>(
   (ref) => XmppConnectionState.disconnected,
@@ -107,29 +105,35 @@ final httpUploadAvailableProvider = FutureProvider<bool>((ref) async {
   return xmpp.httpFiles.isAvailable();
 });
 
-/// Live message list for one chat.
+/// Live message list for one chat ([ChatRef.key] or legacy bare JID).
 final messagesProvider =
-    StreamProvider.family<List<Message>, String>((ref, chatJid) {
-  return ref.watch(databaseProvider).watchMessages(chatJid);
+    StreamProvider.family<List<Message>, String>((ref, chatKey) {
+  final r = resolveChatKey(chatKey);
+  return r.session.db.watchMessages(r.jid);
 });
 
-/// Live chat list.
-final chatsProvider = StreamProvider<List<Chat>>(
-  (ref) => ref.watch(databaseProvider).watchChats(),
+/// Unified multi-account chat list.
+final chatsProvider = StreamProvider<List<AccountChat>>(
+  (ref) {
+    ref.watch(accountHubProvider);
+    return accountHub.watchMergedChats();
+  },
 );
 
-/// Last message preview for the chat list row.
-/// One chat row, or null while loading / unknown.
-final chatProvider = FutureProvider.family<Chat?, String>((ref, chatJid) {
-  return ref
-      .watch(databaseProvider)
+/// One chat row, or null while loading / unknown ([ChatRef.key]).
+final chatProvider = FutureProvider.family<Chat?, String>((ref, chatKey) {
+  final r = resolveChatKey(chatKey);
+  return r.session.db
       .watchChats()
       .first
-      .then((all) => all.where((c) => c.jid == chatJid).firstOrNull);
+      .then((all) => all.where((c) => c.jid == r.jid).firstOrNull);
 });
 
 final lastMessageProvider = StreamProvider.family<String?, String>(
-  (ref, chatJid) => ref.watch(databaseProvider).watchLastMessage(chatJid),
+  (ref, chatKey) {
+    final r = resolveChatKey(chatKey);
+    return r.session.db.watchLastMessage(r.jid);
+  },
 );
 
 /// Live capability snapshot for a chat, or null while resolving.
@@ -143,10 +147,11 @@ final lastMessageProvider = StreamProvider.family<String?, String>(
 /// of leaving the user wondering why nothing arrives.
 final contactStateProvider = FutureProvider.family<ContactState, String>((
   ref,
-  chatJid,
+  chatKey,
 ) async {
   ref.watch(connectionStateProvider);
-  final row = await ref.read(databaseProvider).rosterEntry(chatJid);
+  final r = resolveChatKey(chatKey);
+  final row = await r.session.db.rosterEntry(r.jid);
   return ContactState(
     subscription: row?.subscription ?? 'none',
     asked: (row?.ask ?? '').isNotEmpty,
@@ -179,13 +184,14 @@ class ContactState {
 }
 
 final chatCapabilitiesProvider =
-    FutureProvider.family<ChatCapabilities?, String>((ref, chatJid) async {
+    FutureProvider.family<ChatCapabilities?, String>((ref, chatKey) async {
       ref.watch(connectionStateProvider);
-      final xmpp = ref.read(xmppServiceProvider);
+      final r = resolveChatKey(chatKey);
+      final xmpp = r.session.xmpp;
       if (xmpp.omemo == null) return null;
-      final caps =
-          await ref.read(capabilityServiceProvider).forChat(JID.fromString(chatJid));
-      return caps.reliable ? caps : null;
+      final caps = await xmpp.capabilitiesFor(JID.fromString(r.jid));
+      if (caps == null || !caps.reliable) return null;
+      return caps;
     });
 
 /// Encryption mode for a chat, or [EncMode.none] while resolving.
@@ -202,11 +208,10 @@ final chatCapabilitiesProvider =
 /// can read, and a fresh install that starts on plaintext would hand every new
 /// conversation to anyone with access to the server.
 final chatTrackProvider =
-    FutureProvider.family<Track, String>((ref, chatJid) async {
-  // Watched, not just read: the picker and the header have to re-resolve when
-  // the global default changes, or they disagree until the next restart.
+    FutureProvider.family<Track, String>((ref, chatKey) async {
   final global = ref.watch(globalTrackProvider.future);
-  final override = await ref.watch(databaseProvider).trackOverride(chatJid);
+  final r = resolveChatKey(chatKey);
+  final override = await r.session.db.trackOverride(r.jid);
   return override ?? await global;
 });
 
@@ -218,7 +223,47 @@ final chatTrackProvider =
 final messageSearchProvider =
     StreamProvider.autoDispose.family<List<Message>, String>((ref, needle) {
   if (needle.trim().isEmpty) return Stream.value(const []);
-  return ref.watch(databaseProvider).searchMessages(needle);
+  ref.watch(accountHubProvider);
+  final sessions = accountHub.sessions.toList();
+  if (sessions.isEmpty) return Stream.value(const []);
+  if (sessions.length == 1) {
+    return sessions.first.db.searchMessages(needle);
+  }
+  // Merge per-account FTS streams (same bare JID on two accounts is rare).
+  late final StreamController<List<Message>> controller;
+  final subs = <StreamSubscription<List<Message>>>[];
+  final latest = <int, List<Message>>{};
+  void emit() {
+    final all = latest.values.expand((e) => e).toList()
+      ..sort((a, b) {
+        final byTime = b.timestamp.compareTo(a.timestamp);
+        if (byTime != 0) return byTime;
+        return b.id.compareTo(a.id);
+      });
+    if (!controller.isClosed) {
+      controller.add(all.length > 200 ? all.sublist(0, 200) : all);
+    }
+  }
+
+  controller = StreamController<List<Message>>(
+    onListen: () {
+      for (var i = 0; i < sessions.length; i++) {
+        final index = i;
+        subs.add(
+          sessions[i].db.searchMessages(needle).listen((list) {
+            latest[index] = list;
+            emit();
+          }),
+        );
+      }
+    },
+    onCancel: () async {
+      for (final s in subs) {
+        await s.cancel();
+      }
+    },
+  );
+  return controller.stream;
 });
 
 /// Search inside one conversation.
@@ -226,7 +271,8 @@ final chatMessageSearchProvider =
     StreamProvider.autoDispose.family<List<Message>, ({String chatJid, String needle})>(
   (ref, args) {
   if (args.needle.trim().isEmpty) return Stream.value(const []);
-  return ref.watch(databaseProvider).searchInChat(args.chatJid, args.needle);
+  final r = resolveChatKey(args.chatJid);
+  return r.session.db.searchInChat(r.jid, args.needle);
 });
 
 /// One contact's avatar, fetched once and re-fetched only when its hash moves.
@@ -264,16 +310,16 @@ final _avatarBlobCache = <String, Uint8List>{};
 
 /// The room we are currently in, or null.
 ///
-/// Keyed by the bare room JID so a chat page opened at `room@server/nick` and
-/// one opened at `room@server` read the same state — a room and a person's
-/// address are the same conversation, and treating them as two would leave the
-/// member list empty half the time.
+/// Keyed by [ChatRef.key] (or legacy bare JID) so multi-account sessions use
+/// the owning [XmppService], not only the primary account.
 final roomStateProvider =
-    FutureProvider.family<GroupChat?, String>((ref, roomJid) async {
+    FutureProvider.family<GroupChat?, String>((ref, chatKey) async {
   // Re-reads when the occupant stream fires, so a new arrival shows up without
   // anything having to invalidate this.
-  ref.watch(roomOccupantsProvider(roomJid));
-  final xmpp = ref.watch(xmppServiceProvider);
+  ref.watch(roomOccupantsProvider(chatKey));
+  final r = resolveChatKey(chatKey);
+  final roomJid = r.jid;
+  final xmpp = r.session.xmpp;
   final state = await xmpp.groupChatState(roomJid);
   if (state == null) return null;
   // Conversations getUsers vs getOnlineUsers — private non-anon includes
@@ -287,54 +333,57 @@ final roomStateProvider =
   );
 });
 
-/// Occupants of [roomJid], updated as presence arrives.
+/// Occupants of the room for [chatKey], updated as presence arrives.
 final roomOccupantsProvider =
-    StreamProvider.family<List<Occupant>, String>((ref, roomJid) {
-  final xmpp = ref.watch(xmppServiceProvider);
-  return xmpp.roomOccupants(roomJid).map((chat) => chat?.occupants ?? const []);
+    StreamProvider.family<List<Occupant>, String>((ref, chatKey) {
+  final r = resolveChatKey(chatKey);
+  return r.session.xmpp
+      .roomOccupants(r.jid)
+      .map((chat) => chat?.occupants ?? const []);
 });
 
-/// Archived conversations, most recent first.
-final archivedChatsProvider = StreamProvider<List<Chat>>(
-  (ref) => ref.watch(databaseProvider).watchArchivedChats(),
+/// Archived conversations across accounts.
+final archivedChatsProvider = StreamProvider<List<AccountChat>>(
+  (ref) {
+    ref.watch(accountHubProvider);
+    return accountHub.watchMergedChats(archivedOnly: true);
+  },
 );
 
 /// How [chatJid] looks: wallpaper, bubble shape, accent.
 final chatAppearanceProvider = FutureProvider.family<ChatAppearance, String>((
   ref,
-  chatJid,
+  chatKey,
 ) async {
   ref.watch(chatRowRevisionProvider);
-  final chat = await ref.watch(databaseProvider).watchChats().first;
+  final r = resolveChatKey(chatKey);
+  final chat = await r.session.db.watchChats().first;
   for (final c in chat) {
-    if (c.jid == chatJid) return ChatAppearance.decode(c.appearance);
+    if (c.jid == r.jid) return ChatAppearance.decode(c.appearance);
   }
   return const ChatAppearance();
 });
 
-/// Stores [appearance] for [chatJid], or clears it when null.
+/// Stores [appearance] for [chatKey], or clears it when null.
 Future<void> setChatAppearance(
   WidgetRef ref,
-  String chatJid,
+  String chatKey,
   ChatAppearance? appearance,
 ) async {
-  await ref
-      .read(databaseProvider)
-      .setChatAppearance(chatJid, appearance?.encode());
+  final r = resolveChatKey(chatKey);
+  await r.session.db.setChatAppearance(r.jid, appearance?.encode());
   ref.read(chatRowRevisionProvider.notifier).state =
       ref.read(chatRowRevisionProvider) + 1;
 }
 
-/// Unread count for [chatJid], or null while it is being read.
-///
-/// Read by the chat page as well as the list, because the jump-to-unread button
-/// needs it and the chat page is not rebuilt by the list.
+/// Unread count for [chatKey], or null while it is being read.
 final chatUnreadProvider = FutureProvider.family<int?, String>(
-  (ref, chatJid) async {
+  (ref, chatKey) async {
     ref.watch(chatRowRevisionProvider);
-    final chat = await ref.watch(databaseProvider).watchChats().first;
+    final r = resolveChatKey(chatKey);
+    final chat = await r.session.db.watchChats().first;
     for (final c in chat) {
-      if (c.jid == chatJid) return c.unreadCount;
+      if (c.jid == r.jid) return c.unreadCount;
     }
     return null;
   },
@@ -346,11 +395,12 @@ final chatUnreadProvider = FutureProvider.family<int?, String>(
 /// row changes, so reading on another device moves the divider without a
 /// restart.
 final chatLastReadProvider = FutureProvider.family<DateTime?, String>(
-  (ref, chatJid) async {
+  (ref, chatKey) async {
     ref.watch(chatRowRevisionProvider);
-    final chat = await ref.watch(databaseProvider).watchChats().first;
+    final r = resolveChatKey(chatKey);
+    final chat = await r.session.db.watchChats().first;
     for (final c in chat) {
-      if (c.jid == chatJid) return c.lastReadAt;
+      if (c.jid == r.jid) return c.lastReadAt;
     }
     return null;
   },
@@ -366,34 +416,40 @@ final subscriptionRequestsProvider =
   (ref) => ref.watch(databaseProvider).watchSubscriptionRequests(),
 );
 
-/// The unsent text in [chatJid], or null.
-final draftProvider = FutureProvider.family<String?, String>((ref, chatJid) {
+/// The unsent text in [chatKey], or null.
+final draftProvider = FutureProvider.family<String?, String>((ref, chatKey) {
   ref.watch(draftRevisionProvider);
-  return ref.watch(databaseProvider).draft(chatJid);
+  final r = resolveChatKey(chatKey);
+  return r.session.db.draft(r.jid);
 });
 
 /// Bumped whenever a draft changes, so the input bar redraws.
 final draftRevisionProvider = StateProvider<int>((ref) => 0);
 
-/// Records or clears the draft for [chatJid].
-Future<void> saveDraft(WidgetRef ref, String chatJid, String? text) async {
-  await ref.read(databaseProvider).setDraft(chatJid, text);
+/// Records or clears the draft for [chatKey].
+Future<void> saveDraft(WidgetRef ref, String chatKey, String? text) async {
+  final r = resolveChatKey(chatKey);
+  await r.session.db.setDraft(r.jid, text);
   ref.read(draftRevisionProvider.notifier).state =
       ref.read(draftRevisionProvider) + 1;
 }
 
-/// Stanza ids pinned in [chatJid], most recent first.
+/// Stanza ids pinned in [chatKey], most recent first.
 final pinnedIdsProvider = StreamProvider.family<List<String>, String>(
-  (ref, chatJid) => ref.watch(databaseProvider).watchPinned(chatJid),
+  (ref, chatKey) {
+    final r = resolveChatKey(chatKey);
+    return r.session.db.watchPinned(r.jid);
+  },
 );
 
 /// Pins or unpins a message.
 Future<void> togglePinned(
   WidgetRef ref,
-  String chatJid,
+  String chatKey,
   String stanzaId,
 ) async {
-  await ref.read(databaseProvider).togglePinned(chatJid, stanzaId);
+  final r = resolveChatKey(chatKey);
+  await r.session.db.togglePinned(r.jid, stanzaId);
 }
 
 /// The bare JIDs currently blocked (XEP-0191).
@@ -409,20 +465,23 @@ final blockedJidsProvider = FutureProvider<Set<String>>((ref) async {
 /// Bumped whenever the block list changes.
 final blockRevisionProvider = StateProvider<int>((ref) => 0);
 
-/// True when [jid] is blocked.
-final isBlockedProvider = Provider.family<bool, String>((ref, jid) {
+/// True when the peer for [chatKey] (or bare JID) is blocked on that account.
+final isBlockedProvider = Provider.family<bool, String>((ref, chatKey) {
   ref.watch(blockRevisionProvider);
-  return ref.watch(blockedJidsProvider).value?.contains(jid) ?? false;
+  final r = resolveChatKey(chatKey);
+  return r.session.xmpp.blockedJids.contains(r.jid);
 });
 
-/// Blocks or unblocks [jid], keeping the store and the service in step.
+/// Blocks or unblocks the peer for [chatKey], on the owning session.
 Future<void> toggleBlocked(
   WidgetRef ref,
-  String jid, {
+  String chatKey, {
   required bool currentlyBlocked,
 }) async {
-  final db = ref.read(databaseProvider);
-  final xmpp = ref.read(xmppServiceProvider);
+  final r = resolveChatKey(chatKey);
+  final db = r.session.db;
+  final xmpp = r.session.xmpp;
+  final jid = r.jid;
   if (currentlyBlocked) {
     await unblockContact(xmpp, db, jid);
   } else {
@@ -430,29 +489,22 @@ Future<void> toggleBlocked(
   }
   // Both writes happened; re-read rather than guessing, because a server push
   // can arrive in between and the tile has to show what is actually enforced.
-  await _reloadBlocked(ref);
+  xmpp.blockedJids = await db.blockedJids();
   ref.read(blockRevisionProvider.notifier).state =
       ref.read(blockRevisionProvider) + 1;
 }
 
-Future<void> _reloadBlocked(WidgetRef ref) async {
-  ref.read(xmppServiceProvider).blockedJids =
-      await ref.read(databaseProvider).blockedJids();
-}
-
-/// Reaction chips for the message whose addressable id is [targetId].
+/// Reaction chips for one message in one chat.
 ///
-/// Keyed on the id rather than the message row because that is what a reaction
-/// refers to; a message we could not address is shown without chips rather than
-/// with chips nobody can add to.
-final reactionGroupsProvider =
-    FutureProvider.family<List<ReactionGroup>, String>((ref, targetId) async {
-  // Re-reads when the table changes, so a reaction arriving anywhere updates
-  // the bubble without this page having to know it happened.
+/// Keyed on chat + stanza id so multi-account DBs do not mix chips, and so
+/// "mine" is judged against the owning account's bare JID.
+final reactionGroupsProvider = FutureProvider.family<List<ReactionGroup>,
+    ({String chatKey, String targetId})>((ref, args) async {
   ref.watch(reactionRevisionProvider);
-  final myJid = ref.watch(myBareJidProvider).value;
+  final r = resolveChatKey(args.chatKey);
+  final myJid = r.session.xmpp.myJid;
   if (myJid == null) return const [];
-  return reactionsFor(ref.watch(databaseProvider), targetId, myJid);
+  return reactionsFor(r.session.db, args.targetId, myJid);
 });
 
 /// Bumped whenever a reaction is stored, to invalidate every chip strip.
@@ -470,17 +522,15 @@ final myBareJidProvider = FutureProvider<String?>((ref) async {
 /// "is set to the same value as the global default" are different states: only
 /// the first one follows a later change to the default.
 final chatTrackOverrideProvider =
-    FutureProvider.family<Track?, String>((ref, chatJid) {
-  // Invalidated by setChatTrack, so this re-reads after a change.
-  return ref.watch(databaseProvider).trackOverride(chatJid);
+    FutureProvider.family<Track?, String>((ref, chatKey) {
+  final r = resolveChatKey(chatKey);
+  return r.session.db.trackOverride(r.jid);
 });
 
 /// The track used by conversations with no override of their own.
 final globalTrackProvider = FutureProvider<Track>((ref) async {
   final stored = await ref.read(databaseProvider).metaValue(_globalTrackKey);
   if (stored == null) return Track.standard;
-  // A corrupt setting resolves to the standard track, never to plaintext: an
-  // unreadable value must not cost the user their encryption.
   return Track.fromStored(stored) ?? Track.standard;
 });
 
@@ -489,16 +539,13 @@ Future<void> setGlobalTrack(WidgetRef ref, Track track) async {
   await ref.read(databaseProvider).setMetaValue(_globalTrackKey, track.stored);
 }
 
-/// Pins [chatJid] to [track], or clears the override when null.
-Future<void> setChatTrack(WidgetRef ref, String chatJid, Track? track) async {
-  final db = ref.read(databaseProvider);
-  await db.setTrackOverride(chatJid, track);
-  // Leaving plaintext re-arms the warning for next time. Otherwise a user who
-  // once confirmed it would never see it again — including on the way back,
-  // which is the transition worth a fresh look.
-  await db.clearPlaintextAcknowledgement(chatJid);
-  ref.invalidate(chatTrackOverrideProvider(chatJid));
-  ref.invalidate(chatTrackProvider(chatJid));
+/// Pins [chatKey] to [track], or clears the override when null.
+Future<void> setChatTrack(WidgetRef ref, String chatKey, Track? track) async {
+  final r = resolveChatKey(chatKey);
+  await r.session.db.setTrackOverride(r.jid, track);
+  await r.session.db.clearPlaintextAcknowledgement(r.jid);
+  ref.invalidate(chatTrackOverrideProvider(chatKey));
+  ref.invalidate(chatTrackProvider(chatKey));
 }
 
 /// Database key holding the global default track.

@@ -10,7 +10,6 @@ import 'dart:async';
 import 'package:logging/logging.dart';
 import 'package:moxlib/moxlib.dart';
 import 'package:moxxmpp/moxxmpp.dart';
-import 'package:moxxmpp_socket_tcp/moxxmpp_socket_tcp.dart';
 import 'package:omemo_dart/omemo_dart_axolotl.dart' as axolotl;
 
 import '../omemo/defacto.dart';
@@ -31,6 +30,7 @@ import 'pq_incoming.dart';
 import 'pq_stanza.dart';
 import 'reactions.dart';
 import 'replies.dart';
+import 'xmpp_socket.dart';
 
 /// Decrypted inbound chat message, either track or plaintext.
 class InboundMessage {
@@ -1272,6 +1272,12 @@ class XmppService {
         }
       },
     );
+    // On web, the optional "host" field may be a full wss:// URL (manual
+    // override when host-meta is missing). TCP hosts stay unchanged on IO.
+    final websocketOverride =
+        (host != null && (host.startsWith('wss:') || host.startsWith('ws:')))
+            ? host
+            : null;
     final connection = XmppConnection(
       reconnect ? TestingReconnectionPolicy() : NeverReconnectPolicy(),
       // TODO(M7): replace with a connectivity_plus-backed manager plus
@@ -1279,12 +1285,14 @@ class XmppService {
       // radio lock (Briar's always-on lesson, docs/09).
       AlwaysConnectedConnectivityManager(),
       ClientToServerNegotiator(),
-      TCPSocketWrapper(false),
+      // Native: TCP (+ SOCKS5). Web: RFC 7395 WebSocket + XEP-0156.
+      createXmppSocket(websocketUrl: websocketOverride),
     )..connectionSettings = ConnectionSettings(
         jid: JID.fromString(jid),
+        // When host is a WebSocket URL, do not pass it as a TCP hostname.
         password: password,
-        host: host,
-        port: port,
+        host: websocketOverride != null ? null : host,
+        port: websocketOverride != null ? null : port,
       );
 
     _carbons = CarbonsManager();

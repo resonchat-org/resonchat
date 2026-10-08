@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=resonchat
+GenericName=XMPP Client
+Comment=XMPP client with dual-track OMEMO (standard + post-quantum)
+Exec=resonchat
+Icon=resonchat
+Terminal=false
+Categories=Network;InstantMessaging;Chat;
+StartupWMClass=resonchat
+Keywords=XMPP;OMEMO;chat;messaging;
+SingleMainWindow=true

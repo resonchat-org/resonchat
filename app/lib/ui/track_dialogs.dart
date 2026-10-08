@@ -12,6 +12,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../account/resolve.dart';
 import '../l10n/l10n.dart';
 import '../omemo/track.dart';
 import '../omemo/track_advice.dart';
@@ -213,7 +214,7 @@ class _TrackPickerState extends ConsumerState<_TrackPicker> {
               ),
             const Divider(),
             BlockContactTile(
-              contact: widget.chatJid,
+              contact: resolveChatKey(widget.chatJid).jid,
               blocked: ref.watch(isBlockedProvider(widget.chatJid)),
               onToggle: () async {
                 final messenger = ScaffoldMessenger.of(context);

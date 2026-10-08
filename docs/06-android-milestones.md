@@ -11,7 +11,7 @@
 - [ ] 建立 mono-repo 结构（见 01 文档 §6）
 - [ ] fork `moxxmpp` 与 `omemo_dart` 至 `packages/`
 - [ ] 添加 GPLv3 LICENSE、各文件来源标注规范
-- [ ] GitHub Actions：`flutter analyze` + `flutter test` + `flutter build apk --debug`
+- [ ] GitHub Actions：`flutter analyze` + `flutter test` + `./tool/build_android.sh`
 
 **验收**
 - `flutter run` 在 Android 真机启动空白页成功

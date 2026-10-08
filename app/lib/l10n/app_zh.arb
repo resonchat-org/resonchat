@@ -4,6 +4,23 @@
   "settings": "设置",
   "privacy": "隐私",
   "connection": "连接",
+  "socks5Proxy": "SOCKS5 代理",
+  "socks5ProxySummary": "所有 XMPP 与 HTTP 流量经本机 SOCKS5 代理转发",
+  "socks5ProxyPort": "代理端口",
+  "socks5ProxyPortHint": "默认 7890；Tor 一般为 9050",
+  "socks5ProxyApplied": "代理已更新。请重新连接以便 XMPP 生效。",
+  "socks5ProxyInvalidPort": "请输入 1–65535 之间的端口",
+  "manageAccounts": "账号",
+  "addAccount": "添加账号",
+  "noAccountsYet": "还没有账号",
+  "accountDisabled": "已停用",
+  "removeAccount": "移除账号",
+  "removeAccountConfirm": "从此设备移除 {jid}？该账号的本地聊天记录仍保留在磁盘上。",
+  "@removeAccountConfirm": {
+    "placeholders": {
+      "jid": { "type": "String" }
+    }
+  },
   "encryption": "加密",
   "about": "关于",
   "defaultEncryption": "默认加密方式",
@@ -39,6 +56,7 @@
   "jid": "JID",
   "password": "密码",
   "hostOptional": "主机（可选）",
+  "hostOptionalWebHint": "留空则自动发现（host-meta），或填写 wss://…",
   "connect": "连接",
   "connecting": "正在连接…",
   "authenticationFailed": "身份验证失败",
