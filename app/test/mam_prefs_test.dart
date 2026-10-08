@@ -520,7 +520,7 @@ void main() {
       // the *only* exception rather than leaving it to chance. See the report:
       // the doc's "always" and its `never` branch contradict each other, and
       // the code is right.
-      for (final p in states.where((p) => !p.keepsNothing)) {
+      for (final p in states.where((p) => p.policy != MamRetention.never)) {
         for (final summary in [
           privacySummary(prefsWith(p)),
           conversationPrivacySummary(prefsWith(p), juliet),
@@ -1201,8 +1201,8 @@ void main() {
       final descending = [
         ['unlimited', 'always'],
         ['always', 'roster'],
-        ['roster', 'onlyMuc'],
-        ['onlyMuc', 'never'],
+        ['roster', 'only-muc'],
+        ['only-muc', 'never'],
       ];
       for (final pair in descending) {
         expectShorterWarning(
@@ -1302,7 +1302,21 @@ void main() {
         final current = pair[0];
         final next = pair[1];
         if (current.exposure != null && next.exposure != null) continue;
-        if (next.keepsNothing) continue;
+        // Cap-only → `never` is a real shortening (see the FINDING below); skip
+        // every never next so this sweep stays about unrankable pairs only.
+        if (next.policy == MamRetention.never) continue;
+        // Two cap-only policies *are* rankable, on their caps — see
+        // "two cap-only states still compare". An empty or unrecognised
+        // current is what this FINDING is about.
+        final currentCapOnly =
+            current.policy == null &&
+            current.unrecognised == null &&
+            current.maxDays != null;
+        final nextCapOnly =
+            next.policy == null &&
+            next.unrecognised == null &&
+            next.maxDays != null;
+        if (currentCapOnly && nextCapOnly) continue;
         if (shortensRetention(current, next)) {
           unrankedButCalledShortening.add('$current → $next');
         }

@@ -1,218 +1,176 @@
 # 10 — 三轨协调：后量子 / 标准 / 无加密
 
 本文件规定三条轨道（PQ-OMEMO、标准 OMEMO、无加密）在真实会话中如何协调。
-它取代 `docs/02` §6/§7 里「由程序自动判定轨道」的部分。
+发送策略以本文件为准；`docs/02` §6 的 `decideEncMode` 只描述**最高可达能力**提示。
 
 ## 1. 根本决定：选择权在用户
 
 与 Conversations 一致：**用户选择加密协议，客户端负责判断可行性并如实告知后果，
 但不阻止、不静默替换。**
 
-这一条改变的不只是实现，还改变了安全模型的表述。原来的不变量 1 写作
-「若无 PQ 能力证据，必须走标准 OMEMO，绝不发送对端无法解密的消息」，它隐含
-「轨道由程序决定」。新表述见 §8。
+安全模型表述见 §8 / `docs/01` §7。要点：
 
-选择权交给用户并不削弱安全性，理由是：
-
-1. 加密强度不取决于客户端的猜测，而取决于用户的明确选择与知情
-2. 「程序自动降级」本身就是一个攻击面：攻击者只要让能力判定失败，就能静默
-   把加密降级，而用户完全不知情
-3. 用户选错的后果是**他自己**的消息收不到，代价明确且可见；比悄悄降级更诚实
+1. 加密强度取决于用户的明确选择与知情
+2. 「程序自动降级」本身是一个攻击面：能力判定失败时静默降级会让用户不知情
+3. 用户选错的后果是**他自己**的消息收不到或发不出去，代价明确且可见
 
 ## 2. 轨道标识与显示
 
 | 轨道 | 简写 | 图标 | 含义 |
 |---|---|---|---|
 | 后量子 PQ-OMEMO | `PO` | 护盾带对钩 | 自研混合轨道，resonchat 之间可读 |
-| 标准 OMEMO | `OM` | 护盾 | XEP-0384，第三方客户端可读 |
+| 标准 OMEMO | `OM` | 护盾 | Conversations/axolotl，第三方客户端可读 |
 | 无加密 | `NO` | 叉 | 明文 |
 
-三条轨道**不在同一条消息里混装**。原因：一条消息两种保护强度会让「这条
-消息到底是什么保护」在接收端语义含糊（UI、EME、审计都要跟着分叉），载荷
-接近翻倍（R3 体积风险），改动面远大于它解决的问题。
-
-代价是「最小公分母」：一台设备读不了，整条消息降级。这是 `docs/01` 不变量 1
-的直接后果，属于刻意选择。
+三条轨道**不在同一条消息里混装**。一条消息两种保护强度会让接收端语义含糊，载荷接近翻倍。代价是「最小公分母」：一台设备读不了，整条消息按选定轨判定不可行。
 
 ## 3. 选择的作用域
 
-- **全局默认**：设置项，默认 `OM`（标准）。选 OM 的理由是它既安全又能与第三方
-  互通，且不会一上来就因为对端没有 PQ 能力而丢消息。
-- **会话覆盖**：每个会话可单独选择。优先级高于全局默认。
+- **全局默认**：设置项，默认 `OM`（标准）。存于 `Meta` 表，`key='global_track'`。
+- **会话覆盖**：`chats.track_override`（`TEXT`，`''` 表示继承全局）。优先级高于全局默认。
 
-新会话继承全局默认。群聊不额外分叉，遵循同一套规则。
+新会话继承全局默认。群聊遵循同一套规则（房间侧另有 `muc.dart` 解析入口）。
 
 ## 4. 数据模型
 
 ### 4.1 全局默认
 
-复用已有 `Meta` 表：`key='enc_mode_default'`、`value='standard'`。零迁移。
+`Meta`：`key='global_track'`，`value` 为 `Track.storageToken`（如 `standard` / `pq` / `none`）。读写见 `providers.dart`。
 
 ### 4.2 会话覆盖
 
-`chats` 表新增 `track_override TEXT NOT NULL DEFAULT ''`。`''` 表示继承全局。
-加性迁移，`schemaVersion` 2 → 3，做法与 `delivery_error` 一致。
+`chats.track_override`：空串继承全局；非空为该会话选定轨。
 
 ### 4.3 消息的实际轨道
 
-`messages.enc_mode` 语义收紧，词表固定为 `pq` / `standard` / `none` / `error`。
+`messages.enc_mode` 存**实际发出或入站识别到的**轨道，词表经 `EncModeToken`：`pq` / `standard` / `none` / `error`（亦接受历史别名 `pqOmemo`、`standardOmemo` 等解析）。
 
-现状两处都是错的，本次一并修正：
+| 方向 | 规则 |
+|---|---|
+| 出站 | 写入实际发送使用的轨道 |
+| 入站 | 从 EME `namespace` 与 `<encrypted>` 命名空间识别 |
 
-| | 现状 | 改为 |
-|---|---|---|
-| 出站 | 存「协商结果」 | 存**实际发出的**轨道 |
-| 入站 | 只有 `error` / `none` | 从 EME 读出 |
+## 5. EME：跨客户端传递轨道信息
 
-迁移把历史值归一：`standardOmemo` → `standard`、`pqOmemo` → `pq`，`none` 与
-`error` 保持。
+「每条消息底下标出协议」依赖 EME（XEP-0380）。连接层注册 `EmeManager`；发送侧附带对应 namespace。
 
-> 不修入站的话，**Conversations 发来的加密消息在我们界面上会显示成 `NO`** ——
-> 这是当前代码的实际行为。
+| EME `namespace` | 显示 |
+|---|---|
+| `eu.siacs.conversations.axolotl` | **OM**（Conversations 实际发送） |
+| `urn:xmpp:omemo:1` / `urn:xmpp:omemo:2` | OM |
+| `urn:xmpp:pomemo:0` | **PO** |
+| 无 `<encryption>` 元素 | NO |
 
-## 5. EME：跨客户端传递轨道信息的前置
-
-「每条消息底下标出协议」要求接收端与历史记录都能知道这条消息实际走了哪条轨。
-唯一能跨客户端传递这件事的标准是 EME（XEP-0380）。
-
-moxxmpp 已内置 `EmeManager`（`xeps/xep_0380.dart`），能收并解析为
-`ExplicitEncryptionType`，但**只收不发**，且我们此前没有注册它。
-
-映射表：
-
-| EME `namespace` | moxxmpp 枚举 | 显示 |
-|---|---|---|
-| `eu.siacs.conversations.axolotl` | `omemo` | **OM** ← Conversations 实际发送 |
-| `urn:xmpp:omemo:1` / `urn:xmpp:omemo:2` | `omemo1` / `omemo2` | OM |
-| `urn:xmpp:pomemo:0` | 无 | **PO** ← 本项目，需新增 |
-| 无 `<encryption>` 元素 | — | NO |
-
-第一行值得注意：Conversations 的 EME namespace 与我们今天实测发现的 bundle
-命名空间是同一个 `eu.siacs.conversations.axolotl`，两者互为佐证，说明它就是
-事实标准。
-
-**发送侧**：A 轨与 B 轨都要附带 `ExplicitEncryptionType.toXML()`。
-**接收侧**：注册 `EmeManager`，并扩展 `fromNamespace` 认识 `urn:xmpp:pomemo:0`。
-未知 namespace 一律落 `NO`，不崩溃。
-
-已知隐患：moxxmpp 的 `EmeManager._onStanzaReceived` 里有一句
-`message.firstTag('encryption', xmlns: emeXmlns)!`，无保护解引用 —— 与本项目
-已修过的两处（`firstTag('query')!`、`getNegotiatorById(...)!`）是同一模式。
-正常路径不会触发，但按惯例加防御。
+未知 namespace 落 `NO`，不崩溃。
 
 ## 6. `TrackResolver`：唯一判定入口
 
+实现：`app/lib/omemo/track_resolver.dart` 的 `resolveTrack`。
+
 ```
-resolve(chatJid) -> {
-  desired:   pq | standard | none,   // 只由用户设置决定（会话覆盖 ?: 全局默认）
-  feasible:  bool,                    // 技术上能否实现 desired
-  blockers:  [ {deviceId, 原因} ],    // 不可行时说明谁卡住
-  available: pq | standard | none,     // 当前最高可达，用于能力变化提示
+resolveTrack(requested, capabilities) -> TrackResolution {
+  track:    始终等于 requested（从不改写选择）,
+  blocked:  null | unknownPeers | unreachableDevices
+            | standardUnavailable | pqUnavailable,
+  canSend:  blocked == null,
+  alternative: 弹窗可建议的替代轨（须用户确认）,
 }
 ```
 
-核心是 `desired` 与 `feasible` 分离：`feasible` 只做检查，**不修改** `desired`。
-这样「不阻止用户选择」才是真的不阻止，而不是先偷偷改掉再告诉用户。
+`desired` 与可行性分离：可行性只检查，**不修改**用户选择。
+
+规则摘要：
+
+- `requested == none` → 可发（警告在 UI 选定时刻）
+- 能力快照缺失或 `!reliable` → `unknownPeers`，阻断
+- `standard`：全部收件设备具备可用 OMEMO，否则 `standardUnavailable`
+- `pq`：全部收件设备具备可用 PQ，否则 `pqUnavailable`
 
 ## 7. 发送流程
 
 ```
 desired = none
-  └ 本会话未确认过 → 弹危险警告（可继续）→ 明文，enc_mode='none'
+  └ 本会话未确认过 → 危险警告（可继续）→ 明文，enc_mode='none'
 
 desired = standard
   ├ 收件设备全部支持 OMEMO → 标准 OMEMO，enc_mode='standard'
-  └ 否则 → 弹窗说明谁不可用（可继续）→ 明文，enc_mode='none'
+  └ 否则 → 弹窗说明谁不可用；用户改选 NO 后才能明文发出
 
 desired = pq
   ├ 全部设备 PQ 可用 → 尝试发送
   │   ├ 成功 → enc_mode='pq'
-  │   └ 失败 → **不发**，弹窗报错，给「重试 / 改用 OM」两个动作
-  └ 否则 → 弹窗「对方将完全看不到这条消息」+ 卡住的设备（可继续发送）
+  │   └ 失败 → **不发**，弹窗报错，给「重试 / 改用 OM」
+  └ 否则 → 弹窗「对方将完全看不到这条消息」；用户可改选 OM
 ```
 
-**贯穿全流程的硬性要求：任何一步都不能让标签与实际发出的轨道不一致。**
-PQ 发送失败时不产生任何消息，这是第一条测试断言。
+**贯穿全流程：标签与实际发出的轨道必须一致。** PQ 发送失败时不产生任何消息。
 
 ### 7.1 两类失败必须分开，措辞不能混
 
 | 场景 | 弹窗主体 | 副行 |
 |---|---|---|
-| 对方解不开（能力问题） | **对方将完全看不到这条消息** | 列出卡住的设备 id 与原因 |
+| 对方解不开（能力问题） | **对方将完全看不到这条消息**（PQ）或说明明文是唯一可读路径（OM） | 列出卡住的设备与原因 |
 | 我们发送失败（bundle 抓不到、竞态冲突） | **消息没有发出去** | 原因 + 「重试」/「改用 OM」 |
-
-第一句**不能**写成「对方无法解密」。那听起来像客户端版本问题，用户会以为是显示
-异常，然后困惑于消息为什么消失。实际后果是对方连提示都收不到 —— PO 对他是未知
-命名空间，他只看到那句降级文案。
 
 ## 8. 能力变化：不自动切换，只提示
 
 对方新增支持 PQ 的设备、或掉了设备时：
 
 - 升级方向：会话页出现一次性提示条「现在可以使用后量子」+「切换」按钮
-- 降级方向：立刻弹窗说明哪台设备掉了
+- 降级方向：立刻说明哪台设备掉了
 
-**不自动改设置。** 否则用户会不明白为什么同一个人一会儿 PO 一会儿 OM。
+**不自动改设置。**
 
 ## 9. UI
 
 ### 9.1 顶栏 EncBadge → 协议选择弹层
 
-三行 PO / OM / NO，各带图标 + 一句话说明 + 选中态；底部一个「设为全局默认」。
+三行 PO / OM / NO；底部「设为全局默认」。实现见 `track_dialogs.dart`。
 
 ### 9.2 气泡下方标识
 
-`PO` + 护盾带对勾 · `OM` + 护盾 · `NO` + 叉。放在时间戳同行右侧，10–11px，
-`textSecondary`，`NO` 用 `danger`。用语义图标，不用 emoji。
-
-入站消息解不开时，标签反映**对方实际用了什么**（EME 说是 PQ 就显示 PO），
-并保留占位符。
+`PO` / `OM` / `NO`，与时间戳同行。入站解不开时标签仍反映对方实际使用的协议（EME），并保留占位符。
 
 ### 9.3 加密信息页
 
-同时给两行，避免用户只看到一个名词而无法行动：
+同时给出：
 
-- 当前：标准 OMEMO
-- 最高可达：后量子 —— 因为设备 1538840947 未发布 PQ bundle
+- 当前：用户选定轨
+- 最高可达：`decideEncMode` / 能力服务结果，并说明卡住的设备
 
-这样能区分「这台设备不支持」与「这台设备还没升级」。
-
-## 10. 不变量更新（docs/01 §7）
-
-第 1 条改写为：
+## 10. 不变量（与 docs/01 §7 对齐）
 
 > 轨道由用户选择。程序负责判断可行性、如实告知后果（对方是否会完全收不到），
 > **不阻止、不静默替换**。消息上显示的轨道永远反映实际使用的轨道。
 
-新增：
-
 > 任何情况下都不得出现「标签标着 PQ 而实际发出的是 OM」这类不一致；发送失败
 > 就不发送。
 
-其余不变：不变量 2（PQ root key 必须含 ML-KEM 共享秘密）、3（合法 XML）、
-4（指纹覆盖 X25519 身份密钥）、5（私钥不离开设备）。
+其余：不变量 2（PQ root key 含 ML-KEM）、3（合法 XML）、4（A 轨指纹可跨客户端核对）、5（私钥不落明文）。
 
 ## 11. 测试
 
 | # | 断言 |
 |---|---|
 | 1 | 标签一致性：∀ 消息 `enc_mode` == 实际发出的轨道；PQ 发送失败时不产生消息 |
-| 2 | EME 映射 4 行全覆盖；未知 namespace 落 `NO` 不崩溃 |
+| 2 | EME 映射全覆盖；未知 namespace 落 `NO` 不崩溃 |
 | 3 | 会话覆盖优先于全局默认 |
-| 4 | PQ 发送失败 → 不发 + 报错；绝不产出「标 pq 的 OM 消息」 |
+| 4 | PQ 发送失败 → 不发 + 报错 |
 | 5 | 入站 EME 说是 PQ 但解不开 → 保留 `PO` 标签 + 占位符 |
 | 6 | 能力变化只提示、不改设置 |
-| 7 | 无加密的确认状态按会话记忆，不反复打扰 |
-| 8 | 选定 PO/OM 但有设备不支持 → 弹窗后消息确实发出且标签正确 |
-| 9 | `Meta` 全局默认 + `chats.track_override` 读写往返 |
+| 7 | 无加密的确认状态按会话记忆 |
+| 8 | 选定 PO/OM 但有设备不支持 → 阻断直至用户改选 |
+| 9 | `Meta` `global_track` + `chats.track_override` 读写往返 |
 
-## 12. 落地顺序
+覆盖见 `app/test/track_*.dart`、`track_setting_test.dart` 等。
 
-1. EME 收发双向 + namespace 映射（前置，没有它后面都做不了）
-2. `enc_mode` 语义收紧 + 迁移
-3. 轨道设置存储（`Meta` + `chats.track_override`）
+## 12. 实现清单
+
+1. EME 收发双向 + namespace 映射
+2. `enc_mode` / `EncModeToken` 语义
+3. 轨道设置存储（`global_track` + `track_override`）
 4. `TrackResolver`
-5. 发送流程改造 + 两类弹窗
+5. 发送流程 + 两类弹窗
 6. 气泡标识 + 顶栏选择器
 7. 能力变化提示
-8. 测试 + 文档
+8. 单元与集成测试

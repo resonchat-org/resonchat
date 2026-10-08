@@ -648,18 +648,17 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     setState(() => _pickingFile = true);
     // Paint the barrier before the native picker steals the next frame.
     await WidgetsBinding.instance.endOfFrame;
-    FilePickerResult? picked;
+    PlatformFile? picked;
     try {
-      // withData: true so web (no filesystem paths) and desktop both work.
-      picked = await FilePicker.platform.pickFiles(withData: true);
+      // Single file; bytes via readAsBytes (works on web without a path).
+      picked = await FilePicker.pickFile();
     } finally {
       if (mounted) setState(() => _pickingFile = false);
     }
-    if (!mounted || picked == null || picked.files.isEmpty) return;
-    final file = picked.files.single;
-    final bytes = file.bytes;
-    if (bytes == null || bytes.isEmpty) return;
-    final fileName = file.name;
+    if (!mounted || picked == null) return;
+    final bytes = await picked.readAsBytes();
+    if (!mounted || bytes.isEmpty) return;
+    final fileName = picked.name;
 
     final track = _isGroup && !_mucEncryptable
         ? Track.none

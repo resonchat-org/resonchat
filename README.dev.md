@@ -21,19 +21,20 @@ export ANDROID_HOME="$HOME/Android/Sdk"
 ## 仓库结构
 
 ```
-xmppflutter/
-├─ docs/                     设计文档集（docs/）
+resonchat/
+├─ docs/                     设计文档集
 ├─ app/                      Flutter 应用
 │  ├─ lib/
+│  │  ├─ account/            多账号枢纽
 │  │  ├─ crypto/             PQXDH / KDF / 指纹
-│  │  ├─ omemo/              双轨协议：常量、编解码、协商状态机、轨道管理器
-│  │  ├─ pq/                 ML-KEM-768 抽象与纯 Dart 实现
-│  │  ├─ store/              drift 数据库 + roster 状态桥
+│  │  ├─ omemo/              双轨协议、能力、TrackResolver
+│  │  ├─ pq/                 ML-KEM-768（liboqs FFI / pqcrypto）
+│  │  ├─ store/              drift + 备份格式 + 平台 DB 连接
 │  │  ├─ state/              Riverpod providers
-│  │  ├─ ui/                 登录 / 会话列表 / 聊天 / 加密信息 / 设置
+│  │  ├─ ui/                 登录 / 会话 / 聊天 / 设置 / 账号管理
 │  │  └─ xmpp/               连接生命周期与事件分发
-│  └─ test/                  单元测试
-└─ packages/                 上游 fork（mono-repo 内 path 依赖）
+│  └─ tool/                  build_android / build_web / build_liboqs 等
+└─ packages/                 上游 fork（git 子模块，path 依赖）
    ├─ moxxmpp/packages/moxxmpp
    ├─ moxxmpp/packages/moxxmpp_socket_tcp
    ├─ omemo_dart
@@ -42,21 +43,15 @@ xmppflutter/
 
 ### fork 说明
 
-三个上游库均为 fork 并保留原 license：
+三个上游库均为 fork 并保留原 license（子模块远程见 `.gitmodules`）：
 
 | 包 | 上游 | 许可证 | 本地改动 |
 |---|---|---|---|
-| `moxxmpp` | codeberg.org/moxxy/moxxmpp | MIT（Copyright 2022 Alexander "PapaTutuWawa"） | 移除私有 registry（`publish_to`），改用 path 依赖；`moxxmpp_socket_tcp` SDK 约束提升到 Dart 3 |
-| `omemo_dart` | **github.com/PapaTutuWawa/omemo_dart** | MIT | 仅移除 `publish_to` / 私有 registry |
+| `moxxmpp` | codeberg.org/moxxy/moxxmpp | MIT | 移除私有 registry；Dart 3；并入 MAM；RFC 7395 / XEP-0156 |
+| `omemo_dart` | github.com/PapaTutuWawa/omemo_dart | MIT | 移除私有 registry；axolotl 路径 |
 | `moxlib` | codeberg.org/moxxy/moxlib | **GPL-3.0** | SDK 约束提升到 Dart 3 |
 
-> 两处与早期文档不一致，已按实测更正：
->
-> - **moxxmpp 许可证**：`docs/07` 早期记为 MPL-2.0，实际仓库 `LICENSE` 为 MIT，已按 MIT 处理（MIT 与 GPLv3 兼容）。
-> - **moxlib 许可证**：早期记为 MIT，实际 `packages/moxlib/LICENSE` 为 GPL-3.0 全文。与本项目 GPL-3.0-or-later 一致，不构成冲突。
-> - **omemo_dart 上游地址**：以 `packages/omemo_dart/pubspec.yaml` 的 `homepage` 为准，是 GitHub 而非 Codeberg。
-
-`app/pubspec.yaml` 用 `dependency_overrides` 把私有 registry 依赖全部指向 `packages/`，因此 `flutter pub get` 不需要访问上游自建 Gitea。
+`app/pubspec.yaml` 用 `dependency_overrides` 把依赖全部指向 `packages/`，`flutter pub get` 不需要访问上游自建 Gitea。
 
 ## 常用命令
 
@@ -143,7 +138,7 @@ RFC 7395 framing / `WebSocketXmppSocket` 与 XEP-0156 在 `packages/moxxmpp`（`
 | M1 通信基线 | 已完成 | 连接/SASL SCRAM-SHA-256、资源绑定、roster（drift 持久化 + RFC 6121 版本）、明文收发、XEP-0184 回执、XEP-0085 输入状态、XEP-0280 Carbons、**XEP-0313 MAM**（已从上游 `feat/mam` 并入）、drift 消息存储、最小 UI。剩余验证项：与真实服务端/客户端的双账号互发 |
 | M2 标准 OMEMO | 已完成 | **与真实 Conversations 2.20.4 互通验收通过**：我们加密的消息被第三方客户端解密并显示（唯一标记 + 抓第三方 view hierarchy 自动判定，见 `tool/m2_verify_conversations.sh`）。为此修掉 3 处「按规范实现但真实世界不认」的互不兼容：PEP 节点名、bundle 元素名、Signal 公钥类型字节 |
 | M3 PQ 内核 | 已完成 | PQXDH 到 Double Ratchet 接线完成；liboqs FFI 在设备实测（`backend: liboqs (native)`）且与纯 Dart 逐字节等价；**双账号跨服务器真实互测通过**（conversations.im 与 jabber.fr，10/10 检查）；PQ bundle 已真实发布到服务器 |
-| M4 协商与回退 | 已完成 | `decideEncMode` 状态机（穷举测试）、B 轨 PEP 能力查询、`CapabilityService`（缓存 + 并发去重 + `reliable` 标记）接到发送路径：A 轨自动加密，B 轨优先、失败回落。**PEP 变更订阅已完成**：四个节点（两种方言 × 两轨）任一变化即失效缓存 |
+| M4 协商与发送策略 | 已完成 | `decideEncMode` / `CapabilityService` 给出最高可达轨道；发送由用户 Track + `TrackResolver` 判定（见 docs/10）。PEP 变更订阅：四个节点（两种方言 × 两轨）任一变化即失效缓存 |
 | M5 存储与保护 | 已完成 | OMEMO 设备密钥经 Keystore 封存落库；数据库用 SQLCipher 加密（口令在 Keystore，验收测试直接搜原始文件证明明文不外泄）。**密钥备份/恢复、「不保存明文」选项仍未做** |
 | M6 UI | 进行中 | 已按 docs/05 重做：TG 色板（真实采样自 ThemeColors.java）、CustomPainter 气泡带尾角、日期分隔、未读线、会话列表两行布局、滚动到底 FAB、输入栏（空输入变麦克风）。动画、平板适配、资料页未做 |
 | M7 发布 | 未开始 | — |

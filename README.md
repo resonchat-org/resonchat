@@ -7,12 +7,13 @@
 | 特性 | 状态 | 说明 |
 |---|---|---|
 | 双轨端到端加密（A 轨） | 已完成 | 标准 OMEMO（XEP-0384），与 Conversations / Moxxy / Dino 等互通。已与真实 Conversations 2.20.4 完成互通验收 |
-| 双轨端到端加密（B 轨） | 已完成 | PQ-OMEMO（X25519 + ML-KEM-768 混合，PQXDH），对端全部设备支持时自动升级。已双账号跨服务器互测通过 |
+| 双轨端到端加密（B 轨） | 已完成 | PQ-OMEMO（X25519 + ML-KEM-768 混合，PQXDH）；用户选定 PO 且对端设备可达时发送。已双账号跨服务器互测通过 |
+| 三轨选择（PO / OM / NO） | 已完成 | 用户选定 + `TrackResolver` 判定可行性（见 [docs/10](docs/10-track-selection.md)） |
 | 零服务端改动 / 零新 XEP | 已完成 | 复用 PEP、EME 等既有标准 |
 | 数据库落盘加密 | 已完成 | SQLCipher，口令由 Android Keystore 保护 |
 | 标准协议扩展 | 已完成 | MAM（XEP-0313）历史同步、回执（XEP-0184）、输入状态（XEP-0085）、Carbons（XEP-0280） |
-| 平台支持 | 部分完成 | Android（arm64-v8a / x86_64）；Linux 可打 AppImage（PQ 走纯 Dart `pqcrypto`）；iOS 未做 |
-| Telegram Android 观感 UI | 进行中 | 气泡、色板、列表布局已实现；动画、平板适配、资料页未做 |
+| 平台支持 | 部分完成 | Android（arm64-v8a / x86_64，liboqs）；Web（Drift WASM + WebSocket）；Linux AppImage（`pqcrypto`）；iOS 未做 |
+| Telegram Android 观感 UI | 进行中 | 气泡、色板、列表布局已实现；动画、平板适配未做 |
 
 ## 状态
 
@@ -24,9 +25,9 @@
 | M1 通信基线 | 已完成 | SASL SCRAM-SHA-256、资源绑定、roster（RFC 6121 版本控制）、明文收发、MAM 历史同步、Carbons、消息存储 |
 | M2 标准 OMEMO | 已完成 | **与真实 Conversations 2.20.4 互通验收通过**（我们加密的消息被第三方客户端解密并显示） |
 | M3 PQ 内核 | 已完成 | liboqs FFI 设备实测，与纯 Dart 实现逐字节等价；**双账号跨服务器互测通过**（conversations.im 与 jabber.fr）；PQ bundle 已真实发布到服务器 |
-| M4 协商与回退 | 已完成 | `decideEncMode` 状态机、能力解析服务接发送路径；A 轨自动加密，B 轨优先、失败回落 |
-| M5 存储与保护 | 已完成 | OMEMO 设备密钥经 Keystore 封存落库；数据库 SQLCipher 加密。**密钥备份/恢复与「不保存明文」选项未做** |
-| M6 UI | 进行中 | 按 [docs/05](docs/05-ui-telegram.md) 重做中 |
+| M4 协商与发送策略 | 已完成 | 能力服务 + 用户 Track / `TrackResolver`（docs/10）；PEP 变更失效缓存 |
+| M5 存储与保护 | 已完成 | OMEMO 设备密钥经 Keystore 封存落库；数据库 SQLCipher 加密；聊天历史备份格式已有。**密钥备份/恢复与「不保存明文」选项未做** |
+| M6 UI | 进行中 | 按 [docs/05](docs/05-ui-telegram.md) |
 | M7 发布 | 未开始 | — |
 
 当前验证结果：`dart analyze lib test tool integration_test` 无告警；`flutter test` 123 项通过；`./tool/build_android.sh` 成功。
@@ -136,7 +137,8 @@ chmod +x build/resonchat-*-x86_64.AppImage
 | [里程碑](docs/06-android-milestones.md) | M0–M7 |
 | [合规](docs/07-licensing-compliance.md) | 许可证与商标 |
 | [风险](docs/08-risks-open-questions.md) | 风险与待决问题 |
-| [Briar 借鉴](docs/09-briar-lessons.md) | 信任 UX、省电设计，以及不该抄的部分 |
+| [Briar 借鉴](docs/09-briar-lessons.md) | 信任 UX、省电设计 |
+| [三轨选择](docs/10-track-selection.md) | 用户选定、可行性判定、标签一致性 |
 
 ## 许可证
 
@@ -146,17 +148,15 @@ chmod +x build/resonchat-*-x86_64.AppImage
 
 本项目以 GPL-3.0-or-later 发布，并包含以下第三方代码。完整矩阵见 [`docs/07-licensing-compliance.md`](docs/07-licensing-compliance.md)。
 
-### 仓库内 vendored 的上游库（`packages/`）
+### 仓库内上游 fork（`packages/`，git 子模块）
 
-以下三个库为上游 fork，仅移除 `publish_to` 与私有 registry 依赖、改用 path 依赖等少量改动，**原 license 头与版权声明均予保留**：
+以下三个库为上游 fork，**原 license 头与版权声明均予保留**：
 
 | 路径 | 上游 | 许可证 | 本地改动 |
 |---|---|---|---|
-| `packages/moxxmpp` | [codeberg.org/moxxy/moxxmpp](https://codeberg.org/moxxy/moxxmpp) | MIT（Copyright 2022 Alexander "PapaTutuWawa"） | 移除 `publish_to` 与私有 registry；`moxxmpp_socket_tcp` 的 SDK 约束提升到 Dart 3 |
-| `packages/omemo_dart` | [github.com/PapaTutuWawa/omemo_dart](https://github.com/PapaTutuWawa/omemo_dart) | MIT | 仅移除 `publish_to` 与私有 registry |
-| `packages/moxlib` | [codeberg.org/moxxy/moxlib](https://codeberg.org/moxxy/moxlib) | **GPL-3.0**（见 `packages/moxlib/LICENSE`） | SDK 约束提升到 Dart 3 |
-
-> **关于 moxlib**：早期文档（`docs/07`）将 moxlib 记为 MIT，实测其仓库内的 `LICENSE` 为 GPL-3.0 全文。与本项目的 GPL-3.0-or-later 一致，不构成冲突。
+| `packages/moxxmpp` | [codeberg.org/moxxy/moxxmpp](https://codeberg.org/moxxy/moxxmpp) | MIT | 移除私有 registry；Dart 3；MAM；RFC 7395 / XEP-0156 |
+| `packages/omemo_dart` | [github.com/PapaTutuWawa/omemo_dart](https://github.com/PapaTutuWawa/omemo_dart) | MIT | 移除私有 registry；axolotl 路径 |
+| `packages/moxlib` | [codeberg.org/moxxy/moxlib](https://codeberg.org/moxxy/moxlib) | **GPL-3.0** | SDK 约束提升到 Dart 3 |
 
 ### UI 设计参考
 

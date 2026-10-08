@@ -80,11 +80,15 @@ void main() {
       // the file because a row of key material is a well-formed row. The terms
       // are deliberately fragments that no honest column contains; `meta.key`
       // is why a bare `key` is not one of them.
+      // Fragments that mean crypto key material — not ordinary words like
+      // `muc_private_non_anonymous` (MUC room type, not a private key).
       const suspicious = [
         'secret',
         'sealing',
         'passphrase',
-        'private',
+        'private_key',
+        'privkey',
+        'privatekey',
         'spk',
         'opk',
         'ik_',
@@ -643,6 +647,9 @@ BackupRow _chatRow(String jid, {int unread = 0}) => {
   'unread_count': unread.cell,
   'last_read_at': DateTime.utc(2026, 9, 29).cell,
   'track_override': ''.cell,
+  'is_group': false.cell,
+  'muc_nick': ''.cell,
+  'muc_private_non_anonymous': false.cell,
 };
 
 BackupRow _messageRow(
@@ -661,6 +668,8 @@ BackupRow _messageRow(
   'enc_mode': 'standard'.cell,
   'incoming': incoming.cell,
   'delivered': true.cell,
+  'displayed': false.cell,
+  'markable': false.cell,
   'is_carbon': false.cell,
   'delivery_error': ''.cell,
   'retracted': (retractedAt != null).cell,
@@ -669,6 +678,9 @@ BackupRow _messageRow(
   'reply_body': ''.cell,
   'reply_author': ''.cell,
   'edited_at': null,
+  'media_url': ''.cell,
+  'media_mime': ''.cell,
+  'media_name': ''.cell,
 };
 
 BackupRow _metaRow(String key, String value) => {
@@ -755,6 +767,9 @@ Map<String, Object?> _chatJson(String jid) => {
   'unread_count': 0,
   'last_read_at': '2026-09-29T00:00:00.000Z',
   'track_override': '',
+  'is_group': false,
+  'muc_nick': '',
+  'muc_private_non_anonymous': false,
 };
 
 /// What a migration hook looks like when written properly: typed against the

@@ -6,9 +6,11 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mime/mime.dart';
+import 'package:open_filex/open_filex.dart';
 
 import '../account/account_hub.dart';
 import '../account/resolve.dart';
@@ -105,11 +107,27 @@ class _MediaAttachmentState extends ConsumerState<MediaAttachment> {
 
   Future<void> _openLocal() async {
     if (!_hasLocal) return;
-    // Web / desktop: opening OS handlers is best-effort; images already
-    // render inline. Non-images show a snackbar with the path key.
+    // Web stores bytes under opaque mem:// keys — no OS path to hand off.
+    // Images already render inline; other types stay a no-op toast for now.
+    if (kIsWeb) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(context.l10n.tapToOpen)));
+      return;
+    }
+    final result = await OpenFilex.open(m.localPath);
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(context.l10n.tapToOpen)));
+    if (result.type != ResultType.done) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result.message.isNotEmpty
+                ? result.message
+                : context.l10n.couldNotOpenFile,
+          ),
+        ),
+      );
+    }
   }
 
   @override

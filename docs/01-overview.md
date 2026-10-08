@@ -4,9 +4,9 @@
 
 | # | 目标 |
 |---|---|
-| G1 | 基于 Flutter 的 XMPP 客户端，**Android 优先**，后续扩展到 iOS 及其他平台 |
+| G1 | 基于 Flutter 的 XMPP 客户端，**Android 优先**，并提供 Web 与 Linux AppImage 构建路径 |
 | G2 | 与 **标准 OMEMO 客户端**（Conversations / Moxxy / Dino / Gajim）完全互通 |
-| G3 | 在双方均为本客户端时，自动升级为**后量子混合加密**（X25519 + ML-KEM-768） |
+| G3 | 在双方均为本客户端且用户选定后量子轨道时，使用**后量子混合加密**（X25519 + ML-KEM-768） |
 | G4 | **不修改服务端**、**不引入新 XEP**、**不依赖服务端特殊支持** |
 | G5 | UI 观感与 **Telegram Android 高度一致** |
 | G6 | 以 **GPLv3** 开源发布 |
@@ -17,7 +17,6 @@
 - ❌ 不发明或提交新的 XEP。
 - ❌ 不修改 Prosody / ejabberd / Openfire 等任何服务端。
 - ❌ 不与标准 OMEMO 客户端共享 PQ 会话（它们不可能解密，这是物理限制）。
-- ❌ 初期不做 Web 端（Web 的 FFI/密钥模型不同，后期单独立项）。
 
 ## 3. 硬约束
 
@@ -32,9 +31,9 @@
 ## 4. 关键决策记录（ADR）
 
 ### ADR-001：双轨（标准 OMEMO + PQ 轨道）而非单一方案
-- **决定**：同时实现标准 OMEMO 和 PQ-OMEMO 两条轨道，按对端设备能力自动选择。
-- **理由**：C3（互通）与 C4（后量子）在逻辑上互斥，除非分层。标准客户端只认 XEP-0384。
-- **后果**：实现与测试成本约翻倍；需要一套健壮的协商与回退状态机。
+- **决定**：同时实现标准 OMEMO 和 PQ-OMEMO 两条轨道；发送轨道由用户选择，可行性由 `TrackResolver` 判定（见 [10-track-selection.md](10-track-selection.md)）。
+- **理由**：C3（互通）与 C4（后量子）在逻辑上互斥，除非分层。标准客户端只认 Conversations/axolotl 线格式。
+- **后果**：实现与测试成本约翻倍；需要一套健壮的能力查询、提示与标签一致性规则。
 
 ### ADR-002：PQ 仅用于初始握手（PQXDH），棘轮保持经典
 - **决定**：ML-KEM 只在会话建立时使用；Double Ratchet 的 DH 棘轮继续用 X25519。
@@ -46,54 +45,53 @@
 - **理由**：避免新增 XEP；PEP 是既有标准。disco 只能反映「当前在线资源」，而 bundle 是持久化的，更适合离线设备。
 - **后果**：需要处理 bundle 过期/清理（服务端 max_items 与 TTL）。
 
-### ADR-004：Fork `moxxmpp` + `omemo_dart` 而非从零
-- **决定**：以 moxxmpp 和 omemo_dart 为基础，在 `packages/` 内本地 fork。
-- **理由**：两者已是纯 Dart、跨平台、已实现 OMEMO；许可证实测均为 MIT，与 GPLv3 兼容。
-- **实况修正**：
-  - moxxmpp 上游为 `codeberg.org/moxxy/moxxmpp`，**许可证是 MIT 而非本文档早期所记的 MPL-2.0**。
-  - 三者均**不在 pub.dev**，依赖自建 Gitea registry（`git.polynom.me`）。fork 后已删除 `publish_to`，改用 path 依赖，避免依赖不可达的上游服务。
-  - moxxmpp **缺少 MAM（XEP-0313）**，上游 `feat/mam` 分支有未合并实现，需 cherry-pick 或自写。
-  - moxlib（共享工具库）也需一并 fork。
-  - `moxxmpp_socket_tcp` 的 SDK 约束为 Dart 2.17（与主包 Dart 3 不一致），fork 时已提升。
-  - OMEMO 全部密码学由 `omemo_dart` 提供，moxxmpp 只做 stanza 编解码/传输——这正是 A 轨能保持与上游最小差异、便于跟新的原因。
-- **后果**：需跟进上游变更；fork 需保持 A 轨与上游最小差异，便于合并。
+### ADR-004：Fork `moxxmpp` + `omemo_dart` + `moxlib`
+- **决定**：以 moxxmpp、omemo_dart、moxlib 为基础，以 git 子模块置于 `packages/`，`app` 用 path 依赖引用。
+- **理由**：三者均为纯 Dart、跨平台；moxxmpp / omemo_dart 为 MIT，moxlib 为 GPL-3.0，与 GPLv3 兼容。上游不在 pub.dev，fork 删除 `publish_to`，由 `dependency_overrides` 指向本地路径。
+- **要点**：
+  - moxxmpp 上游：`codeberg.org/moxxy/moxxmpp`（MIT）。
+  - omemo_dart 上游：`github.com/PapaTutuWawa/omemo_dart`（MIT）；A 轨完整走 axolotl（`omemo_dart_axolotl`）。
+  - moxlib 上游：`codeberg.org/moxxy/moxlib`（GPL-3.0）。
+  - MAM（XEP-0313）已从上游 `feat/mam` 并入 moxxmpp fork。
+  - `moxxmpp_socket_tcp` 的 SDK 约束提升到 Dart 3。
+  - OMEMO 密码学由 `omemo_dart` 提供，moxxmpp 做 stanza 编解码/传输；PQ 代码在 app 侧 `lib/omemo/` 与 `lib/pq/`。
+- **后果**：需跟进上游变更；A 轨保持与上游最小差异，便于合并。
 
 ### ADR-005：UI 移植 Telegram Android（Kotlin → Dart），整体 GPLv3
 - **决定**：参考/翻译 TG Android 的 UI 代码与资源；不使用其名称与 Logo。
 - **理由**：TG Android 是 GPLv2-or-later，可合法并入 GPLv3 工程。
 - **后果**：需逐文件标注来源与修改；商标问题需人工审查。
 
-### ADR-006：PQ KEM 起步用纯 Dart `pqcrypto`，liboqs FFI 作为后续替换
-- **决定**：B 轨的 ML-KEM-768 先用 `pqcrypto`（纯 Dart，FIPS 203），通过 `MlKem768` 接口隔离；需要更高性能或更小体积时替换为 liboqs FFI（`OQS_MINIMAL_BUILD="KEM_ml_kem_768;SIG_ml_dsa_65"`，仅 arm64-v8a + x86_64）。
-- **理由**：`pqcrypto` 零依赖、无 NDK 工具链、可在 Linux/测试环境跑通协议与互操作，有 KAT 与 liboqs 互操作证据；OMEMO 建会话只需几十次 KEM 操作，纯 Dart 性能足够（放 isolate 即可）。
-- **后果**：移动端性能需实测；若需 liboqs，必须处理 Android 15 的 16KB page 对齐，且 liboqs 的 THIRD_PARTY_NOTICES 需随 APK 分发。两条实现的共享秘密一致性要有测试（docs/04 §3 要求）。
+### ADR-006：ML-KEM 双后端（liboqs FFI + 纯 Dart `pqcrypto`）
+- **决定**：通过 `MlKem768Provider` 选择实现——Android 原生加载 `libpqbridge.so`（链接预构建 `liboqs.a`）时走 liboqs；否则走 `pqcrypto`（Web、测试、无原生库的桌面）。接口为 `MlKem768`。
+- **理由**：Android 上 liboqs 性能与体积可控（`OQS_MINIMAL_BUILD`，仅 arm64-v8a + x86_64）；纯 Dart 路径保证 Web/CI/无 NDK 环境可测通协议。两条后端共享秘密一致性有互操作测试。
+- **后果**：APK 构建依赖 `tool/build_liboqs.sh`；需处理 Android 15 的 16KB page 对齐；liboqs 的 THIRD_PARTY_NOTICES 随 APK 分发。
 - **待定**：Q1（ML-DSA-65 是否默认携带）仍按「先不携带」推进。
 
 ## 5. 架构总览
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│                        Flutter App (Android)                  │
+│              Flutter App（Android / Web / Linux）              │
 │                                                               │
 │  ┌───────────┐   ┌───────────────┐   ┌───────────────────┐   │
 │  │  ui/      │   │  state/       │   │  store/           │   │
-│  │ TG 观感   │◄─►│ Riverpod      │◄─►│ drift+SQLCipher   │   │
-│  └───────────┘   └───────┬───────┘   │ + Keystore        │   │
+│  │ TG 观感   │◄─►│ Riverpod      │◄─►│ drift + SQLCipher │   │
+│  └───────────┘   └───────┬───────┘   │ (Web: Drift WASM) │   │
 │                          │           └───────────────────┘   │
-│                  ┌───────▼───────────────────────────────┐   │
-│                  │        omemo/ 双轨管理器               │   │
-│                  │  ┌──────────────┐  ┌───────────────┐  │   │
-│                  │  │ A轨 标准OMEMO│  │ B轨 PQ-OMEMO  │  │   │
-│                  │  │ X3DH+Ratchet │  │ PQXDH+Ratchet │  │   │
+│  ┌───────────┐   ┌───────▼───────────────────────────────┐   │
+│  │ account/  │   │        omemo/ 双轨 + TrackResolver     │   │
+│  │ 多账号枢纽 │   │  ┌──────────────┐  ┌───────────────┐  │   │
+│  └───────────┘   │  │ A轨 axolotl  │  │ B轨 PQ-OMEMO  │  │   │
 │                  │  └──────┬───────┘  └───────┬───────┘  │   │
 │                  └─────────┼──────────────────┼──────────┘   │
 │                            ▼                  ▼              │
 │                  ┌──────────────────────────────────────┐    │
-│                  │  crypto/  (Dart)  + pq/ (liboqs FFI) │    │
+│                  │  crypto/  +  pq/（liboqs FFI / pqcrypto）│  │
 │                  └──────────────────┬───────────────────┘    │
 │                                     ▼                        │
 │                  ┌──────────────────────────────────────┐    │
-│                  │  xmpp/  moxxmpp (fork)                │    │
+│                  │  xmpp/  moxxmpp（TCP 或 WebSocket）    │    │
 │                  └──────────────────┬───────────────────┘    │
 └─────────────────────────────────────┼────────────────────────┘
                                       ▼
@@ -104,32 +102,33 @@
 ## 6. 仓库结构
 
 ```
-xmppflutter/
+resonchat/
 ├─ docs/                        # 本设计文档集
-├─ app/                         # Flutter 应用（Android 优先）
-│  ├─ android/                  # NDK 配置、liboqs 交叉编译
+├─ app/                         # Flutter 应用
+│  ├─ android/                  # NDK、CMake（libpqbridge）、构建配置
+│  ├─ web/                      # Web 入口；Drift WASM 由 build_web 拉取
+│  ├─ tool/                     # build_android / build_web / build_liboqs 等
 │  └─ lib/
 │     ├─ main.dart
-│     ├─ xmpp/                  # moxxmpp 集成与连接管理
-│     ├─ omemo/                 # 双轨 OMEMO 管理器 + 协商状态机
+│     ├─ account/               # 多账号枢纽（AccountHub）
+│     ├─ xmpp/                  # 连接、收发、MAM prefs、MUC 等
+│     ├─ omemo/                 # 双轨常量、编解码、能力、TrackResolver
 │     ├─ crypto/                # PQXDH / Ratchet / KDF / 指纹
-│     ├─ pq/                    # liboqs FFI 封装 + 纯 Dart 回退
-│     ├─ store/                 # drift + SQLCipher + Keystore
+│     ├─ pq/                    # MlKem768Provider、liboqs FFI、pqcrypto
+│     ├─ store/                 # drift、备份格式、平台条件导入的 DB 连接
 │     ├─ state/                 # Riverpod providers
-│     └─ ui/                    # TG 观感组件
-│        ├─ theme/              # 颜色/字体/尺寸 token
-│        ├─ chats/              # 会话列表
-│        ├─ chat/               # 聊天页（气泡/附件/输入栏）
-│        └─ settings/           # 设置/加密/指纹
-└─ packages/
-   ├─ moxxmpp/                  # fork（MPL-2.0）
-   └─ omemo_dart/               # fork（MIT），新增 pq/ 子模块
+│     ├─ net/ / platform/ / l10n/
+│     └─ ui/                    # 登录、会话、聊天、设置、账号管理等
+└─ packages/                    # git 子模块（path 依赖）
+   ├─ moxxmpp/                  # monorepo：moxxmpp + moxxmpp_socket_tcp（MIT）
+   ├─ omemo_dart/               # MIT；含 axolotl 路径
+   └─ moxlib/                   # GPL-3.0
 ```
 
 ## 7. 不变量（Invariants，实现时必须始终成立）
 
-1. 面对任何对端，若无 PQ 能力证据，**必须**走标准 OMEMO，绝不发送对端无法解密的消息。
+1. 轨道由用户选择。程序判断可行性、如实告知后果，**不阻止、不静默替换**。消息上显示的轨道永远反映实际使用的轨道（见 [10-track-selection.md](10-track-selection.md)）。
 2. PQ 会话的 root key **必须**包含 ML-KEM 的共享秘密。
 3. 任何加密负载都必须是服务端可存储的合法 XML（无自定义 stanza 类型）。
-4. 指纹展示**必须**同时覆盖 X25519 身份密钥（与标准 OMEMO 一致），以便用户跨客户端核对。
-5. 私钥**永不**离开设备明文存储；Web 不在本阶段。
+4. 指纹展示**必须**覆盖 A 轨 X25519/axolotl 身份密钥（与 Conversations 一致），以便用户跨客户端核对。
+5. 私钥**永不**离开设备明文存储；Android 上由 Keystore 封存对称密钥保护落库材料，Web 走平台存储模型。

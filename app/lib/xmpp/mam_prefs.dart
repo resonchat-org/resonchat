@@ -203,12 +203,16 @@ class RetentionPolicy {
 
   /// Whether the server has been told to keep nothing at all.
   ///
-  /// True only for [MamRetention.never]. Every other state — a cap with no
-  /// policy, a token we do not recognise, nothing at all — answers false,
-  /// because the failure this getter can have is telling a user their history
-  /// is not being kept when it is. That is worse than the opposite mistake: an
-  /// unnecessary warning gets dismissed, a wrong reassurance gets believed.
-  bool get keepsNothing => policy == MamRetention.never;
+  /// True only for the bare [MamRetention.never] state. A day cap alongside
+  /// `never` is allowed on the wire but meaningless (nothing is aged out of an
+  /// empty archive), so it does not count here: an interface that hid archive
+  /// controls on a contradictory answer would be hiding them on something it
+  /// cannot describe. Every other state — a cap with no policy, a token we do
+  /// not recognise, nothing at all — answers false, because the failure this
+  /// getter can have is telling a user their history is not being kept when it
+  /// is. That is worse than the opposite mistake: an unnecessary warning gets
+  /// dismissed, a wrong reassurance gets believed.
+  bool get keepsNothing => policy == MamRetention.never && maxDays == null;
 
   /// How much the server is permitted to keep, or null when we cannot tell.
   ///
@@ -352,9 +356,11 @@ bool appliesToResource(MamPrefs? prefs, String? resource) {
   if (prefs == null) return false;
   final scoped = prefs.resource;
   // An answer nobody scoped describes the account, and describes it for every
-  // resource. One scoped to another resource describes neither this one nor the
-  // account.
-  return scoped == null || resource == null || scoped == resource;
+  // resource. One scoped to a resource describes that resource only — never the
+  // account-wide page (`resource == null`), which is exactly where a
+  // phone-scoped answer must not appear.
+  if (scoped == null) return true;
+  return resource != null && scoped == resource;
 }
 
 /// True when [next] leaves the server keeping strictly less than [current].
@@ -378,20 +384,43 @@ bool shortensRetention(RetentionPolicy? current, RetentionPolicy? next) {
   // way. Reporting a reduction here would put a privacy warning on a change
   // that cannot affect privacy at all, and warnings that fire on harmless
   // changes are warnings the user learns to dismiss.
-  if (current.keepsNothing && next.keepsNothing) return false;
+  if (current.policy == MamRetention.never &&
+      next.policy == MamRetention.never) {
+    return false;
+  }
 
   final before = current.exposure;
   final after = next.exposure;
   if (before != null && after != null) {
     if (before != after) return after < before;
-  } else if (before != after) {
-    // One side states a policy and the other states only a cap, so there is no
-    // honest comparison to make. Both null is not this case: two cap-only
-    // policies compare fine, on their caps.
-    return false;
+    return _isShorterCap(current.maxDays, next.maxDays);
   }
-  return _isShorterCap(current.maxDays, next.maxDays);
+
+  // Cap-only → `never`: the server was keeping some messages for a stated
+  // period and is now keeping none. That is strictly less, and it is the most
+  // restrictive change in the protocol — not an unrankable pair.
+  if (_isCapOnly(current) && next.policy == MamRetention.never) return true;
+
+  // Two cap-only policies compare on their caps. An empty answer or an
+  // unrecognised token states nothing comparable, so those pairs stay quiet.
+  if (_isCapOnly(current) && _isCapOnly(next)) {
+    return _isShorterCap(current.maxDays, next.maxDays);
+  }
+
+  return false;
 }
+
+bool _isCapOnly(RetentionPolicy policy) =>
+    policy.policy == null &&
+    policy.unrecognised == null &&
+    policy.maxDays != null;
+
+/// True when [policy] states nothing we can describe as a current retention.
+bool _isUnreadableCurrent(RetentionPolicy policy) =>
+    policy.unrecognised != null ||
+    (policy.policy == null &&
+        policy.unrecognised == null &&
+        policy.maxDays == null);
 
 /// A smaller cap shortens retention; a cap where there was none does not.
 ///
@@ -470,8 +499,10 @@ MamPrefs? parseMamPrefs(MamPrefsElement element, {String? resource}) {
     // than left to look like a harmless skip. The honest response to a
     // malformed stanza is to stop, not to guess which conversation was meant,
     // and stopping here means one conversation silently loses its exclusion.
+    // Whitespace-only is the same case: it names no conversation a user can
+    // open, and keeping it would put a blank row in the override list.
     final jid = child.attribute(MamPrefsForm.attrJid);
-    if (jid == null || jid.isEmpty) continue;
+    if (jid == null || jid.trim().isEmpty) continue;
 
     // Recorded even when the policy inside it is unreadable. Leaving the entry
     // out would mean "falls back to the account default", which is a different
@@ -525,7 +556,12 @@ RetentionPolicy parseRetention(String? token, {String? max}) {
 /// discarded, and it is discarded towards the *less* informative reading
 /// rather than the more permissive one.
 int? _parseMax(String? raw) {
-  final value = raw == null ? null : int.tryParse(raw);
+  if (raw == null || raw.isEmpty) return null;
+  // `int.tryParse` accepts leading/trailing spaces (`' 30'` → 30). A padded
+  // token is not a clean integer on the wire, and inventing the number from
+  // one is the same failure mode as parsing `soon` into a guess.
+  if (raw != raw.trim()) return null;
+  final value = int.tryParse(raw);
   if (value == null || value < 1) return null;
   return value;
 }
@@ -745,7 +781,10 @@ List<MamChangeWarning> warningsBeforeChange({
   required MamPrefsSupport support,
 }) {
   final warnings = <MamChangeWarning>[];
-  if (current == null) {
+  if (current == null || _isUnreadableCurrent(current)) {
+    // Present-but-empty and unrecognised tokens are the same epistemic position
+    // as a null pointer: we cannot describe what the server is keeping now, so
+    // the direction of the change cannot be stated either.
     warnings.add(const MamChangeWarning.unknownCurrent());
   } else if (shortensRetention(current, next)) {
     warnings.add(const MamChangeWarning.shorterRetention());
@@ -822,8 +861,16 @@ String conversationPrivacySummary(MamPrefs prefs, String conversation) {
 }
 
 String _summarise(RetentionPolicy? policy, String subject) {
+  // When the body cannot use "$subject …" ("told to keep …"), still carry the
+  // conversation framing so a conversation screen never shows a bare
+  // account-wide sentence (see conversationPrivacySummary).
+  final attribution = _conversationAttribution(subject);
+
   if (policy == null) {
-    return 'The server has not said what it keeps, or for how long.';
+    return _scoped(
+      attribution,
+      'The server has not said what it keeps, or for how long.',
+    );
   }
 
   final unknown = policy.unrecognised;
@@ -831,9 +878,12 @@ String _summarise(RetentionPolicy? policy, String subject) {
     // The token is quoted rather than described, because "a policy this app
     // does not understand" is only actionable if the user can read the thing
     // that was not understood and go and ask about it.
-    return 'The server asked for a storage policy called "$unknown" that this '
-        'app does not understand, so what it keeps, and for how long, is '
-        'unknown.';
+    return _scoped(
+      attribution,
+      'The server asked for a storage policy called "$unknown" that this '
+      'app does not understand, so what it keeps, and for how long, is '
+      'unknown.',
+    );
   }
 
   final days = policy.maxDays;
@@ -845,13 +895,19 @@ String _summarise(RetentionPolicy? policy, String subject) {
     // Reporting only the cap here would read as "keeps your messages for 30
     // days", which is a policy the server never stated.
     if (days == null) {
-      return 'The server has not said what it keeps, or for how long.';
+      return _scoped(
+        attribution,
+        'The server has not said what it keeps, or for how long.',
+      );
     }
-    return 'The server has said it keeps some of your messages for '
-        '${_days(days)}, but has not said which.';
+    return _scoped(
+      attribution,
+      'The server has said it keeps some of your messages for '
+      '${_days(days)}, but has not said which.',
+    );
   }
 
-  if (policy.keepsNothing) {
+  if (kind == MamRetention.never) {
     // The one case where nothing needs qualifying. A day cap on a policy that
     // keeps nothing is meaningless, and naming one would read as a promise
     // about something that is not kept.
@@ -860,6 +916,23 @@ String _summarise(RetentionPolicy? policy, String subject) {
 
   final period = _period(days, kind);
   return '$subject ${kind.archives} $period.';
+}
+
+/// Leading "In this conversation…" from [subject], or empty for account-wide.
+String _conversationAttribution(String subject) {
+  if (subject.startsWith('In this conversation, as everywhere else')) {
+    return 'In this conversation, as everywhere else, ';
+  }
+  if (subject.startsWith('In this conversation')) {
+    return 'In this conversation, ';
+  }
+  return '';
+}
+
+String _scoped(String attribution, String sentence) {
+  if (attribution.isEmpty) return sentence;
+  return '$attribution'
+      '${sentence[0].toLowerCase()}${sentence.substring(1)}';
 }
 
 /// The clause that answers "for how long".
