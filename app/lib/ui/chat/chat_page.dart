@@ -7,6 +7,7 @@
 import 'dart:async';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -17,6 +18,7 @@ import '../../account/chat_ref.dart';
 import '../../account/resolve.dart';
 import '../../l10n/l10n.dart';
 import '../../omemo/track.dart';
+import '../../platform/media_store.dart';
 import '../../state/providers.dart';
 import '../../store/database.dart';
 import '../../xmpp/connection.dart';
@@ -578,6 +580,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final pinned = await _vm.isPinned(message.stanzaId);
     if (!mounted) return;
     final track = storedTrack(message.encMode);
+    final isFileMessage =
+        message.mediaUrl.isNotEmpty || message.localPath.isNotEmpty;
     final actions = MessageActions.for_(
       mine: !message.incoming,
       retracted: message.retracted,
@@ -587,6 +591,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
           message.encMode != EncModeToken.error.wire && !message.retracted,
       addressable: message.stanzaId.isNotEmpty,
       pinned: pinned,
+      canSaveFile:
+          !kIsWeb && isFileMessage && mediaStore.existsSync(message.localPath),
     );
     if (actions.isEmpty) return;
 
@@ -623,6 +629,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         );
       case MessageAction.forward:
         await _forwardMessage(message, body);
+      case MessageAction.saveFile:
+        await _saveMessageFile(message);
       case MessageAction.pin:
         await _vm.togglePinned(message.stanzaId);
         if (mounted) setState(() {});
@@ -633,6 +641,31 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         });
       case MessageAction.retract:
         await _doRetract(message);
+    }
+  }
+
+  /// Copies a downloaded attachment out of the private media store.
+  Future<void> _saveMessageFile(Message message) async {
+    final l10n = context.l10n;
+    final name = message.mediaName.isNotEmpty
+        ? message.mediaName
+        : (message.mediaUrl.isNotEmpty ? l10n.fileAttachment : 'file');
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final dest = await mediaStore.copyToPublic(
+        message.localPath,
+        mime: message.mediaMime,
+        preferredName: name,
+      );
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text(l10n.fileSavedToPublic(dest))),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text(l10n.couldNotSaveFile('$e'))),
+      );
     }
   }
 

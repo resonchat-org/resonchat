@@ -5,18 +5,29 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../omemo/track.dart';
 import '../../state/providers.dart';
+import '../../xmpp/message_expiry.dart';
 
 /// Privacy preference toggles for Settings.
 class SettingsUiState {
-  const SettingsUiState({this.readReceipts, this.chatStates});
+  const SettingsUiState({
+    this.readReceipts,
+    this.chatStates,
+    this.automaticDeletion = AutomaticMessageDeletion.never,
+  });
 
   final bool? readReceipts;
   final bool? chatStates;
+  final AutomaticMessageDeletion automaticDeletion;
 
-  SettingsUiState copyWith({bool? readReceipts, bool? chatStates}) {
+  SettingsUiState copyWith({
+    bool? readReceipts,
+    bool? chatStates,
+    AutomaticMessageDeletion? automaticDeletion,
+  }) {
     return SettingsUiState(
       readReceipts: readReceipts ?? this.readReceipts,
       chatStates: chatStates ?? this.chatStates,
+      automaticDeletion: automaticDeletion ?? this.automaticDeletion,
     );
   }
 }
@@ -27,9 +38,15 @@ class SettingsViewModel extends Notifier<SettingsUiState> {
     final xmpp = ref.read(xmppServiceProvider);
     Future.microtask(() async {
       final db = ref.read(databaseProvider);
+      final prefs = ref.read(prefsDatabaseProvider);
       final receipts = await db.sendReadReceiptsEnabled();
       final states = await db.sendChatStatesEnabled();
-      state = state.copyWith(readReceipts: receipts, chatStates: states);
+      final deletion = await loadAutomaticMessageDeletion(prefs);
+      state = state.copyWith(
+        readReceipts: receipts,
+        chatStates: states,
+        automaticDeletion: deletion,
+      );
     });
     return SettingsUiState(
       readReceipts: xmpp.sendReadReceipts,
@@ -54,6 +71,18 @@ class SettingsViewModel extends Notifier<SettingsUiState> {
     state = state.copyWith(chatStates: value);
     ref.read(xmppServiceProvider).sendTypingNotifications = value;
     await ref.read(databaseProvider).setSendChatStates(value);
+  }
+
+  /// Conversations-style global retention; sweeps immediately on change.
+  Future<void> setAutomaticMessageDeletion(
+    AutomaticMessageDeletion value,
+  ) async {
+    state = state.copyWith(automaticDeletion: value);
+    await saveAutomaticMessageDeletion(
+      value,
+      prefs: ref.read(prefsDatabaseProvider),
+    );
+    await expireOldMessagesAcrossAccounts(setting: value);
   }
 }
 

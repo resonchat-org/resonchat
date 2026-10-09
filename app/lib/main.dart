@@ -1,6 +1,7 @@
 // Copyright (C) 2026 resonchat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -13,6 +14,7 @@ import 'l10n/l10n.dart';
 import 'net/app_network.dart';
 import 'state/app_wiring.dart';
 import 'store/prefs_database.dart';
+import 'ui/accent_theme.dart';
 import 'ui/home/home_shell.dart';
 import 'ui/column_mode_sync.dart';
 import 'ui/login/login_page.dart';
@@ -21,7 +23,6 @@ import 'ui/accounts/manage_accounts_page.dart';
 import 'ui/security/security_page.dart';
 import 'ui/profile/profile_page.dart';
 import 'ui/settings/settings_page.dart';
-import 'ui/theme.dart';
 
 /// Root navigator — used to remap `/chat` ↔ column pane across resizes.
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
@@ -67,81 +68,96 @@ class App extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final localeOverride = ref.watch(localeOverrideProvider);
-    return MaterialApp(
-      navigatorKey: appNavigatorKey,
-      onGenerateTitle: (context) => context.l10n.appName,
-      debugShowCheckedModeBanner: false,
-      theme: AppThemeTokens.light(),
-      darkTheme: AppThemeTokens.dark(),
-      locale: localeOverride,
-      supportedLocales: supportedAppLocales,
-      localizationsDelegates: const [
-        AppLocalizations.delegate,
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-      ],
-      localeResolutionCallback: (device, supported) {
-        if (localeOverride != null) return localeOverride;
-        if (device == null) return const Locale('en');
-        for (final locale in supported) {
-          if (locale.languageCode == device.languageCode) {
-            return locale;
-          }
-        }
-        return const Locale('en');
-      },
-      builder: (context, child) => AppWiring(
-        child: ColumnModeSync(
+    final accent = ref.watch(accentPreferenceProvider);
+    return DynamicColorBuilder(
+      builder: (lightDynamic, darkDynamic) {
+        return MaterialApp(
           navigatorKey: appNavigatorKey,
-          child: child ?? const SizedBox.shrink(),
-        ),
-      ),
-      initialRoute: hasAccounts ? '/chats' : '/login',
-      onGenerateRoute: (settings) {
-        switch (settings.name) {
-          case '/login':
-            final addAccount = settings.arguments == true;
-            return MaterialPageRoute<void>(
-              settings: settings,
-              builder: (_) => LoginPage(addAccountMode: addAccount),
-            );
-          case '/chats':
-            return MaterialPageRoute<void>(
-              settings: settings,
-              builder: (_) => const HomeShell(),
-            );
-          case '/chat':
-            final arg = settings.arguments;
-            final key = arg is ChatRef ? arg.key : (arg is String ? arg : '');
-            return MaterialPageRoute<void>(
-              settings: settings,
-              builder: (_) => ChatPage(chatJid: key),
-            );
-          case '/profile':
-            return MaterialPageRoute<void>(
-              settings: settings,
-              builder: (_) =>
-                  ProfilePage(chatJid: settings.arguments! as String),
-            );
-          case '/encryption':
-            return MaterialPageRoute<void>(
-              settings: settings,
-              builder: (_) =>
-                  SecurityPage(chatJid: settings.arguments! as String),
-            );
-          case '/settings':
-            return MaterialPageRoute<void>(
-              settings: settings,
-              builder: (_) => const SettingsPage(),
-            );
-          case '/accounts':
-            return MaterialPageRoute<void>(
-              settings: settings,
-              builder: (_) => const ManageAccountsPage(),
-            );
-        }
-        return null;
+          onGenerateTitle: (context) => context.l10n.appName,
+          debugShowCheckedModeBanner: false,
+          theme: themeForAccent(
+            preference: accent,
+            brightness: Brightness.light,
+            dynamicScheme: lightDynamic,
+          ),
+          darkTheme: themeForAccent(
+            preference: accent,
+            brightness: Brightness.dark,
+            dynamicScheme: darkDynamic,
+          ),
+          locale: localeOverride,
+          supportedLocales: supportedAppLocales,
+          localizationsDelegates: const [
+            AppLocalizations.delegate,
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          localeResolutionCallback: (device, supported) {
+            if (localeOverride != null) return localeOverride;
+            if (device == null) return const Locale('en');
+            for (final locale in supported) {
+              if (locale.languageCode == device.languageCode) {
+                return locale;
+              }
+            }
+            return const Locale('en');
+          },
+          builder: (context, child) => AppWiring(
+            child: ColumnModeSync(
+              navigatorKey: appNavigatorKey,
+              child: child ?? const SizedBox.shrink(),
+            ),
+          ),
+          initialRoute: hasAccounts ? '/chats' : '/login',
+          onGenerateRoute: (settings) {
+            switch (settings.name) {
+              case '/login':
+                final addAccount = settings.arguments == true;
+                return MaterialPageRoute<void>(
+                  settings: settings,
+                  builder: (_) => LoginPage(addAccountMode: addAccount),
+                );
+              case '/chats':
+                return MaterialPageRoute<void>(
+                  settings: settings,
+                  builder: (_) => const HomeShell(),
+                );
+              case '/chat':
+                final arg = settings.arguments;
+                final key = arg is ChatRef
+                    ? arg.key
+                    : (arg is String ? arg : '');
+                return MaterialPageRoute<void>(
+                  settings: settings,
+                  builder: (_) => ChatPage(chatJid: key),
+                );
+              case '/profile':
+                return MaterialPageRoute<void>(
+                  settings: settings,
+                  builder: (_) =>
+                      ProfilePage(chatJid: settings.arguments! as String),
+                );
+              case '/encryption':
+                return MaterialPageRoute<void>(
+                  settings: settings,
+                  builder: (_) =>
+                      SecurityPage(chatJid: settings.arguments! as String),
+                );
+              case '/settings':
+                return MaterialPageRoute<void>(
+                  settings: settings,
+                  builder: (_) => const SettingsPage(),
+                );
+              case '/accounts':
+                return MaterialPageRoute<void>(
+                  settings: settings,
+                  builder: (_) => const ManageAccountsPage(),
+                );
+            }
+            return null;
+          },
+        );
       },
     );
   }

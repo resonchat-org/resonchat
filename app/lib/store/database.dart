@@ -1098,13 +1098,72 @@ class AppDatabase extends _$AppDatabase {
     });
   }
 
+  /// Non-empty [localPath] values for messages in [chatJid].
+  Future<List<String>> localPathsForChat(String chatJid) async {
+    final rows =
+        await (select(messages)..where(
+              (m) => m.chatJid.equals(chatJid) & m.localPath.equals('').not(),
+            ))
+            .get();
+    return [for (final r in rows) r.localPath];
+  }
+
+  /// Non-empty [localPath] values for messages older than [cutoff].
+  Future<List<String>> localPathsOlderThan(DateTime cutoff) async {
+    final rows =
+        await (select(messages)..where(
+              (m) =>
+                  m.timestamp.isSmallerThanValue(cutoff) &
+                  m.localPath.equals('').not(),
+            ))
+            .get();
+    return [for (final r in rows) r.localPath];
+  }
+
   /// Removes every stored message of one conversation from this device.
   ///
   /// The server is untouched: the other side keeps its copy, and archived
   /// messages will come back on the next MAM fetch. That distinction is why
   /// the UI words this as "clear history on this device".
-  Future<int> clearChatMessages(String chatJid) =>
-      (delete(messages)..where((m) => m.chatJid.equals(chatJid))).go();
+  ///
+  /// Callers should delete [localPathsForChat] files before/after this.
+  Future<int> clearChatMessages(String chatJid) {
+    return transaction(() async {
+      await (delete(
+        pinnedMessages,
+      )..where((p) => p.chatJid.equals(chatJid))).go();
+      return (delete(messages)..where((m) => m.chatJid.equals(chatJid))).go();
+    });
+  }
+
+  /// Deletes messages with `timestamp < cutoff` (Conversations expiry).
+  ///
+  /// Also drops pins that pointed at those rows. Callers delete attachment
+  /// files via [localPathsOlderThan] around this call.
+  Future<int> expireMessagesOlderThan(DateTime cutoff) {
+    return transaction(() async {
+      final doomed = await (select(
+        messages,
+      )..where((m) => m.timestamp.isSmallerThanValue(cutoff))).get();
+      if (doomed.isEmpty) return 0;
+      final byChat = <String, Set<String>>{};
+      for (final m in doomed) {
+        if (m.stanzaId.isEmpty) continue;
+        (byChat[m.chatJid] ??= <String>{}).add(m.stanzaId);
+      }
+      for (final entry in byChat.entries) {
+        await (delete(pinnedMessages)..where(
+              (p) =>
+                  p.chatJid.equals(entry.key) &
+                  p.stanzaId.isIn(entry.value.toList()),
+            ))
+            .go();
+      }
+      return (delete(
+        messages,
+      )..where((m) => m.timestamp.isSmallerThanValue(cutoff))).go();
+    });
+  }
 
   /// Records the local cache path after a successful download.
   Future<int> setMessageLocalPath(int messageId, String path) {

@@ -19,6 +19,7 @@ import 'package:moxxmpp/moxxmpp.dart' show JID;
 import '../../account/resolve.dart';
 import '../../omemo/track.dart';
 import '../../omemo/track_resolver.dart';
+import '../../platform/media_store.dart';
 import '../../store/database.dart';
 import '../../xmpp/capabilities.dart';
 import '../../state/providers.dart';
@@ -199,7 +200,9 @@ class ProfilePage extends ConsumerWidget {
       ),
     );
     if (confirmed != true) return;
+    final paths = await db.localPathsForChat(peer);
     await db.clearChatMessages(peer);
+    await mediaStore.deletePaths(paths);
   }
 
   /// What this conversation will actually do, as distinct from what the user

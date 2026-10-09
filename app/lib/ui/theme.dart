@@ -197,36 +197,90 @@ class AppThemeTokens {
   /// harness can substitute a locally available font.
   static String fontFamily = 'Roboto';
 
-  static ThemeData light() {
-    const tg = TgColors.light();
-    return _base(tg, Brightness.light);
+  static ThemeData light([TgColors? tg]) {
+    return lightOrDark(tg ?? const TgColors.light(), Brightness.light);
   }
 
-  static ThemeData dark() {
-    const tg = TgColors.dark();
-    return _base(tg, Brightness.dark);
+  static ThemeData dark([TgColors? tg]) {
+    return lightOrDark(tg ?? const TgColors.dark(), Brightness.dark);
   }
 
-  static ThemeData _base(TgColors tg, Brightness brightness) {
+  /// Fixed-accent Telegram-like theme (seeded [ColorScheme]).
+  static ThemeData lightOrDark(TgColors tg, Brightness brightness) {
     final scheme = ColorScheme.fromSeed(
       seedColor: tg.accent,
       brightness: brightness,
+      dynamicSchemeVariant: DynamicSchemeVariant.fidelity,
     );
+    return _base(
+      tg: tg,
+      brightness: brightness,
+      scheme: scheme,
+      onBar: Colors.white,
+    );
+  }
+
+  /// Fallback when Material You is selected but the platform has no palette.
+  static ThemeData fromSeed(Color seed, Brightness brightness) {
+    final scheme = ColorScheme.fromSeed(
+      seedColor: seed,
+      brightness: brightness,
+      dynamicSchemeVariant: DynamicSchemeVariant.fidelity,
+    );
+    return fromMaterialYou(scheme);
+  }
+
+  /// Material You / Monet: drive chrome from the platform [ColorScheme]
+  /// (TelegramAndroid monet_* themes use system_accent / system_neutral).
+  static ThemeData fromMaterialYou(ColorScheme scheme) {
+    final brightness = scheme.brightness;
+    final base = brightness == Brightness.dark
+        ? const TgColors.dark()
+        : const TgColors.light();
+    // Coloured action bar like Telegram Monet previews (primary / a1_600).
+    final bar = scheme.primary;
+    final tg = base.copyWith(
+      barBackground: bar,
+      accent: scheme.primary,
+      pageBackground: scheme.surface,
+      textPrimary: scheme.onSurface,
+      textSecondary: scheme.onSurfaceVariant,
+      separator: scheme.outlineVariant,
+      peerBubble: scheme.surfaceContainerHigh,
+      ownBubble: scheme.primaryContainer,
+      ownBubbleFrom: Color.lerp(scheme.primaryContainer, scheme.primary, 0.12)!,
+      dateSeparatorText: scheme.onSurfaceVariant,
+    );
+    return _base(
+      tg: tg,
+      brightness: brightness,
+      scheme: scheme,
+      onBar: scheme.onPrimary,
+    );
+  }
+
+  static ThemeData _base({
+    required TgColors tg,
+    required Brightness brightness,
+    required ColorScheme scheme,
+    required Color onBar,
+  }) {
     return ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
+      brightness: brightness,
       fontFamily: fontFamily,
       scaffoldBackgroundColor: tg.pageBackground,
       // Telegram's action bar has no elevation and no shadow.
       appBarTheme: AppBarTheme(
         backgroundColor: tg.barBackground,
-        foregroundColor: Colors.white,
-        iconTheme: const IconThemeData(color: Colors.white),
-        actionsIconTheme: const IconThemeData(color: Colors.white),
+        foregroundColor: onBar,
+        iconTheme: IconThemeData(color: onBar),
+        actionsIconTheme: IconThemeData(color: onBar),
         elevation: 0,
         centerTitle: false,
         titleTextStyle: TextStyle(
-          color: Colors.white,
+          color: onBar,
           fontSize: TgDimens.chatTitleFontSize,
           fontWeight: FontWeight.w600,
         ),

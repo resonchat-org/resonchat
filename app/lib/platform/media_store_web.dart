@@ -29,6 +29,29 @@ class MediaStore {
 
   bool existsSync(String path) => path.isNotEmpty && _bytes.containsKey(path);
 
+  Future<void> deletePath(String path) async {
+    _bytes.remove(path);
+  }
+
+  Future<void> deletePaths(Iterable<String> paths) async {
+    for (final path in paths) {
+      await deletePath(path);
+    }
+  }
+
+  /// Web has no public Downloads; returns the same memory key after a copy.
+  Future<String> copyToPublic(
+    String sourcePath, {
+    String? mime,
+    String? preferredName,
+  }) async {
+    final existing = _bytes[sourcePath];
+    if (existing == null) {
+      throw StateError('unknown media path: $sourcePath');
+    }
+    return writeBytes(existing, preferredName ?? 'file');
+  }
+
   String _safeName(String name) {
     final base = name.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
     return base.isEmpty ? 'file' : base;

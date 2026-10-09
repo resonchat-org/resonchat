@@ -3,16 +3,17 @@
 
 import 'dart:async';
 
+import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
 import '../../net/app_network.dart';
-import '../../pq/liboqs_mlkem.dart';
 import '../../omemo/track.dart';
 import '../../state/providers.dart';
-import '../../xmpp/connection.dart';
+import '../../xmpp/message_expiry.dart';
+import '../accent_theme.dart';
 import '../archive/archive_page.dart';
 import '../theme.dart';
 import 'settings_viewmodel.dart';
@@ -34,7 +35,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final l10n = context.l10n;
     final settings = ref.watch(settingsViewModelProvider);
     final xmpp = ref.watch(xmppServiceProvider);
-    final native = MlKem768Provider.instance.isNative;
     final readReceipts = settings.readReceipts ?? xmpp.sendReadReceipts;
     final chatStates = settings.chatStates ?? xmpp.sendTypingNotifications;
     final localeOverride = ref.watch(localeOverrideProvider);
@@ -44,35 +44,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       appBar: AppBar(title: Text(l10n.settings)),
       body: ListView(
         children: [
-          _header(tg, l10n.defaultEncryption),
-          Consumer(
-            builder: (context, ref, _) {
-              final current =
-                  ref.watch(globalTrackProvider).value ?? Track.standard;
-              return Column(
-                children: [
-                  for (final track in Track.values)
-                    RadioListTile<Track>(
-                      value: track,
-                      // ignore: deprecated_member_use
-                      groupValue: current,
-                      // ignore: deprecated_member_use
-                      onChanged: (value) {
-                        if (value != null)
-                          unawaited(vm.setGlobalEncryption(value));
-                      },
-                      title: Text(
-                        '${track.label}  ${track.localizedDescription(l10n)}',
-                      ),
-                      secondary: Icon(
-                        track.icon,
-                        color: track == Track.none ? tg.danger : tg.accent,
-                      ),
-                    ),
-                ],
-              );
-            },
-          ),
           ListTile(
             leading: const Icon(Icons.archive_outlined),
             title: Text(l10n.archivedConversations),
@@ -80,6 +51,36 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute<void>(builder: (_) => const ArchivePage()),
             ),
+          ),
+
+          // Conversations: Interface (theme / UI) is separate from Privacy.
+          _header(tg, l10n.interface),
+          Consumer(
+            builder: (context, ref, _) {
+              final pref = ref.watch(accentPreferenceProvider);
+              final scheme = Theme.of(context).colorScheme;
+              final swatch = pref.useDynamic
+                  ? scheme.primary
+                  : pref.fixed.swatch;
+              final subtitle = pref.useDynamic
+                  ? l10n.themeColorDynamic
+                  : '${l10n.themeColorFixed} · ${pref.fixed.stored}';
+              return ListTile(
+                leading: Icon(Icons.palette_outlined, color: swatch),
+                title: Text(l10n.themeColor),
+                subtitle: Text(subtitle),
+                trailing: pref.useDynamic
+                    ? _DynamicAccentDot(color: swatch)
+                    : _AccentDot(color: swatch),
+                onTap: () => unawaited(_pickAccent(context, pref)),
+              );
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.language),
+            title: Text(l10n.language),
+            subtitle: Text(_languageLabel(l10n, localeOverride)),
+            onTap: () => _pickLanguage(context, localeOverride),
           ),
 
           _header(tg, l10n.privacy),
@@ -98,15 +99,36 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             onChanged: (v) => unawaited(vm.setChatStates(v)),
           ),
           ListTile(
-            leading: const Icon(Icons.language),
-            title: Text(l10n.language),
-            subtitle: Text(_languageLabel(l10n, localeOverride)),
-            onTap: () => _pickLanguage(context, localeOverride),
+            leading: const Icon(Icons.auto_delete_outlined),
+            title: Text(l10n.automaticMessageDeletion),
+            subtitle: Text(
+              '${_deletionLabel(l10n, settings.automaticDeletion)} · '
+              '${l10n.automaticMessageDeletionSummary}',
+            ),
+            onTap: () => unawaited(
+              _pickAutomaticDeletion(context, settings.automaticDeletion, vm),
+            ),
+          ),
+          Consumer(
+            builder: (context, ref, _) {
+              final current =
+                  ref.watch(globalTrackProvider).value ?? Track.standard;
+              return ListTile(
+                leading: Icon(
+                  Icons.lock_outline,
+                  color: current == Track.none ? tg.danger : null,
+                ),
+                title: Text(l10n.defaultEncryption),
+                subtitle: Text(_trackShortLabel(l10n, current)),
+                onTap: () =>
+                    unawaited(_pickDefaultEncryption(context, current, vm)),
+              );
+            },
           ),
 
-          _header(tg, l10n.connection),
           // SOCKS5 is a TCP CONNECT proxy — browsers cannot use it.
-          if (!kIsWeb)
+          if (!kIsWeb) ...[
+            _header(tg, l10n.connection),
             ListTile(
               leading: Icon(
                 Icons.vpn_key_outlined,
@@ -124,61 +146,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 if (mounted) setState(() {});
               },
             ),
-          ListTile(
-            leading: const Icon(Icons.cloud_outlined),
-            title: Text(l10n.status),
-            subtitle: Text(_status(l10n, xmpp)),
-            trailing: Icon(
-              xmpp.state == XmppConnectionState.connected
-                  ? Icons.check_circle
-                  : Icons.error_outline,
-              color: xmpp.state == XmppConnectionState.connected
-                  ? tg.unreadBadge
-                  : tg.danger,
-              size: 20,
-            ),
-          ),
-          ListTile(
-            leading: const Icon(Icons.sync),
-            title: Text(l10n.messageCarbons),
-            subtitle: Text(
-              xmpp.carbonsEnabled
-                  ? l10n.messageCarbonsEnabled
-                  : l10n.messageCarbonsDisabled,
-            ),
-          ),
-          ListTile(
-            leading: const Icon(Icons.archive_outlined),
-            title: Text(l10n.messageArchiveMam),
-            subtitle: Text(
-              xmpp.mamAvailable
-                  ? l10n.messageArchiveAvailable
-                  : l10n.messageArchiveUnavailable,
-            ),
-          ),
-
-          _header(tg, l10n.encryption),
-          ListTile(
-            leading: Icon(
-              Icons.bolt,
-              color: xmpp.bTrackReady ? tg.accent : tg.textSecondary,
-            ),
-            title: Text(l10n.postQuantumTrack),
-            subtitle: Text(
-              xmpp.bTrackReady
-                  ? l10n.postQuantumReady
-                  : l10n.postQuantumNotReady,
-            ),
-          ),
-          ListTile(
-            leading: const Icon(Icons.memory),
-            title: Text(l10n.postQuantumBackend),
-            subtitle: Text(native ? l10n.backendNative : l10n.backendDart),
-            trailing: Text(
-              native ? 'native' : 'dart',
-              style: TextStyle(color: tg.textSecondary, fontSize: 12),
-            ),
-          ),
+          ],
 
           _header(tg, l10n.about),
           Padding(
@@ -197,6 +165,173 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     if (override == null) return l10n.languageSystem;
     if (override.languageCode == 'zh') return l10n.languageChineseSimplified;
     return l10n.languageEnglish;
+  }
+
+  String _deletionLabel(
+    AppLocalizations l10n,
+    AutomaticMessageDeletion value,
+  ) => switch (value) {
+    AutomaticMessageDeletion.never => l10n.automaticMessageDeletionNever,
+    AutomaticMessageDeletion.oneDay => l10n.automaticMessageDeletionOneDay,
+    AutomaticMessageDeletion.oneWeek => l10n.automaticMessageDeletionOneWeek,
+    AutomaticMessageDeletion.thirtyDays =>
+      l10n.automaticMessageDeletionThirtyDays,
+    AutomaticMessageDeletion.sixMonths =>
+      l10n.automaticMessageDeletionSixMonths,
+  };
+
+  Future<void> _pickAutomaticDeletion(
+    BuildContext context,
+    AutomaticMessageDeletion current,
+    SettingsViewModel vm,
+  ) async {
+    final l10n = context.l10n;
+    final chosen = await showModalBottomSheet<AutomaticMessageDeletion>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final option in AutomaticMessageDeletion.values)
+              ListTile(
+                title: Text(_deletionLabel(l10n, option)),
+                trailing: option == current ? const Icon(Icons.check) : null,
+                onTap: () => Navigator.pop(ctx, option),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (chosen == null || !mounted) return;
+    await vm.setAutomaticMessageDeletion(chosen);
+  }
+
+  /// Leading phrase of [Track.localizedDescription] (before the em dash).
+  String _trackShortLabel(AppLocalizations l10n, Track track) {
+    final full = track.localizedDescription(l10n);
+    final i = full.indexOf('—');
+    return i > 0 ? full.substring(0, i).trim() : full;
+  }
+
+  Future<void> _pickDefaultEncryption(
+    BuildContext context,
+    Track current,
+    SettingsViewModel vm,
+  ) async {
+    final l10n = context.l10n;
+    final tg = context.tg;
+    final chosen = await showModalBottomSheet<Track>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final track in Track.values)
+              ListTile(
+                leading: Icon(
+                  track.icon,
+                  color: track == Track.none ? tg.danger : tg.accent,
+                ),
+                title: Text(_trackShortLabel(l10n, track)),
+                subtitle: Text(track.localizedDescription(l10n)),
+                trailing: track == current ? const Icon(Icons.check) : null,
+                onTap: () => Navigator.pop(ctx, track),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (chosen == null || !mounted) return;
+    await vm.setGlobalEncryption(chosen);
+  }
+
+  Future<void> _pickAccent(
+    BuildContext context,
+    AccentPreference current,
+  ) async {
+    final l10n = context.l10n;
+    final messenger = ScaffoldMessenger.of(context);
+    final dynamicSwatch = Theme.of(context).colorScheme.primary;
+    final chosen = await showModalBottomSheet<AccentPreference>(
+      context: context,
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: _DynamicAccentDot(color: dynamicSwatch),
+                  title: Text(l10n.themeColorDynamic),
+                  subtitle: Text(l10n.themeColorSummary),
+                  trailing: current.useDynamic ? const Icon(Icons.check) : null,
+                  onTap: () =>
+                      Navigator.pop(ctx, const AccentPreference.dynamic()),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  l10n.themeColorFixed,
+                  style: Theme.of(ctx).textTheme.labelLarge,
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: [
+                    for (final option in AccentColor.values)
+                      InkWell(
+                        onTap: () =>
+                            Navigator.pop(ctx, AccentPreference.fixed(option)),
+                        customBorder: const CircleBorder(),
+                        child: Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: option.swatch,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color:
+                                  !current.useDynamic && current.fixed == option
+                                  ? Theme.of(ctx).colorScheme.onSurface
+                                  : Colors.black26,
+                              width:
+                                  !current.useDynamic && current.fixed == option
+                                  ? 3
+                                  : 1,
+                            ),
+                          ),
+                          child: !current.useDynamic && current.fixed == option
+                              ? const Icon(
+                                  Icons.check,
+                                  color: Colors.white,
+                                  size: 22,
+                                )
+                              : null,
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (chosen == null || !mounted) return;
+    await ref.read(accentPreferenceProvider.notifier).setPreference(chosen);
+    if (!chosen.useDynamic) return;
+    // Android S+ / desktop accents — null means we seed-fallback.
+    final palette = await DynamicColorPlugin.getCorePalette();
+    final accentColor = await DynamicColorPlugin.getAccentColor();
+    if (!mounted) return;
+    if (palette == null && accentColor == null) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(l10n.themeColorDynamicUnavailable)),
+      );
+    }
   }
 
   Future<void> _pickLanguage(BuildContext context, Locale? current) async {
@@ -247,12 +382,61 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       ),
     ),
   );
+}
 
-  static String _status(AppLocalizations l10n, XmppService xmpp) =>
-      switch (xmpp.state) {
-        XmppConnectionState.connected => l10n.statusConnected,
-        XmppConnectionState.connecting => l10n.statusConnecting,
-        XmppConnectionState.disconnected =>
-          xmpp.lastError ?? l10n.statusDisconnected,
-      };
+class _AccentDot extends StatelessWidget {
+  const _AccentDot({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 22,
+      height: 22,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.black26),
+      ),
+    );
+  }
+}
+
+/// Material You mark: primary swatch with a small “auto” badge.
+class _DynamicAccentDot extends StatelessWidget {
+  const _DynamicAccentDot({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 28,
+      height: 28,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Container(
+            width: 22,
+            height: 22,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  color,
+                  Color.lerp(color, Colors.white, 0.35)!,
+                  Color.lerp(color, Colors.black, 0.25)!,
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.black26),
+            ),
+          ),
+          const Icon(Icons.auto_awesome, size: 12, color: Colors.white),
+        ],
+      ),
+    );
+  }
 }

@@ -18,8 +18,10 @@ import '../store/database.dart';
 import '../xmpp/capabilities.dart';
 import '../xmpp/blocking.dart';
 import '../xmpp/connection.dart';
+import '../xmpp/message_expiry.dart';
 import '../xmpp/reactions.dart';
 import '../xmpp/retraction.dart';
+import '../store/prefs_database.dart';
 
 /// Connects the connection's streams to persistent state for the app's
 /// lifetime: delivery receipts, delivery failures and capability
@@ -57,12 +59,14 @@ class AppWiring extends ConsumerStatefulWidget {
 class _AppWiringState extends ConsumerState<AppWiring> {
   final List<StreamSubscription<Object?>> _subs = [];
   StreamSubscription<void>? _hubSub;
+  final _messageExpiry = MessageExpiryRunner();
 
   @override
   void initState() {
     super.initState();
     _bindAll();
     _hubSub = accountHub.sessionChanges.listen((_) => _bindAll());
+    _messageExpiry.start();
   }
 
   void _bindAll() {
@@ -74,6 +78,7 @@ class _AppWiringState extends ConsumerState<AppWiring> {
       _wireSession(session);
     }
     _syncConnectionState();
+    unawaited(_messageExpiry.runOnce());
   }
 
   /// Keep [connectionStateProvider] aligned with the primary session.
@@ -180,6 +185,7 @@ class _AppWiringState extends ConsumerState<AppWiring> {
 
   @override
   void dispose() {
+    _messageExpiry.stop();
     _hubSub?.cancel();
     for (final sub in _subs) {
       sub.cancel();
@@ -371,6 +377,13 @@ Future<void> storeInbound(
     );
     return;
   }
+
+  // Conversations: do not persist messages older than the retention cutoff.
+  final stamp = msg.archiveTimestamp ?? DateTime.now();
+  try {
+    final cutoff = (await loadAutomaticMessageDeletion(appPrefs)).cutoffAt();
+    if (cutoff != null && stamp.isBefore(cutoff)) return;
+  } catch (_) {}
 
   await db.insertMessage(
     MessagesCompanion(

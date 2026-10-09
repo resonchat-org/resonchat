@@ -3,6 +3,12 @@
   "appName": "resonchat",
   "settings": "Settings",
   "privacy": "Privacy",
+  "interface": "Interface",
+  "themeColor": "Theme colour",
+  "themeColorSummary": "Material You or a fixed colour",
+  "themeColorDynamic": "Dynamic (Material You)",
+  "themeColorDynamicUnavailable": "Dynamic colours unavailable on this device — using a fallback",
+  "themeColorFixed": "Fixed colour",
   "connection": "Connection",
   "socks5Proxy": "SOCKS5 proxy",
   "socks5ProxySummary": "Send all XMPP and HTTP traffic through a local SOCKS5 proxy",
@@ -23,7 +29,6 @@
       "jid": { "type": "String" }
     }
   },
-  "encryption": "Encryption",
   "about": "About",
   "defaultEncryption": "Default encryption",
   "archivedConversations": "Archived conversations",
@@ -34,26 +39,33 @@
   "readReceiptsSummary": "When enabled, contacts see when you have read their messages",
   "typingNotifications": "Typing notifications",
   "typingNotificationsSummary": "Let contacts know when you are writing a message",
+  "automaticMessageDeletion": "Automatic message deletion",
+  "automaticMessageDeletionSummary": "Deletes old messages on this device only",
+  "automaticMessageDeletionNever": "Never",
+  "automaticMessageDeletionOneDay": "After 1 day",
+  "automaticMessageDeletionOneWeek": "After 1 week",
+  "automaticMessageDeletionThirtyDays": "After 30 days",
+  "automaticMessageDeletionSixMonths": "After 6 months",
+  "saveFile": "Save file",
+  "fileSavedToPublic": "Saved to {path}",
+  "@fileSavedToPublic": {
+    "placeholders": {
+      "path": { "type": "String" }
+    }
+  },
+  "couldNotSaveFile": "Could not save file: {error}",
+  "@couldNotSaveFile": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
   "language": "Language",
   "languageSystem": "System default",
   "languageEnglish": "English",
   "languageChineseSimplified": "简体中文",
-  "status": "Status",
   "statusConnected": "Connected",
   "statusConnecting": "Connecting…",
   "statusDisconnected": "Not connected",
-  "messageCarbons": "Message carbons",
-  "messageCarbonsEnabled": "Enabled — messages sync across your devices",
-  "messageCarbonsDisabled": "Not enabled by this server",
-  "messageArchiveMam": "Message archive (MAM)",
-  "messageArchiveAvailable": "Server keeps history for this account",
-  "messageArchiveUnavailable": "Server does not advertise a MAM archive",
-  "postQuantumTrack": "Post-quantum track",
-  "postQuantumReady": "Bundle published; chats upgrade automatically",
-  "postQuantumNotReady": "Not published — chats use standard OMEMO",
-  "postQuantumBackend": "Post-quantum backend",
-  "backendNative": "liboqs (native, hardware accelerated)",
-  "backendDart": "pqcrypto (pure Dart)",
   "aboutBody": "resonchat — a dual-track OMEMO client for XMPP.\nLicensed GPL-3.0-or-later.\n\nIndependent project. Not affiliated with, endorsed by, or derived from any other messaging product.\n\nThe post-quantum track is a custom extension and has not been independently audited. Use at your own risk.",
   "jid": "JID",
   "password": "Password",
@@ -232,13 +244,6 @@
   "appearance": "Appearance",
   "pinnedMessages": "Pinned messages",
   "loadHistoryMam": "Load history (MAM)",
-  "messageNotDelivered": "Message not delivered",
-  "notDeliveredReason": "Not delivered: {reason}",
-  "@notDeliveredReason": {
-    "placeholders": {
-      "reason": { "type": "String" }
-    }
-  },
   "messageNotSentSnack": "Message not sent. It is still in the box.",
   "couldNotLoadHistory": "Could not load history (server may not support MAM)",
   "loadedArchivedMessages": "Loaded {count} archived message(s)",
@@ -260,10 +265,8 @@
     }
   },
   "edited": "edited",
-  "youPrefix": "You: ",
   "fileAttachment": "File",
   "tapToDownload": "Tap to download",
-  "fileSavedLocally": "Saved on this device",
   "couldNotOpenFile": "Could not open file",
   "uploadingFile": "Uploading…",
   "uploadFailed": "Upload failed: {error}",

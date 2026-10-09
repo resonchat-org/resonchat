@@ -24,6 +24,7 @@ class MessageActions {
     required this.canCopy,
     required this.canEdit,
     required this.canRetract,
+    required this.canSaveFile,
     required this.isPinned,
   });
 
@@ -54,6 +55,10 @@ class MessageActions {
   /// retracting "the last message" instead.
   final bool canRetract;
 
+  /// File / image message with a downloaded private cache copy (Copinc
+  /// “Save file”). Hidden for plain text and for undownloaded attachments.
+  final bool canSaveFile;
+
   /// Whether this message is already pinned, so the entry can offer the
   /// opposite action rather than a verb that does the wrong thing.
   final bool isPinned;
@@ -64,6 +69,7 @@ class MessageActions {
     required bool decrypted,
     required bool addressable,
     required bool pinned,
+    bool canSaveFile = false,
   }) {
     return MessageActions(
       canReply: !retracted && addressable,
@@ -72,6 +78,7 @@ class MessageActions {
       canCopy: decrypted && !retracted,
       canEdit: mine && !retracted && decrypted,
       canRetract: mine && !retracted && addressable,
+      canSaveFile: !retracted && canSaveFile,
       isPinned: pinned,
     );
   }
@@ -82,11 +89,12 @@ class MessageActions {
       !canCopy &&
       !canEdit &&
       !canForward &&
-      !canRetract;
+      !canRetract &&
+      !canSaveFile;
 }
 
 /// The result of the menu.
-enum MessageAction { reply, react, copy, edit, forward, pin, retract }
+enum MessageAction { reply, react, copy, edit, forward, pin, retract, saveFile }
 
 /// Shows the menu and returns what the user picked, or null.
 Future<MessageAction?> showMessageMenu(
@@ -124,8 +132,13 @@ Future<MessageAction?> showMessageMenu(
             ListTile(
               leading: const Icon(Icons.forward),
               title: Text(l10n.forward),
-              subtitle: Text(l10n.forwardSubtitle),
               onTap: () => Navigator.of(context).pop(MessageAction.forward),
+            ),
+          if (actions.canSaveFile)
+            ListTile(
+              leading: const Icon(Icons.save_alt),
+              title: Text(l10n.saveFile),
+              onTap: () => Navigator.of(context).pop(MessageAction.saveFile),
             ),
           if (actions.canEdit)
             ListTile(
