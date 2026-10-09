@@ -12,11 +12,11 @@ import 'package:moxlib/moxlib.dart';
 import 'package:moxxmpp/moxxmpp.dart';
 import 'package:omemo_dart/omemo_dart_axolotl.dart' as axolotl;
 
-import '../omemo/defacto.dart';
-import '../omemo/dual_track_manager.dart';
-import '../omemo/track.dart';
-import '../omemo/track_resolver.dart';
-import '../omemo/protocol.dart';
+import '../crypto/omemo/defacto.dart';
+import '../crypto/omemo/dual_track_manager.dart';
+import '../crypto/omemo/track.dart';
+import '../crypto/omemo/track_resolver.dart';
+import '../crypto/omemo/protocol.dart';
 import '../store/omemo_device_store.dart';
 import 'aesgcm_url.dart';
 import 'b_track_manager.dart';

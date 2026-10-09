@@ -14,9 +14,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../account/resolve.dart';
 import '../../l10n/l10n.dart';
-import '../../omemo/track.dart';
-import '../../omemo/track_advice.dart';
-import '../../omemo/track_resolver.dart';
+import '../../crypto/omemo/track.dart';
+import '../../crypto/omemo/track_advice.dart';
+import '../../crypto/omemo/track_resolver.dart';
 import '../../state/providers.dart';
 import '../../xmpp/capabilities.dart';
 

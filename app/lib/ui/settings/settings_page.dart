@@ -10,7 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
 import '../../net/app_network.dart';
-import '../../omemo/track.dart';
+import '../../crypto/omemo/track.dart';
 import '../../state/providers.dart';
 import '../../xmpp/message_expiry.dart';
 import '../accent_theme.dart';

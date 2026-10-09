@@ -27,8 +27,8 @@
 
 import 'package:moxxmpp/moxxmpp.dart';
 
-import '../omemo/track.dart';
-import '../omemo/track_resolver.dart';
+import '../crypto/omemo/track.dart';
+import '../crypto/omemo/track_resolver.dart';
 
 /// A MUC service that did not answer a join at all.
 ///

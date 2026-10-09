@@ -2,7 +2,7 @@
 
 本文档定义本客户端使用的两套端到端加密轨道。
 
-- **A 轨：Conversations 互通 OMEMO**（XEP-0384 **0.3.0** / axolotl，命名空间 `eu.siacs.conversations.axolotl`；AES-128-GCM + libsignal）——与 Conversations 等主流客户端互通。实现见 `packages/omemo_dart/lib/omemo_dart_axolotl.dart`；PEP 方言见 `app/lib/omemo/defacto.dart`。
+- **A 轨：Conversations 互通 OMEMO**（XEP-0384 **0.3.0** / axolotl，命名空间 `eu.siacs.conversations.axolotl`；AES-128-GCM + libsignal）——与 Conversations 等主流客户端互通。实现见 `packages/omemo_dart/lib/omemo_dart_axolotl.dart`；PEP 方言见 `app/lib/crypto/omemo/defacto.dart`。
 - **B 轨：PQ-OMEMO / pomemo**（命名空间 `urn:xmpp:pomemo:0`）——本项目私有，后量子混合。底层经典 Double Ratchet 对齐 XEP-0384 **0.9.1**（`omemo_dart.dart`：AES-256-CBC+HMAC / OMEMO protobuf）。
 
 两轨差异在**握手算法**、**消息命名空间**与 **A 轨身份密钥线格式**（A：Curve25519/libsignal；B：复用经典 Ed25519+X25519 材料 + ML-KEM）。

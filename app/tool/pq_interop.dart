@@ -19,13 +19,13 @@ import 'package:logging/logging.dart';
 import 'package:moxxmpp/moxxmpp.dart';
 import 'package:moxxmpp_socket_tcp/moxxmpp_socket_tcp.dart';
 import 'package:xml/xml.dart';
-import 'package:resonchat/omemo/bundle_codec.dart';
-import 'package:resonchat/omemo/dual_track_manager.dart';
-import 'package:resonchat/omemo/message_codec.dart';
-import 'package:resonchat/omemo/pq_message_layer.dart';
-import 'package:resonchat/omemo/pq_session.dart';
-import 'package:resonchat/omemo/protocol.dart';
-import 'package:resonchat/pq/liboqs_mlkem.dart';
+import 'package:resonchat/crypto/omemo/bundle_codec.dart';
+import 'package:resonchat/crypto/omemo/dual_track_manager.dart';
+import 'package:resonchat/crypto/omemo/message_codec.dart';
+import 'package:resonchat/crypto/omemo/pq_message_layer.dart';
+import 'package:resonchat/crypto/omemo/pq_session.dart';
+import 'package:resonchat/crypto/omemo/protocol.dart';
+import 'package:resonchat/crypto/pq/liboqs_mlkem.dart';
 
 /// Number of failed checks; module-level so [finish] can report it from
 /// the `finally` block.

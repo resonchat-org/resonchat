@@ -11,8 +11,8 @@
 import 'package:moxxmpp/moxxmpp.dart';
 import 'package:xml/xml.dart';
 
-import '../omemo/message_codec.dart';
-import '../omemo/protocol.dart';
+import '../crypto/omemo/message_codec.dart';
+import '../crypto/omemo/protocol.dart';
 import 'eme.dart';
 
 /// Stanza extension holding a B-track encrypted element.

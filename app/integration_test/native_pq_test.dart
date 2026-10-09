@@ -11,8 +11,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:resonchat/pq/liboqs_mlkem.dart';
-import 'package:resonchat/pq/mlkem.dart';
+import 'package:resonchat/crypto/pq/liboqs_mlkem.dart';
+import 'package:resonchat/crypto/pq/mlkem.dart';
 
 void main() {
   test('native or Dart backend is available and functional', () {

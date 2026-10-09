@@ -7,11 +7,17 @@
 
 import 'package:drift/drift.dart';
 import 'package:moxxmpp/moxxmpp.dart' show XmppRosterItem;
-import 'package:resonchat/omemo/track.dart';
+import 'package:resonchat/crypto/omemo/track.dart';
 
 import 'database_connection.dart';
 
 part 'database.g.dart';
+
+/// [Chats.lastActivity] when a conversation has no messages.
+///
+/// Sorts empty chats to the bottom of the list. Must not be "now" — roster
+/// sync and cold start used to stamp login time onto every contact.
+final DateTime chatActivityEpoch = DateTime.fromMillisecondsSinceEpoch(0);
 
 /// One conversation: a 1:1 contact or a MUC room (Conversations MODE_MULTI).
 ///
@@ -547,7 +553,11 @@ class AppDatabase extends _$AppDatabase {
       // set" independent of "a chat exists", which is what the settings UI
       // assumes.
       await into(chats).insert(
-        ChatsCompanion(jid: Value(chatJid), trackOverride: Value(value)),
+        ChatsCompanion(
+          jid: Value(chatJid),
+          trackOverride: Value(value),
+          lastActivity: Value(chatActivityEpoch),
+        ),
         mode: InsertMode.insertOrIgnore,
       );
       await (update(chats)..where((c) => c.jid.equals(chatJid))).write(
@@ -1023,8 +1033,11 @@ class AppDatabase extends _$AppDatabase {
         .watch();
   }
 
-  /// Creates or updates a chat row. [at] overrides the activity timestamp
-  /// (tests and MAM imports need deterministic ordering).
+  /// Creates or updates a chat row.
+  ///
+  /// New rows get [at], or [chatActivityEpoch] when omitted (no messages yet).
+  /// On conflict, [lastActivity] is left alone unless [at] is passed — roster
+  /// sync must not rewrite every contact's time to "now".
   ///
   /// [isGroup] / [mucNick] / [mucPrivateNonAnonymous] are optional so a later
   /// 1:1 upsert cannot wipe a room's MODE_MULTI flags.
@@ -1036,18 +1049,53 @@ class AppDatabase extends _$AppDatabase {
     String? mucNick,
     bool? mucPrivateNonAnonymous,
   }) async {
-    await into(chats).insertOnConflictUpdate(
+    await into(chats).insert(
       ChatsCompanion(
         jid: Value(jid),
         title: Value(title ?? jid),
-        lastActivity: Value(at ?? DateTime.now()),
+        lastActivity: Value(at ?? chatActivityEpoch),
         isGroup: isGroup != null ? Value(isGroup) : const Value.absent(),
         mucNick: mucNick != null ? Value(mucNick) : const Value.absent(),
         mucPrivateNonAnonymous: mucPrivateNonAnonymous != null
             ? Value(mucPrivateNonAnonymous)
             : const Value.absent(),
       ),
+      onConflict: DoUpdate(
+        (_) => ChatsCompanion(
+          title: Value(title ?? jid),
+          lastActivity: at != null ? Value(at) : const Value.absent(),
+          isGroup: isGroup != null ? Value(isGroup) : const Value.absent(),
+          mucNick: mucNick != null ? Value(mucNick) : const Value.absent(),
+          mucPrivateNonAnonymous: mucPrivateNonAnonymous != null
+              ? Value(mucPrivateNonAnonymous)
+              : const Value.absent(),
+        ),
+      ),
     );
+  }
+
+  /// Sets each chat's [Chats.lastActivity] from its newest message, or
+  /// [chatActivityEpoch] when the conversation is empty.
+  ///
+  /// Repairs rows stamped with login time by an older upsert.
+  Future<void> syncChatLastActivity() async {
+    final rows = await select(chats).get();
+    for (final chat in rows) {
+      final latest =
+          await (select(messages)
+                ..where((m) => m.chatJid.equals(chat.jid))
+                ..orderBy([
+                  (m) => OrderingTerm.desc(m.timestamp),
+                  (m) => OrderingTerm.desc(m.id),
+                ])
+                ..limit(1))
+              .getSingleOrNull();
+      final ts = latest?.timestamp ?? chatActivityEpoch;
+      if (chat.lastActivity == ts) continue;
+      await (update(chats)..where((c) => c.jid.equals(chat.jid))).write(
+        ChatsCompanion(lastActivity: Value(ts)),
+      );
+    }
   }
 
   /// One conversation row, or null.
@@ -1132,7 +1180,13 @@ class AppDatabase extends _$AppDatabase {
       await (delete(
         pinnedMessages,
       )..where((p) => p.chatJid.equals(chatJid))).go();
-      return (delete(messages)..where((m) => m.chatJid.equals(chatJid))).go();
+      final n = await (delete(
+        messages,
+      )..where((m) => m.chatJid.equals(chatJid))).go();
+      await (update(chats)..where((c) => c.jid.equals(chatJid))).write(
+        ChatsCompanion(lastActivity: Value(chatActivityEpoch)),
+      );
+      return n;
     });
   }
 

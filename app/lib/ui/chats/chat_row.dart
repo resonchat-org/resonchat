@@ -20,7 +20,7 @@ import '../../account/account_color.dart';
 import '../../account/account_hub.dart';
 import '../../account/resolve.dart';
 import '../../l10n/l10n.dart';
-import '../../omemo/track.dart';
+import '../../crypto/omemo/track.dart';
 import '../../state/providers.dart';
 import '../../store/database.dart';
 import '../contact_avatar.dart';
@@ -210,10 +210,14 @@ class ChatRow extends ConsumerWidget {
   }
 
   static String _timeOf(DateTime t) {
+    // Empty chats sit at the Unix epoch — no clock to show.
+    if (!t.isAfter(chatActivityEpoch)) return '';
     final now = DateTime.now();
     final h = t.hour.toString().padLeft(2, '0');
     final m = t.minute.toString().padLeft(2, '0');
-    if (t.year == now.year && t.day == now.day) return '$h:$m';
+    if (t.year == now.year && t.month == now.month && t.day == now.day) {
+      return '$h:$m';
+    }
     return '${t.day}/${t.month}';
   }
 }

@@ -9,9 +9,9 @@ import 'package:moxxmpp/moxxmpp.dart' show JID;
 
 import '../account/account_hub.dart';
 import '../account/resolve.dart';
-import '../omemo/dual_track_manager.dart';
-import '../omemo/protocol.dart';
-import '../omemo/track.dart';
+import '../crypto/omemo/dual_track_manager.dart';
+import '../crypto/omemo/protocol.dart';
+import '../crypto/omemo/track.dart';
 import '../store/database.dart';
 import '../store/prefs_database.dart';
 import '../xmpp/avatar.dart';

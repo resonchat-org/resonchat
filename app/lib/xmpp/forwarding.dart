@@ -27,7 +27,7 @@
 
 import 'package:moxxmpp/moxxmpp.dart' show JID;
 
-import '../omemo/track.dart';
+import '../crypto/omemo/track.dart';
 import 'connection.dart';
 import 'replies.dart';
 

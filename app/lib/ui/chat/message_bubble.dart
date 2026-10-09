@@ -9,7 +9,7 @@
 import 'package:flutter/material.dart';
 
 import '../../l10n/l10n.dart';
-import '../../omemo/track.dart';
+import '../../crypto/omemo/track.dart';
 import '../../store/database.dart';
 import '../../xmpp/reactions.dart';
 import '../../xmpp/retraction.dart';
@@ -69,15 +69,16 @@ class _BubblePainter extends CustomPainter {
         ..arcToPoint(Offset(lt, 0), radius: Radius.circular(lt))
         ..close();
     } else {
-      // Mirror image: tail at bottom-left, pointed corner on the right.
+      // Mirror of the outgoing path: tail at bottom-left.
       final rt = radii.topRight.x;
       final lt = radii.topLeft.x;
+      final br = radii.bottomRight.x;
       path
         ..moveTo(lt, 0)
         ..lineTo(size.width - rt, 0)
         ..arcToPoint(Offset(size.width, rt), radius: Radius.circular(rt))
-        ..lineTo(size.width, radii.bottomRight.x)
-        ..lineTo(radii.bottomRight.x, size.height)
+        ..lineTo(size.width, size.height - br)
+        ..lineTo(size.width - br, size.height)
         ..lineTo(tailSize, size.height)
         ..lineTo(0, size.height - tailSize)
         ..lineTo(0, lt)
@@ -560,22 +561,20 @@ class DateSeparator extends StatelessWidget {
 
   final DateTime date;
 
-  String get _label {
+  String _label(AppLocalizations l10n) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final that = DateTime(date.year, date.month, date.day);
     final delta = today.difference(that).inDays;
-    if (delta == 0) return 'Today';
-    if (delta == 1) return 'Yesterday';
-    if (date.year == now.year) {
-      return '${date.day}/${date.month}/${date.year}';
-    }
+    if (delta == 0) return l10n.today;
+    if (delta == 1) return l10n.yesterday;
     return '${date.day}/${date.month}/${date.year}';
   }
 
   @override
   Widget build(BuildContext context) {
     final tg = context.tg;
+    final l10n = context.l10n;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Center(
@@ -586,7 +585,7 @@ class DateSeparator extends StatelessWidget {
             borderRadius: BorderRadius.circular(10),
           ),
           child: Text(
-            _label,
+            _label(l10n),
             style: TextStyle(
               fontSize: TgDimens.timeFontSize,
               color: tg.dateSeparatorText,

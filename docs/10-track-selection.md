@@ -65,7 +65,7 @@
 
 ## 6. `TrackResolver`：唯一判定入口
 
-实现：`app/lib/omemo/track_resolver.dart` 的 `resolveTrack`。
+实现：`app/lib/crypto/omemo/track_resolver.dart` 的 `resolveTrack`。
 
 ```
 resolveTrack(requested, capabilities) -> TrackResolution {
@@ -162,7 +162,7 @@ desired = pq
 | 8 | 选定 PO/OM 但有设备不支持 → 阻断直至用户改选 |
 | 9 | `Meta` `global_track` + `chats.track_override` 读写往返 |
 
-覆盖见 `app/test/track_*.dart`、`track_setting_test.dart` 等。
+覆盖见 `app/test/crypto/track_*.dart` 等。
 
 ## 12. 实现清单
 

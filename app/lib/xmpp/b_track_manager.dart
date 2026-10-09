@@ -14,13 +14,13 @@ import 'dart:math';
 import 'package:logging/logging.dart';
 import 'package:moxxmpp/moxxmpp.dart';
 
-import '../omemo/bundle_codec.dart';
-import '../omemo/dual_track_manager.dart';
-import '../omemo/message_codec.dart';
-import '../omemo/pq_message_layer.dart';
-import '../omemo/pq_session.dart';
-import '../omemo/protocol.dart';
-import '../pq/liboqs_mlkem.dart';
+import '../crypto/omemo/bundle_codec.dart';
+import '../crypto/omemo/dual_track_manager.dart';
+import '../crypto/omemo/message_codec.dart';
+import '../crypto/omemo/pq_message_layer.dart';
+import '../crypto/omemo/pq_session.dart';
+import '../crypto/omemo/protocol.dart';
+import '../crypto/pq/liboqs_mlkem.dart';
 
 /// The local B-track device plus its session and message layer.
 class BTrackSession {

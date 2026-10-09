@@ -17,8 +17,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:moxxmpp/moxxmpp.dart' show JID;
 
 import '../../account/resolve.dart';
-import '../../omemo/track.dart';
-import '../../omemo/track_resolver.dart';
+import '../../crypto/omemo/track.dart';
+import '../../crypto/omemo/track_resolver.dart';
+import '../../l10n/l10n.dart';
 import '../../platform/media_store.dart';
 import '../../store/database.dart';
 import '../../xmpp/capabilities.dart';
@@ -35,6 +36,7 @@ class ProfilePage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tg = context.tg;
+    final l10n = context.l10n;
     final resolved = resolveChatKey(chatJid);
     final peer = resolved.jid;
     final xmpp = resolved.session.xmpp;
@@ -77,7 +79,7 @@ class ProfilePage extends ConsumerWidget {
             ),
           ),
 
-          _section(tg, 'Relationship'),
+          _section(tg, l10n.relationship),
           ListTile(
             leading: Icon(
               contact?.isMutual ?? false ? Icons.how_to_reg : Icons.person_add,
@@ -85,12 +87,11 @@ class ProfilePage extends ConsumerWidget {
                   ? tg.unreadBadge
                   : tg.unreadBadge,
             ),
-            title: Text(contact?.summary ?? 'unknown'),
+            title: Text(contact?.summary ?? l10n.subscriptionUnknown),
             subtitle: Text(
               contact?.isMutual ?? false
-                  ? 'Messages are delivered both ways.'
-                  : 'Many servers refuse messages until both sides have '
-                        'accepted each other.',
+                  ? l10n.subscriptionMutualSummary
+                  : l10n.subscriptionNotMutualSummary,
               style: TextStyle(fontSize: 12, color: tg.textSecondary),
             ),
             trailing: (contact?.isMutual ?? true) || !connected
@@ -98,56 +99,57 @@ class ProfilePage extends ConsumerWidget {
                 : TextButton(
                     onPressed: () =>
                         xmpp.requestSubscription(JID.fromString(peer)),
-                    child: const Text('Ask again'),
+                    child: Text(l10n.askAgain),
                   ),
           ),
 
-          _section(tg, 'Encryption'),
+          _section(tg, l10n.encryption),
           ListTile(
             leading: Icon(
               track.icon,
               color: track == Track.none ? tg.textSecondary : tg.accent,
             ),
-            title: Text('This conversation: ${track.label}'),
+            title: Text(
+              l10n.thisConversationTrack(track.localizedDescription(l10n)),
+            ),
             subtitle: Text(protectionSentence(track, caps, context)),
           ),
           ListTile(
             leading: const Icon(Icons.devices_other),
             title: Text(
-              'Devices that can read it: ${caps?.recipientDevices.length ?? 0}',
+              l10n.devicesThatCanRead(caps?.recipientDevices.length ?? 0),
             ),
             subtitle: Text(
               caps == null || caps.recipientDevices.isEmpty
-                  ? 'No device list has been resolved yet.'
-                  : 'A message must be readable by all of them, so this is '
-                        'what decides whether it can be sent at all.',
+                  ? l10n.noDeviceListYet
+                  : l10n.deviceListDecidesSending,
               style: TextStyle(fontSize: 12, color: tg.textSecondary),
             ),
           ),
           ListTile(
             leading: const Icon(Icons.fingerprint),
-            title: const Text('Encryption details'),
-            subtitle: const Text('Fingerprint and verification'),
+            title: Text(l10n.encryptionDetails),
+            subtitle: Text(l10n.fingerprintAndVerification),
             trailing: const Icon(Icons.chevron_right),
             onTap: () =>
                 Navigator.of(context)
                     .pushNamed('/encryption', arguments: chatJid),
           ),
 
-          _section(tg, 'Actions'),
+          _section(tg, l10n.actions),
           ListTile(
             leading: const Icon(Icons.history),
-            title: const Text('Load archived messages'),
-            subtitle: const Text('Ask the server for this conversation (MAM)'),
+            title: Text(l10n.loadArchivedMessages),
+            subtitle: Text(l10n.loadArchivedMessagesSummary),
             onTap: () => _loadHistory(context, xmpp, peer),
           ),
           ListTile(
             leading: Icon(Icons.delete_outline, color: tg.danger),
             title: Text(
-              'Clear history on this device',
+              l10n.clearHistoryOnDevice,
               style: TextStyle(color: tg.danger),
             ),
-            subtitle: const Text('Does not delete anything on the server'),
+            subtitle: Text(l10n.clearHistoryOnDeviceSummary),
             onTap: () => _confirmClear(context, resolved.session.db, peer),
           ),
         ],
@@ -161,13 +163,14 @@ class ProfilePage extends ConsumerWidget {
     String peer,
   ) async {
     final messenger = ScaffoldMessenger.of(context);
+    final l10n = context.l10n;
     final count = await xmpp.fetchHistory(JID.fromString(peer));
     messenger.showSnackBar(
       SnackBar(
         content: Text(
           count == null
-              ? 'Could not load history (server may not support MAM)'
-              : 'Loaded $count archived message(s)',
+              ? l10n.couldNotLoadHistory
+              : l10n.loadedArchivedMessages(count),
         ),
       ),
     );
@@ -178,23 +181,20 @@ class ProfilePage extends ConsumerWidget {
     AppDatabase db,
     String peer,
   ) async {
+    final l10n = context.l10n;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Clear history?'),
-        content: const Text(
-          'Messages in this conversation will be removed from this device. '
-          'Nothing is deleted on the server, and the other side keeps its '
-          'copy.',
-        ),
+        title: Text(l10n.clearHistoryTitle),
+        content: Text(l10n.clearHistoryBody),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
+            child: Text(l10n.cancel),
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Clear'),
+            child: Text(l10n.clear),
           ),
         ],
       ),
@@ -217,16 +217,18 @@ class ProfilePage extends ConsumerWidget {
     ChatCapabilities? caps,
     BuildContext context,
   ) {
+    final l10n = context.l10n;
     final resolution = resolveTrack(requested: track, capabilities: caps);
     if (!resolution.canSend) {
-      return 'You chose ${track.label}. ${resolution.blocked!.consequence} '
-          'Nothing has been sent; you will be asked each time.';
+      return l10n.choseTrackBlocked(
+        track.localizedDescription(l10n),
+        resolution.blocked!.localizedConsequence(l10n),
+      );
     }
     return switch (track) {
-      Track.pq => 'End-to-end encrypted with post-quantum keys.',
-      Track.standard =>
-        'End-to-end encrypted (standard OMEMO, works with other apps).',
-      Track.none => 'Sent in the clear, as you chose.',
+      Track.pq => l10n.protectedPq,
+      Track.standard => l10n.protectedStandard,
+      Track.none => l10n.protectedNone,
     };
   }
 

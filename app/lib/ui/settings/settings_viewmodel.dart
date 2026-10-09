@@ -3,7 +3,7 @@
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../omemo/track.dart';
+import '../../crypto/omemo/track.dart';
 import '../../state/providers.dart';
 import '../../xmpp/message_expiry.dart';
 

@@ -38,4 +38,4 @@
 
 ## B 轨与 A 轨分工
 
-按 ADR-006，PQ 代码在 app 侧 `lib/omemo/` 与 `lib/pq/`，保持 omemo_dart 上游零侵入；A 轨继续完全委托 omemo_dart / axolotl，以确保与 Conversations 等客户端互通。
+按 ADR-006，PQ 代码在 app 侧 `lib/crypto/omemo/` 与 `lib/crypto/pq/`，保持 omemo_dart 上游零侵入；A 轨继续完全委托 omemo_dart / axolotl，以确保与 Conversations 等客户端互通。

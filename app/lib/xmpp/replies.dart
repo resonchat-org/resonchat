@@ -22,7 +22,7 @@
 import 'package:moxxmpp/moxxmpp.dart'
     show JID, ReplyData, XMLNode, replyXmlns, fallbackIndicationXmlns;
 
-import '../omemo/track.dart';
+import '../crypto/omemo/track.dart';
 
 import 'connection.dart';
 

@@ -261,5 +261,176 @@
   "trackBlockedStandardOutcome": "只有明文发送才能让对方读到此消息。",
   "trackBlockedPqTitle": "对方无法阅读后量子消息",
   "trackBlockedPqConsequence": "对方至少有一台设备不是 resonchat，无法阅读后量子消息。",
-  "trackBlockedPqOutcome": "对方将完全无法阅读此消息。"
+  "trackBlockedPqOutcome": "对方将完全无法阅读此消息。",
+  "appearanceBackground": "背景",
+  "appearanceBubbleShape": "气泡形状",
+  "appearanceBubbleRound": "圆角",
+  "appearanceBubbleSquare": "方角",
+  "appearanceBubbleTailed": "带尾",
+  "reset": "重置",
+  "leaveRoom": "离开",
+  "relationship": "关系",
+  "subscriptionUnknown": "未知",
+  "subscriptionMutualSummary": "双方均可正常收发消息。",
+  "subscriptionNotMutualSummary": "许多服务器在双方互相接受之前会拒绝投递消息。",
+  "encryption": "加密",
+  "thisConversationTrack": "此会话：{label}",
+  "@thisConversationTrack": {
+    "placeholders": {
+      "label": { "type": "String" }
+    }
+  },
+  "devicesThatCanRead": "可阅读的设备：{count}",
+  "@devicesThatCanRead": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "noDeviceListYet": "尚未解析到设备列表。",
+  "deviceListDecidesSending": "消息必须能被所有这些设备阅读，因此这决定了能否发送。",
+  "encryptionDetails": "加密详情",
+  "fingerprintAndVerification": "指纹与验证",
+  "actions": "操作",
+  "loadArchivedMessages": "加载归档消息",
+  "loadArchivedMessagesSummary": "向服务器请求此会话的历史（MAM）",
+  "clearHistoryOnDevice": "清除本机聊天记录",
+  "clearHistoryOnDeviceSummary": "不会删除服务器上的任何内容",
+  "clearHistoryTitle": "清除聊天记录？",
+  "clearHistoryBody": "此会话的消息将从此设备移除。服务器上不会删除任何内容，对方仍保留自己的副本。",
+  "choseTrackBlocked": "你选择了 {label}。{consequence} 尚未发送任何消息；每次发送前都会询问你。",
+  "@choseTrackBlocked": {
+    "placeholders": {
+      "label": { "type": "String" },
+      "consequence": { "type": "String" }
+    }
+  },
+  "protectedPq": "使用后量子密钥进行端到端加密。",
+  "protectedStandard": "端到端加密（标准 OMEMO，可与其他应用互通）。",
+  "protectedNone": "按你的选择以明文发送。",
+
+  "thisChat": "此会话",
+  "youChoseTrack": "你选择了 {label}",
+  "@youChoseTrack": {
+    "placeholders": {
+      "label": { "type": "String" }
+    }
+  },
+  "devices": "设备",
+  "thisDeviceId": "本设备：{id}",
+  "@thisDeviceId": {
+    "placeholders": {
+      "id": { "type": "String" }
+    }
+  },
+  "deviceCountedForCarbons": "计为接收方，以便 Carbons 生效",
+  "recipientDevicesCount": "对方设备：{count}",
+  "@recipientDevicesCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "nonePublishedYet": "尚未发布任何设备",
+  "postQuantumDeviceCount": "后量子：{count} 台设备",
+  "@postQuantumDeviceCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "noPqBundlePublished": "没有设备发布 PQ bundle",
+  "pqUpgradeAutomatic": "所有设备都支持后会自动升级",
+  "verifyIdentity": "验证身份",
+  "verifyIdentityIntro": "与对方当面或在你已信任的通话中核对。这能证明你在与正确的设备通信，且中间没有人窃听。一次比对同时覆盖两条加密轨。",
+  "copyFingerprint": "复制指纹",
+  "fingerprintCopied": "已复制指纹",
+  "verificationStatus": "验证状态",
+  "verifyIShowedFingerprint": "我已向对方出示我的指纹",
+  "verifyTheyMustSeeSame": "对方屏幕上必须看到相同的数字",
+  "verifyTheyConfirmed": "对方确认与其指纹一致",
+  "verifyReadGroupsAloud": "勾选前请逐组大声核对",
+  "verifyTickPreviousFirst": "请先勾选上一项",
+  "verifiedInPerson": "已当面验证。密钥变更时将提醒你。",
+  "trackUsableBlocked": "{consequence} 在你另行选择之前，不会通过 {label} 发送任何内容。",
+  "@trackUsableBlocked": {
+    "placeholders": {
+      "consequence": { "type": "String" },
+      "label": { "type": "String" }
+    }
+  },
+  "trackUsablePq": "使用后量子密钥进行端到端加密",
+  "trackUsableStandard": "端到端加密（标准 OMEMO，可与其他应用互通）",
+  "trackUsableNone": "按你的选择以明文发送",
+
+  "notDelivered": "未送达：{reason}",
+  "@notDelivered": {
+    "placeholders": {
+      "reason": { "type": "String" }
+    }
+  },
+  "messageNotDeliveredTitle": "消息未送达",
+  "messageNotDeliveredBody": "服务器拒绝了此消息：\n\n{reason}\n\n请让对方接受你的联系人请求，或等待对方接受你的请求。",
+  "@messageNotDeliveredBody": {
+    "placeholders": {
+      "reason": { "type": "String" }
+    }
+  },
+  "messageNotDeliveredBodyNotMutual": "服务器拒绝了此消息：\n\n{reason}\n\n此联系人尚未双向订阅（当前：{status}）。许多服务器在双方互相接受之前会拒绝投递消息。\n\n请让对方接受你的联系人请求，或等待对方接受你的请求。",
+  "@messageNotDeliveredBodyNotMutual": {
+    "placeholders": {
+      "reason": { "type": "String" },
+      "status": { "type": "String" }
+    }
+  },
+  "notSent": "未发送：{reason}",
+  "@notSent": {
+    "placeholders": {
+      "reason": { "type": "String" }
+    }
+  },
+  "reactionSendFailed": "表情回应未能发送。",
+  "couldNotDeleteUnsent": "无法删除：消息尚未发送。",
+  "unblockBeforeForward": "转发前请先取消屏蔽 {contact}。",
+  "@unblockBeforeForward": {
+    "placeholders": {
+      "contact": { "type": "String" }
+    }
+  },
+  "forwardedTo": "已转发至 {contact}",
+  "@forwardedTo": {
+    "placeholders": {
+      "contact": { "type": "String" }
+    }
+  },
+  "forwardedThenStopped": "已转发 {count} 条后停止：当前无法使用 {contact} 的加密轨。",
+  "@forwardedThenStopped": {
+    "placeholders": {
+      "count": { "type": "int" },
+      "contact": { "type": "String" }
+    }
+  },
+  "forwardedPartialThenStopped": "已转发 {forwarded}/{total} 条后停止：当前无法使用 {contact} 的加密轨。",
+  "@forwardedPartialThenStopped": {
+    "placeholders": {
+      "forwarded": { "type": "int" },
+      "total": { "type": "int" },
+      "contact": { "type": "String" }
+    }
+  },
+  "notCorrected": "未能更正：{reason}",
+  "@notCorrected": {
+    "placeholders": {
+      "reason": { "type": "String" }
+    }
+  },
+  "nothingToForward": "没有可转发的内容。",
+  "onlyOwnMessagesDeletable": "只能删除自己发送的消息。",
+  "deletedPartial": "已删除 {deleted}/{mine} 条；其余未能发送删除请求。",
+  "@deletedPartial": {
+    "placeholders": {
+      "deleted": { "type": "int" },
+      "mine": { "type": "int" }
+    }
+  },
+  "today": "今天",
+  "yesterday": "昨天",
+  "unknownReason": "未知原因"
 }

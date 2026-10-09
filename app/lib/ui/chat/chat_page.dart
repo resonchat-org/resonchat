@@ -17,7 +17,7 @@ import 'package:moxxmpp/moxxmpp.dart' show JID;
 import '../../account/chat_ref.dart';
 import '../../account/resolve.dart';
 import '../../l10n/l10n.dart';
-import '../../omemo/track.dart';
+import '../../crypto/omemo/track.dart';
 import '../../platform/media_store.dart';
 import '../../state/providers.dart';
 import '../../store/database.dart';
@@ -243,11 +243,12 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
   void _onFailureNotice(String reason) {
     if (!mounted) return;
+    final l10n = context.l10n;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Not delivered: $reason'),
+        content: Text(l10n.notDelivered(reason)),
         action: SnackBarAction(
-          label: 'Details',
+          label: l10n.details,
           onPressed: () => _showRefusalHelp(reason),
         ),
       ),
@@ -261,23 +262,22 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   /// contact sees every message silently vanish.
   void _showRefusalHelp(String reason) {
     final mutual = ref.read(contactStateProvider(widget.chatJid)).value;
+    final l10n = context.l10n;
+    final body = (mutual?.isMutual ?? false)
+        ? l10n.messageNotDeliveredBody(reason)
+        : l10n.messageNotDeliveredBodyNotMutual(
+            reason,
+            mutual?.summary ?? l10n.subscriptionUnknown,
+          );
     showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Message not delivered'),
-        content: Text(
-          'The server refused this message:\n\n$reason\n\n'
-          '${(mutual?.isMutual ?? false) ? '' : 'This contact is not a '
-                    'mutual subscription yet (currently ${mutual?.summary ?? 'unknown'}). '
-                    'Many servers refuse messages until both sides have accepted '
-                    'each other.\n\n'}'
-          'Ask them to accept your contact request, or wait for the other '
-          'side to accept yours.',
-        ),
+        title: Text(l10n.messageNotDeliveredTitle),
+        content: Text(body),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Close'),
+            child: Text(l10n.close),
           ),
         ],
       ),
@@ -432,7 +432,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   void _showNotSent(String reason) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text('Not sent: $reason')));
+        .showSnackBar(SnackBar(content: Text(context.l10n.notSent(reason))));
   }
 
   Future<void> _attachFile() async {
@@ -466,6 +466,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       bytes,
       fileName: picked.name,
       confirm: _confirm,
+      l10n: context.l10n,
     );
     if (!mounted) return;
     final error = result.error;
@@ -485,6 +486,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final result = await _vm.sendText(
       _input.text,
       confirm: _confirm,
+      l10n: context.l10n,
       reply: _replyingTo,
     );
     if (!mounted) return;
@@ -507,9 +509,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   Future<void> _toggleReaction(String targetId, String emoji) async {
     final ok = await _vm.toggleReaction(targetId, emoji);
     if (ok || !mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Reaction could not be sent.')),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(context.l10n.reactionSendFailed)));
   }
 
   Future<void> _showPinned() async {
@@ -676,9 +677,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     if (!mounted) return;
     if (!sent) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Could not delete: the message was not sent.'),
-        ),
+        SnackBar(content: Text(context.l10n.couldNotDeleteUnsent)),
       );
       return;
     }
@@ -697,11 +696,12 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     if (target == null || !mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
+    final l10n = context.l10n;
     final result = await _vm.forwardToChat(items: items, targetKey: target);
     final destPeer = result.destPeer;
     if (result.blocked) {
       messenger.showSnackBar(
-        SnackBar(content: Text('Unblock $destPeer before forwarding to them.')),
+        SnackBar(content: Text(l10n.unblockBeforeForward(destPeer))),
       );
       return;
     }
@@ -711,9 +711,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       SnackBar(
         content: Text(
           outcome.ok
-              ? 'Forwarded to $destPeer'
-              : 'Forwarded ${outcome.forwarded}, then stopped: the $destPeer '
-                    'track cannot be used right now.',
+              ? l10n.forwardedTo(destPeer)
+              : l10n.forwardedThenStopped(outcome.forwarded, destPeer),
         ),
       ),
     );
@@ -725,11 +724,16 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   Future<void> _submitCorrection(String body) async {
     final targetId = _editingId;
     if (targetId == null) return;
-    final failure = await _vm.submitCorrection(targetId, body);
+    final failure = await _vm.submitCorrection(
+      targetId,
+      body,
+      l10n: context.l10n,
+    );
     if (!mounted) return;
     if (failure != null) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Not corrected: $failure')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.notCorrected(failure))),
+      );
       return;
     }
     setState(() {
@@ -760,9 +764,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final items = await _vm.forwardItemsFor(List<String>.from(_selection));
     if (!mounted) return;
     if (items.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Nothing there to forward.')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(context.l10n.nothingToForward)));
       return;
     }
     final target = await showModalBottomSheet<String>(
@@ -772,11 +775,12 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     );
     if (target == null || !mounted) return;
     final messenger = ScaffoldMessenger.of(context);
+    final l10n = context.l10n;
     final result = await _vm.forwardToChat(items: items, targetKey: target);
     final destPeer = result.destPeer;
     if (result.blocked) {
       messenger.showSnackBar(
-        SnackBar(content: Text('Unblock $destPeer before forwarding to them.')),
+        SnackBar(content: Text(l10n.unblockBeforeForward(destPeer))),
       );
       return;
     }
@@ -788,8 +792,11 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       messenger.showSnackBar(
         SnackBar(
           content: Text(
-            'Forwarded ${outcome.forwarded} of ${items.length}, then stopped: '
-            'the $destPeer track cannot be used right now.',
+            l10n.forwardedPartialThenStopped(
+              outcome.forwarded,
+              items.length,
+              destPeer,
+            ),
           ),
         ),
       );
@@ -804,19 +811,17 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final messenger = ScaffoldMessenger.of(context);
     final result = await _vm.deleteMineByIds(List<String>.from(_selection));
     if (!mounted) return;
+    final l10n = context.l10n;
     if (result.mine == 0) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('Only your own messages can be deleted.')),
+        SnackBar(content: Text(l10n.onlyOwnMessagesDeletable)),
       );
       return;
     }
     if (result.deleted < result.mine) {
       messenger.showSnackBar(
         SnackBar(
-          content: Text(
-            'Deleted ${result.deleted} of ${result.mine}; the rest could not '
-            'be sent.',
-          ),
+          content: Text(l10n.deletedPartial(result.deleted, result.mine)),
         ),
       );
     }
@@ -1017,10 +1022,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                     painter: WallpaperPainter(
                       wallpaper: appearance.wallpaper,
                       base: tg.pageBackground,
-                      // A per-conversation accent tints the pattern; without one it
-                      // falls back to the theme's, so the pattern is never drawn in
-                      // a colour the app does not otherwise use.
-                      accent: appearance.accent ?? tg.accent,
+                      // Theme accent tints the pattern (per-chat colour was
+                      // removed; the app theme colour already covers that).
+                      accent: tg.accent,
                       seed: _peerJid,
                     ),
                     child: messages.when(

@@ -352,5 +352,176 @@
   "trackBlockedStandardOutcome": "Sending in the clear is the only way this message gets read.",
   "trackBlockedPqTitle": "They cannot read post-quantum messages",
   "trackBlockedPqConsequence": "At least one of their devices is not an resonchat device, and it cannot read post-quantum messages.",
-  "trackBlockedPqOutcome": "The other person will not be able to read this message at all."
+  "trackBlockedPqOutcome": "The other person will not be able to read this message at all.",
+  "appearanceBackground": "Background",
+  "appearanceBubbleShape": "Bubble shape",
+  "appearanceBubbleRound": "Round",
+  "appearanceBubbleSquare": "Square",
+  "appearanceBubbleTailed": "Tailed",
+  "reset": "Reset",
+  "leaveRoom": "Leave",
+  "relationship": "Relationship",
+  "subscriptionUnknown": "unknown",
+  "subscriptionMutualSummary": "Messages are delivered both ways.",
+  "subscriptionNotMutualSummary": "Many servers refuse messages until both sides have accepted each other.",
+  "encryption": "Encryption",
+  "thisConversationTrack": "This conversation: {label}",
+  "@thisConversationTrack": {
+    "placeholders": {
+      "label": { "type": "String" }
+    }
+  },
+  "devicesThatCanRead": "Devices that can read it: {count}",
+  "@devicesThatCanRead": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "noDeviceListYet": "No device list has been resolved yet.",
+  "deviceListDecidesSending": "A message must be readable by all of them, so this is what decides whether it can be sent at all.",
+  "encryptionDetails": "Encryption details",
+  "fingerprintAndVerification": "Fingerprint and verification",
+  "actions": "Actions",
+  "loadArchivedMessages": "Load archived messages",
+  "loadArchivedMessagesSummary": "Ask the server for this conversation (MAM)",
+  "clearHistoryOnDevice": "Clear history on this device",
+  "clearHistoryOnDeviceSummary": "Does not delete anything on the server",
+  "clearHistoryTitle": "Clear history?",
+  "clearHistoryBody": "Messages in this conversation will be removed from this device. Nothing is deleted on the server, and the other side keeps its copy.",
+  "choseTrackBlocked": "You chose {label}. {consequence} Nothing has been sent; you will be asked each time.",
+  "@choseTrackBlocked": {
+    "placeholders": {
+      "label": { "type": "String" },
+      "consequence": { "type": "String" }
+    }
+  },
+  "protectedPq": "End-to-end encrypted with post-quantum keys.",
+  "protectedStandard": "End-to-end encrypted (standard OMEMO, works with other apps).",
+  "protectedNone": "Sent in the clear, as you chose.",
+
+  "thisChat": "This chat",
+  "youChoseTrack": "You chose {label}",
+  "@youChoseTrack": {
+    "placeholders": {
+      "label": { "type": "String" }
+    }
+  },
+  "devices": "Devices",
+  "thisDeviceId": "This device: {id}",
+  "@thisDeviceId": {
+    "placeholders": {
+      "id": { "type": "String" }
+    }
+  },
+  "deviceCountedForCarbons": "Counted as a recipient so Carbons work",
+  "recipientDevicesCount": "Recipient devices: {count}",
+  "@recipientDevicesCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "nonePublishedYet": "None published yet",
+  "postQuantumDeviceCount": "Post-quantum: {count} device(s)",
+  "@postQuantumDeviceCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "noPqBundlePublished": "No device publishes a PQ bundle",
+  "pqUpgradeAutomatic": "Upgrade is automatic once every device does",
+  "verifyIdentity": "Verify identity",
+  "verifyIdentityIntro": "Compare this with the other person, in person or over a call you already trust. It proves you are talking to the right device and that nobody is in the middle. One comparison covers both encryption tracks.",
+  "copyFingerprint": "Copy fingerprint",
+  "fingerprintCopied": "Fingerprint copied",
+  "verificationStatus": "Verification status",
+  "verifyIShowedFingerprint": "I showed my fingerprint to them",
+  "verifyTheyMustSeeSame": "They must see the same digits on their own screen",
+  "verifyTheyConfirmed": "They confirmed theirs matches",
+  "verifyReadGroupsAloud": "Read every group out loud before ticking this",
+  "verifyTickPreviousFirst": "Tick the previous box first",
+  "verifiedInPerson": "Verified in person. Key changes will now warn you.",
+  "trackUsableBlocked": "{consequence} Nothing is sent on {label} until you choose otherwise.",
+  "@trackUsableBlocked": {
+    "placeholders": {
+      "consequence": { "type": "String" },
+      "label": { "type": "String" }
+    }
+  },
+  "trackUsablePq": "End-to-end encrypted with post-quantum keys",
+  "trackUsableStandard": "End-to-end encrypted (standard OMEMO, works with other apps)",
+  "trackUsableNone": "Sent in the clear, as you chose",
+
+  "notDelivered": "Not delivered: {reason}",
+  "@notDelivered": {
+    "placeholders": {
+      "reason": { "type": "String" }
+    }
+  },
+  "messageNotDeliveredTitle": "Message not delivered",
+  "messageNotDeliveredBody": "The server refused this message:\n\n{reason}\n\nAsk them to accept your contact request, or wait for the other side to accept yours.",
+  "@messageNotDeliveredBody": {
+    "placeholders": {
+      "reason": { "type": "String" }
+    }
+  },
+  "messageNotDeliveredBodyNotMutual": "The server refused this message:\n\n{reason}\n\nThis contact is not a mutual subscription yet (currently {status}). Many servers refuse messages until both sides have accepted each other.\n\nAsk them to accept your contact request, or wait for the other side to accept yours.",
+  "@messageNotDeliveredBodyNotMutual": {
+    "placeholders": {
+      "reason": { "type": "String" },
+      "status": { "type": "String" }
+    }
+  },
+  "notSent": "Not sent: {reason}",
+  "@notSent": {
+    "placeholders": {
+      "reason": { "type": "String" }
+    }
+  },
+  "reactionSendFailed": "Reaction could not be sent.",
+  "couldNotDeleteUnsent": "Could not delete: the message was not sent.",
+  "unblockBeforeForward": "Unblock {contact} before forwarding to them.",
+  "@unblockBeforeForward": {
+    "placeholders": {
+      "contact": { "type": "String" }
+    }
+  },
+  "forwardedTo": "Forwarded to {contact}",
+  "@forwardedTo": {
+    "placeholders": {
+      "contact": { "type": "String" }
+    }
+  },
+  "forwardedThenStopped": "Forwarded {count}, then stopped: the {contact} track cannot be used right now.",
+  "@forwardedThenStopped": {
+    "placeholders": {
+      "count": { "type": "int" },
+      "contact": { "type": "String" }
+    }
+  },
+  "forwardedPartialThenStopped": "Forwarded {forwarded} of {total}, then stopped: the {contact} track cannot be used right now.",
+  "@forwardedPartialThenStopped": {
+    "placeholders": {
+      "forwarded": { "type": "int" },
+      "total": { "type": "int" },
+      "contact": { "type": "String" }
+    }
+  },
+  "notCorrected": "Not corrected: {reason}",
+  "@notCorrected": {
+    "placeholders": {
+      "reason": { "type": "String" }
+    }
+  },
+  "nothingToForward": "Nothing there to forward.",
+  "onlyOwnMessagesDeletable": "Only your own messages can be deleted.",
+  "deletedPartial": "Deleted {deleted} of {mine}; the rest could not be sent.",
+  "@deletedPartial": {
+    "placeholders": {
+      "deleted": { "type": "int" },
+      "mine": { "type": "int" }
+    }
+  },
+  "today": "Today",
+  "yesterday": "Yesterday",
+  "unknownReason": "unknown reason"
 }

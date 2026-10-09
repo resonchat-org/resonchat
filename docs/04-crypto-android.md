@@ -14,7 +14,7 @@
 | 哈希 | SHA-256 | `cryptography` (Dart) |
 | 随机数 | `Random.secure()` / 平台 CSPRNG | — |
 
-选择入口：`MlKem768Provider`（`app/lib/pq/liboqs_mlkem.dart`）。能加载原生桥时 `isNative == true`，否则 `PqcryptoMlKem768`。
+选择入口：`MlKem768Provider`（`app/lib/crypto/pq/liboqs_mlkem.dart`）。能加载原生桥时 `isNative == true`，否则 `PqcryptoMlKem768`。
 
 ## 2. liboqs 在 Android 上的构建
 

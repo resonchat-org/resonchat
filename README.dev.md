@@ -26,14 +26,13 @@ resonchat/
 ├─ app/                      Flutter 应用
 │  ├─ lib/
 │  │  ├─ account/            多账号枢纽
-│  │  ├─ crypto/             PQXDH / KDF / 指纹
-│  │  ├─ omemo/              双轨协议、能力、TrackResolver
-│  │  ├─ pq/                 ML-KEM-768（liboqs FFI / pqcrypto）
+│  │  ├─ crypto/             加密：PQXDH / 指纹；omemo/ 双轨；pq/ ML-KEM
 │  │  ├─ store/              drift + 备份格式 + 平台 DB 连接
 │  │  ├─ state/              跨 feature Riverpod 读模型
 │  │  ├─ ui/                 feature 页面 + 主题/壳层小组件
 │  │  ├─ utils/              外观编解码、emoji 目录等非 UI 数据
 │  │  └─ xmpp/               连接生命周期与事件分发
+│  ├─ test/                  按关注点：crypto / rooms / store / messages / session / ui
 │  └─ tool/                  build_android / build_web / build_liboqs 等
 └─ packages/                 上游 fork（git 子模块，path 依赖）
    ├─ moxxmpp/packages/moxxmpp
@@ -63,7 +62,7 @@ resonchat/
 | **View** | `ui/<feature>/*_page.dart` 等 | 渲染、滚动、对话框；不写协议/DB |
 | **ViewModel** | 同目录 `*_viewmodel.dart`（Riverpod `Notifier`，按需） | UI 状态与命令 |
 | **读模型** | `state/providers.dart` | 跨页面 Stream/Future providers |
-| **Data** | `account/`、`store/`、`xmpp/`、`omemo/` | 经 `AccountHub` / `resolveChatKey` / providers 访问 |
+| **Data** | `account/`、`store/`、`xmpp/`、`crypto/` | 经 `AccountHub` / `resolveChatKey` / providers 访问 |
 
 ```
 ui/
@@ -85,7 +84,7 @@ cd app
 flutter pub get
 dart run build_runner build          # 生成 drift 代码（database.g.dart）
 dart analyze lib test                # flutter analyze 在本机会崩，改用 dart analyze
-flutter test
+flutter test                         # test/{crypto,rooms,store,messages,session,ui}/
 ./tool/build_android.sh              # mipmap + liboqs NDK libs + flutter build apk
 ./tool/build_web.sh                  # Drift WASM → web/ + flutter build web
 ./tool/build_appimage.sh             # Linux AppImage（需 GTK 3 等桌面依赖）
@@ -151,7 +150,7 @@ RFC 7395 framing / `WebSocketXmppSocket` 与 XEP-0156 在 `packages/moxxmpp`（`
 | `calloc.asTypedList()` | 返回的视图在 `free` 后仍被使用（use-after-free，不崩只静默出错） | 先 `Uint8List.fromList` 复制再释放 |
 | C 符号导出 | `-fvisibility=hidden` 下 `.so` 能加载但符号全找不到 | 导出函数加 `__attribute__((visibility("default")))` |
 | adb 输入法 | 中文 TTS IME 会吞掉 `@` 和 `.`，把 `xmpprev@jabber.fr` 变成「下面品牌Rev@就ABB而.」 | `adb shell ime disable` 禁用全部输入法后 `input text` 原样注入 |
-| XEP-0384 线格式 | 规范节点名 `urn:xmpp:omemo:2:*` 没有任何客户端实现；真实世界是 `eu.siacs.conversations.axolotl.*` | 出入站都同时支持两种方言（`lib/omemo/defacto.dart`） |
+| XEP-0384 线格式 | 规范节点名 `urn:xmpp:omemo:2:*` 没有任何客户端实现；真实世界是 `eu.siacs.conversations.axolotl.*` | 出入站都同时支持两种方言（`lib/crypto/omemo/defacto.dart`） |
 | Signal 公钥序列化 | 公钥是「1 字节类型前缀 0x05 + 32 字节密钥」= 33 字节；omemo_dart 用裸 32 字节 | 读时剥前缀、写时加前缀（`stripKeyTypeByte`/`addKeyTypeByte`） |
 | PubSub item id | 真实客户端把 bundle 挂在 `current` 上，moxxmpp 用设备号 | 取整节点，谁的 item 能解析就用谁 |
 | `ShouldEncrypt` 回调 | moxxmpp 对**每个**出站 stanza 都问一次「要不要加密」 | 只对 `message` 回答；否则能力解析会为每个 PubSub IQ 再发 IQ，形成无界级联把登录饿死 |

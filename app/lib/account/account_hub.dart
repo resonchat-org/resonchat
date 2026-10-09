@@ -13,7 +13,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:logging/logging.dart';
 
 import '../net/app_network.dart';
-import '../omemo/dual_track_manager.dart';
+import '../crypto/omemo/dual_track_manager.dart';
 import '../store/account_store.dart';
 import '../store/database.dart';
 import '../store/omemo_device_store.dart';
@@ -209,6 +209,9 @@ class AccountHub extends ChangeNotifier {
       for (final item in items) {
         await db.upsertChat(item.jid, title: item.name ?? item.jid);
       }
+      // Roster upsert must not move chats to "now"; realign from messages
+      // (and repair rows stamped with login time by older builds).
+      await db.syncChatLastActivity();
       await xmpp.ensureOmemoDevice();
       await xmpp.replenishPrekeys();
       await xmpp.initialiseBTrack();

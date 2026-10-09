@@ -13,7 +13,7 @@
 
 import 'package:moxxmpp/moxxmpp.dart';
 
-import '../omemo/track.dart';
+import '../crypto/omemo/track.dart';
 
 /// Declares the encryption used on an outgoing message.
 ///

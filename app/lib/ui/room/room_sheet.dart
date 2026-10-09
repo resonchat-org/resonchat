@@ -490,7 +490,7 @@ class _RoomSheetState extends State<_RoomSheet> {
                     onPressed: () =>
                         Navigator.of(context)
                             .pop(const RoomSheetResult.leave()),
-                    child: const Text('Leave'),
+                    child: Text(l10n.leaveRoom),
                   ),
                 ],
               ),

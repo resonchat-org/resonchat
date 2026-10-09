@@ -14,8 +14,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../account/resolve.dart';
 import '../../crypto/fingerprint.dart';
-import '../../omemo/track.dart';
-import '../../omemo/track_resolver.dart';
+import '../../crypto/omemo/track.dart';
+import '../../crypto/omemo/track_resolver.dart';
+import '../../l10n/l10n.dart';
 import '../../xmpp/capabilities.dart';
 import '../../state/providers.dart';
 import '../theme.dart';
@@ -69,43 +70,46 @@ class _SecurityPageState extends ConsumerState<SecurityPage> {
     await Clipboard.setData(ClipboardData(text: formatFingerprint(fp)));
     if (!mounted) return;
     ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('Fingerprint copied')));
+        .showSnackBar(SnackBar(content: Text(context.l10n.fingerprintCopied)));
   }
 
   @override
   Widget build(BuildContext context) {
     final tg = context.tg;
+    final l10n = context.l10n;
     final track =
         ref.watch(chatTrackProvider(widget.chatJid)).value ?? Track.standard;
     final caps = ref.watch(chatCapabilitiesProvider(widget.chatJid)).value;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Encryption')),
+      appBar: AppBar(title: Text(l10n.encryption)),
       body: ListView(
         children: [
-          _section(tg, 'This chat'),
+          _section(tg, l10n.thisChat),
           ListTile(
             leading: Icon(
               track.icon,
               color: track == Track.none ? tg.textSecondary : tg.accent,
             ),
-            title: Text('You chose ${track.label}'),
-            subtitle: Text(_describe(track, caps)),
+            title: Text(l10n.youChoseTrack(track.localizedDescription(l10n))),
+            subtitle: Text(_describe(track, caps, l10n)),
           ),
 
-          _section(tg, 'Devices'),
+          _section(tg, l10n.devices),
           ListTile(
             leading: const Icon(Icons.smartphone),
-            title: Text('This device: ${_deviceId ?? '—'}'),
-            subtitle: const Text('Counted as a recipient so Carbons work'),
+            title: Text(l10n.thisDeviceId('${_deviceId ?? '—'}')),
+            subtitle: Text(l10n.deviceCountedForCarbons),
           ),
           if (caps != null)
             ListTile(
               leading: const Icon(Icons.devices_other),
-              title: Text('Recipient devices: ${caps.recipientDevices.length}'),
+              title: Text(
+                l10n.recipientDevicesCount(caps.recipientDevices.length),
+              ),
               subtitle: Text(
                 caps.recipientDevices.isEmpty
-                    ? 'None published yet'
+                    ? l10n.nonePublishedYet
                     : caps.recipientDevices.join(', '),
               ),
             ),
@@ -115,22 +119,19 @@ class _SecurityPageState extends ConsumerState<SecurityPage> {
                 caps.pqDevices.isNotEmpty ? Icons.bolt : Icons.bolt_outlined,
                 color: caps.pqDevices.isNotEmpty ? tg.accent : tg.textSecondary,
               ),
-              title: Text('Post-quantum: ${caps.pqDevices.length} device(s)'),
+              title: Text(l10n.postQuantumDeviceCount(caps.pqDevices.length)),
               subtitle: Text(
                 caps.pqDevices.isEmpty
-                    ? 'No device publishes a PQ bundle'
-                    : 'Upgrade is automatic once every device does',
+                    ? l10n.noPqBundlePublished
+                    : l10n.pqUpgradeAutomatic,
               ),
             ),
 
-          _section(tg, 'Verify identity'),
+          _section(tg, l10n.verifyIdentity),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
             child: Text(
-              'Compare this with the other person, in person or over a call '
-              'you already trust. It proves you are talking to the right '
-              'device and that nobody is in the middle. One comparison covers '
-              'both encryption tracks.',
+              l10n.verifyIdentityIntro,
               style: TextStyle(fontSize: 13, color: tg.textSecondary),
             ),
           ),
@@ -156,11 +157,11 @@ class _SecurityPageState extends ConsumerState<SecurityPage> {
             child: OutlinedButton.icon(
               onPressed: _fingerprint == null ? null : _copyFingerprint,
               icon: const Icon(Icons.copy, size: 18),
-              label: const Text('Copy fingerprint'),
+              label: Text(l10n.copyFingerprint),
             ),
           ),
 
-          _section(tg, 'Verification status'),
+          _section(tg, l10n.verificationStatus),
           const _VerificationSteps(),
           const SizedBox(height: 24),
         ],
@@ -181,17 +182,22 @@ class _SecurityPageState extends ConsumerState<SecurityPage> {
   );
 
   /// The chosen track, and separately whether it can currently be used.
-  static String _describe(Track track, ChatCapabilities? caps) {
+  static String _describe(
+    Track track,
+    ChatCapabilities? caps,
+    AppLocalizations l10n,
+  ) {
     final resolution = resolveTrack(requested: track, capabilities: caps);
     if (!resolution.canSend) {
-      return '${resolution.blocked!.consequence} '
-          'Nothing is sent on ${track.label} until you choose otherwise.';
+      return l10n.trackUsableBlocked(
+        resolution.blocked!.localizedConsequence(l10n),
+        track.localizedDescription(l10n),
+      );
     }
     return switch (track) {
-      Track.pq => 'End-to-end encrypted with post-quantum keys',
-      Track.standard =>
-        'End-to-end encrypted (standard OMEMO, works with other apps)',
-      Track.none => 'Sent in the clear, as you chose',
+      Track.pq => l10n.trackUsablePq,
+      Track.standard => l10n.trackUsableStandard,
+      Track.none => l10n.trackUsableNone,
     };
   }
 }
@@ -213,6 +219,7 @@ class _VerificationStepsState extends State<_VerificationSteps> {
   @override
   Widget build(BuildContext context) {
     final tg = context.tg;
+    final l10n = context.l10n;
     final done = _weShowed && _theyConfirmed;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -221,9 +228,9 @@ class _VerificationStepsState extends State<_VerificationSteps> {
           value: _weShowed,
           onChanged: (v) => setState(() => _weShowed = v ?? false),
           controlAffinity: ListTileControlAffinity.leading,
-          title: const Text('I showed my fingerprint to them'),
+          title: Text(l10n.verifyIShowedFingerprint),
           subtitle: Text(
-            'They must see the same digits on their own screen',
+            l10n.verifyTheyMustSeeSame,
             style: TextStyle(fontSize: 12, color: tg.textSecondary),
           ),
         ),
@@ -233,11 +240,11 @@ class _VerificationStepsState extends State<_VerificationSteps> {
               ? (v) => setState(() => _theyConfirmed = v ?? false)
               : null,
           controlAffinity: ListTileControlAffinity.leading,
-          title: const Text('They confirmed theirs matches'),
+          title: Text(l10n.verifyTheyConfirmed),
           subtitle: Text(
             _weShowed
-                ? 'Read every group out loud before ticking this'
-                : 'Tick the previous box first',
+                ? l10n.verifyReadGroupsAloud
+                : l10n.verifyTickPreviousFirst,
             style: TextStyle(fontSize: 12, color: tg.textSecondary),
           ),
         ),
@@ -250,7 +257,7 @@ class _VerificationStepsState extends State<_VerificationSteps> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Verified in person. Key changes will now warn you.',
+                    l10n.verifiedInPerson,
                     style: TextStyle(
                       fontSize: 13,
                       color: tg.unreadBadge,

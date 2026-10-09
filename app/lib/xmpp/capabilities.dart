@@ -12,9 +12,9 @@ import 'dart:async';
 import 'package:logging/logging.dart';
 import 'package:moxxmpp/moxxmpp.dart';
 
-import '../omemo/dual_track_manager.dart';
-import '../omemo/negotiation.dart';
-import '../omemo/protocol.dart';
+import '../crypto/omemo/dual_track_manager.dart';
+import '../crypto/omemo/negotiation.dart';
+import '../crypto/omemo/protocol.dart';
 
 /// Capability snapshot for one conversation.
 class ChatCapabilities {
@@ -108,7 +108,7 @@ class CapabilityService {
     // Read the device list ourselves rather than through moxxmpp: its
     // fetchDeviceList only knows the XEP-0384 spec node, which no real
     // client publishes to, so it silently reported an empty list for
-    // everyone. See lib/omemo/defacto.dart.
+    // everyone. See lib/crypto/omemo/defacto.dart.
     final resolved = await tracks().resolveOmemoDevices(bare);
 
     final devices = <int>{...resolved.devices};

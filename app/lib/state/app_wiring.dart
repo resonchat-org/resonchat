@@ -11,9 +11,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../account/account_hub.dart';
 import 'providers.dart';
-import '../omemo/dual_track_manager.dart';
-import '../omemo/track.dart';
-import '../omemo/track_advice.dart';
+import '../crypto/omemo/dual_track_manager.dart';
+import '../crypto/omemo/track.dart';
+import '../crypto/omemo/track_advice.dart';
 import '../store/database.dart';
 import '../xmpp/capabilities.dart';
 import '../xmpp/blocking.dart';
@@ -85,12 +85,17 @@ class _AppWiringState extends ConsumerState<AppWiring> {
   ///
   /// Cold start never went through the login page, so this stayed
   /// `disconnected` even when XMPP was up — caps / upload / UI looked offline.
+  ///
+  /// Deferred: [_bindAll] runs from [initState], and Riverpod forbids
+  /// provider writes during widget lifecycle.
   void _syncConnectionState() {
     final xmpp = accountHub.primaryXmppOrNull;
     if (xmpp == null) return;
-    try {
-      ref.read(connectionStateProvider.notifier).state = xmpp.state;
-    } catch (_) {}
+    final next = xmpp.state;
+    Future(() {
+      if (!mounted) return;
+      ref.read(connectionStateProvider.notifier).state = next;
+    });
   }
 
   void _wireSession(AccountSession session) {

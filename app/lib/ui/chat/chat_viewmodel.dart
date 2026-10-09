@@ -14,9 +14,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:moxxmpp/moxxmpp.dart' show JID;
 
 import '../../account/resolve.dart';
-import '../../omemo/track.dart';
-import '../../omemo/track_advice.dart';
-import '../../omemo/track_resolver.dart';
+import '../../crypto/omemo/track.dart';
+import '../../crypto/omemo/track_advice.dart';
+import '../../crypto/omemo/track_resolver.dart';
+import '../../l10n/generated/app_localizations.dart';
 import '../../state/app_wiring.dart';
 import '../../state/providers.dart';
 import '../../store/database.dart';
@@ -647,13 +648,14 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
   Future<ChatSendResult> sendText(
     String text, {
     required ChatTrackConfirm confirm,
+    required AppLocalizations l10n,
     ChatReplyTarget? reply,
   }) async {
     if (state.sending) return const ChatSendResult();
     _set((s) => s.copyWith(sending: true));
     try {
       final track = await ref.read(chatTrackProvider(arg).future);
-      return await _sendOn(track, text.trim(), confirm, reply);
+      return await _sendOn(track, text.trim(), confirm, reply, l10n);
     } finally {
       _set((s) => s.copyWith(sending: false));
     }
@@ -664,6 +666,7 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
     String text,
     ChatTrackConfirm confirm,
     ChatReplyTarget? reply,
+    AppLocalizations l10n,
   ) async {
     if (text.isEmpty) return const ChatSendResult();
 
@@ -707,7 +710,8 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
       // the session dropped. Say so rather than showing a bubble that looks
       // sent.
       return ChatSendResult(
-        failureReason: outcome.blocked?.title ?? 'unknown reason',
+        failureReason:
+            outcome.blocked?.localizedTitle(l10n) ?? l10n.unknownReason,
       );
     }
 
@@ -746,6 +750,7 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
     List<int> bytes, {
     required String fileName,
     required ChatTrackConfirm confirm,
+    required AppLocalizations l10n,
   }) async {
     if (state.sending) return const ChatAttachResult();
     final xmpp = _xmpp;
@@ -789,7 +794,8 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
       );
       if (!outcome.sent) {
         return ChatAttachResult(
-          failureReason: outcome.blocked?.title ?? 'unknown reason',
+          failureReason:
+              outcome.blocked?.localizedTitle(l10n) ?? l10n.unknownReason,
         );
       }
 
@@ -908,14 +914,20 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
   /// correction of an encrypted message must not travel in the clear, or the
   /// server learns the corrected text. Returns null on success, otherwise the
   /// reason it was not corrected.
-  Future<String?> submitCorrection(String targetId, String body) async {
+  Future<String?> submitCorrection(
+    String targetId,
+    String body, {
+    required AppLocalizations l10n,
+  }) async {
     final r = resolveChatKey(arg);
     final outcome = await r.session.xmpp.correctMessage(
       JID.fromString(r.jid).toBare(),
       targetId: targetId,
       body: body,
     );
-    if (!outcome.sent) return outcome.blocked?.title ?? 'unknown reason';
+    if (!outcome.sent) {
+      return outcome.blocked?.localizedTitle(l10n) ?? l10n.unknownReason;
+    }
     await r.session.db.applyCorrection(
       chatJid: r.jid,
       targetId: targetId,

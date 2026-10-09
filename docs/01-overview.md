@@ -54,7 +54,7 @@
   - moxlib 上游：`codeberg.org/moxxy/moxlib`（GPL-3.0）。
   - MAM（XEP-0313）已从上游 `feat/mam` 并入 moxxmpp fork。
   - `moxxmpp_socket_tcp` 的 SDK 约束提升到 Dart 3。
-  - OMEMO 密码学由 `omemo_dart` 提供，moxxmpp 做 stanza 编解码/传输；PQ 代码在 app 侧 `lib/omemo/` 与 `lib/pq/`。
+  - OMEMO 密码学由 `omemo_dart` 提供，moxxmpp 做 stanza 编解码/传输；PQ 代码在 app 侧 `lib/crypto/omemo/` 与 `lib/crypto/pq/`。
 - **后果**：需跟进上游变更；A 轨保持与上游最小差异，便于合并。
 
 ### ADR-005：UI 移植 Telegram Android（Kotlin → Dart），整体 GPLv3
