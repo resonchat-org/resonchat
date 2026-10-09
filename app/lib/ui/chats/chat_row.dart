@@ -25,15 +25,7 @@ import '../../state/providers.dart';
 import '../../store/database.dart';
 import '../contact_avatar.dart';
 import '../theme.dart';
-
-/// The two swipe gestures on a chat row.
-enum ChatSwipeAction {
-  /// Swipe in from the leading edge.
-  toggleMute,
-
-  /// Swipe in from the trailing edge.
-  togglePin,
-}
+import 'notify_mode_sheet.dart';
 
 class ChatRow extends ConsumerWidget {
   const ChatRow({
@@ -68,28 +60,25 @@ class ChatRow extends ConsumerWidget {
         : ref.watch(chatTrackProvider(chatKey)).value ?? Track.standard;
     final preview = ref.watch(lastMessageProvider(chatKey));
     final locked = track != Track.none;
+    final notifyMode = chatNotifyModeOf(
+      muted: chat.muted,
+      alwaysNotify: chat.alwaysNotify,
+    );
+    final silenced = notifyMode.isSilenced;
 
+    // Swipe trailing edge to pin/unpin only. Notification mode lives in the
+    // chat AppBar / profile / room sheet — not a second swipe affordance.
     return Dismissible(
       key: ValueKey('chat-row-$chatKey'),
-      direction: DismissDirection.horizontal,
+      direction: DismissDirection.endToStart,
       background: SwipeBackground(
-        alignment: Alignment.centerLeft,
-        icon: chat.muted ? Icons.notifications_active : Icons.notifications_off,
-        label: chat.muted ? context.l10n.unmute : context.l10n.mute,
-      ),
-      secondaryBackground: SwipeBackground(
         alignment: Alignment.centerRight,
         icon: chat.pinned ? Icons.push_pin_outlined : Icons.push_pin,
         label: chat.pinned ? context.l10n.unpin : context.l10n.pin,
         color: tg.accent,
       ),
-      confirmDismiss: (direction) async {
-        final db = dbForChatKey(chatKey);
-        if (direction == DismissDirection.startToEnd) {
-          await db.setChatFlag(chat.jid, muted: !chat.muted);
-        } else {
-          await db.setChatFlag(chat.jid, pinned: !chat.pinned);
-        }
+      confirmDismiss: (_) async {
+        await dbForChatKey(chatKey).setChatFlag(chat.jid, pinned: !chat.pinned);
         return false;
       },
       child: InkWell(
@@ -123,9 +112,9 @@ class ChatRow extends ConsumerWidget {
                       children: [
                         if (chat.pinned)
                           _Flag(icon: Icons.push_pin, color: tg.textSecondary),
-                        if (chat.muted)
+                        if (silenced)
                           _Flag(
-                            icon: Icons.notifications_off,
+                            icon: notifyModeIcon(notifyMode),
                             color: tg.textSecondary,
                           ),
                         if (locked) _Flag(icon: Icons.lock, color: tg.accent),
@@ -136,7 +125,7 @@ class ChatRow extends ConsumerWidget {
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: TgDimens.chatTitleFontSize,
-                              fontWeight: chat.unreadCount > 0 && !chat.muted
+                              fontWeight: chat.unreadCount > 0 && !silenced
                                   ? FontWeight.w700
                                   : FontWeight.w500,
                               color: tg.textPrimary,
@@ -145,18 +134,21 @@ class ChatRow extends ConsumerWidget {
                         ),
                         // Before the time, as Telegram draws it: the badge is
                         // what the user is acting on and the time is context.
+                        // Mention `@` sits beside the count (DialogCell
+                        // drawMention + drawCount).
+                        if (chat.unreadMentions > 0) ...[
+                          MentionBadge(muted: silenced),
+                          const SizedBox(width: 4),
+                        ],
                         if (chat.unreadCount > 0) ...[
-                          UnreadBadge(
-                            count: chat.unreadCount,
-                            muted: chat.muted,
-                          ),
+                          UnreadBadge(count: chat.unreadCount, muted: silenced),
                           const SizedBox(width: 6),
                         ],
                         Text(
                           _timeOf(chat.lastActivity),
                           style: TextStyle(
                             fontSize: TgDimens.timeFontSize,
-                            color: chat.unreadCount > 0 && !chat.muted
+                            color: chat.unreadCount > 0 && !silenced
                                 ? tg.accent
                                 : tg.textSecondary,
                           ),
@@ -353,6 +345,37 @@ class UnreadBadge extends StatelessWidget {
           fontSize: TgDimens.timeFontSize,
           fontWeight: FontWeight.w700,
           color: muted ? accent : Colors.white,
+        ),
+      ),
+    );
+  }
+}
+
+/// Telegram `DialogCell` mention pill: a filled `@` next to the unread count.
+class MentionBadge extends StatelessWidget {
+  const MentionBadge({super.key, required this.muted});
+
+  final bool muted;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = context.tg.accent;
+    return Container(
+      width: 20,
+      height: 20,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: muted ? Colors.transparent : accent,
+        shape: BoxShape.circle,
+        border: muted ? Border.all(color: accent) : null,
+      ),
+      child: Text(
+        '@',
+        style: TextStyle(
+          fontSize: TgDimens.timeFontSize,
+          fontWeight: FontWeight.w800,
+          color: muted ? accent : Colors.white,
+          height: 1,
         ),
       ),
     );

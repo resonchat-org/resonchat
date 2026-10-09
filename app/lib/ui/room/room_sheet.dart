@@ -16,9 +16,11 @@ import '../../account/account_hub.dart';
 import '../../account/chat_ref.dart';
 import '../../l10n/l10n.dart';
 import '../../state/providers.dart';
+import '../../store/database.dart';
 import '../../xmpp/connection.dart';
 import '../../xmpp/muc.dart';
 import 'room_config_page.dart';
+import '../chats/notify_mode_sheet.dart';
 import '../home/open_chat.dart';
 import '../theme.dart';
 
@@ -529,6 +531,7 @@ class _RoomSheetState extends State<_RoomSheet> {
                 ),
               ),
             ),
+            _RoomNotifyTile(chatKey: widget.chatKey),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
               child: Text(
@@ -705,5 +708,29 @@ class PinnedSheet extends ConsumerWidget {
     final h = t.hour.toString().padLeft(2, '0');
     final m = t.minute.toString().padLeft(2, '0');
     return '$h:$m';
+  }
+}
+
+/// Notification mode row in the room sheet.
+class _RoomNotifyTile extends ConsumerWidget {
+  const _RoomNotifyTile({required this.chatKey});
+
+  final String chatKey;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = context.l10n;
+    final chat = ref.watch(chatProvider(chatKey)).value;
+    if (chat == null) return const SizedBox.shrink();
+    final mode = chatNotifyModeOf(
+      muted: chat.muted,
+      alwaysNotify: chat.alwaysNotify,
+    );
+    return ListTile(
+      leading: Icon(notifyModeIcon(mode)),
+      title: Text(l10n.notificationSettings),
+      subtitle: Text(notifyModeLabel(l10n, mode)),
+      onTap: () => openChatNotifySettings(context, chatKey),
+    );
   }
 }

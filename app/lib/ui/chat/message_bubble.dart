@@ -15,6 +15,7 @@ import '../../xmpp/reactions.dart';
 import '../../xmpp/retraction.dart';
 import '../../utils/appearance.dart';
 import 'media_attachment.dart';
+import 'mention_text.dart';
 import '../theme.dart';
 
 enum BubbleSide { incoming, outgoing }
@@ -130,6 +131,8 @@ class MessageBubble extends StatelessWidget {
     this.replyAuthor = '',
     this.message,
     this.chatKey,
+    this.mentionsMe = false,
+    this.highlightNicks = const [],
     this.onReact,
     this.onLongPress,
     this.onTap,
@@ -142,6 +145,17 @@ class MessageBubble extends StatelessWidget {
 
   /// Owning conversation key ([ChatRef.key]) for media download / DB writes.
   final String? chatKey;
+
+  /// This inbound group message addressed us (nick / MUC PM).
+  ///
+  /// Draws a soft accent tint on the bubble (Telegram flashes selection on
+  /// unread mentions; we keep a light persistent tint so the row stays
+  /// recognizable after the flash would have ended) and bolds matched nicks.
+  final bool mentionsMe;
+
+  /// Our nick / localpart used to bold highlight spans in [text].
+  final List<String> highlightNicks;
+
   final DateTime time;
   final BubbleSide side;
 
@@ -214,7 +228,17 @@ class MessageBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final tg = context.tg;
     final mine = this.mine || side == BubbleSide.outgoing;
-    final color = mine ? tg.ownBubble : tg.peerBubble;
+    final baseColor = mine ? tg.ownBubble : tg.peerBubble;
+    // Soft accent wash when this message @'d us — enough to find it in a
+    // scroll, not a second selection colour fighting [selected].
+    final color = mentionsMe && !mine
+        ? Color.alphaBlend(tg.accent.withValues(alpha: 0.14), baseColor)
+        : baseColor;
+    final bodyStyle = TextStyle(
+      fontSize: TgDimens.messageFontSize,
+      color: tg.textPrimary,
+      height: 1.3,
+    );
 
     return Container(
       // The selection tint is on the row, not the bubble: tinting the bubble
@@ -232,13 +256,22 @@ class MessageBubble extends StatelessWidget {
           if (senderName != null)
             Padding(
               padding: const EdgeInsets.only(bottom: 2, left: 12, right: 12),
-              child: Text(
-                senderName!,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: senderColor ?? tg.accent,
-                  fontWeight: FontWeight.w500,
-                ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (mentionsMe) ...[
+                    Icon(Icons.alternate_email, size: 14, color: tg.accent),
+                    const SizedBox(width: 4),
+                  ],
+                  Text(
+                    senderName!,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: senderColor ?? tg.accent,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
               ),
             ),
           if (replyTo.isNotEmpty && !retracted)
@@ -294,12 +327,15 @@ class MessageBubble extends StatelessWidget {
                                 )
                               : _shouldHideUrlBody(message, text)
                               ? const SizedBox.shrink()
-                              : Text(
-                                  text,
-                                  style: TextStyle(
-                                    fontSize: TgDimens.messageFontSize,
-                                    color: tg.textPrimary,
-                                    height: 1.3,
+                              : Text.rich(
+                                  mentionAwareSpan(
+                                    text,
+                                    style: bodyStyle,
+                                    highlightNicks: highlightNicks,
+                                    mentionStyle: bodyStyle.copyWith(
+                                      fontWeight: FontWeight.w700,
+                                      color: tg.accent,
+                                    ),
                                   ),
                                 ),
                         ),

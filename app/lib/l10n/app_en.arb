@@ -84,12 +84,20 @@
     }
   },
   "clear": "Clear",
-  "contactRequests": "Contact requests",
+  "pendingRequests": "Pending requests",
   "nothingWaiting": "Nothing waiting",
   "wantToSeeYou": "Want to see you",
   "waitingForThem": "Waiting for them",
   "theyHaveNotAnswered": "They have not answered yet.",
   "incomingRequestSubtitle": "They want to see when you are online and to send you messages.",
+  "groupInvitations": "Group invitations",
+  "groupInvitationSubtitle": "Invited by {from}",
+  "@groupInvitationSubtitle": {
+    "placeholders": {
+      "from": { "type": "String" }
+    }
+  },
+  "groupInvitationSubtitleUnknown": "Someone invited you to this group.",
   "decline": "Decline",
   "accept": "Accept",
   "joinGroup": "Join a group",
@@ -123,6 +131,10 @@
   "contactAddFailed": "Could not add the contact on the server.",
   "mute": "Mute",
   "unmute": "Unmute",
+  "notificationSettings": "Notifications",
+  "notifyAllMessages": "Notify on all messages",
+  "notifyOnlyWhenHighlighted": "Notify only when highlighted",
+  "notifyNever": "Notify never",
   "pin": "Pin",
   "unpin": "Unpin",
   "reply": "Reply",

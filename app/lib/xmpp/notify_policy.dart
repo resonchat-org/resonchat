@@ -80,12 +80,17 @@ class NotifyReason {
   /// The conversation was moved to the archive.
   static const String archived = 'archived';
 
-  /// The conversation is muted and nothing in it addressed us directly.
+  /// Conversations "notify never" — no alert, even for highlights.
   static const String muted = 'muted';
 
-  /// The conversation is muted, but the message names us in a group.
-  static const String mentionedInMutedConversation =
-      'mentionedInMutedConversation';
+  /// Highlight-only mode, and this message did not address us.
+  static const String notHighlighted = 'notHighlighted';
+
+  /// Alert because the message highlighted us (nick / MUC PM).
+  static const String highlighted = 'highlighted';
+
+  /// Former name of [highlighted]; kept so older logs stay searchable.
+  static const String mentionedInMutedConversation = highlighted;
 
   /// The app is in front of the user.
   static const String appInForeground = 'appInForeground';
@@ -196,6 +201,7 @@ class NotifyPolicy {
     required this.me,
     this.body = '',
     this.muted = false,
+    this.alwaysNotify = true,
     this.archived = false,
     this.pinned = false,
     this.isGroup = false,
@@ -204,6 +210,7 @@ class NotifyPolicy {
     this.blocked = false,
     this.appInForeground = false,
     this.reading = false,
+    this.privateMessage = false,
   });
 
   /// Who wrote it.
@@ -215,8 +222,14 @@ class NotifyPolicy {
   /// The message text, or empty when [undecryptable].
   final String body;
 
-  /// The user asked for no notifications here.
+  /// Conversations "notify never": silence even when highlighted.
   final bool muted;
+
+  /// Conversations `alwaysNotify`. When false, only [mentionsUser] alerts.
+  ///
+  /// Callers should force this true for 1:1 chats — highlight-only is a
+  /// room setting.
+  final bool alwaysNotify;
 
   /// The user moved this conversation out of the main list.
   final bool archived;
@@ -250,51 +263,62 @@ class NotifyPolicy {
   /// lifecycle alone, and a module that guessed it would be a module that has to
   /// be taken on trust at exactly the point where being wrong buzzes.
   final bool reading;
+
+  /// A private message inside a MUC (Conversations `wasHighlightedOrPrivate`).
+  ///
+  /// Counts as a highlight even with no nick in the body: the message was
+  /// addressed to us alone.
+  final bool privateMessage;
 }
 
-/// Whether [policy]'s message names the user, addressing them directly.
+/// Conversations `NotificationService.generateNickHighlightPattern`.
 ///
-/// Only ever true in a group, and that restriction is the whole reason this is
-/// not a rubber stamp for a mute. In a 1:1 there is nobody else in the
-/// conversation to address: the mute *is* the notification setting for that
-/// person, and reading the sender's use of our name as a reason to override it
-/// would make every conversation un-muteable by any message containing it.
+/// Nick after start-of-string or whitespace; optional `@` (composer habit);
+/// then whitespace, end, or punctuation. Case-insensitive.
+RegExp nickHighlightPattern(String nick) {
+  final escaped = RegExp.escape(nick);
+  return RegExp(
+    '(?<=(^|\\s))@?$escaped(?=\\s|\$|\\p{P})',
+    caseSensitive: false,
+    unicode: true,
+  );
+}
+
+/// Names that count as "us" for a nick highlight (room nick + bare localpart).
+Set<String> highlightNamesFor({String? nickname, String? meJid}) {
+  final names = <String>{
+    if (nickname != null) nickname.trim(),
+    if (meJid != null && meJid.isNotEmpty) NotifyIdentity(jid: meJid).localpart,
+  }..removeWhere((n) => n.isEmpty);
+  return names;
+}
+
+/// Whether [body] addresses any of [names] under [nickHighlightPattern].
+bool bodyHighlightsNick(String body, Iterable<String> names) {
+  if (body.isEmpty) return false;
+  for (final name in names) {
+    if (name.isEmpty) continue;
+    if (nickHighlightPattern(name).hasMatch(body)) return true;
+  }
+  return false;
+}
+
+/// Whether [policy]'s message addresses the user (nick highlight or MUC PM).
 ///
-/// False for an undecryptable message even when the stored body happens to
-/// contain the name. A body we could not open cannot have mentioned anyone, and
-/// this is the same rule the rest of the client follows about messages we could
-/// not open — `track_resolver.dart` refuses to substitute a track on the
-/// strength of a message it never read, and a mention is exactly the kind of
-/// decision that must not be taken on unread text. Which means a sender must not
-/// be able to defeat a mute by sending something we cannot decrypt: whether they
-/// are named in it is not a question we are entitled to answer.
+/// Matching follows Conversations' highlight rule (see [nickHighlightPattern]),
+/// plus our localpart when the room has no nick for us yet. Only ever true in
+/// a group: in a 1:1 the mute *is* the setting for that person.
 ///
-/// Biased towards over-notifying on purpose. The composer writes a mention as
-/// `@nick` (`local_nickname.dart`), but detection here does not insist on the
-/// `@`: either token is enough, because a room addresses a member as `zoe:`
-/// about as often as `@zoe`, and a stricter test silently drops both. A spurious
-/// match costs one unwanted buzz in a room the user muted; a missed one is what
-/// teaches a user to turn notifications off altogether, and once they have the
-/// two costs stop being comparable.
+/// False for undecryptable bodies — we must not take mention decisions on text
+/// we could not open.
 bool mentionsUser(NotifyPolicy policy) {
   if (policy.undecryptable) return false;
   if (!policy.isGroup) return false;
-  final haystack = policy.body.toLowerCase();
-  if (haystack.isEmpty) return false;
-  final names = {
-    policy.me.nickname?.trim().toLowerCase() ?? '',
-    policy.me.localpart.toLowerCase(),
-  }..removeWhere((n) => n.isEmpty);
-  for (final name in names) {
-    // A name flanked by word characters is part of a longer word, not a
-    // mention: "malice" is not addressed to "alice", and a mute is not broken
-    // by a substring.
-    final pattern = RegExp(
-      '(^|[^a-z0-9_])${RegExp.escape(name)}([^a-z0-9_]|\$)',
-    );
-    if (pattern.hasMatch(haystack)) return true;
-  }
-  return false;
+  if (policy.privateMessage) return true;
+  return bodyHighlightsNick(
+    policy.body,
+    highlightNamesFor(nickname: policy.me.nickname, meJid: policy.me.jid),
+  );
 }
 
 /// Decides what an inbound message should do.
@@ -316,20 +340,19 @@ bool mentionsUser(NotifyPolicy policy) {
 ///      dozens of senders the user did not choose and cannot mute one by one, so
 ///      the only lever is to put it away — and a mention should not turn that
 ///      into a stream of pings from the whole membership.
-///   5. [NotifyPolicy.muted] — unless [mentionsUser].
-///   6. [NotifyPolicy.appInForeground] — before the undecryptable rule,
+///   5. [NotifyPolicy.muted] — Conversations "notify never"; no highlight
+///      override (unlike highlight-only below).
+///   6. Highlight-only (`!alwaysNotify`) — silent unless [mentionsUser].
+///   7. [NotifyPolicy.appInForeground] — before the undecryptable rule,
 ///      because "the app is open" is about the phone and "we could not open the
 ///      message" is about the message. The foreground wins, or the user is told
 ///      about a message sitting in the conversation they are looking at.
-///   7. [NotifyPolicy.undecryptable] — announce, never describe.
-///   8. Otherwise notify.
+///   8. [NotifyPolicy.undecryptable] — announce, never describe.
+///   9. Otherwise notify.
 ///
 /// Every decision that alerts also counts as unread, because the badge is not a
 /// notification: it is the only record that a message is waiting, and one that
-/// buzzes while showing no badge reads as read. The reasons that suppress it are
-/// exactly the ones `_acceptInbound` returns early for, so the badge and the
-/// buzz cannot end up disagreeing about one message — with the one deliberate
-/// exception of a mention, which alerts and therefore counts.
+/// buzzes while showing no badge reads as read.
 NotifyDecision decide(NotifyPolicy policy) {
   // Pinned is deliberately unread. It is a statement about where a conversation
   // sits in a list, not about wanting to be interrupted; a mute that a pin could
@@ -352,8 +375,31 @@ NotifyDecision decide(NotifyPolicy policy) {
   if (policy.reading) return _silent(NotifyReason.readingThisConversation);
   if (policy.archived) return _silent(NotifyReason.archived);
 
+  // Conversations three-way: never / highlight-only / all.
+  // "Never" is absolute — a nick in the body must not defeat it.
+  // Unread still counts: mute is about the shade, not the badge.
+  if (policy.muted) {
+    return const NotifyDecision(
+      post: false,
+      sound: false,
+      banner: false,
+      includePreview: false,
+      countsAsUnread: true,
+      reason: NotifyReason.muted,
+    );
+  }
+
   final mentioned = mentionsUser(policy);
-  if (policy.muted && !mentioned) return _silent(NotifyReason.muted);
+  if (!policy.alwaysNotify && !mentioned) {
+    return const NotifyDecision(
+      post: false,
+      sound: false,
+      banner: false,
+      includePreview: false,
+      countsAsUnread: true,
+      reason: NotifyReason.notHighlighted,
+    );
+  }
 
   // Foreground still counts unread. A message that arrives while the user is
   // reading a different conversation has to be counted somewhere, and if it is
@@ -391,8 +437,8 @@ NotifyDecision decide(NotifyPolicy policy) {
     banner: true,
     includePreview: true,
     countsAsUnread: true,
-    reason: mentioned
-        ? NotifyReason.mentionedInMutedConversation
+    reason: mentioned && !policy.alwaysNotify
+        ? NotifyReason.highlighted
         : NotifyReason.incoming,
   );
 }

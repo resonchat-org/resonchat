@@ -15,7 +15,13 @@ import 'package:sqlite3/sqlite3.dart' show Database, sqlite3;
 
 /// Shared preferences DB (`resonchat.sqlite3`). Not an account store.
 Future<QueryExecutor> openPrefsDatabaseConnection() =>
-    _openFile('resonchat.sqlite3', expectedUserVersion: 1);
+    _openFile('resonchat.sqlite3', maxReadableVersion: 1);
+
+/// Must match [AppDatabase.schemaVersion] in `database.dart`.
+///
+/// Used only to refuse *newer* files we cannot migrate. Older versions are
+/// left for Drift [MigrationStrategy.onUpgrade].
+const int kAccountSchemaVersion = 4;
 
 /// Per-account DB (`resonchat_<accountId>.sqlite3`). [accountId] is required.
 Future<QueryExecutor> openAccountDatabaseConnection(String accountId) {
@@ -23,17 +29,20 @@ Future<QueryExecutor> openAccountDatabaseConnection(String accountId) {
   if (id.isEmpty) {
     throw ArgumentError.value(accountId, 'accountId', 'must be non-empty');
   }
-  return _openFile('resonchat_$id.sqlite3', expectedUserVersion: 1);
+  return _openFile(
+    'resonchat_$id.sqlite3',
+    maxReadableVersion: kAccountSchemaVersion,
+  );
 }
 
 /// Opens a Drift [QueryExecutor] for one SQLite file on IO platforms.
 Future<QueryExecutor> _openFile(
   String name, {
-  required int expectedUserVersion,
+  required int maxReadableVersion,
 }) async {
   final dir = await getApplicationDocumentsDirectory();
   final file = File(p.join(dir.path, name));
-  await _deleteIncompatible(file, expectedUserVersion: expectedUserVersion);
+  await _deleteIncompatible(file, maxReadableVersion: maxReadableVersion);
 
   final passphrase = await _databasePassphrase();
   if (passphrase != null) {
@@ -60,13 +69,17 @@ Future<QueryExecutor> _openFile(
   return NativeDatabase.createInBackground(file);
 }
 
-/// No forward compatibility: wipe files that are not at [expectedUserVersion].
+/// Wipe only databases from a *newer* build than this one can read.
 ///
-/// Probe failures (SQLCipher vs plain, etc.) are left for the open path to
-/// handle — only a readable, wrong [user_version] triggers delete.
+/// Older [user_version] values are migrated by Drift. Wiping on any mismatch
+/// (the previous behaviour) deleted the account DB whenever
+/// [AppDatabase.schemaVersion] moved past the hardcoded probe value — empty
+/// chat list on the next cold start.
+///
+/// Probe failures (SQLCipher vs plain, etc.) are left for the open path.
 Future<void> _deleteIncompatible(
   File file, {
-  required int expectedUserVersion,
+  required int maxReadableVersion,
 }) async {
   if (!await file.exists()) return;
   try {
@@ -83,12 +96,12 @@ Future<void> _deleteIncompatible(
     } finally {
       probe.close();
     }
-    // Fresh empty files are user_version 0 before Drift migrates — leave them.
-    if (version == 0 || version == expectedUserVersion) return;
+    // 0 = fresh file before Drift migrates. version <= max = we can open/migrate.
+    if (version == 0 || version <= maxReadableVersion) return;
     await file.delete();
     debugPrint(
-      'Deleted incompatible DB ${file.path} (user_version=$version, '
-      'expected=$expectedUserVersion)',
+      'Deleted forward-incompatible DB ${file.path} (user_version=$version, '
+      'maxReadable=$maxReadableVersion)',
     );
   } catch (e) {
     debugPrint('DB probe skipped for ${file.path}: $e');

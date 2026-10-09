@@ -14,11 +14,14 @@ import 'providers.dart';
 import '../crypto/omemo/dual_track_manager.dart';
 import '../crypto/omemo/track.dart';
 import '../crypto/omemo/track_advice.dart';
+import '../platform/app_notifications.dart';
 import '../store/database.dart';
+import '../account/chat_ref.dart';
 import '../xmpp/capabilities.dart';
 import '../xmpp/blocking.dart';
 import '../xmpp/connection.dart';
 import '../xmpp/message_expiry.dart';
+import '../xmpp/notify_policy.dart';
 import '../xmpp/reactions.dart';
 import '../xmpp/retraction.dart';
 import '../store/prefs_database.dart';
@@ -56,7 +59,8 @@ class AppWiring extends ConsumerStatefulWidget {
   ConsumerState<AppWiring> createState() => _AppWiringState();
 }
 
-class _AppWiringState extends ConsumerState<AppWiring> {
+class _AppWiringState extends ConsumerState<AppWiring>
+    with WidgetsBindingObserver {
   final List<StreamSubscription<Object?>> _subs = [];
   StreamSubscription<void>? _hubSub;
   final _messageExpiry = MessageExpiryRunner();
@@ -64,9 +68,16 @@ class _AppWiringState extends ConsumerState<AppWiring> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _bindAll();
     _hubSub = accountHub.sessionChanges.listen((_) => _bindAll());
     _messageExpiry.start();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    ref.read(appForegroundProvider.notifier).state =
+        state == AppLifecycleState.resumed;
   }
 
   void _bindAll() {
@@ -161,6 +172,16 @@ class _AppWiringState extends ConsumerState<AppWiring> {
         await db.addIncomingRequest(jid.toBare().toString());
       }),
     );
+    _subs.add(
+      xmpp.roomInvites.listen((invite) async {
+        await db.upsertRoomInvitation(
+          roomJid: invite.roomJid,
+          fromJid: invite.fromJid,
+          password: invite.password,
+          reason: invite.reason,
+        );
+      }),
+    );
     unawaited(_loadBlocked(ref, session));
     _subs.add(
       xmpp.blocklistChanges.listen((pushed) async {
@@ -190,6 +211,7 @@ class _AppWiringState extends ConsumerState<AppWiring> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _messageExpiry.stop();
     _hubSub?.cancel();
     for (final sub in _subs) {
@@ -247,21 +269,67 @@ Future<void> _acceptInbound(
 ) async {
   final db = session.db;
   final ownBare = session.xmpp.myJid;
-  await storeInbound(db, msg, ownBare: ownBare);
+  final mentionsMe = await storeInbound(db, msg, ownBare: ownBare);
   final chatJid = _chatJidFor(msg, ownBare);
-  if (msg.isCarbonCopy) return;
   if (_isOwnArchive(msg, ownBare)) return;
   if (msg.fromArchive) return;
-  final chat = (await db.watchChats().first)
-      .where((c) => c.jid == chatJid)
-      .firstOrNull;
-  if (chat?.muted ?? false) return;
-  if (chat?.archived ?? false) return;
-  if (session.xmpp.blockedJids.contains(chatJid)) return;
-  await db.markChatUnread(
-    chatJid,
-    arrivedAt: msg.archiveTimestamp ?? DateTime.now(),
+
+  final chat = await db.getChat(chatJid);
+  final isGroup = chat?.isGroup ?? msg.type == 'groupchat';
+  final privateMessage =
+      isGroup && msg.type == 'chat' && msg.from.resource.isNotEmpty;
+  final openKey = ref.read(openChatKeyProvider);
+  final chatKey = ChatRef(accountId: session.account.id, jid: chatJid).key;
+  final reading = openKey == chatKey;
+  final foreground = ref.read(appForegroundProvider);
+
+  final policy = NotifyPolicy(
+    sender: NotifyIdentity(
+      jid: msg.from.toString(),
+      nickname: isGroup && msg.from.resource.isNotEmpty
+          ? msg.from.resource
+          : null,
+    ),
+    me: NotifyIdentity(
+      jid: ownBare ?? '',
+      nickname: isGroup
+          ? (chat?.mucNick.isNotEmpty == true ? chat!.mucNick : null)
+          : null,
+    ),
+    body: msg.encryptionError != null ? '' : msg.body,
+    muted: chat?.muted ?? false,
+    alwaysNotify: isGroup ? (chat?.alwaysNotify ?? true) : true,
+    archived: chat?.archived ?? false,
+    pinned: chat?.pinned ?? false,
+    isGroup: isGroup,
+    carbon: msg.isCarbonCopy,
+    undecryptable: msg.encryptionError != null,
+    blocked: session.xmpp.blockedJids.contains(chatJid),
+    appInForeground: foreground,
+    reading: reading,
+    privateMessage: privateMessage,
   );
+
+  final decision = decide(policy);
+  if (decision.countsAsUnread) {
+    await db.markChatUnread(
+      chatJid,
+      arrivedAt: msg.archiveTimestamp ?? DateTime.now(),
+      mentionsMe: mentionsMe || mentionsUser(policy),
+    );
+  }
+  final request = notificationFor(policy, chatJid: chatJid);
+  if (request != null) {
+    final title = (chat?.title.isNotEmpty == true) ? chat!.title : chatJid;
+    unawaited(
+      AppNotifications.instance.post(
+        accountId: session.account.id,
+        chatJid: chatJid,
+        title: title,
+        request: request,
+      ),
+    );
+  }
 }
 
 /// Conversation bare JID for [msg], accounting for our own archived outbound.
@@ -332,7 +400,10 @@ void forgetCapabilityHistory() => _lastCapabilities.clear();
 ///
 /// [ownBare] is our account bare JID. When set, archived messages we sent
 /// are stored as outgoing under the peer (`to`), matching Conversations.
-Future<void> storeInbound(
+///
+/// Returns whether the stored row highlighted us (nick / MUC PM). False when
+/// nothing was inserted.
+Future<bool> storeInbound(
   AppDatabase db,
   InboundMessage msg, {
   String? ownBare,
@@ -343,7 +414,7 @@ Future<void> storeInbound(
   // puts the right name on the bubble.
   final own = _isOwnArchive(msg, ownBare);
   // Own archived outbound without a peer address cannot be placed in a chat.
-  if (own && msg.to == null) return;
+  if (own && msg.to == null) return false;
   final chatJid = _chatJidFor(msg, ownBare);
   final sender = msg.from.toString();
   final isGroupchat = msg.type == 'groupchat';
@@ -352,14 +423,14 @@ Future<void> storeInbound(
   await db.upsertChat(chatJid, isGroup: isGroupchat ? true : null);
 
   // A carbon duplicates a message we already hold locally.
-  if (msg.isCarbonCopy) return;
+  if (msg.isCarbonCopy) return false;
   final stanzaId = msg.stanzaId ?? '';
-  if (await db.findByStanzaId(chatJid, stanzaId) != null) return;
+  if (await db.findByStanzaId(chatJid, stanzaId) != null) return false;
   // A room message is identified by its sender's full JID, not just the room:
   // two people in the same room can, and frequently do, send stanzas with the
   // same id. Deduplicating on the bare room would drop the second one.
   final dedupeKey = sender.isEmpty ? stanzaId : sender;
-  if (await db.findByStanzaId(chatJid, dedupeKey) != null) return;
+  if (await db.findByStanzaId(chatJid, dedupeKey) != null) return false;
 
   // A stanza carrying an apply-to is an instruction about an earlier message,
   // not a message. Storing it would put a duplicate bubble next to the one it
@@ -367,7 +438,7 @@ Future<void> storeInbound(
   // as though the sender had written it.
   if (msg.retracts != null) {
     await applyRetraction(db, msg.retracts!);
-    return;
+    return false;
   }
   if (msg.corrects != null) {
     // A correction is a new rendering of the original: the body is its real
@@ -380,15 +451,29 @@ Future<void> storeInbound(
       body: msg.body,
       track: msg.track ?? Track.none,
     );
-    return;
+    return false;
   }
 
   // Conversations: do not persist messages older than the retention cutoff.
   final stamp = msg.archiveTimestamp ?? DateTime.now();
   try {
     final cutoff = (await loadAutomaticMessageDeletion(appPrefs)).cutoffAt();
-    if (cutoff != null && stamp.isBefore(cutoff)) return;
+    if (cutoff != null && stamp.isBefore(cutoff)) return false;
   } catch (_) {}
+
+  final chat = await db.getChat(chatJid);
+  final isGroup = chat?.isGroup ?? isGroupchat;
+  final privateMessage =
+      isGroup && msg.type == 'chat' && msg.from.resource.isNotEmpty;
+  final mentionsMe =
+      !own &&
+      isGroup &&
+      msg.encryptionError == null &&
+      (privateMessage ||
+          bodyHighlightsNick(
+            msg.body,
+            highlightNamesFor(nickname: chat?.mucNick, meJid: ownBare),
+          ));
 
   await db.insertMessage(
     MessagesCompanion(
@@ -426,6 +511,8 @@ Future<void> storeInbound(
       mediaUrl: Value(msg.encryptionError != null ? '' : msg.mediaUrl),
       mediaMime: Value(msg.mediaMime),
       mediaName: Value(msg.mediaName),
+      mentionsMe: Value(mentionsMe),
     ),
   );
+  return mentionsMe;
 }

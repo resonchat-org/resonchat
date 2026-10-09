@@ -3,7 +3,7 @@
 //
 // Chat list translated from Telegram for Android's `DialogsActivity`
 // (GPL-2.0-or-later): 54dp avatar, two-line text column, unread badge,
-// pinned/mute affordances and swipe-to-archive/delete.
+// pinned affordance.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,9 +11,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../l10n/l10n.dart';
 import '../../state/providers.dart';
 import '../accounts/accounts_icon.dart';
-import '../archive/archive_page.dart';
 import '../home/open_chat.dart';
-import '../requests/requests_page.dart';
+import '../pending/pending_requests_page.dart';
 import '../room/room_sheet.dart';
 import '../theme.dart';
 import 'chats_viewmodel.dart';
@@ -85,9 +84,11 @@ class _ChatsPageState extends ConsumerState<ChatsPage> {
           ),
           IconButton(
             icon: const Icon(Icons.person_add_alt),
-            tooltip: l10n.contactRequests,
+            tooltip: l10n.pendingRequests,
             onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const RequestsPage()),
+              MaterialPageRoute<void>(
+                builder: (_) => const PendingRequestsPage(),
+              ),
             ),
           ),
           IconButton(
@@ -97,13 +98,6 @@ class _ChatsPageState extends ConsumerState<ChatsPage> {
               context: context,
               isScrollControlled: true,
               builder: (_) => const JoinRoomSheet(),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.archive_outlined),
-            tooltip: l10n.archived,
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const ArchivePage()),
             ),
           ),
           IconButton(

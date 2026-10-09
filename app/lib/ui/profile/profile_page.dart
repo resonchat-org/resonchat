@@ -25,6 +25,7 @@ import '../../store/database.dart';
 import '../../xmpp/capabilities.dart';
 import '../../state/providers.dart';
 import '../../xmpp/connection.dart';
+import '../chats/notify_mode_sheet.dart';
 import '../theme.dart';
 
 class ProfilePage extends ConsumerWidget {
@@ -135,6 +136,30 @@ class ProfilePage extends ConsumerWidget {
                 Navigator.of(context)
                     .pushNamed('/encryption', arguments: chatJid),
           ),
+
+          _section(tg, l10n.notificationSettings),
+          if (chat != null)
+            ListTile(
+              leading: Icon(
+                notifyModeIcon(
+                  chatNotifyModeOf(
+                    muted: chat.muted,
+                    alwaysNotify: chat.alwaysNotify,
+                  ),
+                ),
+              ),
+              title: Text(l10n.notificationSettings),
+              subtitle: Text(
+                notifyModeLabel(
+                  l10n,
+                  chatNotifyModeOf(
+                    muted: chat.muted,
+                    alwaysNotify: chat.alwaysNotify,
+                  ),
+                ),
+              ),
+              onTap: () => openChatNotifySettings(context, chatJid),
+            ),
 
           _section(tg, l10n.actions),
           ListTile(

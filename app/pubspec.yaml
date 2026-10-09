@@ -43,6 +43,7 @@ dependencies:
   open_filex: ^4.7.0
   flutter_svg: ^2.0.17
   dynamic_color: ^1.7.0
+  flutter_local_notifications: ^19.0.0
 hooks:
   user_defines:
     sqlite3:

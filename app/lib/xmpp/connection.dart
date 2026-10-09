@@ -30,7 +30,10 @@ import 'pq_incoming.dart';
 import 'pq_stanza.dart';
 import 'reactions.dart';
 import 'replies.dart';
+import 'room_invite.dart';
 import 'xmpp_socket.dart';
+
+export 'room_invite.dart' show RoomInvite;
 
 /// Decrypted inbound chat message, either track or plaintext.
 class InboundMessage {
@@ -1488,6 +1491,43 @@ class XmppService {
     return true;
   }
 
+  /// Incoming MUC invitations (mediated or direct).
+  Stream<RoomInvite> get roomInvites =>
+      _roomInviteManager?.invites ?? const Stream.empty();
+
+  RoomInviteManager? _roomInviteManager;
+
+  /// XEP-0045 `<decline/>` for a mediated invite we are rejecting.
+  Future<void> declineRoomInvite({
+    required String roomJid,
+    String toInviter = '',
+  }) async {
+    final conn = _connection;
+    if (conn == null) return;
+    final children = <XMLNode>[
+      XMLNode(
+        tag: 'decline',
+        attributes: {if (toInviter.isNotEmpty) 'to': toInviter},
+      ),
+    ];
+    try {
+      await conn.sendStanza(
+        StanzaDetails(
+          Stanza.message(
+            to: JID.fromString(roomJid).toBare().toString(),
+            children: [
+              XMLNode.xmlns(tag: 'x', xmlns: mucUserXmlns, children: children),
+            ],
+          ),
+          awaitable: false,
+          shouldEncrypt: false,
+        ),
+      );
+    } catch (e) {
+      _log.warning('decline invite to $roomJid failed: $e');
+    }
+  }
+
   /// Bare JIDs we have asked to see, awaiting their answer.
   Stream<JID> get outgoingRequests => _outgoingRequests.stream;
   final _outgoingRequests = StreamController<JID>.broadcast();
@@ -1648,6 +1688,8 @@ class XmppService {
       UserAvatarManager(),
       // XEP-0045 group chats.
       MUCManager(),
+      // Incoming room invites before MessageManager (empty-bubble prevention).
+      _roomInviteManager = RoomInviteManager(),
       // XEP-0444 reactions, plus the stable-id manager they depend on: a
       // reaction addresses a message by its origin-id.
       StableIdManager(),

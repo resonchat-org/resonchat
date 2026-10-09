@@ -79,12 +79,20 @@
   "noMessagesFound": "未找到消息",
   "searchFailed": "搜索失败：{error}",
   "clear": "清除",
-  "contactRequests": "联系人请求",
+  "pendingRequests": "待处理请求",
   "nothingWaiting": "暂无待处理请求",
   "wantToSeeYou": "想看到你",
   "waitingForThem": "等待对方回复",
   "theyHaveNotAnswered": "对方尚未回复。",
   "incomingRequestSubtitle": "对方希望看到你的在线状态并向你发送消息。",
+  "groupInvitations": "群聊邀请",
+  "groupInvitationSubtitle": "{from} 邀请你加入",
+  "@groupInvitationSubtitle": {
+    "placeholders": {
+      "from": { "type": "String" }
+    }
+  },
+  "groupInvitationSubtitleUnknown": "有人邀请你加入此群聊。",
   "decline": "拒绝",
   "accept": "接受",
   "joinGroup": "加入群组",
@@ -113,6 +121,10 @@
   "contactAddFailed": "无法在服务器上添加该联系人。",
   "mute": "静音",
   "unmute": "取消静音",
+  "notificationSettings": "通知",
+  "notifyAllMessages": "所有消息都提醒",
+  "notifyOnlyWhenHighlighted": "仅在被提及时提醒",
+  "notifyNever": "从不提醒",
   "pin": "置顶",
   "unpin": "取消置顶",
   "reply": "回复",

@@ -9,7 +9,10 @@ import 'package:drift/drift.dart';
 import 'package:moxxmpp/moxxmpp.dart' show XmppRosterItem;
 import 'package:resonchat/crypto/omemo/track.dart';
 
+import 'chat_notify_mode.dart';
 import 'database_connection.dart';
+
+export 'chat_notify_mode.dart';
 
 part 'database.g.dart';
 
@@ -41,12 +44,16 @@ class Chats extends Table {
   /// Pinned to the top of the chat list.
   BoolColumn get pinned => boolean().withDefault(const Constant(false))();
 
-  /// Notifications suppressed for this conversation.
+  /// Conversations "notify never": no shade entry, even for highlights.
   ///
-  /// A local decision, not a server one: there is no standard way to tell a
-  /// contact "stop notifying me about this", and pretending otherwise would
-  /// mean the setting silently does nothing on another device.
+  /// Combined with [alwaysNotify] for groups (see [ChatNotifyMode]). A local
+  /// decision — there is no standard way to tell a server to suppress pushes
+  /// for one conversation.
   BoolColumn get muted => boolean().withDefault(const Constant(false))();
+
+  /// Conversations `alwaysNotify`. When false (and not [muted]), only nick
+  /// highlights / MUC PMs alert. Ignored for 1:1 (use [muted] alone).
+  BoolColumn get alwaysNotify => boolean().withDefault(const Constant(true))();
 
   /// Moved out of the main list into the archive.
   BoolColumn get archived => boolean().withDefault(const Constant(false))();
@@ -57,6 +64,13 @@ class Chats extends Table {
   /// being closed: deriving it from the message table means every launch
   /// re-reads the whole transcript to work out what was already read.
   IntColumn get unreadCount => integer().withDefault(const Constant(0))();
+
+  /// Unread messages that highlighted us (nick / MUC PM).
+  ///
+  /// Separate from [unreadCount] the way Telegram keeps
+  /// `unread_mentions_count`: the chat list can show an `@` badge beside
+  /// the ordinary unread pill.
+  IntColumn get unreadMentions => integer().withDefault(const Constant(0))();
 
   /// Where the reader had got to, so a jump lands in the right place.
   DateTimeColumn get lastReadAt => dateTime().withDefault(currentDateAndTime)();
@@ -187,6 +201,14 @@ class Messages extends Table {
 
   /// Absolute path of a downloaded/cached copy on this device, else empty.
   TextColumn get localPath => text().withDefault(const Constant(''))();
+
+  /// True when this inbound group message highlighted us (nick match or MUC PM).
+  ///
+  /// Stored at insert time (Conversations detects at paint; Telegram stores
+  /// `mentioned` on the message). Persistence means the bubble still marks
+  /// the mention after a nick change, and the chat-list `@` badge can count
+  /// without re-parsing every body.
+  BoolColumn get mentionsMe => boolean().withDefault(const Constant(false))();
 }
 
 /// Roster cache + RFC 6121 version, persisted for roster versioning.
@@ -235,6 +257,27 @@ class SubscriptionRequests extends Table {
 
   @override
   Set<Column> get primaryKey => {jid, outgoing};
+}
+
+/// A MUC invitation awaiting accept / decline (XEP-0045 / XEP-0249).
+///
+/// Separate from [SubscriptionRequests]: a room invite is not a presence
+/// subscription, and the pending-requests screen needs both lists without
+/// overloading one row type.
+class RoomInvitations extends Table {
+  /// Bare room JID.
+  TextColumn get roomJid => text()();
+
+  /// Inviter bare JID when known.
+  TextColumn get fromJid => text().withDefault(const Constant(''))();
+
+  TextColumn get password => text().withDefault(const Constant(''))();
+  TextColumn get reason => text().withDefault(const Constant(''))();
+
+  DateTimeColumn get invitedAt => dateTime().withDefault(currentDateAndTime)();
+
+  @override
+  Set<Column> get primaryKey => {roomJid};
 }
 
 /// One message the user pinned inside a conversation.
@@ -329,6 +372,7 @@ class Meta extends Table {
     BlockedContacts,
     PinnedMessages,
     SubscriptionRequests,
+    RoomInvitations,
     PendingCorrections,
     Reactions,
     Meta,
@@ -337,13 +381,26 @@ class Meta extends Table {
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
-  /// Schema reset: no legacy migrations. Drift requires a positive version.
   @override
-  int get schemaVersion => 1;
+  // Keep in sync with [kAccountSchemaVersion] in database_connection_io.dart.
+  int get schemaVersion => 4;
 
   @override
-  MigrationStrategy get migration =>
-      MigrationStrategy(onCreate: (m) async => m.createAll());
+  MigrationStrategy get migration => MigrationStrategy(
+    onCreate: (m) async => m.createAll(),
+    onUpgrade: (m, from, to) async {
+      if (from < 2) {
+        await m.addColumn(chats, chats.alwaysNotify);
+      }
+      if (from < 3) {
+        await m.addColumn(chats, chats.unreadMentions);
+        await m.addColumn(messages, messages.mentionsMe);
+      }
+      if (from < 4) {
+        await m.createTable(roomInvitations);
+      }
+    },
+  );
 
   /// True when the user has acknowledged, for this conversation, that
   /// plaintext is readable by anyone with server access.
@@ -715,6 +772,34 @@ class AppDatabase extends _$AppDatabase {
     )..where((r) => r.jid.equals(jid) & r.outgoing.equals(outgoing))).go();
   }
 
+  Stream<List<RoomInvitation>> watchRoomInvitations() => (select(
+    roomInvitations,
+  )..orderBy([(r) => OrderingTerm.desc(r.invitedAt)])).watch();
+
+  /// Upserts a pending room invitation (re-invites refresh the row).
+  Future<void> upsertRoomInvitation({
+    required String roomJid,
+    required String fromJid,
+    String password = '',
+    String reason = '',
+  }) async {
+    await into(roomInvitations).insertOnConflictUpdate(
+      RoomInvitationsCompanion.insert(
+        roomJid: roomJid,
+        fromJid: Value(fromJid),
+        password: Value(password),
+        reason: Value(reason),
+        invitedAt: Value(DateTime.now()),
+      ),
+    );
+  }
+
+  Future<void> removeRoomInvitation(String roomJid) async {
+    await (delete(
+      roomInvitations,
+    )..where((r) => r.roomJid.equals(roomJid))).go();
+  }
+
   /// Every OMEMO device id this installation has published.
   ///
   /// Stored so that a later publish can tell which ids on our own public
@@ -866,18 +951,34 @@ class AppDatabase extends _$AppDatabase {
     await (delete(blockedContacts)..where((b) => b.jid.equals(jid))).go();
   }
 
-  /// Marks [chatJid] as read: the unread count goes to zero and the read
-  /// marker moves to now.
+  /// Marks [chatJid] as read up to [at] (default: now).
   ///
-  /// The marker is stored rather than inferred so that "read" survives the app
-  /// being closed. Inferring it from the message table would mean re-reading
-  /// the whole transcript on every launch.
+  /// Badges are *recomputed* from inbound messages newer than the marker,
+  /// not forced to zero. Leave-chat calls this asynchronously after dispose;
+  /// a message that landed in that gap used to be counted by
+  /// [markChatUnread] and then wiped here (first @ invisible; second showed
+  /// `1`). Recomputing keeps those rows.
+  ///
+  /// Prefer passing [at] captured *before* any await on the leave path so the
+  /// marker is the moment the user left, not when this SQL eventually runs.
   Future<void> markChatRead(String chatJid, {DateTime? at}) async {
-    await (update(chats)..where((c) => c.jid.equals(chatJid))).write(
-      ChatsCompanion(
-        unreadCount: const Value(0),
-        lastReadAt: Value(at ?? DateTime.now()),
-      ),
+    final readSec = (at ?? DateTime.now()).millisecondsSinceEpoch ~/ 1000;
+    // Drift stores DateTime as unix seconds (integer). Same unit as
+    // [markChatUnread].
+    await customStatement(
+      'UPDATE chats SET '
+      'last_read_at = ?, '
+      'unread_count = ('
+      '  SELECT COUNT(*) FROM messages '
+      '  WHERE chat_jid = ? AND incoming = 1 AND timestamp > ?'
+      '), '
+      'unread_mentions = ('
+      '  SELECT COUNT(*) FROM messages '
+      '  WHERE chat_jid = ? AND incoming = 1 AND mentions_me = 1 '
+      '    AND timestamp > ?'
+      ') '
+      'WHERE jid = ?',
+      [readSec, chatJid, readSec, chatJid, readSec, chatJid],
     );
   }
 
@@ -889,9 +990,13 @@ class AppDatabase extends _$AppDatabase {
   /// one would be lost. Counting is exactly where an off-by-one stays invisible
   /// to the user until they open the chat and find a message already marked
   /// read.
+  ///
+  /// When [mentionsMe] is true, also bumps [Chats.unreadMentions] (Telegram
+  /// `unread_mentions_count`).
   Future<void> markChatUnread(
     String chatJid, {
     required DateTime arrivedAt,
+    bool mentionsMe = false,
   }) async {
     // Raw SQL because drift's typed update cannot express
     // `unread_count = unread_count + 1`. The guard is in the same statement on
@@ -901,8 +1006,11 @@ class AppDatabase extends _$AppDatabase {
     // Seconds, not milliseconds: that is what drift stores a DateTime as, and
     // getting it wrong makes the comparison always false, so every replayed
     // message counts and the guard is quietly dead.
+    final mentionBump = mentionsMe
+        ? ', unread_mentions = unread_mentions + 1'
+        : '';
     await customStatement(
-      'UPDATE chats SET unread_count = unread_count + 1 '
+      'UPDATE chats SET unread_count = unread_count + 1$mentionBump '
       'WHERE jid = ? AND last_read_at <= ?',
       [chatJid, arrivedAt.millisecondsSinceEpoch ~/ 1000],
     );
@@ -913,6 +1021,7 @@ class AppDatabase extends _$AppDatabase {
     String chatJid, {
     bool? pinned,
     bool? muted,
+    bool? alwaysNotify,
     bool? archived,
   }) async {
     final updated = await (update(chats)..where((c) => c.jid.equals(chatJid)))
@@ -920,6 +1029,9 @@ class AppDatabase extends _$AppDatabase {
           ChatsCompanion(
             pinned: pinned == null ? const Value.absent() : Value(pinned),
             muted: muted == null ? const Value.absent() : Value(muted),
+            alwaysNotify: alwaysNotify == null
+                ? const Value.absent()
+                : Value(alwaysNotify),
             archived: archived == null ? const Value.absent() : Value(archived),
           ),
         );
@@ -932,10 +1044,23 @@ class AppDatabase extends _$AppDatabase {
         ChatsCompanion(
           pinned: pinned == null ? const Value.absent() : Value(pinned),
           muted: muted == null ? const Value.absent() : Value(muted),
+          alwaysNotify: alwaysNotify == null
+              ? const Value.absent()
+              : Value(alwaysNotify),
           archived: archived == null ? const Value.absent() : Value(archived),
         ),
       );
     }
+  }
+
+  /// Conversations-style notification mode for [chatJid].
+  Future<void> setChatNotifyMode(String chatJid, ChatNotifyMode mode) {
+    final flags = mode.storageFlags;
+    return setChatFlag(
+      chatJid,
+      muted: flags.muted,
+      alwaysNotify: flags.alwaysNotify,
+    );
   }
 
   /// Messages in conversation order. `timestamp` first (so imported

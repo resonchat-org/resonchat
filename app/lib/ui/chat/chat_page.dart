@@ -18,6 +18,7 @@ import '../../account/chat_ref.dart';
 import '../../account/resolve.dart';
 import '../../l10n/l10n.dart';
 import '../../crypto/omemo/track.dart';
+import '../../platform/app_notifications.dart';
 import '../../platform/media_store.dart';
 import '../../state/providers.dart';
 import '../../store/database.dart';
@@ -31,6 +32,7 @@ import 'message_actions.dart';
 import '../home/open_chat.dart';
 import '../room/room_sheet.dart';
 import '../chats/search.dart';
+import '../chats/notify_mode_sheet.dart';
 import 'message_bubble.dart';
 import 'track_dialogs.dart';
 import 'chat_viewmodel.dart';
@@ -215,9 +217,22 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     // messages get a read receipt without waiting until the user leaves.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      ref.read(openChatKeyProvider.notifier).state = widget.chatJid;
+      _clearShadeForOpenChat();
       // Groupchat does not use 1:1 displayed markers the same way.
       if (!_ui.isGroup) unawaited(_vm.sendDisplayedForLatest());
     });
+  }
+
+  void _clearShadeForOpenChat() {
+    final chatRef = ChatRef.tryParse(widget.chatJid);
+    if (chatRef == null) return;
+    unawaited(
+      AppNotifications.instance.cancelChat(
+        accountId: chatRef.accountId,
+        chatJid: chatRef.jid,
+      ),
+    );
   }
 
   /// Attaches to the view model for [ChatPage.chatJid]: the provider build
@@ -238,7 +253,34 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     super.didUpdateWidget(oldWidget);
     // Each conversation has its own view model (advice, typing and room state
     // included), so switching chats just means attaching to the new one.
-    if (oldWidget.chatJid != widget.chatJid) _bindViewModel();
+    if (oldWidget.chatJid != widget.chatJid) {
+      _bindViewModel();
+      // Defer: didUpdateWidget runs inside the parent rebuild, and writing a
+      // StateProvider here re-enters Riverpod mid-notify (listener exception).
+      final key = widget.chatJid;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.read(openChatKeyProvider.notifier).state = key;
+        _clearShadeForOpenChat();
+      });
+    }
+  }
+
+  @override
+  void deactivate() {
+    // Capture before [super.deactivate]: context/ref stay valid here, but
+    // clearing must not happen synchronously — the parent (e.g. HomeShell
+    // replacing the column pane) is often still rebuilding when we deactivate.
+    final container = ProviderScope.containerOf(context);
+    final key = widget.chatJid;
+    final shouldClear = container.read(openChatKeyProvider) == key;
+    super.deactivate();
+    if (!shouldClear) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (container.read(openChatKeyProvider) == key) {
+        container.read(openChatKeyProvider.notifier).state = null;
+      }
+    });
   }
 
   void _onFailureNotice(String reason) {
@@ -970,6 +1012,19 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                   onPressed: _showMembers,
                 ),
               IconButton(
+                icon: Icon(
+                  notifyModeIcon(
+                    chatNotifyModeOf(
+                      muted: chatRow?.muted ?? false,
+                      alwaysNotify: chatRow?.alwaysNotify ?? true,
+                    ),
+                  ),
+                ),
+                tooltip: l10n.notificationSettings,
+                onPressed: () =>
+                    openChatNotifySettings(context, widget.chatJid),
+              ),
+              IconButton(
                 icon: const Icon(Icons.search),
                 tooltip: l10n.searchInChat,
                 onPressed: _openInChatSearch,
@@ -1049,6 +1104,10 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                           focusMessageKey: _focusMessageKey,
                           bubbleStyle: appearance.bubble,
                           isGroup: ui.isGroup,
+                          highlightNicks: _highlightNicksFor(
+                            mucNick: ui.mucNick,
+                            chatKey: widget.chatJid,
+                          ),
                         );
                       },
                       loading: () =>
@@ -1184,6 +1243,7 @@ class _MessageList extends StatelessWidget {
     required this.focusMessageKey,
     required this.bubbleStyle,
     required this.isGroup,
+    required this.highlightNicks,
   });
 
   final String chatKey;
@@ -1229,6 +1289,9 @@ class _MessageList extends StatelessWidget {
 
   /// MODE_MULTI: show occupant nicks above incoming bubbles.
   final bool isGroup;
+
+  /// Our nick / localpart for bolding @-highlights in body text.
+  final List<String> highlightNicks;
 
   @override
   Widget build(BuildContext context) {
@@ -1297,6 +1360,7 @@ class _MessageList extends StatelessWidget {
         selected: selectedIds.contains(m.stanzaId),
         bubbleStyle: bubbleStyle,
         isGroup: isGroup,
+        highlightNicks: highlightNicks,
         onReact: (emoji) => onReact(m.stanzaId, emoji),
         onMenu: (body) => onMenu(m, body),
         onToggleSelected: () => onToggleSelected(m),
@@ -1487,6 +1551,7 @@ class _ReactionBubble extends ConsumerWidget {
     required this.selected,
     required this.bubbleStyle,
     required this.isGroup,
+    required this.highlightNicks,
     required this.onReact,
     required this.onMenu,
     required this.onToggleSelected,
@@ -1498,6 +1563,7 @@ class _ReactionBubble extends ConsumerWidget {
   final bool selected;
   final BubbleStyle bubbleStyle;
   final bool isGroup;
+  final List<String> highlightNicks;
   final void Function(String emoji) onReact;
   final void Function(String body) onMenu;
   final void Function() onToggleSelected;
@@ -1544,6 +1610,8 @@ class _ReactionBubble extends ConsumerWidget {
       bubbleStyle: bubbleStyle,
       message: message,
       chatKey: chatKey,
+      mentionsMe: message.mentionsMe,
+      highlightNicks: isGroup ? highlightNicks : const [],
       onReact: onReact,
       // A long press still opens the context menu when nothing is selected;
       // once a selection exists, long press adds to it, which is what a user
@@ -1556,6 +1624,21 @@ class _ReactionBubble extends ConsumerWidget {
       onTap: selectionMode ? onToggleSelected : null,
     );
   }
+}
+
+/// Nick names that count as "us" for bolding highlights in the transcript.
+List<String> _highlightNicksFor({
+  required String mucNick,
+  required String chatKey,
+}) {
+  final names = <String>{};
+  if (mucNick.isNotEmpty) names.add(mucNick);
+  try {
+    final bare = resolveChatKey(chatKey).session.account.bareJid;
+    final at = bare.indexOf('@');
+    if (at > 0) names.add(bare.substring(0, at));
+  } catch (_) {}
+  return names.toList();
 }
 
 /// Occupant nick from a stored sender (`room@server/nick` or bare nick).

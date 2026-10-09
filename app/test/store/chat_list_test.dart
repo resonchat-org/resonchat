@@ -7,6 +7,7 @@
 // the user checks against reality — "the badge said 3 and there were 2" — so
 // every test here is about it not drifting.
 
+import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:test/test.dart';
 import 'package:resonchat/store/database.dart';
@@ -160,6 +161,36 @@ void main() {
       expect(row.unreadCount, 0);
       expect(row.lastReadAt, clock(2));
     });
+
+    test(
+      'mark-read keeps messages that arrived after the leave marker',
+      () async {
+        // dispose → unawaited markRead: a message can land (and bump the
+        // counter) before the SQL runs. Forcing unread to 0 would hide it.
+        await touch('a@example.org', 10);
+        await db.markChatRead('a@example.org', at: clock(1));
+        await db.insertMessage(
+          MessagesCompanion(
+            chatJid: const Value('a@example.org'),
+            sender: const Value('room@example.org/bob'),
+            body: const Value('hey Alice'),
+            incoming: const Value(true),
+            timestamp: Value(clock(2)),
+            mentionsMe: const Value(true),
+          ),
+        );
+        await db.markChatUnread(
+          'a@example.org',
+          arrivedAt: clock(2),
+          mentionsMe: true,
+        );
+        // Late mark-read with the *leave* time, not "now".
+        await db.markChatRead('a@example.org', at: clock(1));
+        final row = (await db.watchChats().first).single;
+        expect(row.unreadCount, 1);
+        expect(row.unreadMentions, 1);
+      },
+    );
 
     test('two arrivals are not collapsed into one', () async {
       // The read-modify-write version of this loses a count: both callers read

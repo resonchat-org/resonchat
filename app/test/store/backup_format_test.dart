@@ -643,8 +643,10 @@ BackupRow _chatRow(String jid, {int unread = 0}) => {
   'appearance': ''.cell,
   'pinned': false.cell,
   'muted': false.cell,
+  'always_notify': false.cell,
   'archived': false.cell,
   'unread_count': unread.cell,
+  'unread_mentions': 0.cell,
   'last_read_at': DateTime.utc(2026, 9, 29).cell,
   'track_override': ''.cell,
   'is_group': false.cell,
@@ -681,6 +683,7 @@ BackupRow _messageRow(
   'media_url': ''.cell,
   'media_mime': ''.cell,
   'media_name': ''.cell,
+  'mentions_me': false.cell,
 };
 
 BackupRow _metaRow(String key, String value) => {
@@ -763,8 +766,10 @@ Map<String, Object?> _chatJson(String jid) => {
   'appearance': '',
   'pinned': false,
   'muted': false,
+  'always_notify': false,
   'archived': false,
   'unread_count': 0,
+  'unread_mentions': 0,
   'last_read_at': '2026-09-29T00:00:00.000Z',
   'track_override': '',
   'is_group': false,

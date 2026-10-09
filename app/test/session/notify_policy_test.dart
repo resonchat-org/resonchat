@@ -27,10 +27,11 @@ void main() {
   const zoe = NotifyIdentity(jid: 'zoe@example.org/phone', nickname: 'zoe');
   const zoeNoNick = NotifyIdentity(jid: 'zoe@example.org/phone');
 
-  /// Every combination of the nine boolean inputs.
+  /// Every combination of the boolean inputs.
   ///
   /// Bit 4 is `pinned`, so `sweep(bits | 4)` is the same message with the
-  /// conversation pinned and nothing else changed.
+  /// conversation pinned and nothing else changed. Bit 512 clears
+  /// `alwaysNotify` (highlight-only).
   NotifyPolicy sweep(int bits, {String body = 'see you soon'}) => NotifyPolicy(
     sender: roomAlice,
     me: zoe,
@@ -44,12 +45,13 @@ void main() {
     blocked: (bits & 64) != 0,
     appInForeground: (bits & 128) != 0,
     reading: (bits & 256) != 0,
+    alwaysNotify: (bits & 512) == 0,
   );
 
   /// The whole space of inputs, over the three bodies that matter.
   Iterable<NotifyPolicy> everyInput() => [
     for (final body in const ['see you soon', 'zoe: are you there?', '   '])
-      for (var bits = 0; bits < 512; bits++) sweep(bits, body: body),
+      for (var bits = 0; bits < 1024; bits++) sweep(bits, body: body),
   ];
 
   /// Every reason a decision is allowed to give.
@@ -59,7 +61,8 @@ void main() {
     NotifyReason.readingThisConversation,
     NotifyReason.archived,
     NotifyReason.muted,
-    NotifyReason.mentionedInMutedConversation,
+    NotifyReason.notHighlighted,
+    NotifyReason.highlighted,
     NotifyReason.appInForeground,
     NotifyReason.undecryptable,
     NotifyReason.incoming,
@@ -161,7 +164,7 @@ void main() {
       );
       expect(d.post, isFalse);
       expect(d.alerts, isFalse);
-      expect(d.countsAsUnread, isFalse);
+      expect(d.countsAsUnread, isTrue);
       expect(d.reason, NotifyReason.muted);
     });
 
@@ -272,11 +275,9 @@ void main() {
     });
   });
 
-  group('a mute and a direct mention', () {
-    test('a mention in a muted room breaks the mute', () {
-      // The decision this file exists for. Silently dropping a direct mention
-      // because the user muted the *conversation* is how a person ends up
-      // muting everything, and once they have, no rule here can reach them.
+  group('Conversations three-way notify (never / highlights / all)', () {
+    test('never: a mention does not break notify-never', () {
+      // Conversations `isMuted()` — absolute silence until unmuted.
       final d = decide(
         const NotifyPolicy(
           sender: roomAlice,
@@ -286,35 +287,13 @@ void main() {
           muted: true,
         ),
       );
-      expect(d.post, isTrue);
-      expect(d.sound, isTrue);
-      expect(d.banner, isTrue);
-      expect(d.includePreview, isTrue);
+      expect(d.post, isFalse);
+      expect(d.alerts, isFalse);
       expect(d.countsAsUnread, isTrue);
-      expect(d.reason, NotifyReason.mentionedInMutedConversation);
-      expect(
-        mentionsUser(
-          const NotifyPolicy(
-            sender: roomAlice,
-            me: zoe,
-            body: 'zoe: are you there?',
-            isGroup: true,
-          ),
-        ),
-        isTrue,
-      );
+      expect(d.reason, NotifyReason.muted);
     });
 
-    test('and only that message', () {
-      // The mention is not a hole in the mute. The next message in the same
-      // muted room, which does not name the user, is silent again.
-      const room = NotifyPolicy(
-        sender: roomAlice,
-        me: zoe,
-        isGroup: true,
-        muted: true,
-      );
-      expect(decide(room).reason, NotifyReason.muted);
+    test('highlights: only a nick / MUC-PM alerts', () {
       expect(
         decide(
           const NotifyPolicy(
@@ -322,29 +301,54 @@ void main() {
             me: zoe,
             body: 'reacted 👍',
             isGroup: true,
-            muted: true,
+            alwaysNotify: false,
           ),
         ).reason,
-        NotifyReason.muted,
+        NotifyReason.notHighlighted,
       );
-      expect(
-        decide(
-          const NotifyPolicy(
-            sender: roomAlice,
-            me: zoe,
-            body: 'zoe: ping',
-            isGroup: true,
-            muted: true,
-          ),
-        ).reason,
-        NotifyReason.mentionedInMutedConversation,
+      final hit = decide(
+        const NotifyPolicy(
+          sender: roomAlice,
+          me: zoe,
+          body: 'zoe: ping',
+          isGroup: true,
+          alwaysNotify: false,
+        ),
       );
+      expect(hit.post, isTrue);
+      expect(hit.reason, NotifyReason.highlighted);
     });
 
-    test('a mention in a 1:1 does not break the mute', () {
-      // There is nobody else in the conversation to address. In a 1:1 the mute
-      // *is* the notification setting for that person, and letting any message
-      // containing their own name defeat it would make mute un-honourable.
+    test('highlights: a MUC private message counts as a highlight', () {
+      final d = decide(
+        const NotifyPolicy(
+          sender: roomAlice,
+          me: zoe,
+          body: 'psst',
+          isGroup: true,
+          alwaysNotify: false,
+          privateMessage: true,
+        ),
+      );
+      expect(d.post, isTrue);
+      expect(d.reason, NotifyReason.highlighted);
+    });
+
+    test('all: ordinary room traffic alerts', () {
+      final d = decide(
+        const NotifyPolicy(
+          sender: roomAlice,
+          me: zoe,
+          body: 'hello everyone',
+          isGroup: true,
+        ),
+      );
+      expect(d.post, isTrue);
+      expect(d.reason, NotifyReason.incoming);
+    });
+
+    test('a mention in a 1:1 does not invent highlight-only', () {
+      // Highlight-only is a room setting. In a 1:1 the mute is binary.
       final d = decide(
         const NotifyPolicy(
           sender: alice,
@@ -358,17 +362,13 @@ void main() {
     });
 
     test('an archived room does not come back for a mention', () {
-      // Archive and mute are different claims. A mute is about one person's
-      // stream; archiving is about a room with dozens of senders the user did
-      // not choose and cannot mute one by one. Letting the whole membership
-      // break it would turn "archive this room" into a subscription.
       final d = decide(
         const NotifyPolicy(
           sender: roomAlice,
           me: zoe,
           body: 'zoe: are you there?',
           isGroup: true,
-          muted: true,
+          alwaysNotify: false,
           archived: true,
         ),
       );
@@ -376,22 +376,17 @@ void main() {
       expect(d.alerts, isFalse);
     });
 
-    test('a mention in a message we could not read does not break the mute', () {
-      // The body here is the one thing that cannot happen: a message we could
-      // not open has no body. It is spelled out anyway, because it is the shape
-      // of the bug — a stale body left in the row by an earlier decryption
-      // attempt must not become a way round a mute, and the check has to be
-      // here rather than in the caller.
+    test('undecryptable text is never a highlight', () {
       final policy = const NotifyPolicy(
         sender: roomAlice,
         me: zoe,
         body: 'zoe: are you there?',
         isGroup: true,
-        muted: true,
+        alwaysNotify: false,
         undecryptable: true,
       );
       expect(mentionsUser(policy), isFalse);
-      expect(decide(policy).reason, NotifyReason.muted);
+      expect(decide(policy).reason, NotifyReason.notHighlighted);
       expect(decide(policy).alerts, isFalse);
     });
 
@@ -410,7 +405,9 @@ void main() {
     });
 
     test('the name still counts at a word boundary', () {
-      const names = ['zoe', 'zoe:', 'hey zoe', '@zoe', 'zoe?', '(zoe)'];
+      // Conversations `generateNickHighlightPattern`: after start/whitespace,
+      // optional `@`, then whitespace / end / punctuation.
+      const names = ['zoe', 'zoe:', 'hey zoe', '@zoe', 'zoe?', 'hey @zoe!'];
       for (final body in names) {
         expect(
           mentionsUser(
@@ -420,6 +417,18 @@ void main() {
           reason: 'should match: $body',
         );
       }
+      expect(
+        mentionsUser(
+          const NotifyPolicy(
+            sender: roomAlice,
+            me: zoe,
+            body: '(zoe)',
+            isGroup: true,
+          ),
+        ),
+        isFalse,
+        reason: 'leading paren is not Conversations whitespace',
+      );
     });
 
     test('the localpart is the name when there is no nickname', () {
@@ -494,7 +503,7 @@ void main() {
     });
 
     test('nor does it un-mute, un-archive or un-block', () {
-      for (var bits = 0; bits < 512; bits++) {
+      for (var bits = 0; bits < 1024; bits++) {
         expectIdentical(
           decide(sweep(bits | 4)),
           decide(sweep(bits)),
@@ -561,17 +570,14 @@ void main() {
     });
 
     test('the badge agrees with the reasons that suppress it', () {
-      // These five are exactly the early returns in `_acceptInbound`, so the
-      // badge cannot end up disagreeing with the buzz about one message. The
-      // one the counter does not have is the mention: a mention notifies, so it
-      // counts, and a conversation that buzzes while showing no badge reads as
-      // read.
+      // Silence that also means "do not count": block / carbon / reading /
+      // archive. Mute and highlight-only still increment unread — Conversations
+      // separates the shade from the badge.
       const neverCounts = {
         NotifyReason.blocked,
         NotifyReason.carbon,
         NotifyReason.readingThisConversation,
         NotifyReason.archived,
-        NotifyReason.muted,
       };
       for (final policy in everyInput()) {
         final d = decide(policy);

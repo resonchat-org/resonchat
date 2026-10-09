@@ -274,8 +274,10 @@ const Map<BackupTable, BackupTableSpec> kBackupTables = {
     BackupColumn('appearance', BackupColumnKind.text),
     BackupColumn('pinned', BackupColumnKind.flag),
     BackupColumn('muted', BackupColumnKind.flag),
+    BackupColumn('always_notify', BackupColumnKind.flag),
     BackupColumn('archived', BackupColumnKind.flag),
     BackupColumn('unread_count', BackupColumnKind.integer),
+    BackupColumn('unread_mentions', BackupColumnKind.integer),
     BackupColumn('last_read_at', BackupColumnKind.stamp),
     BackupColumn('track_override', BackupColumnKind.text),
     BackupColumn('is_group', BackupColumnKind.flag),
@@ -309,6 +311,7 @@ const Map<BackupTable, BackupTableSpec> kBackupTables = {
     BackupColumn('media_url', BackupColumnKind.text),
     BackupColumn('media_mime', BackupColumnKind.text),
     BackupColumn('media_name', BackupColumnKind.text),
+    BackupColumn('mentions_me', BackupColumnKind.flag),
     // local_path is device-local and deliberately omitted from backups.
   ]),
   BackupTable.rosterEntries: BackupTableSpec(BackupTable.rosterEntries, [

@@ -442,7 +442,11 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
   Future<void> markReadAndSendDisplayed() async {
     final r = resolveChatKey(arg);
     final bump = ref.read(chatRowRevisionProvider.notifier);
-    await r.session.db.markChatRead(r.jid);
+    // Capture before any await: dispose fires this without awaiting, and a
+    // message can arrive before markChatRead runs. The marker must be "left
+    // at", not "SQL finished at", or that message is wiped from the badges.
+    final leftAt = DateTime.now();
+    await r.session.db.markChatRead(r.jid, at: leftAt);
     bump.state = bump.state + 1;
     await sendDisplayedForLatest();
   }

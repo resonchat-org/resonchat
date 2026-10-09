@@ -45,6 +45,14 @@ final prefsDatabaseProvider = Provider<PrefsDatabase>((ref) => appPrefs);
 /// Phone layout ignores this and uses stacked `/chat` routes instead.
 final selectedChatKeyProvider = StateProvider<String?>((ref) => null);
 
+/// Conversation currently open on screen (phone route or column pane).
+///
+/// Used by notify policy so a message in the open chat does not buzz.
+final openChatKeyProvider = StateProvider<String?>((ref) => null);
+
+/// Whether the app is in the foreground ([AppLifecycleState.resumed]).
+final appForegroundProvider = StateProvider<bool>((ref) => true);
+
 /// Primary account DB (per-account chat data). Chat-scoped code must use
 /// [dbForChatKey] / session lookup instead.
 final databaseProvider = Provider<AppDatabase>((ref) {
@@ -437,6 +445,11 @@ final chatRowRevisionProvider = StateProvider<int>((ref) => 0);
 /// Pending contact requests, newest first.
 final subscriptionRequestsProvider = StreamProvider<List<SubscriptionRequest>>(
   (ref) => ref.watch(databaseProvider).watchSubscriptionRequests(),
+);
+
+/// Pending MUC invitations, newest first.
+final roomInvitationsProvider = StreamProvider<List<RoomInvitation>>(
+  (ref) => ref.watch(databaseProvider).watchRoomInvitations(),
 );
 
 /// The unsent text in [chatKey], or null.

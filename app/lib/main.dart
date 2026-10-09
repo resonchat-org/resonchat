@@ -12,6 +12,7 @@ import 'account/account_hub.dart';
 import 'account/chat_ref.dart';
 import 'l10n/l10n.dart';
 import 'net/app_network.dart';
+import 'platform/app_notifications.dart';
 import 'state/app_wiring.dart';
 import 'store/prefs_database.dart';
 import 'ui/accent_theme.dart';
@@ -55,18 +56,53 @@ Future<void> main() async {
     );
   });
 
+  AppNotifications.instance.onOpenChat = _openChatFromNotification;
+  await AppNotifications.instance.ensureReady();
+  final launchChatKey = await AppNotifications.instance.launchChatKey();
+
   await hub.connectAll();
 
-  runApp(ProviderScope(child: App(hasAccounts: hub.hasAccounts)));
+  runApp(
+    ProviderScope(
+      child: App(hasAccounts: hub.hasAccounts, initialChatKey: launchChatKey),
+    ),
+  );
 }
 
-class App extends ConsumerWidget {
-  const App({super.key, required this.hasAccounts});
+void _openChatFromNotification(String chatKey) {
+  final nav = appNavigatorKey.currentState;
+  if (nav == null) return;
+  final ref = ChatRef.tryParse(chatKey);
+  if (ref == null) return;
+  nav.pushNamed('/chat', arguments: ref);
+}
+
+class App extends ConsumerStatefulWidget {
+  const App({super.key, required this.hasAccounts, this.initialChatKey});
 
   final bool hasAccounts;
 
+  /// Chat opened because the process was launched from a shade tap.
+  final String? initialChatKey;
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<App> createState() => _AppState();
+}
+
+class _AppState extends ConsumerState<App> {
+  @override
+  void initState() {
+    super.initState();
+    final key = widget.initialChatKey;
+    if (key != null && widget.hasAccounts) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _openChatFromNotification(key);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final localeOverride = ref.watch(localeOverrideProvider);
     final accent = ref.watch(accentPreferenceProvider);
     return DynamicColorBuilder(
@@ -109,7 +145,7 @@ class App extends ConsumerWidget {
               child: child ?? const SizedBox.shrink(),
             ),
           ),
-          initialRoute: hasAccounts ? '/chats' : '/login',
+          initialRoute: widget.hasAccounts ? '/chats' : '/login',
           onGenerateRoute: (settings) {
             switch (settings.name) {
               case '/login':
