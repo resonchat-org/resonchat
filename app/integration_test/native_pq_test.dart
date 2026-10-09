@@ -23,7 +23,7 @@ void main() {
       'backend: ${provider.isNative ? 'liboqs (native)' : 'pqcrypto (Dart)'}',
     );
     // ignore: avoid_print
-    print('loadError: ${LiboqsMlKem768.loadError ?? 'none'}');
+    print('loadError: ${liboqsLoadError ?? 'none'}');
     // ignore: avoid_print
     print('platform: ${Platform.operatingSystem}/${Platform.version}');
 

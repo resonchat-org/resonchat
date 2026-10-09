@@ -15,11 +15,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:moxxmpp/moxxmpp.dart' show JID;
 
-import '../l10n/l10n.dart';
-import '../state/providers.dart';
-import '../store/database.dart';
-import 'contact_avatar.dart';
-import 'theme.dart';
+import '../../l10n/l10n.dart';
+import '../../state/providers.dart';
+import '../../store/database.dart';
+import '../contact_avatar.dart';
+import '../theme.dart';
 
 class RequestsPage extends ConsumerWidget {
   const RequestsPage({super.key});

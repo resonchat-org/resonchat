@@ -7,24 +7,24 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:moxxmpp/moxxmpp.dart' show JID, RosterManager, rosterManager;
 
-import '../xmpp/connection.dart';
-
-import '../account/account_hub.dart';
-import '../account/chat_ref.dart';
-import '../l10n/l10n.dart';
-import '../state/providers.dart';
-import 'accounts_icon.dart';
-import 'archive_page.dart';
+import '../../l10n/l10n.dart';
+import '../../state/providers.dart';
+import '../accounts/accounts_icon.dart';
+import '../archive/archive_page.dart';
+import '../home/open_chat.dart';
+import '../requests/requests_page.dart';
+import '../room/room_sheet.dart';
+import '../theme.dart';
+import 'chats_viewmodel.dart';
 import 'chat_row.dart';
-import 'requests_page.dart';
-import 'room_sheet.dart';
 import 'search.dart';
-import 'theme.dart';
 
 class ChatsPage extends ConsumerStatefulWidget {
-  const ChatsPage({super.key});
+  const ChatsPage({super.key, this.activeChatKey});
+
+  /// Highlighted row in column mode (FluffyChat `activeChat`).
+  final String? activeChatKey;
 
   @override
   ConsumerState<ChatsPage> createState() => _ChatsPageState();
@@ -39,42 +39,24 @@ class _ChatsPageState extends ConsumerState<ChatsPage> {
     super.dispose();
   }
 
-  /// Opens a conversation with [jid], adding the contact first.
-  ///
-  /// Merely creating a local row is not enough: a server only routes stanzas
-  /// between accounts that are in each other's roster, so a chat opened this
-  /// way would silently never receive anything. Adding the contact and
-  /// asking for the subscription is what makes it a real conversation.
+  /// Opens a conversation, adding the contact first when online.
   Future<void> _openChat() async {
     final raw = _jid.text.trim();
     if (raw.isEmpty) return;
-    final jid = bareJidOf(raw);
-    if (jid == null) {
-      if (!mounted) return;
+    final result = await ref
+        .read(chatsViewModelProvider.notifier)
+        .openChatByJid(raw);
+    if (!mounted) return;
+    final l10n = context.l10n;
+    if (result.invalidJid) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(context.l10n.invalidJid)));
+          .showSnackBar(SnackBar(content: Text(l10n.invalidJid)));
       return;
     }
-
-    final hub = accountHub;
-    final session = hub.primarySession;
-    if (session == null) return;
-    await session.db.upsertChat(jid);
+    if (result.chatKey == null) return;
     _jid.clear();
-    final chatRef = ChatRef(accountId: session.account.id, jid: jid);
-
-    final xmpp = session.xmpp;
-    if (xmpp.state == XmppConnectionState.connected) {
-      final roster = xmpp.connection?.getManagerById<RosterManager>(
-        rosterManager,
-      );
-      final added = await roster?.addToRoster(jid, jid) ?? false;
-      if (added) {
-        await xmpp.requestSubscription(JID.fromString(jid));
-        await xmpp.subscribePeerPep(JID.fromString(jid));
-      }
-      if (!mounted) return;
-      final l10n = context.l10n;
+    final added = result.contactAdded;
+    if (added != null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -83,9 +65,7 @@ class _ChatsPageState extends ConsumerState<ChatsPage> {
         ),
       );
     }
-    if (mounted) {
-      Navigator.of(context).pushNamed('/chat', arguments: chatRef.key);
-    }
+    openChat(context, result.chatKey!);
   }
 
   @override
@@ -158,11 +138,11 @@ class _ChatsPageState extends ConsumerState<ChatsPage> {
                       ),
                       itemBuilder: (context, i) {
                         final entry = list[i];
+                        final key = entry.ref.key;
                         return ChatRow(
                           entry: entry,
-                          onOpen: () =>
-                              Navigator.of(context)
-                                  .pushNamed('/chat', arguments: entry.ref.key),
+                          selected: widget.activeChatKey == key,
+                          onOpen: () => openChat(context, key),
                         );
                       },
                     ),
@@ -221,22 +201,4 @@ class _OpenChatBar extends StatelessWidget {
       ),
     );
   }
-}
-
-/// One conversation row.
-
-/// Reduces whatever the user typed to a bare JID, or null if it is not one.
-///
-/// `user@example.org/phone` and `user@example.org` are the same contact for
-/// roster purposes; only the bare form belongs in the roster, and putting a
-/// full JID there silently creates a second, unreachable entry.
-String? bareJidOf(String raw) {
-  final trimmed = raw.trim();
-  final slash = trimmed.indexOf('/');
-  final bare = slash == -1 ? trimmed : trimmed.substring(0, slash);
-  final parts = bare.split('@');
-  if (parts.length != 2 || parts[0].isEmpty || parts[1].isEmpty) return null;
-  // A domain must look like a domain, not a fragment of one.
-  if (parts[1].contains(' ')) return null;
-  return bare;
 }

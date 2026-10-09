@@ -27,7 +27,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:logging/logging.dart';
 import 'package:moxxmpp/moxxmpp.dart' show JID, RosterManager, rosterManager;
-import 'package:omemo_dart/omemo_dart.dart' show OmemoBundle;
+import 'package:resonchat/omemo/defacto.dart';
 import 'package:resonchat/omemo/track.dart';
 import 'package:resonchat/omemo/dual_track_manager.dart';
 import 'package:resonchat/omemo/protocol.dart';
@@ -77,7 +77,7 @@ void main() {
       // server is told we have no contacts, so it refuses to route anything
       // and every message comes back as an error — which looks exactly like
       // a client bug.
-      db = await openAppDatabase();
+      db = await openAppDatabase(accountId: 'interop-m2');
       final ok = await xmpp.connect(
         jid: jid,
         password: password,
@@ -156,14 +156,14 @@ void main() {
         final bundle = await tracks.getOmemoBundle(peer, id);
         final detail = bundle == null
             ? 'could not parse'
-            : 'spk ${_len(bundle.spkEncoded)}B '
-                  'sig ${_len(bundle.spkSignatureEncoded)}B '
-                  'ik ${_len(bundle.ikEncoded)}B '
-                  'opks ${bundle.opksEncoded.length} '
-                  'pk sizes ${bundle.opksEncoded.values.map(_len).toSet().toList()}';
+            : 'spk ${_len(bundle.signedPreKeyPublicEncoded)}B '
+                  'sig ${_len(bundle.signedPreKeySignatureEncoded)}B '
+                  'ik ${_len(bundle.identityKeyEncoded)}B '
+                  'opks ${bundle.preKeysEncoded.length} '
+                  'pk sizes ${bundle.preKeysEncoded.values.map(_len).toSet().toList()}';
         check(
           'device $id bundle verifies (spk sig ik sizes, opks present)',
-          bundle != null && _bundleLooksSane(bundle),
+          bundle != null && omemoBundleLooksSane(bundle),
           detail,
         );
       }
@@ -292,20 +292,5 @@ int _len(String b64) {
     return base64Decode(b64).length;
   } catch (_) {
     return -1;
-  }
-}
-
-bool _bundleLooksSane(OmemoBundle b) {
-  try {
-    if (base64Decode(b.spkEncoded).length != 32) return false;
-    if (base64Decode(b.spkSignatureEncoded).length != 64) return false;
-    if (base64Decode(b.ikEncoded).length != 32) return false;
-    if (b.opksEncoded.isEmpty) return false;
-    for (final pk in b.opksEncoded.values) {
-      if (base64Decode(pk).length != 32) return false;
-    }
-    return true;
-  } catch (_) {
-    return false;
   }
 }

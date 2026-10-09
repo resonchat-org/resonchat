@@ -17,7 +17,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:logging/logging.dart';
 import 'package:moxxmpp/moxxmpp.dart';
-import 'package:omemo_dart/omemo_dart.dart';
+import 'package:omemo_dart/omemo_dart_axolotl.dart' show AxolotlBundle;
 import 'package:resonchat/omemo/track.dart';
 import 'package:resonchat/xmpp/capabilities.dart';
 import 'package:resonchat/omemo/defacto.dart';
@@ -202,8 +202,8 @@ void main() {
         bundleB != null && omemoBundleLooksSane(bundleB),
         bundleB == null
             ? 'nothing'
-            : 'spkId ${bundleB.spkId}, '
-                  '${bundleB.opksEncoded.length} prekeys',
+            : 'spkId ${bundleB.signedPreKeyId}, '
+                  '${bundleB.preKeysEncoded.length} prekeys',
       );
       expect(bundleB, isNotNull);
       final bundleA = await _fetchBundle(a, otherOfB, idA);
@@ -212,8 +212,8 @@ void main() {
         bundleA != null && omemoBundleLooksSane(bundleA),
         bundleA == null
             ? 'nothing'
-            : 'spkId ${bundleA.spkId}, '
-                  '${bundleA.opksEncoded.length} prekeys',
+            : 'spkId ${bundleA.signedPreKeyId}, '
+                  '${bundleA.preKeysEncoded.length} prekeys',
       );
       expect(bundleA, isNotNull);
 
@@ -324,7 +324,7 @@ void main() {
 }
 
 /// Reads B's bundle the way A's code would: the de-facto node first.
-Future<OmemoBundle?> _fetchBundle(
+Future<AxolotlBundle?> _fetchBundle(
   XmppService from,
   JID peer,
   int deviceId,

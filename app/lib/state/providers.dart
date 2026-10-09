@@ -13,11 +13,12 @@ import '../omemo/dual_track_manager.dart';
 import '../omemo/protocol.dart';
 import '../omemo/track.dart';
 import '../store/database.dart';
+import '../store/prefs_database.dart';
 import '../xmpp/avatar.dart';
 import '../xmpp/blocking.dart';
 import '../xmpp/muc.dart';
 import '../xmpp/reactions.dart';
-import '../ui/appearance.dart';
+import '../utils/appearance.dart';
 import '../xmpp/b_track_manager.dart';
 import '../xmpp/capabilities.dart';
 import '../xmpp/connection.dart';
@@ -35,7 +36,16 @@ final accountHubProvider = Provider<AccountHub>((ref) {
   return hub;
 });
 
-/// Primary account DB (settings / SOCKS). Chat-scoped code must use
+/// Shared prefs DB (SOCKS / locale / global track). Always available after
+/// [main] opens it — does not require an account session.
+final prefsDatabaseProvider = Provider<PrefsDatabase>((ref) => appPrefs);
+
+/// Selected conversation in column (tablet/desktop) mode, or null.
+///
+/// Phone layout ignores this and uses stacked `/chat` routes instead.
+final selectedChatKeyProvider = StateProvider<String?>((ref) => null);
+
+/// Primary account DB (per-account chat data). Chat-scoped code must use
 /// [dbForChatKey] / session lookup instead.
 final databaseProvider = Provider<AppDatabase>((ref) {
   ref.watch(accountHubProvider);
@@ -340,6 +350,7 @@ final roomStateProvider = FutureProvider.family<GroupChat?, String>((
     roomJid: roomJid,
     nick: state.nick ?? '',
     occupants: occupants,
+    subject: state.subject,
     joined: state.joined,
   );
 });
@@ -547,14 +558,19 @@ final chatTrackOverrideProvider = FutureProvider.family<Track?, String>((
 
 /// The track used by conversations with no override of their own.
 final globalTrackProvider = FutureProvider<Track>((ref) async {
-  final stored = await ref.read(databaseProvider).metaValue(_globalTrackKey);
+  final stored = await ref
+      .read(prefsDatabaseProvider)
+      .getString(_globalTrackKey);
   if (stored == null) return Track.standard;
   return Track.fromStored(stored) ?? Track.standard;
 });
 
 /// Stores the global default.
 Future<void> setGlobalTrack(WidgetRef ref, Track track) async {
-  await ref.read(databaseProvider).setMetaValue(_globalTrackKey, track.stored);
+  await ref
+      .read(prefsDatabaseProvider)
+      .setString(_globalTrackKey, track.stored);
+  ref.invalidate(globalTrackProvider);
 }
 
 /// Pins [chatKey] to [track], or clears the override when null.

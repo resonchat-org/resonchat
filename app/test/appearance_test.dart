@@ -12,7 +12,7 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:test/test.dart';
 import 'package:resonchat/store/database.dart';
-import 'package:resonchat/ui/appearance.dart';
+import 'package:resonchat/utils/appearance.dart';
 
 void main() {
   group('encoding', () {

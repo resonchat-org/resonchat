@@ -11,9 +11,9 @@
 
 import 'package:flutter/material.dart';
 
-import '../l10n/l10n.dart';
-import '../omemo/track.dart';
-import 'theme.dart';
+import '../../l10n/l10n.dart';
+import '../../omemo/track.dart';
+import '../theme.dart';
 
 /// The actions available on one message.
 class MessageActions {

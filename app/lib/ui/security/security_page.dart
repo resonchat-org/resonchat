@@ -12,13 +12,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../account/resolve.dart';
-import '../crypto/fingerprint.dart';
-import '../omemo/track.dart';
-import '../omemo/track_resolver.dart';
-import '../xmpp/capabilities.dart';
-import '../state/providers.dart';
-import 'theme.dart';
+import '../../account/resolve.dart';
+import '../../crypto/fingerprint.dart';
+import '../../omemo/track.dart';
+import '../../omemo/track_resolver.dart';
+import '../../xmpp/capabilities.dart';
+import '../../state/providers.dart';
+import '../theme.dart';
 
 /// How far this chat's verification has got.
 enum VerifyStage {

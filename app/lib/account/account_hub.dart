@@ -91,9 +91,9 @@ class AccountHub extends ChangeNotifier {
 
   /// Opens per-account databases without connecting.
   ///
-  /// Call this, then load SOCKS prefs from [primaryDbOrNull], then
-  /// [connectAll] — otherwise the first TCP hop races [AppNetwork.loadFrom]
-  /// and connects with the proxy still disabled.
+  /// Shared SOCKS/locale prefs live in [appPrefs] (opened in [main] before
+  /// this). Call [connectAll] only after [AppNetwork.loadFrom] has applied
+  /// those prefs.
   Future<void> openSessions() async {
     _accounts = await _store.loadAll();
     for (final a in _accounts.where((a) => a.enabled)) {
@@ -151,10 +151,7 @@ class AccountHub extends ChangeNotifier {
       existing.account = account;
       return existing;
     }
-    final db = await openAppDatabase(
-      accountId: account.id,
-      legacyFile: account.legacyDb,
-    );
+    final db = await openAppDatabase(accountId: account.id);
     final xmpp = _buildXmpp(db);
     final session = AccountSession(account: account, db: db, xmpp: xmpp);
     session.subs.add(db.watchChats().listen((_) => _chatsTick.add(null)));
@@ -288,7 +285,6 @@ class AccountHub extends ChangeNotifier {
       jid: jid.trim(),
       password: password,
       host: (host == null || host.trim().isEmpty) ? null : host.trim(),
-      legacyDb: existing?.legacyDb ?? !hasAccounts,
     );
     await _store.upsert(account);
     _accounts = await _store.loadAll();

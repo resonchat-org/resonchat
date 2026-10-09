@@ -1,18 +1,22 @@
 // Copyright (C) 2026 resonchat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../l10n/l10n.dart';
-import '../net/app_network.dart';
-import '../pq/liboqs_mlkem.dart';
-import '../omemo/track.dart';
-import '../state/providers.dart';
-import '../xmpp/connection.dart';
-import 'archive_page.dart';
-import 'theme.dart';
+import '../../l10n/l10n.dart';
+import '../../net/app_network.dart';
+import '../../pq/liboqs_mlkem.dart';
+import '../../omemo/track.dart';
+import '../../state/providers.dart';
+import '../../xmpp/connection.dart';
+import '../archive/archive_page.dart';
+import '../theme.dart';
+import 'settings_viewmodel.dart';
+import 'socks5_proxy_sheet.dart';
 
 /// App settings. Deliberately free of branding that would suggest any
 /// affiliation with other messengers (docs/05 §6).
@@ -24,84 +28,17 @@ class SettingsPage extends ConsumerStatefulWidget {
 }
 
 class _SettingsPageState extends ConsumerState<SettingsPage> {
-  bool? _readReceipts;
-  bool? _chatStates;
-  bool _socks5Enabled = false;
-  final _socks5Port = TextEditingController(text: '7890');
-
-  @override
-  void initState() {
-    super.initState();
-    final xmpp = ref.read(xmppServiceProvider);
-    _readReceipts = xmpp.sendReadReceipts;
-    _chatStates = xmpp.sendTypingNotifications;
-    ref.read(databaseProvider).sendReadReceiptsEnabled().then((v) {
-      if (mounted) setState(() => _readReceipts = v);
-    });
-    ref.read(databaseProvider).sendChatStatesEnabled().then((v) {
-      if (mounted) setState(() => _chatStates = v);
-    });
-    _loadSocks5();
-  }
-
-  Future<void> _loadSocks5() async {
-    final db = ref.read(databaseProvider);
-    final enabled = await db.socks5ProxyEnabled();
-    final port = await db.socks5ProxyPort();
-    if (!mounted) return;
-    setState(() {
-      _socks5Enabled = enabled;
-      _socks5Port.text = '$port';
-    });
-    appNetwork.config = Socks5ProxyConfig(
-      enabled: enabled,
-      host: await db.socks5ProxyHost(),
-      port: port,
-    );
-  }
-
-  @override
-  void dispose() {
-    _socks5Port.dispose();
-    super.dispose();
-  }
-
-  Future<void> _applySocks5({bool? enabled, int? port}) async {
-    final l10n = context.l10n;
-    final nextEnabled = enabled ?? _socks5Enabled;
-    final parsed = port ?? int.tryParse(_socks5Port.text.trim());
-    if (parsed == null || parsed < 1 || parsed > 65535) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(l10n.socks5ProxyInvalidPort)));
-      return;
-    }
-    final db = ref.read(databaseProvider);
-    final host = await db.socks5ProxyHost();
-    await db.setSocks5ProxyEnabled(nextEnabled);
-    await db.setSocks5ProxyPort(parsed);
-    appNetwork.config = Socks5ProxyConfig(
-      enabled: nextEnabled,
-      host: host,
-      port: parsed,
-    );
-    if (!mounted) return;
-    setState(() {
-      _socks5Enabled = nextEnabled;
-      _socks5Port.text = '$parsed';
-    });
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(l10n.socks5ProxyApplied)));
-  }
-
   @override
   Widget build(BuildContext context) {
     final tg = context.tg;
     final l10n = context.l10n;
+    final settings = ref.watch(settingsViewModelProvider);
     final xmpp = ref.watch(xmppServiceProvider);
     final native = MlKem768Provider.instance.isNative;
-    final readReceipts = _readReceipts ?? xmpp.sendReadReceipts;
-    final chatStates = _chatStates ?? xmpp.sendTypingNotifications;
+    final readReceipts = settings.readReceipts ?? xmpp.sendReadReceipts;
+    final chatStates = settings.chatStates ?? xmpp.sendTypingNotifications;
     final localeOverride = ref.watch(localeOverrideProvider);
+    final vm = ref.read(settingsViewModelProvider.notifier);
 
     return Scaffold(
       appBar: AppBar(title: Text(l10n.settings)),
@@ -121,7 +58,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                       groupValue: current,
                       // ignore: deprecated_member_use
                       onChanged: (value) {
-                        if (value != null) setGlobalTrack(ref, value);
+                        if (value != null)
+                          unawaited(vm.setGlobalEncryption(value));
                       },
                       title: Text(
                         '${track.label}  ${track.localizedDescription(l10n)}',
@@ -150,22 +88,14 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             title: Text(l10n.readReceipts),
             subtitle: Text(l10n.readReceiptsSummary),
             value: readReceipts,
-            onChanged: (v) async {
-              setState(() => _readReceipts = v);
-              xmpp.sendReadReceipts = v;
-              await ref.read(databaseProvider).setSendReadReceipts(v);
-            },
+            onChanged: (v) => unawaited(vm.setReadReceipts(v)),
           ),
           SwitchListTile(
             secondary: const Icon(Icons.edit_outlined),
             title: Text(l10n.typingNotifications),
             subtitle: Text(l10n.typingNotificationsSummary),
             value: chatStates,
-            onChanged: (v) async {
-              setState(() => _chatStates = v);
-              xmpp.sendTypingNotifications = v;
-              await ref.read(databaseProvider).setSendChatStates(v);
-            },
+            onChanged: (v) => unawaited(vm.setChatStates(v)),
           ),
           ListTile(
             leading: const Icon(Icons.language),
@@ -176,30 +106,24 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
           _header(tg, l10n.connection),
           // SOCKS5 is a TCP CONNECT proxy — browsers cannot use it.
-          if (!kIsWeb) ...[
-            SwitchListTile(
-              secondary: const Icon(Icons.vpn_key_outlined),
-              title: Text(l10n.socks5Proxy),
-              subtitle: Text(l10n.socks5ProxySummary),
-              value: _socks5Enabled,
-              onChanged: (v) => _applySocks5(enabled: v),
-            ),
-            if (_socks5Enabled)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: TextField(
-                  controller: _socks5Port,
-                  keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
-                    labelText: l10n.socks5ProxyPort,
-                    helperText: l10n.socks5ProxyPortHint,
-                    prefixText: '127.0.0.1:',
-                  ),
-                  onSubmitted: (_) => _applySocks5(),
-                  onEditingComplete: () => _applySocks5(),
-                ),
+          if (!kIsWeb)
+            ListTile(
+              leading: Icon(
+                Icons.vpn_key_outlined,
+                color: appNetwork.config.enabled ? tg.accent : null,
               ),
-          ],
+              title: Text(l10n.socks5Proxy),
+              subtitle: Text(
+                appNetwork.config.enabled
+                    ? '${appNetwork.config.host}:${appNetwork.config.port}'
+                    : l10n.socks5ProxySummary,
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () async {
+                await showSocks5ProxySheet(context, ref);
+                if (mounted) setState(() {});
+              },
+            ),
           ListTile(
             leading: const Icon(Icons.cloud_outlined),
             title: Text(l10n.status),

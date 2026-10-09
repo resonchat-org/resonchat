@@ -120,6 +120,92 @@ bool isPrivateAndNonAnonymous(Iterable<String> discoFeatures) {
       features.contains('muc_nonanonymous');
 }
 
+/// Conversations `MucOptions.AFFILIATION_RANKS`.
+int affiliationRank(String affiliation) {
+  switch (affiliation) {
+    case 'owner':
+      return 4;
+    case 'admin':
+      return 3;
+    case 'member':
+      return 2;
+    case 'none':
+      return 1;
+    case 'outcast':
+      return 0;
+    default:
+      return 0;
+  }
+}
+
+/// Conversations kick gate: owner, or admin who outranks the target.
+bool canKickOccupant({
+  required String selfAffiliation,
+  required Occupant target,
+}) {
+  if (selfAffiliation == 'owner') return true;
+  return affiliationRank(selfAffiliation) >= affiliationRank('admin') &&
+      affiliationRank(selfAffiliation) > affiliationRank(target.affiliation);
+}
+
+/// Conversations `MucOptions.canInvite`.
+bool canInviteToRoom({
+  required bool joined,
+  required bool membersOnly,
+  required bool allowInvites,
+  required String selfRole,
+}) {
+  if (!joined) return false;
+  final hasPermission = !membersOnly || selfRole == 'moderator' || allowInvites;
+  return hasPermission;
+}
+
+/// Conversations `MucOptions.allowPm` with the live self role.
+bool allowPrivateMessages({
+  required String? allowPmRaw,
+  required String selfRole,
+}) {
+  if (allowPmRaw == null || allowPmRaw.isEmpty) return true;
+  switch (allowPmRaw) {
+    case 'anyone':
+      return true;
+    case 'participants':
+      // Conversations ranks(Role.PARTICIPANT): participant or moderator.
+      return selfRole == 'moderator' || selfRole == 'participant';
+    case 'moderators':
+      return selfRole == 'moderator';
+    default:
+      return false;
+  }
+}
+
+/// What we may do as ourself in a room (Conversations MucOptions gates).
+class RoomSelfCapabilities {
+  const RoomSelfCapabilities({
+    required this.affiliation,
+    required this.role,
+    required this.joined,
+    required this.privateNonAnonymous,
+    required this.allowPm,
+    required this.canInvite,
+    required this.canChangeSubject,
+  });
+
+  final String affiliation;
+  final String role;
+  final bool joined;
+  final bool privateNonAnonymous;
+  final bool allowPm;
+  final bool canInvite;
+  final bool canChangeSubject;
+
+  /// XEP-0045 configuration form (`muc#owner`) — owners only.
+  bool get canConfigureRoom => joined && affiliation == 'owner';
+
+  bool canKick(Occupant target) =>
+      canKickOccupant(selfAffiliation: affiliation, target: target);
+}
+
 /// Bare real JIDs to encrypt a groupchat OMEMO message to
 /// (Conversations `MucOptions.getMembers`).
 List<String> mucCryptoTargets({

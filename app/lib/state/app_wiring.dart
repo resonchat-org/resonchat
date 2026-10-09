@@ -11,7 +11,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../account/account_hub.dart';
 import 'providers.dart';
-import '../net/app_network.dart';
 import '../omemo/dual_track_manager.dart';
 import '../omemo/track.dart';
 import '../omemo/track_advice.dart';
@@ -62,7 +61,6 @@ class _AppWiringState extends ConsumerState<AppWiring> {
   @override
   void initState() {
     super.initState();
-    unawaited(_loadSocks5Proxy());
     _bindAll();
     _hubSub = accountHub.sessionChanges.listen((_) => _bindAll());
   }
@@ -178,20 +176,6 @@ class _AppWiringState extends ConsumerState<AppWiring> {
         (msg) => unawaited(_acceptInbound(ref, session, msg)),
       ),
     );
-  }
-
-  Future<void> _loadSocks5Proxy() async {
-    // Prefer the load already done in main() before connectAll. Reloading
-    // here is a no-op when prefs match; still useful if main had no DB yet.
-    final db = accountHub.primaryDbOrNull;
-    if (db == null) return;
-    await appNetwork.loadFrom(() async {
-      return Socks5ProxyConfig(
-        enabled: await db.socks5ProxyEnabled(),
-        host: await db.socks5ProxyHost(),
-        port: await db.socks5ProxyPort(),
-      );
-    });
   }
 
   @override

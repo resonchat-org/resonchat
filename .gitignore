@@ -17,6 +17,7 @@ coverage/
 *.mocks.dart
 **/generated/
 **/l10n/generated/
+app/android/app/src/main/res/mipmap-*/ic_launcher.png
 
 # Android
 android/.gradle/

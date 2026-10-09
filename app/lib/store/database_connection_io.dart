@@ -13,16 +13,27 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqlite3/sqlite3.dart' show Database, sqlite3;
 
-/// Opens a Drift [QueryExecutor] for one account on IO platforms.
-Future<QueryExecutor> openDatabaseConnection({
-  String? accountId,
-  bool legacyFile = false,
+/// Shared preferences DB (`resonchat.sqlite3`). Not an account store.
+Future<QueryExecutor> openPrefsDatabaseConnection() =>
+    _openFile('resonchat.sqlite3', expectedUserVersion: 1);
+
+/// Per-account DB (`resonchat_<accountId>.sqlite3`). [accountId] is required.
+Future<QueryExecutor> openAccountDatabaseConnection(String accountId) {
+  final id = accountId.trim();
+  if (id.isEmpty) {
+    throw ArgumentError.value(accountId, 'accountId', 'must be non-empty');
+  }
+  return _openFile('resonchat_$id.sqlite3', expectedUserVersion: 1);
+}
+
+/// Opens a Drift [QueryExecutor] for one SQLite file on IO platforms.
+Future<QueryExecutor> _openFile(
+  String name, {
+  required int expectedUserVersion,
 }) async {
   final dir = await getApplicationDocumentsDirectory();
-  final name = legacyFile || accountId == null || accountId.isEmpty
-      ? 'resonchat.sqlite3'
-      : 'resonchat_$accountId.sqlite3';
   final file = File(p.join(dir.path, name));
+  await _deleteIncompatible(file, expectedUserVersion: expectedUserVersion);
 
   final passphrase = await _databasePassphrase();
   if (passphrase != null) {
@@ -47,6 +58,41 @@ Future<QueryExecutor> openDatabaseConnection({
   }
 
   return NativeDatabase.createInBackground(file);
+}
+
+/// No forward compatibility: wipe files that are not at [expectedUserVersion].
+///
+/// Probe failures (SQLCipher vs plain, etc.) are left for the open path to
+/// handle — only a readable, wrong [user_version] triggers delete.
+Future<void> _deleteIncompatible(
+  File file, {
+  required int expectedUserVersion,
+}) async {
+  if (!await file.exists()) return;
+  try {
+    final passphrase = await _databasePassphrase();
+    final probe = sqlite3.open(file.path);
+    var version = 0;
+    try {
+      if (passphrase != null) {
+        probe.execute("PRAGMA key = \"x'${_hex(passphrase)}'\";");
+        probe.select('SELECT count(*) FROM sqlite_master;');
+      }
+      final row = probe.select('PRAGMA user_version;');
+      version = row.isEmpty ? 0 : (row.first.values.first as int?) ?? 0;
+    } finally {
+      probe.close();
+    }
+    // Fresh empty files are user_version 0 before Drift migrates — leave them.
+    if (version == 0 || version == expectedUserVersion) return;
+    await file.delete();
+    debugPrint(
+      'Deleted incompatible DB ${file.path} (user_version=$version, '
+      'expected=$expectedUserVersion)',
+    );
+  } catch (e) {
+    debugPrint('DB probe skipped for ${file.path}: $e');
+  }
 }
 
 String _hex(List<int> bytes) =>

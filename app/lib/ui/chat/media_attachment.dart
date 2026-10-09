@@ -12,12 +12,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mime/mime.dart';
 import 'package:open_filex/open_filex.dart';
 
-import '../account/account_hub.dart';
-import '../account/resolve.dart';
-import '../l10n/l10n.dart';
-import '../platform/media_store.dart';
-import '../store/database.dart';
-import 'theme.dart';
+import '../../account/account_hub.dart';
+import '../../account/resolve.dart';
+import '../../l10n/l10n.dart';
+import '../../platform/media_store.dart';
+import '../../store/database.dart';
+import '../theme.dart';
 
 bool isImageMime(String mime, String pathOrName) {
   if (mime.toLowerCase().startsWith('image/')) return true;

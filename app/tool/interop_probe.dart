@@ -15,14 +15,13 @@
 //
 // Credentials come from argv, not from source. Nothing is written to disk.
 
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:logging/logging.dart';
 import 'package:moxxmpp/moxxmpp.dart';
 import 'package:moxxmpp_socket_tcp/moxxmpp_socket_tcp.dart';
-import 'package:omemo_dart/omemo_dart.dart' as omemo;
+import 'package:omemo_dart/omemo_dart_axolotl.dart' as axolotl;
 
 Future<void> main(List<String> args) async {
   if (args.length < 2) {
@@ -52,7 +51,7 @@ Future<void> main(List<String> args) async {
   }
 
   // --- A track wiring -------------------------------------------------
-  omemo.OmemoManager? oom;
+  axolotl.AxolotlOmemoManager? oom;
   final moxxOmemo = OmemoManager(
     () async => oom!,
     // Encrypt everything: sending to ourselves still exercises the full
@@ -103,21 +102,18 @@ Future<void> main(List<String> args) async {
   check('resource bound', true);
 
   // --- 2. publish our device -----------------------------------------
-  final device = await omemo.OmemoDevice.generateNewDevice(
+  final device = await axolotl.AxolotlDevice.generateNewDevice(
     jid.toBare().toString(),
-    opkAmount: 20,
+    preKeyCount: 20,
   );
-  oom = omemo.OmemoManager(
+  oom = axolotl.AxolotlOmemoManager(
     device,
-    omemo.BlindTrustBeforeVerificationTrustManager(),
-    moxxOmemo.sendEmptyMessageImpl,
-    moxxOmemo.fetchDeviceList,
-    moxxOmemo.fetchDeviceBundle,
-    moxxOmemo.subscribeToDeviceListImpl,
-    moxxOmemo.publishDeviceImpl,
+    fetchDeviceList: moxxOmemo.fetchDeviceList,
+    fetchBundle: moxxOmemo.fetchDeviceBundle,
   );
+  oom.trackPreKeyIds(device.store.preKeyStore.store.keys);
   final deviceId = await oom.getDeviceId();
-  final bundle = await (await oom.getDevice()).toBundle();
+  final bundle = await oom.getLocalBundle();
   final published = await moxxOmemo.publishBundle(bundle);
   final publishFailed = !published.isType<bool>() || published.get<bool>();
   check('publish bundle', !publishFailed, 'device id $deviceId');
@@ -142,25 +138,27 @@ Future<void> main(List<String> args) async {
     // so validate it with the same code path a peer would use.
     var signatureOk = false;
     try {
-      // Rebuild the key objects the way a peer would, then check sizes.
-      // A bundle whose SPK signature cannot even be reconstructed here is
-      // the classic M2 interop failure, so this is worth asserting.
-      final spk = await fetched.spk.getBytes();
-      final ik = await fetched.ik.getBytes();
+      // libsignal serialize() includes the 0x05 type byte → 33B keys.
+      final spk = base64Decode(fetched.signedPreKeyPublicEncoded);
+      final ik = base64Decode(fetched.identityKeyEncoded);
+      final sig = base64Decode(fetched.signedPreKeySignatureEncoded);
       signatureOk =
-          spk.length == 32 &&
-          ik.length == 32 &&
-          fetched.spkSignature.length == 64 &&
-          fetched.opksEncoded.isNotEmpty &&
-          fetched.opksEncoded.values.every((v) => base64Decode(v).length == 32);
+          (spk.length == 33 || spk.length == 32) &&
+          (ik.length == 33 || ik.length == 32) &&
+          sig.length == 64 &&
+          fetched.preKeysEncoded.isNotEmpty &&
+          fetched.preKeysEncoded.values.every((v) {
+            final len = base64Decode(v).length;
+            return len == 33 || len == 32;
+          });
     } catch (e) {
       // ignore: avoid_print
       print('  bundle verification threw: $e');
     }
     check(
-      'bundle well-formed (32B keys, 64B sig, opks)',
+      'bundle well-formed (32/33B keys, 64B sig, opks)',
       signatureOk,
-      'prekeys=${fetched.opksEncoded.length}',
+      'prekeys=${fetched.preKeysEncoded.length}',
     );
   }
 

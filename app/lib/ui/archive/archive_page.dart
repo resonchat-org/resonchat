@@ -4,11 +4,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../account/resolve.dart';
-import '../l10n/l10n.dart';
-import '../state/providers.dart';
-import 'chat_row.dart';
-import 'theme.dart';
+import '../../account/resolve.dart';
+import '../../l10n/l10n.dart';
+import '../../state/providers.dart';
+import '../chats/chat_row.dart';
+import '../home/open_chat.dart';
+import '../theme.dart';
 
 class ArchivePage extends ConsumerWidget {
   const ArchivePage({super.key});
@@ -55,9 +56,7 @@ class ArchivePage extends ConsumerWidget {
                 },
                 child: ChatRow(
                   entry: entry,
-                  onOpen: () =>
-                      Navigator.of(context)
-                          .pushNamed('/chat', arguments: entry.ref.key),
+                  onOpen: () => openChat(context, entry.ref.key),
                 ),
               );
             },

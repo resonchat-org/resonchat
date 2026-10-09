@@ -8,13 +8,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../account/account_hub.dart';
-import '../l10n/l10n.dart';
-import '../net/app_network.dart';
-import '../state/providers.dart';
-import '../xmpp/connection.dart';
-import 'socks5_proxy_sheet.dart';
-import 'theme.dart';
+import '../../l10n/l10n.dart';
+import '../../net/app_network.dart';
+import '../theme.dart';
+import '../settings/socks5_proxy_sheet.dart';
+import 'login_viewmodel.dart';
 
 /// Parsed `--dart-define` credentials, or null when unset.
 ({String jid, String password})? smokeCredentials() {
@@ -73,57 +71,24 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       _busy = true;
       _error = null;
     });
-    try {
-      await appNetwork.waitUntilReady();
-      final hub = accountHub;
-      final ok = await hub.addAndConnect(
-        jid: _jid.text.trim(),
-        password: _password.text,
-        host: _host.text.trim().isEmpty ? null : _host.text.trim(),
-      );
-      if (!ok) {
-        setState(
-          () => _error =
-              hub.lastConnectError ?? context.l10n.authenticationFailed,
+    final result = await ref
+        .read(loginViewModelProvider.notifier)
+        .connect(
+          jid: _jid.text,
+          password: _password.text,
+          host: _host.text,
+          authFailedLabel: context.l10n.authenticationFailed,
         );
-        return;
-      }
-
-      final session = hub.primarySession;
-      if (session == null) {
-        setState(() => _error = context.l10n.authenticationFailed);
-        return;
-      }
-
-      // Shared SOCKS lives on the primary DB. Reload only after first login
-      // (add-account reuses the already-loaded global proxy).
-      if (!widget.addAccountMode) {
-        await appNetwork.loadFrom(() async {
-          return Socks5ProxyConfig(
-            enabled: await session.db.socks5ProxyEnabled(),
-            host: await session.db.socks5ProxyHost(),
-            port: await session.db.socks5ProxyPort(),
-          );
-        });
-      }
-
-      ref.read(connectionStateProvider.notifier).state =
-          XmppConnectionState.connected;
-      // Drop any cold-start "no session" provider errors from the login route.
-      ref.invalidate(databaseProvider);
-      ref.invalidate(xmppServiceProvider);
-
-      // Roster / OMEMO / MAM already ran inside [AccountHub.addAndConnect].
-      if (!mounted) return;
-      if (widget.addAccountMode) {
-        Navigator.of(context).pop();
-      } else {
-        Navigator.of(context).pushReplacementNamed('/chats');
-      }
-    } catch (e) {
-      setState(() => _error = '$e');
-    } finally {
-      if (mounted) setState(() => _busy = false);
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (!result.success) {
+      setState(() => _error = result.error);
+      return;
+    }
+    if (widget.addAccountMode) {
+      Navigator.of(context).pop();
+    } else {
+      Navigator.of(context).pushReplacementNamed('/chats');
     }
   }
 
@@ -165,9 +130,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                 textInputAction: TextInputAction.done,
                 onSubmitted: (_) => _connect(),
               ),
-              // One shared SOCKS for every account (primary DB / Settings).
-              // Add-account must not offer a second proxy — that would diverge.
-              // Browsers cannot do SOCKS CONNECT, so hide the control on web.
+              // Shared SOCKS prefs (same sheet as Settings). Add-account must
+              // not offer a second proxy. Browsers cannot do SOCKS CONNECT.
               if (!widget.addAccountMode && !kIsWeb) ...[
                 const SizedBox(height: 8),
                 ListTile(

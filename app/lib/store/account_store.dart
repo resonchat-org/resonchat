@@ -17,10 +17,9 @@ class StoredAccount {
     required this.password,
     this.host,
     this.enabled = true,
-    this.legacyDb = false,
   });
 
-  /// Stable id (Conversations account UUID).
+  /// Stable id (Conversations account UUID). Used in the account DB filename.
   final String id;
   final String jid;
   final String password;
@@ -30,9 +29,6 @@ class StoredAccount {
 
   /// When false, the hub does not open a session (Conversations OPTION_DISABLED).
   final bool enabled;
-
-  /// True for the first migrated account that still uses `resonchat.sqlite3`.
-  final bool legacyDb;
 
   bool get hasHost => host != null && host!.isNotEmpty;
 
@@ -47,7 +43,6 @@ class StoredAccount {
     String? password,
     String? host,
     bool? enabled,
-    bool? legacyDb,
     bool clearHost = false,
   }) => StoredAccount(
     id: id ?? this.id,
@@ -55,7 +50,6 @@ class StoredAccount {
     password: password ?? this.password,
     host: clearHost ? null : (host ?? this.host),
     enabled: enabled ?? this.enabled,
-    legacyDb: legacyDb ?? this.legacyDb,
   );
 
   Map<String, dynamic> toJson() => {
@@ -64,7 +58,6 @@ class StoredAccount {
     'password': password,
     if (hasHost) 'host': host,
     'enabled': enabled,
-    'legacyDb': legacyDb,
   };
 
   factory StoredAccount.fromJson(Map<String, dynamic> json) => StoredAccount(
@@ -73,7 +66,6 @@ class StoredAccount {
     password: json['password'] as String,
     host: json['host'] as String?,
     enabled: json['enabled'] as bool? ?? true,
-    legacyDb: json['legacyDb'] as bool? ?? false,
   );
 }
 
@@ -120,7 +112,6 @@ class AccountStore {
       jid: jid,
       password: password,
       host: (host == null || host.isEmpty) ? null : host,
-      legacyDb: true,
     );
     await saveAll([account]);
     await _storage.delete(key: _jidKey);
@@ -143,7 +134,7 @@ class AccountStore {
       // Same bare JID → replace credentials (re-login).
       final j = all.indexWhere((a) => a.bareJid == account.bareJid);
       if (j >= 0) {
-        all[j] = account.copyWith(id: all[j].id, legacyDb: all[j].legacyDb);
+        all[j] = account.copyWith(id: all[j].id);
       } else {
         all.add(account);
       }

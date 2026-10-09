@@ -8,15 +8,19 @@ import 'package:drift/drift.dart';
 import 'package:drift/wasm.dart';
 import 'package:flutter/foundation.dart';
 
-/// Opens a Drift [QueryExecutor] for one account in the browser.
-Future<QueryExecutor> openDatabaseConnection({
-  String? accountId,
-  bool legacyFile = false,
-}) async {
-  final name = legacyFile || accountId == null || accountId.isEmpty
-      ? 'resonchat'
-      : 'resonchat_$accountId';
+/// Shared preferences DB. Not an account store.
+Future<QueryExecutor> openPrefsDatabaseConnection() => _openWasm('resonchat');
 
+/// Per-account DB. [accountId] is required (hashed id in the name).
+Future<QueryExecutor> openAccountDatabaseConnection(String accountId) {
+  final id = accountId.trim();
+  if (id.isEmpty) {
+    throw ArgumentError.value(accountId, 'accountId', 'must be non-empty');
+  }
+  return _openWasm('resonchat_$id');
+}
+
+Future<QueryExecutor> _openWasm(String name) async {
   final result = await WasmDatabase.open(
     databaseName: name,
     sqlite3Uri: Uri.parse('sqlite3.wasm'),

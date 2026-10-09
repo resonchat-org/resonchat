@@ -331,243 +331,13 @@ class Meta extends Table {
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
+  /// Schema reset: no legacy migrations. Drift requires a positive version.
   @override
-  int get schemaVersion => 19;
+  int get schemaVersion => 1;
 
   @override
-  MigrationStrategy get migration => MigrationStrategy(
-    onUpgrade: (m, from, to) async {
-      if (from < 19) {
-        await customStatement(
-          'ALTER TABLE chats ADD COLUMN muc_private_non_anonymous '
-          'INTEGER NOT NULL DEFAULT 0',
-        );
-      }
-      if (from < 18) {
-        await customStatement(
-          'ALTER TABLE chats ADD COLUMN is_group INTEGER NOT NULL '
-          'DEFAULT 0',
-        );
-        await customStatement(
-          "ALTER TABLE chats ADD COLUMN muc_nick TEXT NOT NULL "
-          "DEFAULT ''",
-        );
-      }
-      if (from < 17) {
-        await customStatement(
-          "ALTER TABLE messages ADD COLUMN media_url TEXT NOT NULL "
-          "DEFAULT ''",
-        );
-        await customStatement(
-          "ALTER TABLE messages ADD COLUMN media_mime TEXT NOT NULL "
-          "DEFAULT ''",
-        );
-        await customStatement(
-          "ALTER TABLE messages ADD COLUMN media_name TEXT NOT NULL "
-          "DEFAULT ''",
-        );
-        await customStatement(
-          "ALTER TABLE messages ADD COLUMN local_path TEXT NOT NULL "
-          "DEFAULT ''",
-        );
-      }
-      if (from < 16) {
-        await customStatement(
-          'ALTER TABLE messages ADD COLUMN displayed INTEGER NOT NULL '
-          'DEFAULT 0',
-        );
-        await customStatement(
-          'ALTER TABLE messages ADD COLUMN markable INTEGER NOT NULL '
-          'DEFAULT 0',
-        );
-      }
-      if (from < 2) {
-        // Only additive changes so far; drift still expects an explicit
-        // step per version so a future destructive change has a place to
-        // go. Raw SQL because addColumn's generic bound is
-        // GeneratedColumn<Object> and will not take a TextColumn.
-        await customStatement(
-          "ALTER TABLE messages ADD COLUMN delivery_error TEXT NOT NULL "
-          "DEFAULT ''",
-        );
-      }
-      if (from < 15) {
-        await customStatement(
-          "ALTER TABLE chats ADD COLUMN appearance TEXT NOT NULL DEFAULT ''",
-        );
-      }
-      if (from < 14) {
-        await customStatement(
-          'CREATE TABLE IF NOT EXISTS subscription_requests ('
-          'jid TEXT NOT NULL, '
-          'outgoing INTEGER NOT NULL DEFAULT 0, '
-          'asked_at INTEGER NOT NULL DEFAULT 0, '
-          'PRIMARY KEY (jid, outgoing))',
-        );
-      }
-      if (from < 13) {
-        await customStatement(
-          'ALTER TABLE pinned_messages ADD COLUMN sequence INTEGER NOT NULL '
-          'DEFAULT 0',
-        );
-      }
-      if (from < 12) {
-        await customStatement(
-          'CREATE TABLE IF NOT EXISTS pinned_messages ('
-          'chat_jid TEXT NOT NULL, '
-          'stanza_id TEXT NOT NULL, '
-          'pinned_at INTEGER NOT NULL DEFAULT 0, '
-          'PRIMARY KEY (chat_jid, stanza_id))',
-        );
-      }
-      if (from < 11) {
-        await customStatement(
-          'CREATE TABLE IF NOT EXISTS blocked_contacts ('
-          'jid TEXT NOT NULL PRIMARY KEY, '
-          'blocked_at INTEGER NOT NULL DEFAULT 0)',
-        );
-      }
-      if (from < 10) {
-        await customStatement(
-          'ALTER TABLE chats ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0',
-        );
-        await customStatement(
-          'ALTER TABLE chats ADD COLUMN muted INTEGER NOT NULL DEFAULT 0',
-        );
-        await customStatement(
-          'ALTER TABLE chats ADD COLUMN archived INTEGER NOT NULL DEFAULT 0',
-        );
-        await customStatement(
-          'ALTER TABLE chats ADD COLUMN unread_count INTEGER NOT NULL '
-          'DEFAULT 0',
-        );
-        await customStatement(
-          'ALTER TABLE chats ADD COLUMN last_read_at INTEGER NOT NULL '
-          'DEFAULT 0',
-        );
-      }
-      if (from < 9) {
-        // retracted_at was created with a NOT NULL default, so every row
-        // has a value and the column cannot say whether the message was
-        // actually retracted. drift cannot change a column's nullability in
-        // place, and SQLite cannot either, so the column is rebuilt.
-        await customStatement('ALTER TABLE messages RENAME TO messages_old');
-        await customStatement(
-          'CREATE TABLE messages ('
-          'id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, '
-          'chat_jid TEXT NOT NULL REFERENCES chats (jid), '
-          'sender TEXT NOT NULL, '
-          'stanza_id TEXT NOT NULL DEFAULT \'\', '
-          'body TEXT NOT NULL, '
-          'timestamp INTEGER NOT NULL, '
-          'enc_mode TEXT NOT NULL DEFAULT \'none\', '
-          'incoming INTEGER NOT NULL, '
-          'delivered INTEGER NOT NULL DEFAULT 0, '
-          'is_carbon INTEGER NOT NULL DEFAULT 0, '
-          'delivery_error TEXT NOT NULL DEFAULT \'\', '
-          'retracted INTEGER NOT NULL DEFAULT 0, '
-          'retracted_at INTEGER, '
-          'reply_to TEXT NOT NULL DEFAULT \'\', '
-          'reply_body TEXT NOT NULL DEFAULT \'\', '
-          'reply_author TEXT NOT NULL DEFAULT \'\', '
-          'edited_at INTEGER)',
-        );
-        // `retracted` rather than `retracted_at` decides what counts: an
-        // existing row with retracted = 1 keeps a timestamp, and one with 0
-        // gets none.
-        await customStatement(
-          'INSERT INTO messages '
-          'SELECT id, chat_jid, sender, stanza_id, body, timestamp, '
-          'enc_mode, incoming, delivered, is_carbon, delivery_error, '
-          'retracted, '
-          'CASE WHEN retracted = 1 THEN \'2026-01-01 00:00:00\' ELSE NULL END, '
-          'reply_to, reply_body, reply_author, edited_at '
-          'FROM messages_old',
-        );
-        await customStatement('DROP TABLE messages_old');
-        await customStatement(
-          'CREATE INDEX IF NOT EXISTS messages_chat_time '
-          'ON messages (chat_jid, timestamp)',
-        );
-      }
-      if (from < 8) {
-        // The chat-list and message-list queries both filter on chat_jid and
-        // order by timestamp. Without this every conversation open scans the
-        // whole messages table.
-        await customStatement(
-          'CREATE INDEX IF NOT EXISTS messages_chat_time '
-          'ON messages (chat_jid, timestamp)',
-        );
-      }
-      if (from < 7) {
-        // XEP-0461 reply quote, copied onto the replying row so it
-        // survives its target being retracted or never loaded.
-        await customStatement(
-          "ALTER TABLE messages ADD COLUMN reply_to TEXT NOT NULL DEFAULT ''",
-        );
-        await customStatement(
-          "ALTER TABLE messages ADD COLUMN reply_body TEXT NOT NULL DEFAULT ''",
-        );
-        await customStatement(
-          "ALTER TABLE messages ADD COLUMN reply_author TEXT NOT NULL DEFAULT ''",
-        );
-      }
-      if (from < 6) {
-        await customStatement(
-          'CREATE TABLE IF NOT EXISTS pending_corrections ('
-          'target_id TEXT NOT NULL PRIMARY KEY, '
-          'body TEXT NOT NULL, '
-          'enc_mode TEXT NOT NULL DEFAULT \'none\', '
-          'corrected_at INTEGER NOT NULL DEFAULT 0)',
-        );
-      }
-      if (from < 5) {
-        // XEP-0424 retraction + XEP-0308 correction markers.
-        await customStatement(
-          'ALTER TABLE messages ADD COLUMN retracted INTEGER NOT NULL '
-          'DEFAULT 0',
-        );
-        await customStatement(
-          'ALTER TABLE messages ADD COLUMN retracted_at INTEGER',
-        );
-        await customStatement(
-          'ALTER TABLE messages ADD COLUMN edited_at INTEGER',
-        );
-      }
-      if (from < 4) {
-        // XEP-0444 reactions. Created empty and populated from live traffic:
-        // reactions are ephemeral by nature and there is nothing to
-        // migrate from an earlier build, because none of them existed.
-        await customStatement(
-          'CREATE TABLE IF NOT EXISTS reactions ('
-          'target_id TEXT NOT NULL, '
-          'emoji TEXT NOT NULL, '
-          'reactor TEXT NOT NULL, '
-          'reacted_at INTEGER NOT NULL DEFAULT 0, '
-          'PRIMARY KEY (target_id, emoji, reactor))',
-        );
-        await customStatement(
-          'CREATE INDEX IF NOT EXISTS reactions_target '
-          'ON reactions (target_id)',
-        );
-      }
-      if (from < 3) {
-        // Per-conversation track choice. Empty string means "no override",
-        // which is also the right answer for every conversation that
-        // existed before this column: nobody had chosen yet.
-        //
-        // No rewrite of messages.enc_mode here: that column stores what a
-        // message *actually used*, which is a fact about the past and does
-        // not change because we renamed the vocabulary. The rename lives
-        // in EncModeToken.parse, which still understands the old words
-        // ('pq', 'standard', ...).
-        await customStatement(
-          "ALTER TABLE chats ADD COLUMN track_override TEXT NOT NULL "
-          "DEFAULT ''",
-        );
-      }
-    },
-  );
+  MigrationStrategy get migration =>
+      MigrationStrategy(onCreate: (m) async => m.createAll());
 
   /// True when the user has acknowledged, for this conversation, that
   /// plaintext is readable by anyone with server access.
@@ -1415,33 +1185,6 @@ class AppDatabase extends _$AppDatabase {
   Future<void> setSendChatStates(bool enabled) =>
       setMetaValue('pref_chat_states', enabled ? '1' : '0');
 
-  /// SOCKS5 proxy (Conversations Tor / unified socket path).
-  Future<bool> socks5ProxyEnabled() async =>
-      (await metaValue('pref_socks5_enabled')) == '1';
-
-  Future<String> socks5ProxyHost() async {
-    final raw = (await metaValue('pref_socks5_host'))?.trim() ?? '';
-    return raw.isEmpty ? '127.0.0.1' : raw;
-  }
-
-  Future<int> socks5ProxyPort() async {
-    final raw = await metaValue('pref_socks5_port');
-    final parsed = int.tryParse(raw ?? '');
-    if (parsed == null || parsed < 1 || parsed > 65535) return 7890;
-    return parsed;
-  }
-
-  Future<void> setSocks5ProxyEnabled(bool enabled) =>
-      setMetaValue('pref_socks5_enabled', enabled ? '1' : '0');
-
-  Future<void> setSocks5ProxyHost(String host) => setMetaValue(
-    'pref_socks5_host',
-    host.trim().isEmpty ? '127.0.0.1' : host.trim(),
-  );
-
-  Future<void> setSocks5ProxyPort(int port) =>
-      setMetaValue('pref_socks5_port', '$port');
-
   /// Newest message timestamp across all chats.
   ///
   /// Conversations `getLastMessageReceived` — used as the MAM catch-up
@@ -1491,18 +1234,10 @@ class AppDatabase extends _$AppDatabase {
   }
 }
 
-/// Opens the DB for one account.
+/// Opens the per-account DB (`resonchat_<accountId>.sqlite3`).
 ///
-/// [legacyFile] keeps the pre-multi-account name for the first migrated
-/// account. Native uses `resonchat.sqlite3` / `resonchat_<id>.sqlite3`; web
-/// uses the same logical names inside OPFS / IndexedDB via Drift WASM.
-Future<AppDatabase> openAppDatabase({
-  String? accountId,
-  bool legacyFile = false,
-}) async {
-  final executor = await openDatabaseConnection(
-    accountId: accountId,
-    legacyFile: legacyFile,
-  );
+/// Shared prefs live in [openAppPrefs] / `resonchat.sqlite3`, not here.
+Future<AppDatabase> openAppDatabase({required String accountId}) async {
+  final executor = await openAccountDatabaseConnection(accountId);
   return AppDatabase(executor);
 }

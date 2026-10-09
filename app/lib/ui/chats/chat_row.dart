@@ -16,15 +16,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../account/account_color.dart';
-import '../account/account_hub.dart';
-import '../account/resolve.dart';
-import '../l10n/l10n.dart';
-import '../omemo/track.dart';
-import '../state/providers.dart';
-import '../store/database.dart';
-import 'contact_avatar.dart';
-import 'theme.dart';
+import '../../account/account_color.dart';
+import '../../account/account_hub.dart';
+import '../../account/resolve.dart';
+import '../../l10n/l10n.dart';
+import '../../omemo/track.dart';
+import '../../state/providers.dart';
+import '../../store/database.dart';
+import '../contact_avatar.dart';
+import '../theme.dart';
 
 /// The two swipe gestures on a chat row.
 enum ChatSwipeAction {
@@ -41,6 +41,7 @@ class ChatRow extends ConsumerWidget {
     required this.entry,
     required this.onOpen,
     this.showAccountChrome = true,
+    this.selected = false,
   });
 
   final AccountChat entry;
@@ -48,6 +49,9 @@ class ChatRow extends ConsumerWidget {
 
   /// Left stripe + via label when more than one account is configured.
   final bool showAccountChrome;
+
+  /// Column-mode highlight for the open conversation.
+  final bool selected;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -92,11 +96,12 @@ class ChatRow extends ConsumerWidget {
         onTap: onOpen,
         child: Container(
           height: TgDimens.chatsRowHeight,
-          decoration: multi && showAccountChrome
-              ? BoxDecoration(
-                  border: Border(left: BorderSide(color: accent, width: 3)),
-                )
-              : null,
+          decoration: BoxDecoration(
+            color: selected ? tg.accent.withValues(alpha: 0.12) : null,
+            border: multi && showAccountChrome
+                ? Border(left: BorderSide(color: accent, width: 3))
+                : null,
+          ),
           padding: const EdgeInsets.symmetric(
             horizontal: TgDimens.chatsHorizontalPadding,
           ),

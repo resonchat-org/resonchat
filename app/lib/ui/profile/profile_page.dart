@@ -16,14 +16,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:moxxmpp/moxxmpp.dart' show JID;
 
-import '../account/resolve.dart';
-import '../omemo/track.dart';
-import '../omemo/track_resolver.dart';
-import '../store/database.dart';
-import '../xmpp/capabilities.dart';
-import '../state/providers.dart';
-import '../xmpp/connection.dart';
-import 'theme.dart';
+import '../../account/resolve.dart';
+import '../../omemo/track.dart';
+import '../../omemo/track_resolver.dart';
+import '../../store/database.dart';
+import '../../xmpp/capabilities.dart';
+import '../../state/providers.dart';
+import '../../xmpp/connection.dart';
+import '../theme.dart';
 
 class ProfilePage extends ConsumerWidget {
   const ProfilePage({super.key, required this.chatJid});

@@ -23,8 +23,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:resonchat/ui/message_bubble.dart';
-import 'package:resonchat/ui/unread.dart';
+import 'package:resonchat/ui/chat/message_bubble.dart';
+import 'package:resonchat/ui/chats/unread.dart';
 import 'package:resonchat/ui/theme.dart';
 
 const _previewDir = 'build/ui-previews';

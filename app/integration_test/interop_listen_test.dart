@@ -39,7 +39,7 @@ void main() {
 
     Logger.root.level = Level.WARNING;
 
-    final db = await openAppDatabase();
+    final db = await openAppDatabase(accountId: 'interop-listen');
     final xmpp = XmppService();
     try {
       final ok = await xmpp.connect(

@@ -638,12 +638,322 @@ class XmppService {
   /// Disco#info features for a room (Conversations fetch after join).
   ///
   /// Used to decide [isPrivateAndNonAnonymous] — only then may OMEMO run.
+  /// Also caches `muc#roominfo_changesubject` / `muc#roomconfig_changesubject`
+  /// for [canChangeSubject].
   Future<List<String>> queryRoomFeatures(String roomJid) async {
     final manager = muc;
     if (manager == null) return const [];
-    final result = await manager.queryRoomInformation(JID.fromString(roomJid));
+    final bare = JID.fromString(roomJid).toBare().toString();
+    final result = await manager.queryRoomInformation(JID.fromString(bare));
     if (!result.isType<RoomInformation>()) return const [];
-    return List<String>.from(result.get<RoomInformation>().features);
+    final info = result.get<RoomInformation>();
+    _cacheRoomPolicy(bare, info);
+    return List<String>.from(info.features);
+  }
+
+  /// Conversations `MucOptions.canChangeSubject`:
+  /// moderator role OR room allows participants to edit the subject.
+  Future<bool> canChangeSubject(String roomJid) async {
+    final bare = JID.fromString(roomJid).toBare().toString();
+    final state = await groupChatState(bare);
+    if (state == null || !state.joined) return false;
+    if (state.role == Role.moderator) return true;
+    return _participantsCanChangeSubject[bare] ?? false;
+  }
+
+  /// Snapshot of what the self occupant may do in [roomJid].
+  Future<RoomSelfCapabilities> roomSelfCapabilities(String roomJid) async {
+    final bare = JID.fromString(roomJid).toBare().toString();
+    final state = await groupChatState(bare);
+    final affiliation = state?.affiliation?.value ?? 'none';
+    final role = state?.role?.value ?? 'none';
+    final joined = state?.joined ?? false;
+    final membersOnly = _membersOnly[bare] ?? false;
+    final allowInvites = _allowInvites[bare] ?? false;
+    return RoomSelfCapabilities(
+      affiliation: affiliation,
+      role: role,
+      joined: joined,
+      privateNonAnonymous: _privateNonAnonymous[bare] ?? false,
+      allowPm: allowPrivateMessages(
+        allowPmRaw: _allowPmRaw[bare],
+        selfRole: role,
+      ),
+      canInvite: canInviteToRoom(
+        joined: joined,
+        membersOnly: membersOnly,
+        allowInvites: allowInvites,
+        selfRole: role,
+      ),
+      canChangeSubject:
+          joined &&
+          (state?.role == Role.moderator ||
+              (_participantsCanChangeSubject[bare] ?? false)),
+    );
+  }
+
+  /// Conversations `MultiUserChatManager.setSubject`.
+  Future<void> setGroupChatSubject(String roomJid, String subject) async {
+    final manager = muc;
+    if (manager == null) return;
+    await manager.setSubject(JID.fromString(roomJid).toBare(), subject);
+  }
+
+  /// XEP-0045 §10.2 — request the room configuration data form (`muc#owner`).
+  ///
+  /// [lang] is sent as `xml:lang` so servers that localize forms (e.g. ejabberd)
+  /// can return translated labels; Prosody often returns English only.
+  Future<DataForm?> fetchRoomConfigForm(String roomJid, {String? lang}) async {
+    final connection = _connection;
+    if (connection == null) return null;
+    final bare = JID.fromString(roomJid).toBare().toString();
+    try {
+      final result = await connection
+          .sendStanza(
+            StanzaDetails(
+              Stanza.iq(
+                to: bare,
+                type: 'get',
+                attributes: {
+                  if (lang != null && lang.isNotEmpty) 'xml:lang': lang,
+                },
+                children: [XMLNode.xmlns(tag: 'query', xmlns: mucOwnerXmlns)],
+              ),
+              shouldEncrypt: false,
+            ),
+          )
+          .timeout(const Duration(seconds: 20));
+      if (result == null || result.attributes['type'] != 'result') return null;
+      final query = result.firstTag('query', xmlns: mucOwnerXmlns);
+      final x = query?.firstTag('x', xmlns: dataFormsXmlns);
+      if (x == null) return null;
+      return parseDataForm(x);
+    } catch (e) {
+      _log.warning('fetchRoomConfigForm $bare: $e');
+      return null;
+    }
+  }
+
+  /// Submit a filled room configuration form (`type=submit`).
+  Future<bool> submitRoomConfigForm(String roomJid, DataForm form) async {
+    final connection = _connection;
+    if (connection == null) return false;
+    final bare = JID.fromString(roomJid).toBare().toString();
+    try {
+      final result = await connection
+          .sendStanza(
+            StanzaDetails(
+              Stanza.iq(
+                to: bare,
+                type: 'set',
+                children: [
+                  XMLNode.xmlns(
+                    tag: 'query',
+                    xmlns: mucOwnerXmlns,
+                    children: [form.toSubmitXml()],
+                  ),
+                ],
+              ),
+              shouldEncrypt: false,
+            ),
+          )
+          .timeout(const Duration(seconds: 20));
+      return result != null && result.attributes['type'] == 'result';
+    } catch (e) {
+      _log.warning('submitRoomConfigForm $bare: $e');
+      return false;
+    }
+  }
+
+  /// Cancel an in-progress room configuration session.
+  Future<void> cancelRoomConfigForm(String roomJid) async {
+    final connection = _connection;
+    if (connection == null) return;
+    final bare = JID.fromString(roomJid).toBare().toString();
+    try {
+      await connection.sendStanza(
+        StanzaDetails(
+          Stanza.iq(
+            to: bare,
+            type: 'set',
+            children: [
+              XMLNode.xmlns(
+                tag: 'query',
+                xmlns: mucOwnerXmlns,
+                children: [
+                  XMLNode.xmlns(
+                    tag: 'x',
+                    xmlns: dataFormsXmlns,
+                    attributes: {'type': 'cancel'},
+                  ),
+                ],
+              ),
+            ],
+          ),
+          shouldEncrypt: false,
+        ),
+      );
+    } catch (e) {
+      _log.warning('cancelRoomConfigForm $bare: $e');
+    }
+  }
+
+  /// Conversations kick: affiliation outcast (when real JID known) + role none.
+  Future<bool> kickOccupant(String roomJid, Occupant occupant) async {
+    final bare = JID.fromString(roomJid).toBare().toString();
+    final caps = await roomSelfCapabilities(bare);
+    if (!canKickOccupant(selfAffiliation: caps.affiliation, target: occupant)) {
+      return false;
+    }
+    var ok = true;
+    final real = occupant.realJid;
+    if (real != null && real.isNotEmpty) {
+      ok = await setRoomAffiliation(bare, real, 'outcast') && ok;
+    }
+    if (occupant.nick.isNotEmpty) {
+      ok = await setRoomRole(bare, occupant.nick, 'none') && ok;
+    }
+    return ok;
+  }
+
+  /// Conversations `MultiUserChatManager.invite` (mediated invite).
+  Future<bool> inviteToRoom(String roomJid, String inviteeBareJid) async {
+    final connection = _connection;
+    if (connection == null) return false;
+    final bare = JID.fromString(roomJid).toBare().toString();
+    final caps = await roomSelfCapabilities(bare);
+    if (!caps.canInvite) return false;
+    final invitee = JID.fromString(inviteeBareJid).toBare().toString();
+    // Members-only rooms need affiliation before the invite is useful.
+    if (_membersOnly[bare] ?? false) {
+      await setRoomAffiliation(bare, invitee, 'member');
+    }
+    try {
+      await connection.sendStanza(
+        StanzaDetails(
+          Stanza.message(
+            to: bare,
+            children: [
+              XMLNode.xmlns(
+                tag: 'x',
+                xmlns: mucUserXmlns,
+                children: [
+                  XMLNode(tag: 'invite', attributes: {'to': invitee}),
+                ],
+              ),
+            ],
+          ),
+          awaitable: false,
+          shouldEncrypt: false,
+        ),
+      );
+      return true;
+    } catch (e) {
+      _log.warning('invite to $bare failed: $e');
+      return false;
+    }
+  }
+
+  /// `muc#admin` set affiliation (Conversations `setAffiliation`).
+  Future<bool> setRoomAffiliation(
+    String roomJid,
+    String userBareJid,
+    String affiliation,
+  ) async {
+    final connection = _connection;
+    if (connection == null) return false;
+    final bare = JID.fromString(roomJid).toBare().toString();
+    final user = JID.fromString(userBareJid).toBare().toString();
+    try {
+      final result = await connection.sendStanza(
+        StanzaDetails(
+          Stanza.iq(
+            to: bare,
+            type: 'set',
+            children: [
+              XMLNode.xmlns(
+                tag: 'query',
+                xmlns: mucAdminXmlns,
+                children: [
+                  XMLNode(
+                    tag: 'item',
+                    attributes: {'jid': user, 'affiliation': affiliation},
+                  ),
+                ],
+              ),
+            ],
+          ),
+          shouldEncrypt: false,
+        ),
+      );
+      return result != null && result.attributes['type'] == 'result';
+    } catch (e) {
+      _log.warning('setAffiliation $affiliation for $user in $bare: $e');
+      return false;
+    }
+  }
+
+  /// `muc#admin` set role (Conversations `setRole`).
+  Future<bool> setRoomRole(String roomJid, String nick, String role) async {
+    final connection = _connection;
+    if (connection == null) return false;
+    final bare = JID.fromString(roomJid).toBare().toString();
+    try {
+      final result = await connection.sendStanza(
+        StanzaDetails(
+          Stanza.iq(
+            to: bare,
+            type: 'set',
+            children: [
+              XMLNode.xmlns(
+                tag: 'query',
+                xmlns: mucAdminXmlns,
+                children: [
+                  XMLNode(
+                    tag: 'item',
+                    attributes: {'nick': nick, 'role': role},
+                  ),
+                ],
+              ),
+            ],
+          ),
+          shouldEncrypt: false,
+        ),
+      );
+      return result != null && result.attributes['type'] == 'result';
+    } catch (e) {
+      _log.warning('setRole $role for $nick in $bare: $e');
+      return false;
+    }
+  }
+
+  void _cacheRoomPolicy(String bare, RoomInformation info) {
+    _membersOnly[bare] = info.features.contains('muc_membersonly');
+    final form = info.roomInfo;
+    if (form == null) {
+      _participantsCanChangeSubject[bare] = false;
+      _allowInvites[bare] = false;
+      _allowPmRaw[bare] = null;
+      return;
+    }
+    final subjectField =
+        form.getFieldByVar('muc#roomconfig_changesubject') ??
+        form.getFieldByVar('muc#roominfo_changesubject');
+    _participantsCanChangeSubject[bare] =
+        subjectField != null &&
+        subjectField.values.isNotEmpty &&
+        subjectField.values.first == '1';
+
+    final inviteField = form.getFieldByVar('muc#roomconfig_allowinvites');
+    _allowInvites[bare] =
+        inviteField != null &&
+        inviteField.values.isNotEmpty &&
+        inviteField.values.first == '1';
+
+    final pmField = form.getFieldByVar('muc#roomconfig_allowpm');
+    _allowPmRaw[bare] = (pmField == null || pmField.values.isEmpty)
+        ? null
+        : pmField.values.first;
   }
 
   /// Occupants currently known for [roomJid], with real JIDs when published.
@@ -1019,6 +1329,10 @@ class XmppService {
     }
     _affiliations.remove(bare);
     _privateNonAnonymous.remove(bare);
+    _participantsCanChangeSubject.remove(bare);
+    _allowInvites.remove(bare);
+    _allowPmRaw.remove(bare);
+    _membersOnly.remove(bare);
   }
 
   /// The room's occupants, updated as presence arrives.
@@ -1288,7 +1602,9 @@ class XmppService {
             // When host is a WebSocket URL, do not pass it as a TCP hostname.
             password: password,
             host: websocketOverride != null ? null : host,
-            port: websocketOverride != null ? null : port,
+            port: websocketOverride != null
+                ? null
+                : (port ?? (host != null && host.isNotEmpty ? 5222 : null)),
           );
 
     _carbons = CarbonsManager();
@@ -2114,6 +2430,14 @@ class XmppService {
   /// Whether [roomJid] is Conversations `isPrivateAndNonAnonymous`.
   final _privateNonAnonymous = <String, bool>{};
 
+  /// Conversations `participantsCanChangeSubject` from disco roominfo/config.
+  final _participantsCanChangeSubject = <String, bool>{};
+
+  /// Conversations `allowInvites` / `membersOnly` / raw allowpm from disco.
+  final _allowInvites = <String, bool>{};
+  final _membersOnly = <String, bool>{};
+  final _allowPmRaw = <String, String?>{};
+
   Future<void> _publishRoomState(XmppEvent event) async {
     final roomJid = switch (event) {
       MemberJoinedEvent e => e.roomJid,
@@ -2121,6 +2445,7 @@ class XmppService {
       MemberLeftEvent e => e.roomJid,
       MemberChangedNickEvent e => e.roomJid,
       OwnDataChangedEvent e => e.roomJid,
+      RoomSubjectChangedEvent e => e.roomJid,
       _ => null,
     };
     if (roomJid == null) return;
@@ -2148,6 +2473,7 @@ class XmppService {
         // to.
         nick: state.nick ?? '',
         occupants: occupants,
+        subject: state.subject,
         joined: state.joined,
       ),
     );

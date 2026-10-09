@@ -8,14 +8,14 @@
 
 import 'package:flutter/material.dart';
 
-import '../l10n/l10n.dart';
-import '../omemo/track.dart';
-import '../store/database.dart';
-import '../xmpp/reactions.dart';
-import '../xmpp/retraction.dart';
-import 'appearance.dart';
+import '../../l10n/l10n.dart';
+import '../../omemo/track.dart';
+import '../../store/database.dart';
+import '../../xmpp/reactions.dart';
+import '../../xmpp/retraction.dart';
+import '../../utils/appearance.dart';
 import 'media_attachment.dart';
-import 'theme.dart';
+import '../theme.dart';
 
 enum BubbleSide { incoming, outgoing }
 

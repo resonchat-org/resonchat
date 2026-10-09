@@ -12,14 +12,19 @@ import 'account/chat_ref.dart';
 import 'l10n/l10n.dart';
 import 'net/app_network.dart';
 import 'state/app_wiring.dart';
-import 'ui/chats_page.dart';
-import 'ui/login_page.dart';
-import 'ui/chat_page.dart';
-import 'ui/manage_accounts_page.dart';
-import 'ui/security_page.dart';
-import 'ui/profile_page.dart';
-import 'ui/settings_page.dart';
+import 'store/prefs_database.dart';
+import 'ui/home/home_shell.dart';
+import 'ui/column_mode_sync.dart';
+import 'ui/login/login_page.dart';
+import 'ui/chat/chat_page.dart';
+import 'ui/accounts/manage_accounts_page.dart';
+import 'ui/security/security_page.dart';
+import 'ui/profile/profile_page.dart';
+import 'ui/settings/settings_page.dart';
 import 'ui/theme.dart';
+
+/// Root navigator — used to remap `/chat` ↔ column pane across resizes.
+final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -33,21 +38,21 @@ Future<void> main() async {
     });
   }
 
+  // Shared prefs DB first (SOCKS / locale), before any account session.
+  final prefs = await openAppPrefs();
+
   final hub = AccountHub();
   installAccountHub(hub);
-  // Open DBs first, apply SOCKS, then connect — never race proxy load.
+  // Open account DBs, apply SOCKS from prefs, then connect — never race proxy.
   await hub.openSessions();
 
-  final primaryDb = hub.primaryDbOrNull;
-  if (primaryDb != null) {
-    await appNetwork.loadFrom(() async {
-      return Socks5ProxyConfig(
-        enabled: await primaryDb.socks5ProxyEnabled(),
-        host: await primaryDb.socks5ProxyHost(),
-        port: await primaryDb.socks5ProxyPort(),
-      );
-    });
-  }
+  await appNetwork.loadFrom(() async {
+    return Socks5ProxyConfig(
+      enabled: await prefs.socks5ProxyEnabled(),
+      host: await prefs.socks5ProxyHost(),
+      port: await prefs.socks5ProxyPort(),
+    );
+  });
 
   await hub.connectAll();
 
@@ -63,6 +68,7 @@ class App extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final localeOverride = ref.watch(localeOverrideProvider);
     return MaterialApp(
+      navigatorKey: appNavigatorKey,
       onGenerateTitle: (context) => context.l10n.appName,
       debugShowCheckedModeBanner: false,
       theme: AppThemeTokens.light(),
@@ -85,8 +91,12 @@ class App extends ConsumerWidget {
         }
         return const Locale('en');
       },
-      builder: (context, child) =>
-          AppWiring(child: child ?? const SizedBox.shrink()),
+      builder: (context, child) => AppWiring(
+        child: ColumnModeSync(
+          navigatorKey: appNavigatorKey,
+          child: child ?? const SizedBox.shrink(),
+        ),
+      ),
       initialRoute: hasAccounts ? '/chats' : '/login',
       onGenerateRoute: (settings) {
         switch (settings.name) {
@@ -99,7 +109,7 @@ class App extends ConsumerWidget {
           case '/chats':
             return MaterialPageRoute<void>(
               settings: settings,
-              builder: (_) => const ChatsPage(),
+              builder: (_) => const HomeShell(),
             );
           case '/chat':
             final arg = settings.arguments;

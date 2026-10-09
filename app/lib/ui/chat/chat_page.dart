@@ -6,7 +6,6 @@
 
 import 'dart:async';
 
-import 'package:drift/drift.dart' hide Column;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -14,33 +13,35 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:moxxmpp/moxxmpp.dart' show JID;
 
-import '../account/resolve.dart';
-import '../l10n/l10n.dart';
-import '../omemo/track.dart';
-import '../xmpp/muc.dart';
-import '../omemo/track_advice.dart';
-import '../omemo/track_resolver.dart';
-import '../state/app_wiring.dart';
-import '../state/providers.dart';
-import '../store/database.dart';
-import '../xmpp/connection.dart';
-import '../xmpp/forwarding.dart';
-import '../xmpp/local_nickname.dart';
-import '../xmpp/reactions.dart';
-import '../xmpp/retraction.dart';
-import '../xmpp/replies.dart';
-import 'contact_avatar.dart';
-import 'appearance.dart';
+import '../../account/chat_ref.dart';
+import '../../account/resolve.dart';
+import '../../l10n/l10n.dart';
+import '../../omemo/track.dart';
+import '../../state/providers.dart';
+import '../../store/database.dart';
+import '../../xmpp/connection.dart';
+import '../../xmpp/forwarding.dart';
+import '../../xmpp/local_nickname.dart';
+import '../../xmpp/reactions.dart';
+import '../contact_avatar.dart';
+import '../../utils/appearance.dart';
 import 'message_actions.dart';
-import 'room_sheet.dart';
-import 'search.dart';
+import '../home/open_chat.dart';
+import '../room/room_sheet.dart';
+import '../chats/search.dart';
 import 'message_bubble.dart';
 import 'track_dialogs.dart';
-import 'theme.dart';
-import 'unread.dart';
+import 'chat_viewmodel.dart';
+import '../theme.dart';
+import '../chats/unread.dart';
 
 class ChatPage extends ConsumerStatefulWidget {
-  const ChatPage({super.key, required this.chatJid, this.focusMessageAnchor});
+  const ChatPage({
+    super.key,
+    required this.chatJid,
+    this.focusMessageAnchor,
+    this.embedded = false,
+  });
 
   /// [ChatRef.key] (accountId + peer JID), or legacy bare JID.
   final String chatJid;
@@ -48,6 +49,9 @@ class ChatPage extends ConsumerStatefulWidget {
   /// When set (e.g. from search), open scrolled to this message instead of
   /// unread / bottom. Same encoding as [unreadAnchorOf].
   final String? focusMessageAnchor;
+
+  /// Shown in the home shell side pane (column mode); no route stack back.
+  final bool embedded;
 
   @override
   ConsumerState<ChatPage> createState() => _ChatPageState();
@@ -57,26 +61,18 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   /// Peer bare JID for XMPP (not the opaque [ChatRef.key]).
   String get _peerJid => resolveChatKey(widget.chatJid).jid;
 
+  /// Only for handing to the room sheet; all domain work goes through [_vm].
   XmppService get _xmpp => resolveChatKey(widget.chatJid).session.xmpp;
 
-  AppDatabase get _db => resolveChatKey(widget.chatJid).session.db;
+  /// Domain logic and UI state live in the view model; this State keeps only
+  /// what needs a `BuildContext` or a widget controller.
+  late ChatViewModel _vm;
+  StreamSubscription<String>? _failureNoticeSub;
+  StreamSubscription<String>? _noticeSub;
 
   final _input = TextEditingController();
   final _scroll = ScrollController();
   final _focus = FocusNode();
-
-  /// True while we have announced `composing` and not yet `paused`/`active`
-  /// (Conversations EditMessage.isUserTyping).
-  bool _typingNotified = false;
-
-  /// Peer chat state for this conversation (Conversations ChatStateManager.incoming).
-  TypingState _peerTyping = TypingState.inactive;
-
-  /// Clears composing → paused after Config.TYPING_TIMEOUT (8s).
-  Timer? _typingTimeout;
-
-  StreamSubscription<TypingNotification>? _typingSub;
-  StreamSubscription<InboundMessage>? _inboundReadSub;
 
   bool _atBottom = true;
 
@@ -166,12 +162,6 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) => jump(attempt: 0));
   }
 
-  /// Guards against a double tap sending twice while the first send awaits.
-  bool _sending = false;
-
-  /// True while the system file picker is open — freezes the chat behind it.
-  bool _pickingFile = false;
-
   /// True after the first open has positioned the transcript.
   ///
   /// Priority: search focus → unread divider → latest message.
@@ -200,40 +190,15 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   final _selection = <String>[];
 
   bool get _selectionMode => _selection.isNotEmpty;
-  StreamSubscription<DeliveryFailure>? _failureSub;
 
-  /// The group chat this page is showing, or null for a 1:1 conversation.
-  ///
-  /// Derived once in initState rather than watched: a room's membership moves
-  /// constantly, and rebuilding the whole page — including the input bar the
-  /// user is typing into — every time somebody joins is not acceptable.
-  GroupChat? _room;
-  String? _roomJid;
-
-  /// Conversations MODE_MULTI — from the chat row, never from parsing the JID.
-  bool _isGroup = false;
-  String _mucNick = '';
-
-  /// Conversations `isPrivateAndNonAnonymous` — OMEMO allowed only then.
-  bool _mucEncryptable = false;
+  /// UI state owned by the view model (group/MUC, typing, advice, sending…).
+  ChatUiState get _ui => ref.read(chatViewModelProvider(widget.chatJid));
 
   @override
   void initState() {
     super.initState();
     _scroll.addListener(_onScroll);
-    // A message the server refused must stop looking sent.
-    _failureSub = _xmpp.deliveryFailures.listen(_onDeliveryFailure);
-    _adviceSub = trackAdvice.listen(_onAdvice);
-    _typingSub = _xmpp.typingStates.listen(_onPeerTyping);
-    // While this chat is open, a new inbound markable message is already
-    // being read — send <displayed/> like Conversations markRead on open.
-    _inboundReadSub = _xmpp.inbound.listen((msg) {
-      if (msg.from.toBare().toString() != _peerJid) return;
-      if (!msg.markable || msg.fromArchive) return;
-      final id = msg.originId ?? msg.stanzaId;
-      if (id == null || id.isEmpty) return;
-      unawaited(_xmpp.sendDisplayedMarker(JID.fromString(_peerJid), id));
-    });
+    _bindViewModel();
     // Deliberately *not* marked read here. Marking on arrival would clear the
     // unread badge before the user has read anything, and the boundary in the
     // transcript would vanish before it had been seen. The marker advances when
@@ -243,86 +208,45 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     // Marking on "a message scrolled past" would be worse: a message the user
     // scrolled past deliberately, on purpose, is not unread.
 
-    unawaited(_bootstrapRoom());
     // Conversations sends <displayed/> when the conversation is marked read
     // (opening / viewing). Fire once the first frame is up so unread inbound
     // messages get a read receipt without waiting until the user leaves.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       // Groupchat does not use 1:1 displayed markers the same way.
-      if (!_isGroup) unawaited(_sendDisplayedForLatest());
+      if (!_ui.isGroup) unawaited(_vm.sendDisplayedForLatest());
     });
   }
 
-  /// Loads MODE_MULTI state from the chat row (bare room JID + nick).
-  Future<void> _bootstrapRoom() async {
-    final row = await _db.getChat(_peerJid);
-    if (!mounted || row == null || !row.isGroup) return;
-    setState(() {
-      _isGroup = true;
-      _mucNick = row.mucNick;
-      _mucEncryptable = row.mucPrivateNonAnonymous;
-      _roomJid = _peerJid;
+  /// Attaches to the view model for [ChatPage.chatJid]: the provider build
+  /// starts its subscriptions; here we only listen for what needs a snackbar.
+  void _bindViewModel() {
+    _vm = ref.read(chatViewModelProvider(widget.chatJid).notifier);
+    _failureNoticeSub?.cancel();
+    _noticeSub?.cancel();
+    _failureNoticeSub = _vm.failureNotices.listen(_onFailureNotice);
+    _noticeSub = _vm.notices.listen((text) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
     });
-    await _loadRoom();
-    await _refreshRoomEncryptable();
-  }
-
-  /// Re-query disco so OMEMO availability matches Conversations after join.
-  Future<void> _refreshRoomEncryptable() async {
-    final jid = _roomJid;
-    if (jid == null) return;
-    final xmpp = _xmpp;
-    final features = await xmpp.queryRoomFeatures(jid);
-    final encryptable = isPrivateAndNonAnonymous(features);
-    // Conversations fetchMembers when private+non-anonymous.
-    await xmpp.refreshRoomMembership(jid, privateNonAnonymous: encryptable);
-    await _db.upsertChat(
-      jid,
-      isGroup: true,
-      mucPrivateNonAnonymous: encryptable,
-    );
-    if (!mounted) return;
-    if (encryptable != _mucEncryptable) {
-      setState(() => _mucEncryptable = encryptable);
-    }
-    // Affiliation fetch may have added offline members — reload the list.
-    ref.invalidate(roomStateProvider(widget.chatJid));
-    final chat = await ref.read(roomStateProvider(widget.chatJid).future);
-    if (!mounted || chat == null) return;
-    setState(() => _room = chat);
-  }
-
-  /// Sends XEP-0333 displayed for the newest markable inbound message.
-  Future<void> _sendDisplayedForLatest() async {
-    final db = _db;
-    final xmpp = _xmpp;
-    final last = await db.lastIncomingMarkable(_peerJid);
-    if (last == null || last.stanzaId.isEmpty) return;
-    await xmpp.sendDisplayedMarker(JID.fromString(_peerJid), last.stanzaId);
   }
 
   @override
   void didUpdateWidget(ChatPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Advice names the conversation it is about, so switching chats clears it.
-    // Keeping it would show the previous contact's devices above this
-    // contact's messages.
-    if (oldWidget.chatJid != widget.chatJid && _advice != null) {
-      setState(() => _advice = null);
-    }
+    // Each conversation has its own view model (advice, typing and room state
+    // included), so switching chats just means attaching to the new one.
+    if (oldWidget.chatJid != widget.chatJid) _bindViewModel();
   }
 
-  Future<void> _onDeliveryFailure(DeliveryFailure failure) async {
-    if (failure.from.toBare().toString() != _peerJid) return;
-    await _db.markDeliveryFailure(failure.stanzaId, failure.reason);
+  void _onFailureNotice(String reason) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Not delivered: ${failure.reason}'),
+        content: Text('Not delivered: $reason'),
         action: SnackBarAction(
           label: 'Details',
-          onPressed: () => _showRefusalHelp(failure.reason),
+          onPressed: () => _showRefusalHelp(reason),
         ),
       ),
     );
@@ -364,14 +288,13 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     // unread boundary stays on screen while it is actually being read, and so
     // the list badge survives a user who opened a chat and left it again
     // without scrolling.
-    unawaited(_markReadAndSendDisplayed());
+    unawaited(_vm.markReadAndSendDisplayed());
     // Conversations updateChatState on leave: paused if draft remains, else active.
-    _typingTimeout?.cancel();
-    unawaited(_publishComposerChatState());
-    _failureSub?.cancel();
-    _adviceSub?.cancel();
-    _typingSub?.cancel();
-    _inboundReadSub?.cancel();
+    unawaited(
+      _vm.publishComposerChatState(composerEmpty: _input.text.trim().isEmpty),
+    );
+    _failureNoticeSub?.cancel();
+    _noticeSub?.cancel();
     _scroll
       ..removeListener(_onScroll)
       ..dispose();
@@ -380,88 +303,20 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     super.dispose();
   }
 
-  void _onPeerTyping(TypingNotification n) {
-    if (n.from.toBare().toString() != _peerJid) return;
-    if (!mounted) return;
-    if (n.state == _peerTyping) return;
-    setState(() => _peerTyping = n.state);
-  }
-
   /// AppBar subtitle: peer typing (Conversations contact_is_typing) or track.
-  String _peerStatusSubtitle(BuildContext context, Track track) {
+  String _peerStatusSubtitle(
+    BuildContext context,
+    Track track,
+    TypingState peerTyping,
+  ) {
     // Prefer a short local name when the JID is long.
     final name = _peerJid.split('@').first;
     final l10n = context.l10n;
-    return switch (_peerTyping) {
+    return switch (peerTyping) {
       TypingState.composing => l10n.contactIsTyping(name),
       TypingState.paused => l10n.contactStoppedTyping(name),
       TypingState.inactive => track.description.split(' — ').first,
     };
-  }
-
-  /// Conversations Config.TYPING_TIMEOUT — seconds of idle before `paused`.
-  static const int _typingTimeoutSecs = 8;
-
-  /// XEP-0085 send path aligned with Conversations EditMessage:
-  /// composing on first non-empty keystroke, paused after idle timeout,
-  /// active when the box is cleared.
-  void _onInputChanged(String value) {
-    if (_isGroup) {
-      // Groupchat chat-states are not the 1:1 typing model.
-      unawaited(saveDraft(ref, widget.chatJid, value));
-      return;
-    }
-    // The draft is saved on every keystroke rather than on leaving the page,
-    // because "leaving" includes the app being killed and the conversation
-    // being switched from a notification — none of which give us a callback.
-    unawaited(saveDraft(ref, widget.chatJid, value));
-
-    _typingTimeout?.cancel();
-    final length = value.trim().length;
-    final xmpp = _xmpp;
-    final peer = JID.fromString(_peerJid);
-
-    if (length == 0) {
-      // onTextDeleted → DEFAULT_CHAT_STATE (active).
-      _typingNotified = false;
-      unawaited(xmpp.sendChatState(peer, TypingState.inactive));
-      return;
-    }
-
-    _typingTimeout = Timer(const Duration(seconds: _typingTimeoutSecs), () {
-      if (!_typingNotified) return;
-      // onTypingStopped → paused; next keystroke re-sends composing.
-      _typingNotified = false;
-      unawaited(_xmpp.sendChatState(peer, TypingState.paused));
-    });
-
-    if (!_typingNotified) {
-      _typingNotified = true;
-      unawaited(xmpp.sendChatState(peer, TypingState.composing));
-    }
-  }
-
-  /// Publishes leave chat state (Conversations `updateChatState`).
-  Future<void> _publishComposerChatState() async {
-    final xmpp = _xmpp;
-    final peer = JID.fromString(_peerJid);
-    final empty = _input.text.trim().isEmpty;
-    _typingNotified = false;
-    // Empty → active (DEFAULT); non-empty draft → paused.
-    await xmpp.sendChatState(
-      peer,
-      empty ? TypingState.inactive : TypingState.paused,
-    );
-  }
-
-  /// Marks the chat read locally and sends XEP-0333 `<displayed/>`
-  /// (Conversations `markRead` → `DisplayedManager.displayed`).
-  Future<void> _markReadAndSendDisplayed() async {
-    final db = _db;
-    await db.markChatRead(_peerJid);
-    ref.read(chatRowRevisionProvider.notifier).state =
-        ref.read(chatRowRevisionProvider) + 1;
-    await _sendDisplayedForLatest();
   }
 
   void _onScroll() {
@@ -549,103 +404,47 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     }
     _draftRestored = true;
     _input.text = draft;
-    _typingNotified = draft.trim().isNotEmpty;
+    _vm.onDraftRestored(draft);
   }
 
-  /// Sends the input on [track], asking the user when it cannot be used.
-  ///
-  /// Returns the outcome so the caller can store what actually went out.
-  /// Returns null when the user cancelled or nothing was sent — in both cases
-  /// the text must go back into the box, because the user did not send it.
-  Future<SendOutcome?> _sendOn(Track track) async {
-    final text = _input.text.trim();
-    if (text.isEmpty) return null;
-
-    var chosen = track;
-    final xmpp = _xmpp;
-    final peer = JID.fromString(_peerJid).toBare();
-
-    // Public / anonymous rooms: plaintext only (Conversations).
-    if (_isGroup && !_mucEncryptable) {
-      chosen = Track.none;
-    }
-
-    final resolved = await _resolveTrackForSend(chosen);
-    if (resolved == null) return null;
-    chosen = resolved;
-
-    final reply = _replyingTo;
-    final messageType = _isGroup ? 'groupchat' : 'chat';
-    final outcome = reply == null
-        ? await xmpp.sendOnTrack(
-            peer,
-            text,
-            track: chosen,
-            messageType: messageType,
+  /// Dialog hooks for [ChatViewModel.resolveTrackForSend]. Both answer "no"
+  /// once this page is gone, so nothing is sent without a decision.
+  ChatTrackConfirm get _confirm => ChatTrackConfirm(
+    confirmPlaintext: ({required contact, required alternative}) async =>
+        mounted &&
+        await confirmPlaintext(
+          context,
+          contact: contact,
+          alternative: alternative,
+        ),
+    askTrackSubstitute: ({required blocked, required alternative}) async =>
+        mounted
+        ? await askTrackSubstitute(
+            context,
+            blocked: blocked,
+            alternative: alternative,
           )
-        : await sendReply(
-            xmpp,
-            to: peer,
-            body: text,
-            targetId: reply.id,
-            track: chosen,
-            quoteBody: reply.body,
-            messageType: messageType,
-          );
-    if (!outcome.sent) {
-      // It was sendable a moment ago and is not now — a bundle went stale, or
-      // the session dropped. Say so rather than showing a bubble that looks
-      // sent.
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Not sent: ${outcome.blocked?.title ?? 'unknown reason'}',
-            ),
-          ),
-        );
-      }
-      return null;
-    }
+        : null,
+  );
 
-    await _db.insertMessage(
-      MessagesCompanion(
-        chatJid: Value(_peerJid),
-        sender: const Value('me'),
-        stanzaId: Value(outcome.stanzaId ?? ''),
-        body: Value(text),
-        timestamp: Value(DateTime.now()),
-        // What went out, as reported by the send — never the track we
-        // hoped for. A bubble labelled PO that travelled as plaintext is
-        // the one lie this app must not tell.
-        encMode: Value(EncModeToken.of(outcome.track).wire),
-        incoming: const Value(false),
-        // The quote is copied onto this row. Looking it up from the target
-        // message would empty the quote out the moment that message is
-        // retracted — and retracting it is one tap away.
-        replyTo: Value(reply?.id ?? ''),
-        replyBody: Value(reply?.body ?? ''),
-        replyAuthor: Value(reply?.author ?? ''),
-      ),
-    );
-    if (reply != null) {
-      setState(() => _replyingTo = null);
-    }
-    return outcome;
+  void _showNotSent(String reason) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text('Not sent: $reason')));
   }
 
   Future<void> _attachFile() async {
-    if (_sending || _pickingFile) return;
-    final xmpp = _xmpp;
+    final ui = _ui;
+    if (ui.sending || ui.pickingFile) return;
     // Button is disabled when upload is unavailable; keep this as a guard.
-    if (!await xmpp.httpFiles.isAvailable()) {
+    if (!await _vm.isUploadAvailable()) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(context.l10n.httpUploadUnavailable)),
       );
       return;
     }
-    setState(() => _pickingFile = true);
+    _vm.setPickingFile(true);
     // Paint the barrier before the native picker steals the next frame.
     await WidgetsBinding.instance.endOfFrame;
     PlatformFile? picked;
@@ -653,280 +452,68 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       // Single file; bytes via readAsBytes (works on web without a path).
       picked = await FilePicker.pickFile();
     } finally {
-      if (mounted) setState(() => _pickingFile = false);
+      _vm.setPickingFile(false);
     }
     if (!mounted || picked == null) return;
     final bytes = await picked.readAsBytes();
     if (!mounted || bytes.isEmpty) return;
-    final fileName = picked.name;
 
-    final track = _isGroup && !_mucEncryptable
-        ? Track.none
-        : await ref.read(chatTrackProvider(widget.chatJid).future);
-    final peer = JID.fromString(_peerJid);
-    _sending = true;
-    if (mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(context.l10n.uploadingFile)));
-    }
-    try {
-      // Same resolve / substitute dialog as text (incl. MUC PQ → standard).
-      final Track? outcomeTrack;
-      if (_isGroup && !_mucEncryptable) {
-        outcomeTrack = await _resolveTrackForSend(Track.none);
-      } else {
-        outcomeTrack = await _resolveTrackForSend(track);
-      }
-      if (outcomeTrack == null) return;
-
-      final uploaded = await xmpp.httpFiles.uploadBytes(
-        Uint8List.fromList(bytes),
-        fileName: fileName,
-        encrypt: outcomeTrack != Track.none,
-      );
-      final cached = await xmpp.httpFiles.cacheLocalBytes(
-        Uint8List.fromList(bytes),
-        preferredName: uploaded.fileName,
-      );
-      final outcome = await xmpp.sendOnTrack(
-        peer,
-        uploaded.shareUrl,
-        track: outcomeTrack,
-        oobUrl: uploaded.shareUrl,
-        messageType: _isGroup ? 'groupchat' : 'chat',
-      );
-      if (!outcome.sent) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Not sent: ${outcome.blocked?.title ?? 'unknown reason'}',
-              ),
-            ),
-          );
-        }
-        return;
-      }
-      await _db.insertMessage(
-        MessagesCompanion(
-          chatJid: Value(_peerJid),
-          sender: const Value('me'),
-          stanzaId: Value(outcome.stanzaId ?? ''),
-          body: Value(uploaded.shareUrl),
-          timestamp: Value(DateTime.now()),
-          encMode: Value(EncModeToken.of(outcome.track).wire),
-          incoming: const Value(false),
-          mediaUrl: Value(uploaded.shareUrl),
-          mediaMime: Value(uploaded.mime),
-          mediaName: Value(uploaded.fileName),
-          localPath: Value(cached.path),
-        ),
-      );
-      if (mounted) {
-        WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(context.l10n.uploadFailed('$e'))),
-        );
-      }
-    } finally {
-      _sending = false;
-    }
-  }
-
-  /// Track resolution / plaintext confirm — shared by 1:1 and MUC.
-  ///
-  /// When the chosen track cannot be used, shows [askTrackSubstitute]
-  /// (e.g. PQ unavailable → offer standard), never silently downgrades.
-  Future<Track?> _resolveTrackForSend(Track track) async {
-    var chosen = track;
-    final xmpp = _xmpp;
-    final peer = JID.fromString(_peerJid).toBare();
-
-    final TrackResolution resolution;
-    if (_isGroup) {
-      if (!_mucEncryptable) {
-        // Already forced to none by the caller for public/anonymous rooms.
-        resolution = const TrackResolution(track: Track.none, blocked: null);
-        chosen = Track.none;
-      } else {
-        resolution = await xmpp.resolveGroupchatTrack(
-          roomJid: peer.toString(),
-          requested: chosen,
-        );
-      }
-    } else {
-      final caps = await xmpp.capabilitiesFor(peer);
-      resolution = resolveTrack(requested: chosen, capabilities: caps);
-    }
-
-    if (chosen == Track.none) {
-      final alternative =
-          resolution.alternative ??
-          (_mucEncryptable || !_isGroup ? Track.standard : Track.none);
-      if (!mounted) return null;
-      // Asked once per conversation, not once per message.
-      final db = _db;
-      final acknowledged = await db.plaintextAcknowledged(_peerJid);
-      if (!mounted) return null;
-      if (!acknowledged) {
-        final agreed = await confirmPlaintext(
-          context,
-          contact: _peerJid,
-          alternative: alternative,
-        );
-        if (!agreed || !mounted) return null;
-        await db.acknowledgePlaintext(_peerJid);
-      }
-    } else if (!resolution.canSend) {
-      // Refuse and explain. Nothing is sent here, and nothing is sent on
-      // another track without a separate decision from the user.
-      final alternative = resolution.alternative ?? Track.standard;
-      if (!mounted || resolution.blocked == null) return null;
-      final substituted = await askTrackSubstitute(
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(context.l10n.uploadingFile)));
+    final result = await _vm.sendAttachmentBytes(
+      bytes,
+      fileName: picked.name,
+      confirm: _confirm,
+    );
+    if (!mounted) return;
+    final error = result.error;
+    if (error != null) {
+      ScaffoldMessenger.of(
         context,
-        blocked: resolution.blocked!,
-        alternative: alternative,
-      );
-      if (substituted == null || !mounted) return null;
-      if (substituted == Track.none) {
-        // Deliberate downgrade to plaintext from the substitute dialog.
-        final agreed = await confirmPlaintext(
-          context,
-          contact: _peerJid,
-          alternative: Track.standard,
-        );
-        if (!agreed || !mounted) return null;
-      }
-      chosen = substituted;
+      ).showSnackBar(SnackBar(content: Text(context.l10n.uploadFailed(error))));
+    } else if (result.failureReason != null) {
+      _showNotSent(result.failureReason!);
+    } else if (result.sent) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
     }
-    return chosen;
   }
 
   Future<void> _send() async {
-    if (_sending) return;
-    final track = await ref.read(chatTrackProvider(widget.chatJid).future);
-    _sending = true;
-    final outcome = await _sendOn(track);
-    _sending = false;
+    if (_ui.sending) return;
+    final result = await _vm.sendText(
+      _input.text,
+      confirm: _confirm,
+      reply: _replyingTo,
+    );
+    if (!mounted) return;
+    final failure = result.failureReason;
+    if (failure != null) _showNotSent(failure);
 
-    final text = _input.text.trim();
-    if (outcome?.sent ?? false) {
-      _typingTimeout?.cancel();
+    if (result.sent) {
+      if (_replyingTo != null) setState(() => _replyingTo = null);
       _input.clear();
-      unawaited(saveDraft(ref, widget.chatJid, null));
-      // Composer emptied → active (same as onTextDeleted).
-      _typingNotified = false;
-      if (!_isGroup) {
-        unawaited(
-          _xmpp.sendChatState(JID.fromString(_peerJid), TypingState.inactive),
-        );
-      }
+      _vm.onMessageSent();
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
-    } else if (text.isNotEmpty && mounted) {
-      // Put the text back. It was never sent, and a user who typed a message
-      // and watched the box empty has no way to know what happened to it.
+    } else if (_input.text.trim().isNotEmpty) {
+      // The text stays in the box. It was never sent, and a user who typed a
+      // message and watched the box empty has no way to know what happened.
       _showUnsentNotice();
     }
   }
 
   /// Adds or withdraws [emoji] on the message addressed by [targetId].
-  ///
-  /// Withdrawing sends an *empty* set, not a set without that emoji: XEP-0444
-  /// broadcasts are complete lists, so anything else leaves the withdrawn row
-  /// on the sender's device forever.
-  ///
-  /// Optimistic in both directions, and rolled back if the send fails — a chip
-  /// that appears a second late feels broken, and one that stays after a
-  /// failure is a lie.
   Future<void> _toggleReaction(String targetId, String emoji) async {
-    final db = _db;
-    final myJid = resolveChatKey(widget.chatJid).session.xmpp.myJid;
-    if (myJid == null || targetId.isEmpty) return;
-
-    final before = await reactionsFor(db, targetId, myJid);
-    final mine = before.where((g) => g.mine).toList();
-    final next = <String>{for (final g in mine) g.emoji};
-    if (next.remove(emoji)) {
-      // withdrawing
-    } else {
-      next.add(emoji);
-    }
-
-    final chatJid = _peerJid;
-    await storeReaction(
-      db,
-      ReactionUpdate(targetId: targetId, reactor: myJid, emojis: next.toList()),
-    );
-    _bumpReactions();
-
-    final sent = await sendReaction(
-      _xmpp,
-      to: JID.fromString(chatJid).toBare(),
-      targetId: targetId,
-      emojis: next.toList(),
-    );
-    if (sent || !mounted) return;
-    if (!mounted) return;
-
-    // Put the chips back exactly as they were. Re-sending the whole previous
-    // set rather than just undoing this one emoji keeps the local state equal
-    // to what the last successful broadcast said.
-    final previous = <String>{for (final g in mine) g.emoji};
-    await storeReaction(
-      db,
-      ReactionUpdate(
-        targetId: targetId,
-        reactor: myJid,
-        emojis: previous.toList(),
-      ),
-    );
-    _bumpReactions();
-    if (!mounted) return;
+    final ok = await _vm.toggleReaction(targetId, emoji);
+    if (ok || !mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Reaction could not be sent.')),
     );
   }
 
-  Future<void> _loadRoom() async {
-    final jid = _roomJid;
-    if (jid == null) return;
-    var nick = _mucNick;
-    if (nick.isEmpty) {
-      final row = await _db.getChat(jid);
-      nick = row?.mucNick ?? '';
-      if (nick.isNotEmpty && mounted) {
-        setState(() => _mucNick = nick);
-      }
-    }
-    var chat = await ref.read(roomStateProvider(widget.chatJid).future);
-    // Join with the stored nick when the MUC cache has nothing yet
-    // (Conversations joinMuc on open / connect).
-    if ((chat == null || !chat.joined) && nick.isNotEmpty) {
-      final err = await _xmpp.joinGroupChat(jid, nick);
-      if (!mounted) return;
-      if (err != null) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('$err')));
-      }
-      ref.invalidate(roomStateProvider(widget.chatJid));
-      chat = await ref.read(roomStateProvider(widget.chatJid).future);
-    }
-    if (!mounted || chat == null) return;
-    setState(() => _room = chat);
-  }
-
   Future<void> _showPinned() async {
     if (!mounted) return;
     final ids = await ref.read(pinnedIdsProvider(widget.chatJid).future);
-    final messages = await _db.watchMessages(_peerJid).first;
-    final bodies = <String, ({String body, String sender, DateTime at})>{
-      for (final m in messages)
-        if (ids.contains(m.stanzaId))
-          m.stanzaId: (body: m.body, sender: m.sender, at: m.timestamp),
-    };
+    final bodies = await _vm.pinnedBodies(ids);
     if (!mounted) return;
     await showModalBottomSheet<void>(
       context: context,
@@ -937,27 +524,48 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   }
 
   Future<void> _showMembers() async {
-    final chat = _room;
+    final ui = _ui;
+    final chat = ui.room;
     if (chat == null) return;
-    final result = await showRoomSheet(context, chat);
+    // Telegram ChatAvatarContainer → Profile: about/subject lives in the
+    // room sheet, not as AppBar subtitle (subtitle stays member count).
+    final caps = await _xmpp.roomSelfCapabilities(chat.roomJid);
+    if (!mounted) return;
+    final result = await showRoomSheet(
+      context,
+      chat,
+      chatKey: widget.chatJid,
+      xmpp: _xmpp,
+      caps: caps,
+      canChangeSubject: ui.canChangeSubject || caps.canChangeSubject,
+      onSetSubject: (subject) =>
+          _xmpp.setGroupChatSubject(chat.roomJid, subject),
+    );
     if (!mounted || result == null) return;
-    if (result.leaving) {
-      await _xmpp.leaveGroupChat(chat.roomJid);
-      // Keep isGroup; clear nick so connect does not auto-rejoin until they
-      // join again (bookmark autojoin can restore nick later).
-      await _db.upsertChat(chat.roomJid, isGroup: true, mucNick: '');
-      if (mounted) Navigator.of(context).maybePop();
-      return;
-    }
-    // A private conversation from inside a room: the member's nickname is not a
-    // JID, so this goes through the room's service and is resolved to a real
-    // address by the server's occupant lookup.
-    if (result.nick != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Private chat with ${result.nick} is not set up yet.'),
-        ),
-      );
+    final effect = await _vm.applyMemberResult(
+      roomJid: chat.roomJid,
+      leaving: result.leaving,
+      jid: result.jid,
+      mucPmNick: result.mucPmNick,
+    );
+    if (!mounted) return;
+    switch (effect.kind) {
+      case ChatMemberEffectKind.left:
+        if (widget.embedded) {
+          clearSelectedChat(context);
+        } else {
+          unawaited(Navigator.of(context).maybePop());
+        }
+      case ChatMemberEffectKind.openChat:
+        final accountId = resolveChatKey(widget.chatJid).session.account.id;
+        openChat(context, ChatRef(accountId: accountId, jid: effect.jid!).key);
+      case ChatMemberEffectKind.privateMessage:
+        // Conversations privateMessageWith / nextCounterpart: stay in room UI.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _focus.requestFocus();
+        });
+      case ChatMemberEffectKind.none:
+        break;
     }
   }
 
@@ -967,7 +575,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     // Read before the dialog opens: an await here would leave a frame where a
     // tap lands on nothing, and the dialog is modal so the menu's own action
     // handler is the only thing that should be doing async work.
-    final pinned = await _db.isPinned(_peerJid, message.stanzaId);
+    final pinned = await _vm.isPinned(message.stanzaId);
     if (!mounted) return;
     final track = storedTrack(message.encMode);
     final actions = MessageActions.for_(
@@ -1016,7 +624,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       case MessageAction.forward:
         await _forwardMessage(message, body);
       case MessageAction.pin:
-        await togglePinned(ref, widget.chatJid, message.stanzaId);
+        await _vm.togglePinned(message.stanzaId);
         if (mounted) setState(() {});
       case MessageAction.edit:
         setState(() {
@@ -1028,20 +636,12 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     }
   }
 
-  /// Retracts [message], then applies it locally.
-  ///
-  /// The local copy is updated only after the send succeeded. The other way
-  /// round would leave a message greyed out locally while the recipient — and
-  /// the user's other devices — still have it.
+  /// Retracts [message]; the view model applies it locally only after the
+  /// send succeeded.
   Future<void> _doRetract(Message message) async {
-    final db = _db;
-    final sent = await retractMessage(
-      _xmpp,
-      chatJid: widget.chatJid,
-      targetId: message.stanzaId,
-    );
+    final sent = await _vm.retractMessage(message.stanzaId);
+    if (!mounted) return;
     if (!sent) {
-      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Could not delete: the message was not sent.'),
@@ -1049,47 +649,31 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       );
       return;
     }
-    await db.markRetracted(message.stanzaId);
-    if (mounted) setState(() {});
+    setState(() {});
   }
 
   /// Forwards [body] from this conversation into another one.
-  ///
-  /// Sent again as a new, re-encrypted message rather than reusing the
-  /// original stanza: a wrapped stanza carries encryption meant for somebody
-  /// else, so forwarding by reuse would either fail silently or hand the new
-  /// recipient the previous conversation's keys.
   Future<void> _forwardMessage(Message message, String body) async {
     if (!mounted) return;
+    final items = [ForwardItem(body: body, chatJid: _peerJid)];
     final target = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
-      builder: (_) => ForwardTargetSheet(
-        items: [ForwardItem(body: body, chatJid: _peerJid)],
-      ),
+      builder: (_) => ForwardTargetSheet(items: items),
     );
     if (target == null || !mounted) return;
-    final dest = resolveChatKey(target);
-    final destPeer = dest.jid;
-    // Refuse to forward into a blocked conversation: the user blocked them,
-    // and the act of forwarding is a message to them.
-    if (ref.read(isBlockedProvider(target))) {
-      ScaffoldMessenger.of(context).showSnackBar(
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+    final result = await _vm.forwardToChat(items: items, targetKey: target);
+    final destPeer = result.destPeer;
+    if (result.blocked) {
+      messenger.showSnackBar(
         SnackBar(content: Text('Unblock $destPeer before forwarding to them.')),
       );
       return;
     }
-
-    final track = await ref.read(chatTrackProvider(target).future);
-    if (!mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
-    final navigator = Navigator.of(context);
-    final outcome = await forwardMessages(
-      dest.session.xmpp,
-      toJid: JID.fromString(destPeer).toBare(),
-      items: [ForwardItem(body: body, chatJid: _peerJid)],
-      track: track,
-    );
+    final outcome = result.outcome;
+    if (outcome == null) return;
     messenger.showSnackBar(
       SnackBar(
         content: Text(
@@ -1105,42 +689,20 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   }
 
   /// Sends a correction for [_editingId] and stores it.
-  ///
-  /// Sent on the conversation's current track, like any other message: a
-  /// correction of an encrypted message must not travel in the clear, or the
-  /// server learns the corrected text.
   Future<void> _submitCorrection(String body) async {
     final targetId = _editingId;
     if (targetId == null) return;
-    final db = _db;
-    final outcome = await _xmpp.correctMessage(
-      JID.fromString(_peerJid).toBare(),
-      targetId: targetId,
-      body: body,
-    );
-    if (!outcome.sent) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Not corrected: ${outcome.blocked?.title ?? 'unknown reason'}',
-          ),
-        ),
-      );
+    final failure = await _vm.submitCorrection(targetId, body);
+    if (!mounted) return;
+    if (failure != null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Not corrected: $failure')));
       return;
     }
-    await db.applyCorrection(
-      chatJid: _peerJid,
-      targetId: targetId,
-      body: body,
-      encMode: EncModeToken.of(outcome.track).wire,
-    );
-    if (mounted) {
-      setState(() {
-        _editingId = null;
-        _editingBody = '';
-      });
-    }
+    setState(() {
+      _editingId = null;
+      _editingBody = '';
+    });
   }
 
   /// Adds or removes [message] from the selection.
@@ -1162,14 +724,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   /// Forwards everything selected, in the order it was picked.
   Future<void> _forwardSelection() async {
     if (!mounted) return;
-    final ids = List<String>.from(_selection);
-    final messages = await _db.watchMessages(_peerJid).first;
-    final byId = {for (final m in messages) m.stanzaId: m};
-    final items = <ForwardItem>[
-      for (final id in ids)
-        if (byId[id] != null && byId[id]!.body.trim().isNotEmpty)
-          ForwardItem(body: byId[id]!.body, chatJid: _peerJid),
-    ];
+    final items = await _vm.forwardItemsFor(List<String>.from(_selection));
     if (!mounted) return;
     if (items.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1183,23 +738,17 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       builder: (_) => ForwardTargetSheet(items: items),
     );
     if (target == null || !mounted) return;
-    final dest = resolveChatKey(target);
-    final destPeer = dest.jid;
-    if (ref.read(isBlockedProvider(target))) {
-      ScaffoldMessenger.of(context).showSnackBar(
+    final messenger = ScaffoldMessenger.of(context);
+    final result = await _vm.forwardToChat(items: items, targetKey: target);
+    final destPeer = result.destPeer;
+    if (result.blocked) {
+      messenger.showSnackBar(
         SnackBar(content: Text('Unblock $destPeer before forwarding to them.')),
       );
       return;
     }
-    final track = await ref.read(chatTrackProvider(target).future);
-    if (!mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
-    final outcome = await forwardMessages(
-      dest.session.xmpp,
-      toJid: JID.fromString(destPeer).toBare(),
-      items: items,
-      track: track,
-    );
+    final outcome = result.outcome;
+    if (outcome == null) return;
     if (!outcome.ok && mounted) {
       // Partial forwards are reported rather than silently dropped: the user
       // is the only one who knows which of the selected messages mattered.
@@ -1213,53 +762,32 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       );
       return;
     }
-    setState(_selection.clear);
+    if (mounted) setState(_selection.clear);
   }
 
   /// Retracts the selected messages that we sent.
-  ///
-  /// Only ours: XEP-0424 is an instruction to the recipient's own client, so
-  /// retracting somebody else's message would change only our copy — which is
-  /// not "delete for everyone" and is not what the button said.
   Future<void> _deleteSelection() async {
     if (!mounted) return;
-    final ids = List<String>.from(_selection);
-    final messages = await _db.watchMessages(_peerJid).first;
-    final mine = [
-      for (final m in messages)
-        if (ids.contains(m.stanzaId) && !m.incoming) m.stanzaId,
-    ];
-    if (!mounted) return;
     final messenger = ScaffoldMessenger.of(context);
-    if (mine.isEmpty) {
+    final result = await _vm.deleteMineByIds(List<String>.from(_selection));
+    if (!mounted) return;
+    if (result.mine == 0) {
       messenger.showSnackBar(
         const SnackBar(content: Text('Only your own messages can be deleted.')),
       );
       return;
     }
-    var deleted = 0;
-    for (final id in mine) {
-      final ok = await retractMessage(_xmpp, chatJid: _peerJid, targetId: id);
-      if (!ok) break;
-      deleted++;
-    }
-    if (deleted < mine.length) {
+    if (result.deleted < result.mine) {
       messenger.showSnackBar(
         SnackBar(
           content: Text(
-            'Deleted $deleted of ${mine.length}; the rest could not be sent.',
+            'Deleted ${result.deleted} of ${result.mine}; the rest could not '
+            'be sent.',
           ),
         ),
       );
     }
-    await _db.markRetracted(mine.first);
-    // Refresh the rows that were marked above; one update covers the list.
-    if (mounted) setState(() => _selection.clear());
-  }
-
-  void _bumpReactions() {
-    final rev = ref.read(reactionRevisionProvider);
-    ref.read(reactionRevisionProvider.notifier).state = rev + 1;
+    setState(_selection.clear);
   }
 
   void _showUnsentNotice() {
@@ -1272,7 +800,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   }
 
   Future<void> _loadHistory() async {
-    final count = await _xmpp.fetchHistory(JID.fromString(_peerJid));
+    final count = await _vm.loadHistory();
     if (!mounted) return;
     final l10n = context.l10n;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -1286,43 +814,16 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     );
   }
 
-  StreamSubscription<TrackAdvice>? _adviceSub;
-
-  /// The most recent advice about *this* conversation, or null.
-  ///
-  /// Advice about other conversations is dropped rather than stored: showing a
-  /// banner for one contact's devices above another contact's messages is worse
-  /// than showing nothing, and the chat page has no way to display advice for a
-  /// conversation it is not showing.
-  TrackAdvice? _advice;
-
-  void _onAdvice(TrackAdvice advice) {
-    if (advice.chatJid != _peerJid) return;
-    if (!mounted) return;
-    setState(() => _advice = advice);
-  }
-
-  void _dismissAdvice() {
-    if (_advice == null) return;
-    setState(() => _advice = null);
-  }
-
-  void _adoptAdvice() {
-    final advice = _advice;
-    if (advice == null) return;
-    setState(() => _advice = null);
-    unawaited(setChatTrack(ref, widget.chatJid, advice.suggestion));
-  }
-
   @override
   Widget build(BuildContext context) {
     final tg = context.tg;
     final l10n = context.l10n;
+    final ui = ref.watch(chatViewModelProvider(widget.chatJid));
     final messages = ref.watch(messagesProvider(widget.chatJid));
     // The chosen track, not the negotiated one. The header says what the user
     // picked; whether it can actually be used is decided at send time and
     // explained there if not.
-    final track = _isGroup && !_mucEncryptable
+    final track = ui.isGroup && !ui.mucEncryptable
         ? Track.none
         : ref.watch(chatTrackProvider(widget.chatJid)).value ?? Track.standard;
     final appearance =
@@ -1334,7 +835,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       localNickname: null,
       rosterTitle: chatRow?.title ?? '',
       jid: _peerJid,
-      isRoom: _isGroup,
+      isRoom: ui.isGroup,
     );
     // Watched so a draft saved here is read back into the field; see
     // _restoreDraft for why it only happens once.
@@ -1346,15 +847,19 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         Scaffold(
           appBar: AppBar(
             titleSpacing: 0,
-            title: Row(
-              children: [
-                // Rooms open the member list; contacts open the profile.
-                GestureDetector(
-                  onTap: _isGroup
-                      ? _showMembers
-                      : () => Navigator.of(context)
+            automaticallyImplyLeading: !widget.embedded,
+            // Telegram ChatAvatarContainer: one tap target → profile/room sheet.
+            // Group subtitle is member count (getChatSubtitle), not about/subject.
+            title: GestureDetector(
+              onTap: ui.isGroup
+                  ? _showMembers
+                  : () =>
+                        Navigator.of(context)
                             .pushNamed('/profile', arguments: widget.chatJid),
-                  child: _isGroup
+              behavior: HitTestBehavior.opaque,
+              child: Row(
+                children: [
+                  ui.isGroup
                       ? CircleAvatar(
                           radius: TgDimens.avatarChat / 2,
                           backgroundColor: tg.accent.withValues(alpha: 0.18),
@@ -1370,45 +875,57 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                           radius: TgDimens.avatarChat / 2,
                           hero: true,
                         ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                      Text(
-                        _isGroup
-                            ? (_room == null
-                                  ? l10n.joining
-                                  : l10n.membersInRoom(_room!.occupants.length))
-                            : _peerStatusSubtitle(context, track),
-                        style: TextStyle(
-                          fontSize: TgDimens.timeFontSize,
-                          fontWeight: FontWeight.w400,
-                          color: Colors.white70,
-                          fontStyle:
-                              !_isGroup &&
-                                  (_peerTyping == TypingState.composing ||
-                                      _peerTyping == TypingState.paused)
-                              ? FontStyle.italic
-                              : FontStyle.normal,
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                      ),
-                    ],
+                        Text(
+                          ui.isGroup
+                              ? (ui.room == null
+                                    ? l10n.joining
+                                    : l10n.membersInRoom(
+                                        ui.room!.occupants.length,
+                                      ))
+                              : _peerStatusSubtitle(
+                                  context,
+                                  track,
+                                  ui.peerTyping,
+                                ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: TgDimens.timeFontSize,
+                            fontWeight: FontWeight.w400,
+                            color: Colors.white70,
+                            fontStyle:
+                                !ui.isGroup &&
+                                    (ui.peerTyping == TypingState.composing ||
+                                        ui.peerTyping == TypingState.paused)
+                                ? FontStyle.italic
+                                : FontStyle.normal,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
             actions: [
-              if (!_isGroup || _mucEncryptable)
+              if (!ui.isGroup || ui.mucEncryptable)
                 EncBadge(
                   label: track.label,
                   locked: track != Track.none,
                   onTap: () => showTrackPicker(context, ref, widget.chatJid),
                 ),
-              if (_isGroup)
+              if (ui.isGroup)
                 IconButton(
                   icon: const Icon(Icons.group_outlined),
                   tooltip: l10n.members,
@@ -1450,12 +967,12 @@ class _ChatPageState extends ConsumerState<ChatPage> {
           body: Column(
             children: [
               // Rooms are not roster contacts — no subscription banner.
-              if (!_isGroup) _SubscriptionBanner(chatJid: widget.chatJid),
-              if (_advice != null)
+              if (!ui.isGroup) _SubscriptionBanner(chatJid: widget.chatJid),
+              if (ui.advice != null)
                 TrackAdviceBanner(
-                  advice: _advice!,
-                  onSwitch: _adoptAdvice,
-                  onDismiss: _dismissAdvice,
+                  advice: ui.advice!,
+                  onSwitch: _vm.adoptAdvice,
+                  onDismiss: _vm.dismissAdvice,
                 ),
               Expanded(
                 child: Container(
@@ -1494,7 +1011,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                           focusMessageAnchor: _activeFocusAnchor,
                           focusMessageKey: _focusMessageKey,
                           bubbleStyle: appearance.bubble,
-                          isGroup: _isGroup,
+                          isGroup: ui.isGroup,
                         );
                       },
                       loading: () =>
@@ -1507,6 +1024,27 @@ class _ChatPageState extends ConsumerState<ChatPage> {
               // Editing replaces the input bar rather than sitting above it: two
               // text fields in one chat is ambiguous about which one a keystroke
               // goes to.
+              if (ui.mucPmNick != null)
+                Material(
+                  color: tg.accent.withValues(alpha: 0.12),
+                  child: ListTile(
+                    dense: true,
+                    leading: Icon(
+                      Icons.lock_outline,
+                      color: tg.accent,
+                      size: 20,
+                    ),
+                    title: Text(
+                      l10n.privateMessageTo(ui.mucPmNick!),
+                      style: TextStyle(color: tg.accent, fontSize: 13),
+                    ),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.close, size: 18),
+                      tooltip: l10n.cancel,
+                      onPressed: () => _vm.setMucPmNick(null),
+                    ),
+                  ),
+                ),
               if (_replyingTo != null && _editingId == null)
                 ReplyPreview(
                   author: _replyingTo!.author,
@@ -1533,7 +1071,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                 _InputBar(
                   controller: _input,
                   focusNode: _focus,
-                  onChanged: _onInputChanged,
+                  onChanged: _vm.onInputChanged,
                   onSend: _send,
                   onAttach: _attachFile,
                   attachEnabled: attachEnabled,
@@ -1544,8 +1082,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                   onPicked: (emoji) {
                     final target = _reactingToId;
                     setState(() => _reactingToId = null);
-                    if (target != null)
+                    if (target != null) {
                       unawaited(_toggleReaction(target, emoji));
+                    }
                   },
                   onDismissed: () => setState(() => _reactingToId = null),
                 ),
@@ -1559,7 +1098,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         ),
         // Covers app bar, transcript, FAB, and input while the OS picker is up
         // so nothing behind it can be tapped or scrolled.
-        if (_pickingFile)
+        if (ui.pickingFile)
           const ModalBarrier(dismissible: false, color: Color(0x66000000)),
       ],
     );

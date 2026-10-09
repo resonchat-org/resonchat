@@ -16,7 +16,7 @@ import 'package:moxxmpp/moxxmpp.dart';
 import 'package:resonchat/omemo/track.dart';
 import 'package:resonchat/state/app_wiring.dart';
 import 'package:resonchat/store/database.dart';
-import 'package:resonchat/ui/chats_page.dart';
+import 'package:resonchat/ui/chats/chats_viewmodel.dart';
 import 'package:resonchat/xmpp/connection.dart';
 
 void main() {

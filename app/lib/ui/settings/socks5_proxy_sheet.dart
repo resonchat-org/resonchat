@@ -1,17 +1,18 @@
 // Copyright (C) 2026 resonchat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// SOCKS5 controls usable before login (settings alone would be unreachable
-// when a bad proxy blocks connect).
+// Shared SOCKS5 editor (login + settings). Prefs live in [appPrefs].
+
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../l10n/l10n.dart';
-import '../net/app_network.dart';
-import '../state/providers.dart';
+import '../../l10n/l10n.dart';
+import '../../net/app_network.dart';
+import '../../store/prefs_database.dart';
 
-/// Bottom sheet: enable SOCKS5 + local port (host stays loopback).
+/// Bottom sheet: enable SOCKS5 + host + port.
 Future<void> showSocks5ProxySheet(BuildContext context, WidgetRef ref) {
   return showModalBottomSheet<void>(
     context: context,
@@ -19,15 +20,13 @@ Future<void> showSocks5ProxySheet(BuildContext context, WidgetRef ref) {
     showDragHandle: true,
     builder: (ctx) => Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
-      child: _Socks5ProxySheet(ref: ref),
+      child: const _Socks5ProxySheet(),
     ),
   );
 }
 
 class _Socks5ProxySheet extends StatefulWidget {
-  const _Socks5ProxySheet({required this.ref});
-
-  final WidgetRef ref;
+  const _Socks5ProxySheet();
 
   @override
   State<_Socks5ProxySheet> createState() => _Socks5ProxySheetState();
@@ -36,6 +35,7 @@ class _Socks5ProxySheet extends StatefulWidget {
 class _Socks5ProxySheetState extends State<_Socks5ProxySheet> {
   bool _enabled = false;
   bool _ready = false;
+  final _host = TextEditingController(text: '127.0.0.1');
   final _port = TextEditingController(text: '7890');
 
   @override
@@ -45,48 +45,79 @@ class _Socks5ProxySheetState extends State<_Socks5ProxySheet> {
   }
 
   Future<void> _load() async {
-    final db = widget.ref.read(databaseProvider);
-    final enabled = await db.socks5ProxyEnabled();
-    final port = await db.socks5ProxyPort();
+    final prefs = appPrefs;
+    final enabled = await prefs.socks5ProxyEnabled();
+    final host = await prefs.socks5ProxyHost();
+    final port = await prefs.socks5ProxyPort();
     if (!mounted) return;
     setState(() {
       _enabled = enabled;
+      _host.text = host;
       _port.text = '$port';
       _ready = true;
     });
   }
 
-  @override
-  void dispose() {
-    _port.dispose();
-    super.dispose();
-  }
-
   Future<void> _apply({bool? enabled}) async {
     final l10n = context.l10n;
     final nextEnabled = enabled ?? _enabled;
+    final host = _host.text.trim();
+    if (host.isEmpty) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(l10n.socks5ProxyInvalidHost)));
+      return;
+    }
     final parsed = int.tryParse(_port.text.trim());
     if (parsed == null || parsed < 1 || parsed > 65535) {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(l10n.socks5ProxyInvalidPort)));
       return;
     }
-    final db = widget.ref.read(databaseProvider);
-    final host = await db.socks5ProxyHost();
-    await db.setSocks5ProxyEnabled(nextEnabled);
-    await db.setSocks5ProxyPort(parsed);
+
+    await appPrefs.setSocks5ProxyEnabled(nextEnabled);
+    await appPrefs.setSocks5ProxyHost(host);
+    await appPrefs.setSocks5ProxyPort(parsed);
     appNetwork.config = Socks5ProxyConfig(
       enabled: nextEnabled,
       host: host,
       port: parsed,
     );
+
     if (!mounted) return;
     setState(() {
       _enabled = nextEnabled;
+      _host.text = host;
       _port.text = '$parsed';
     });
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(l10n.socks5ProxyApplied)));
+  }
+
+  /// Persist current fields when the sheet is dismissed without an explicit
+  /// submit (same prefs path as [_apply]).
+  void _persistIfValid() {
+    if (!_ready) return;
+    final host = _host.text.trim();
+    final parsed = int.tryParse(_port.text.trim());
+    if (host.isEmpty || parsed == null || parsed < 1 || parsed > 65535) {
+      return;
+    }
+    final cfg = Socks5ProxyConfig(enabled: _enabled, host: host, port: parsed);
+    if (cfg == appNetwork.config) return;
+    appNetwork.config = cfg;
+    unawaited(() async {
+      await appPrefs.setSocks5ProxyEnabled(cfg.enabled);
+      await appPrefs.setSocks5ProxyHost(cfg.host);
+      await appPrefs.setSocks5ProxyPort(cfg.port);
+    }());
+  }
+
+  @override
+  void dispose() {
+    _persistIfValid();
+    _host.dispose();
+    _port.dispose();
+    super.dispose();
   }
 
   @override
@@ -112,7 +143,18 @@ class _Socks5ProxySheetState extends State<_Socks5ProxySheet> {
               value: _enabled,
               onChanged: (v) => _apply(enabled: v),
             ),
-            if (_enabled)
+            if (_enabled) ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: TextField(
+                  controller: _host,
+                  keyboardType: TextInputType.url,
+                  autocorrect: false,
+                  decoration: InputDecoration(labelText: l10n.socks5ProxyHost),
+                  onSubmitted: (_) => _apply(),
+                  onEditingComplete: () => _apply(),
+                ),
+              ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                 child: TextField(
@@ -121,12 +163,12 @@ class _Socks5ProxySheetState extends State<_Socks5ProxySheet> {
                   decoration: InputDecoration(
                     labelText: l10n.socks5ProxyPort,
                     helperText: l10n.socks5ProxyPortHint,
-                    prefixText: '127.0.0.1:',
                   ),
                   onSubmitted: (_) => _apply(),
                   onEditingComplete: () => _apply(),
                 ),
               ),
+            ],
           ],
         ),
       ),

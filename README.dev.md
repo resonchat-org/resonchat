@@ -30,8 +30,9 @@ resonchat/
 │  │  ├─ omemo/              双轨协议、能力、TrackResolver
 │  │  ├─ pq/                 ML-KEM-768（liboqs FFI / pqcrypto）
 │  │  ├─ store/              drift + 备份格式 + 平台 DB 连接
-│  │  ├─ state/              Riverpod providers
-│  │  ├─ ui/                 登录 / 会话 / 聊天 / 设置 / 账号管理
+│  │  ├─ state/              跨 feature Riverpod 读模型
+│  │  ├─ ui/                 feature 页面 + 主题/壳层小组件
+│  │  ├─ utils/              外观编解码、emoji 目录等非 UI 数据
 │  │  └─ xmpp/               连接生命周期与事件分发
 │  └─ tool/                  build_android / build_web / build_liboqs 等
 └─ packages/                 上游 fork（git 子模块，path 依赖）
@@ -52,6 +53,30 @@ resonchat/
 | `moxlib` | codeberg.org/moxxy/moxlib | **GPL-3.0** | SDK 约束提升到 Dart 3 |
 
 `app/pubspec.yaml` 用 `dependency_overrides` 把依赖全部指向 `packages/`，`flutter pub get` 不需要访问上游自建 Gitea。
+
+## Architecture: MVVM + Riverpod
+
+贴近 Flutter 官方 MVVM（View + ViewModel），目录按 feature 组织：
+
+| 层 | 本仓库落点 | 职责 |
+|---|---|---|
+| **View** | `ui/<feature>/*_page.dart` 等 | 渲染、滚动、对话框；不写协议/DB |
+| **ViewModel** | 同目录 `*_viewmodel.dart`（Riverpod `Notifier`，按需） | UI 状态与命令 |
+| **读模型** | `state/providers.dart` | 跨页面 Stream/Future providers |
+| **Data** | `account/`、`store/`、`xmpp/`、`omemo/` | 经 `AccountHub` / `resolveChatKey` / providers 访问 |
+
+```
+ui/
+  theme.dart, design_tokens.dart   主题 / tokens
+  contact_avatar.dart              跨 feature 小组件
+  column_mode*.dart, …             宽屏双栏壳层
+  chat/  chats/  login/  settings/  room/  …
+utils/
+  appearance.dart                  会话外观编解码与壁纸绘制
+  emoji_data.dart                  emoji 目录（纯数据）
+```
+
+类名：`ChatViewModel` + `ChatPage`。有状态/命令的 feature 才加 ViewModel；View 只绑回调与导航。非 UI 的数据/设置类放 `utils/`。
 
 ## 常用命令
 

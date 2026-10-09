@@ -25,9 +25,9 @@
 
 import 'package:flutter/material.dart';
 
-import '../l10n/l10n.dart';
-import '../store/database.dart';
-import 'theme.dart';
+import '../../l10n/l10n.dart';
+import '../../store/database.dart';
+import '../theme.dart';
 
 /// Stable key for the unread divider target (stanza id, or `__row_<id>`).
 String unreadAnchorOf(Message m) =>
