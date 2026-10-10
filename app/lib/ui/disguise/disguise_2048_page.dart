@@ -206,8 +206,7 @@ class _Disguise2048PageState extends State<Disguise2048Page> {
                           );
                           return Listener(
                             behavior: HitTestBehavior.opaque,
-                            onPointerDown: (e) =>
-                                _onPointerDown(e, boardSize),
+                            onPointerDown: (e) => _onPointerDown(e, boardSize),
                             onPointerUp: (e) => _onPointerUp(e, boardSize),
                             onPointerCancel: (_) {
                               _pointerDown = null;

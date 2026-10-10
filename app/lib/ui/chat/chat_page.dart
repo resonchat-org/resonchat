@@ -20,8 +20,12 @@ import '../../l10n/l10n.dart';
 import '../../crypto/omemo/track.dart';
 import '../../platform/app_notifications.dart';
 import '../../platform/media_store.dart';
+import '../../platform/voice_recorder.dart';
 import '../../state/providers.dart';
 import '../../store/database.dart';
+import '../../translate/translatable_text.dart';
+import '../../translate/translation_prefs.dart';
+import '../../translate/translation_service.dart';
 import '../../xmpp/connection.dart';
 import '../../xmpp/forwarding.dart';
 import '../../xmpp/local_nickname.dart';
@@ -175,6 +179,12 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   /// an edit survives the list rebuilding underneath it.
   String? _editingId;
   String _editingBody = '';
+
+  /// In-memory translations for the open chat, keyed by stanza id.
+  final Map<String, String> _translations = {};
+
+  /// Stanza ids with a Translate request in flight.
+  final Set<String> _translating = {};
 
   /// Id of the message whose quick-reaction strip is open, or null.
   String? _reactingToId;
@@ -523,6 +533,39 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     }
   }
 
+  /// Upload a hold-to-talk clip (Telegram MediaController → sendMessage).
+  Future<void> _sendVoice(VoiceClip clip) async {
+    if (_ui.sending) return;
+    if (!await _vm.isUploadAvailable()) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.httpUploadUnavailable)),
+      );
+      return;
+    }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(context.l10n.uploadingFile)));
+    final result = await _vm.sendAttachmentBytes(
+      clip.bytes,
+      fileName: clip.fileName,
+      confirm: _confirm,
+      l10n: context.l10n,
+      mimeOverride: clip.mime,
+    );
+    if (!mounted) return;
+    final error = result.error;
+    if (error != null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(context.l10n.uploadFailed(error))));
+    } else if (result.failureReason != null) {
+      _showNotSent(result.failureReason!);
+    } else if (result.sent) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    }
+  }
+
   Future<void> _send() async {
     if (_ui.sending) return;
     final result = await _vm.sendText(
@@ -625,17 +668,24 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final track = storedTrack(message.encMode);
     final isFileMessage =
         message.mediaUrl.isNotEmpty || message.localPath.isNotEmpty;
+    final decrypted =
+        message.encMode != EncModeToken.error.wire && !message.retracted;
     final actions = MessageActions.for_(
       mine: !message.incoming,
       retracted: message.retracted,
       // An undecryptable message has no body to copy or correct; offering
       // either would act on a placeholder.
-      decrypted:
-          message.encMode != EncModeToken.error.wire && !message.retracted,
+      decrypted: decrypted,
       addressable: message.stanzaId.isNotEmpty,
       pinned: pinned,
       canSaveFile:
           !kIsWeb && isFileMessage && mediaStore.existsSync(message.localPath),
+      canTranslate: canOfferTranslate(
+        body: body,
+        decrypted: decrypted,
+        retracted: message.retracted,
+        hasMedia: isFileMessage,
+      ),
     );
     if (actions.isEmpty) return;
 
@@ -670,6 +720,10 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                 .showSnackBar(SnackBar(content: Text(context.l10n.copied)));
           }),
         );
+      case MessageAction.translate:
+        unawaited(_translateMessage(message, body));
+      case MessageAction.select:
+        _toggleSelected(message);
       case MessageAction.forward:
         await _forwardMessage(message, body);
       case MessageAction.saveFile:
@@ -684,6 +738,45 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         });
       case MessageAction.retract:
         await _doRetract(message);
+    }
+  }
+
+  /// Fetches a translation and shows it under the bubble for this open chat.
+  Future<void> _translateMessage(Message message, String body) async {
+    final l10n = context.l10n;
+    final cacheKey =
+        message.stanzaId.isNotEmpty ? message.stanzaId : 'body:${body.hashCode}';
+    if (_translations.containsKey(cacheKey)) {
+      if (mounted) setState(() {});
+      return;
+    }
+    final prefs = await TranslationPrefs.load();
+    if (!mounted) return;
+    if (!translationService.isConfigured(prefs)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.translationNotConfigured)),
+      );
+      return;
+    }
+    setState(() => _translating.add(cacheKey));
+    try {
+      final lang = Localizations.localeOf(context).languageCode;
+      final result = await translationService.translateOnce(
+        body,
+        prefs: prefs,
+        uiLanguageCode: lang,
+      );
+      if (!mounted) return;
+      setState(() {
+        _translations[cacheKey] = result.text;
+        _translating.remove(cacheKey);
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _translating.remove(cacheKey));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.translationFailed('$e'))),
+      );
     }
   }
 
@@ -1180,6 +1273,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                             onToggleSelected: _toggleSelected,
                             selectionMode: _selectionMode,
                             selectedIds: _selection,
+                            translations: _translations,
+                            translatingIds: _translating,
                             readAt: ref
                                 .watch(chatLastReadProvider(widget.chatJid))
                                 .value,
@@ -1253,6 +1348,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                     onChanged: _vm.onInputChanged,
                     onSend: _send,
                     onAttach: _attachFile,
+                    onVoice: _sendVoice,
                     attachEnabled: attachEnabled,
                   ),
                 if (_reactingToId != null)
@@ -1322,6 +1418,8 @@ class _MessageList extends StatelessWidget {
     required this.onToggleSelected,
     required this.selectionMode,
     required this.selectedIds,
+    required this.translations,
+    required this.translatingIds,
     required this.readAt,
     required this.unreadCount,
     required this.unreadDividerKey,
@@ -1354,6 +1452,12 @@ class _MessageList extends StatelessWidget {
 
   /// The stanza ids currently selected, in the order they were picked.
   final List<String> selectedIds;
+
+  /// In-memory translations for this open chat (stanza id → text).
+  final Map<String, String> translations;
+
+  /// Stanza ids currently waiting on a Translate response.
+  final Set<String> translatingIds;
 
   /// When the user last read this conversation, which is where the unread
   /// boundary goes.
@@ -1439,6 +1543,9 @@ class _MessageList extends StatelessWidget {
         rows.add(errorRow);
         continue;
       }
+      final cacheKey = m.stanzaId.isNotEmpty
+          ? m.stanzaId
+          : 'body:${m.body.hashCode}';
       Widget bubble = _ReactionBubble(
         chatKey: chatKey,
         message: m,
@@ -1447,6 +1554,8 @@ class _MessageList extends StatelessWidget {
         bubbleStyle: bubbleStyle,
         isGroup: isGroup,
         highlightNicks: highlightNicks,
+        translation: translations[cacheKey],
+        translating: translatingIds.contains(cacheKey),
         onReact: (emoji) => onReact(m.stanzaId, emoji),
         onMenu: (body) => onMenu(m, body),
         onToggleSelected: () => onToggleSelected(m),
@@ -1465,15 +1574,16 @@ class _MessageList extends StatelessWidget {
   }
 }
 
-/// Bottom input bar: attach button, text field, and a button that becomes
-/// a microphone whenever the field is empty (docs/05 §4.2).
-class _InputBar extends StatelessWidget {
+/// Bottom input bar: attach, text field, send — or hold-to-talk mic when empty
+/// (Telegram `ChatActivityEnterView`, docs/05 §4.2).
+class _InputBar extends StatefulWidget {
   const _InputBar({
     required this.controller,
     required this.focusNode,
     required this.onChanged,
     required this.onSend,
     required this.onAttach,
+    required this.onVoice,
     required this.attachEnabled,
   });
 
@@ -1482,16 +1592,158 @@ class _InputBar extends StatelessWidget {
   final ValueChanged<String> onChanged;
   final VoidCallback onSend;
   final VoidCallback onAttach;
+  final Future<void> Function(VoiceClip clip) onVoice;
 
-  /// False when the server has no XEP-0363 — button stays light and inert.
+  /// False when the server has no XEP-0363 — attach/mic stay muted.
   final bool attachEnabled;
+
+  @override
+  State<_InputBar> createState() => _InputBarState();
+}
+
+class _InputBarState extends State<_InputBar> {
+  final _recorder = VoiceRecorder();
+  var _recording = false;
+  var _cancelArmed = false;
+  var _starting = false;
+
+  /// Finger still down — used to discard if permission/start outlasts press.
+  var _pointerHeld = false;
+  Offset? _pointerOrigin;
+  Duration _elapsed = Duration.zero;
+  Timer? _tick;
+
+  /// Telegram slide-to-cancel threshold (~dp 80).
+  static const _cancelDx = -64.0;
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    unawaited(_recorder.dispose());
+    super.dispose();
+  }
+
+  void _startTick() {
+    _tick?.cancel();
+    _tick = Timer.periodic(const Duration(milliseconds: 200), (_) {
+      if (!mounted || !_recording) return;
+      setState(() => _elapsed = _recorder.elapsed);
+    });
+  }
+
+  Future<void> _beginRecord() async {
+    if (_recording || _starting) return;
+    final l10n = context.l10n;
+    if (!widget.attachEnabled) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(l10n.httpUploadUnavailable)));
+      return;
+    }
+    if (!VoiceRecorder.isSupported) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(l10n.voiceNotSupported)));
+      return;
+    }
+    _starting = true;
+    try {
+      final ok = await _recorder.ensurePermission();
+      if (!mounted || !_pointerHeld) return;
+      if (!ok) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(l10n.voicePermissionDenied)));
+        return;
+      }
+      final muted = await VoiceRecorder.isSystemMicMuted();
+      if (!mounted || !_pointerHeld) return;
+      if (muted == true) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(l10n.voiceMicMuted)));
+        return;
+      }
+      await _recorder.start();
+      if (!mounted || !_pointerHeld) {
+        await _recorder.stop(send: false);
+        return;
+      }
+      HapticFeedback.lightImpact();
+      setState(() {
+        _recording = true;
+        _cancelArmed = false;
+        _elapsed = Duration.zero;
+      });
+      _startTick();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(l10n.uploadFailed('$e'))));
+      }
+    } finally {
+      _starting = false;
+    }
+  }
+
+  Future<void> _endRecord({required bool send}) async {
+    _pointerHeld = false;
+    if (!_recording && !_recorder.isRecording) {
+      _pointerOrigin = null;
+      return;
+    }
+    _tick?.cancel();
+    final clip = await _recorder.stop(send: send);
+    if (!mounted) return;
+    setState(() {
+      _recording = false;
+      _cancelArmed = false;
+      _pointerOrigin = null;
+      _elapsed = Duration.zero;
+    });
+    if (!send) return;
+    if (clip == null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(context.l10n.voiceTooShort)));
+      return;
+    }
+    HapticFeedback.selectionClick();
+    await widget.onVoice(clip);
+  }
+
+  void _onMicPointerDown(PointerDownEvent e) {
+    _pointerHeld = true;
+    _pointerOrigin = e.position;
+    unawaited(_beginRecord());
+  }
+
+  void _onMicPointerMove(PointerMoveEvent e) {
+    if (!_recording || _pointerOrigin == null) return;
+    final dx = e.position.dx - _pointerOrigin!.dx;
+    final armed = dx <= _cancelDx;
+    if (armed != _cancelArmed) {
+      setState(() => _cancelArmed = armed);
+      if (armed) HapticFeedback.selectionClick();
+    }
+  }
+
+  void _onMicPointerUp(PointerUpEvent e) {
+    unawaited(_endRecord(send: !_cancelArmed));
+  }
+
+  void _onMicPointerCancel(PointerCancelEvent e) {
+    unawaited(_endRecord(send: false));
+  }
+
+  String _formatElapsed(Duration d) {
+    final total = d.inSeconds;
+    final m = (total ~/ 60).toString().padLeft(2, '0');
+    final s = (total % 60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
 
   @override
   Widget build(BuildContext context) {
     final tg = context.tg;
     final l10n = context.l10n;
     return ValueListenableBuilder<TextEditingValue>(
-      valueListenable: controller,
+      valueListenable: widget.controller,
       builder: (context, value, _) {
         final empty = value.text.trim().isEmpty;
         return Container(
@@ -1503,61 +1755,144 @@ class _InputBar extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              IconButton(
-                icon: const Icon(Icons.attach_file),
-                // Supported → primary (darker); unsupported → muted, no press.
-                color: attachEnabled ? tg.textPrimary : tg.textSecondary,
-                disabledColor: tg.textSecondary,
-                tooltip: attachEnabled
-                    ? l10n.attachFile
-                    : l10n.httpUploadUnavailable,
-                onPressed: attachEnabled ? onAttach : null,
-              ),
+              if (!_recording)
+                IconButton(
+                  icon: const Icon(Icons.attach_file),
+                  color: widget.attachEnabled
+                      ? tg.textPrimary
+                      : tg.textSecondary,
+                  disabledColor: tg.textSecondary,
+                  tooltip: widget.attachEnabled
+                      ? l10n.attachFile
+                      : l10n.httpUploadUnavailable,
+                  onPressed: widget.attachEnabled ? widget.onAttach : null,
+                )
+              else
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 12,
+                  ),
+                  child: Icon(
+                    Icons.mic,
+                    size: 22,
+                    color: _cancelArmed ? tg.danger : tg.accent,
+                  ),
+                ),
               Expanded(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 120),
-                  child: TextField(
-                    controller: controller,
-                    focusNode: focusNode,
-                    minLines: 1,
-                    maxLines: 5,
-                    textInputAction: TextInputAction.newline,
-                    onChanged: onChanged,
-                    style: TextStyle(
-                      fontSize: TgDimens.messageFontSize,
-                      color: tg.textPrimary,
-                    ),
-                    decoration: InputDecoration(
-                      isDense: true,
-                      filled: true,
-                      fillColor: tg.pageBackground,
-                      hintText: l10n.messageComposerHint,
-                      hintStyle: TextStyle(color: tg.textSecondary),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 10,
+                child: _recording
+                    ? Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 10,
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                color: _cancelArmed
+                                    ? tg.danger
+                                    : const Color(0xFFE53935),
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              _formatElapsed(_elapsed),
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontFeatures: const [
+                                  FontFeature.tabularFigures(),
+                                ],
+                                color: tg.textPrimary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                _cancelArmed
+                                    ? l10n.releaseToCancel
+                                    : l10n.slideToCancel,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: _cancelArmed
+                                      ? tg.danger
+                                      : tg.textSecondary,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 120),
+                        child: TextField(
+                          controller: widget.controller,
+                          focusNode: widget.focusNode,
+                          minLines: 1,
+                          maxLines: 5,
+                          textInputAction: TextInputAction.newline,
+                          onChanged: widget.onChanged,
+                          style: TextStyle(
+                            fontSize: TgDimens.messageFontSize,
+                            color: tg.textPrimary,
+                          ),
+                          decoration: InputDecoration(
+                            isDense: true,
+                            filled: true,
+                            fillColor: tg.pageBackground,
+                            hintText: l10n.messageComposerHint,
+                            hintStyle: TextStyle(color: tg.textSecondary),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(18),
+                              borderSide: BorderSide(color: tg.separator),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(18),
+                              borderSide: BorderSide(color: tg.separator),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(18),
+                              borderSide: BorderSide(color: tg.accent),
+                            ),
+                          ),
+                        ),
                       ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(18),
-                        borderSide: BorderSide(color: tg.separator),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(18),
-                        borderSide: BorderSide(color: tg.separator),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(18),
-                        borderSide: BorderSide(color: tg.accent),
+              ),
+              if (empty || _recording)
+                Listener(
+                  behavior: HitTestBehavior.opaque,
+                  onPointerDown: _onMicPointerDown,
+                  onPointerMove: _onMicPointerMove,
+                  onPointerUp: _onMicPointerUp,
+                  onPointerCancel: _onMicPointerCancel,
+                  child: Tooltip(
+                    message: l10n.holdToRecord,
+                    child: Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Icon(
+                        _cancelArmed ? Icons.delete_outline : Icons.mic,
+                        color: _cancelArmed ? tg.danger : tg.accent,
+                        size: 28,
                       ),
                     ),
                   ),
+                )
+              else
+                IconButton(
+                  icon: const Icon(Icons.send),
+                  color: tg.accent,
+                  onPressed: widget.onSend,
                 ),
-              ),
-              IconButton(
-                icon: Icon(empty ? Icons.mic_none : Icons.send),
-                color: tg.accent,
-                onPressed: empty ? () {} : onSend,
-              ),
             ],
           ),
         );
@@ -1638,6 +1973,8 @@ class _ReactionBubble extends ConsumerWidget {
     required this.bubbleStyle,
     required this.isGroup,
     required this.highlightNicks,
+    this.translation,
+    this.translating = false,
     required this.onReact,
     required this.onMenu,
     required this.onToggleSelected,
@@ -1650,6 +1987,8 @@ class _ReactionBubble extends ConsumerWidget {
   final BubbleStyle bubbleStyle;
   final bool isGroup;
   final List<String> highlightNicks;
+  final String? translation;
+  final bool translating;
   final void Function(String emoji) onReact;
   final void Function(String body) onMenu;
   final void Function() onToggleSelected;
@@ -1698,17 +2037,19 @@ class _ReactionBubble extends ConsumerWidget {
       chatKey: chatKey,
       mentionsMe: message.mentionsMe,
       highlightNicks: isGroup ? highlightNicks : const [],
+      translation: translation,
+      translating: translating,
       onReact: onReact,
-      // Telegram ChatActivity: long-press → action mode; short tap → single
-      // message menu (or toggle while already selecting).
-      onLongPress: message.retracted || message.stanzaId.isEmpty
-          ? null
-          : onToggleSelected,
-      onTap: message.retracted
+      // Long-press → context menu (incl. Select). Tap toggles only while
+      // already in multi-select — Select from the menu is what enters it.
+      onLongPress: message.retracted
           ? null
           : selectionMode
-          ? onToggleSelected
+          ? (message.stanzaId.isEmpty ? null : onToggleSelected)
           : () => onMenu(message.body),
+      onTap: message.retracted || !selectionMode || message.stanzaId.isEmpty
+          ? null
+          : onToggleSelected,
     );
   }
 }

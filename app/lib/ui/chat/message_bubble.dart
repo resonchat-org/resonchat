@@ -133,12 +133,20 @@ class MessageBubble extends StatelessWidget {
     this.chatKey,
     this.mentionsMe = false,
     this.highlightNicks = const [],
+    this.translation,
+    this.translating = false,
     this.onReact,
     this.onLongPress,
     this.onTap,
   });
 
   final String text;
+
+  /// External translation shown under the bubble (in-memory for this chat).
+  final String? translation;
+
+  /// True while a Translate request for this message is in flight.
+  final bool translating;
 
   /// When set and carrying a media URL, render download / image UI.
   final Message? message;
@@ -388,6 +396,34 @@ class MessageBubble extends StatelessWidget {
               ],
             ),
           ),
+          if (!retracted &&
+              (translating ||
+                  (translation != null && translation!.trim().isNotEmpty)))
+            Padding(
+              padding: EdgeInsets.only(
+                top: 4,
+                left: mine ? 0 : 12,
+                right: mine ? 12 : 0,
+              ),
+              child: translating
+                  ? SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: tg.textSecondary,
+                      ),
+                    )
+                  : Text(
+                      translation!,
+                      style: TextStyle(
+                        fontSize: TgDimens.messageFontSize - 1,
+                        color: tg.textSecondary,
+                        height: 1.3,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+            ),
           if (reactions.isNotEmpty && !retracted)
             Padding(
               padding: EdgeInsets.only(

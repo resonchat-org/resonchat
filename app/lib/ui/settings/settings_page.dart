@@ -20,6 +20,9 @@ import '../theme.dart';
 import 'app_lock_pin_sheet.dart';
 import 'settings_viewmodel.dart';
 import 'socks5_proxy_sheet.dart';
+import 'translation_settings_sheet.dart';
+import '../../translate/translation_engine.dart';
+import '../../translate/translation_prefs.dart';
 
 /// App settings. Deliberately free of branding that would suggest any
 /// affiliation with other messengers (docs/05 §6).
@@ -31,6 +34,20 @@ class SettingsPage extends ConsumerStatefulWidget {
 }
 
 class _SettingsPageState extends ConsumerState<SettingsPage> {
+  TranslationPrefs? _translationPrefs;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_reloadTranslationPrefs());
+  }
+
+  Future<void> _reloadTranslationPrefs() async {
+    final prefs = await TranslationPrefs.load();
+    if (!mounted) return;
+    setState(() => _translationPrefs = prefs);
+  }
+
   @override
   Widget build(BuildContext context) {
     final tg = context.tg;
@@ -141,9 +158,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             },
           ),
 
+          _header(tg, l10n.connection),
           // SOCKS5 is a TCP CONNECT proxy — browsers cannot use it.
-          if (!kIsWeb) ...[
-            _header(tg, l10n.connection),
+          if (!kIsWeb)
             ListTile(
               leading: Icon(
                 Icons.vpn_key_outlined,
@@ -161,7 +178,30 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 if (mounted) setState(() {});
               },
             ),
-          ],
+          Builder(
+            builder: (context) {
+              final prefs = _translationPrefs;
+              final subtitle = prefs == null
+                  ? l10n.translationSummary
+                  : prefs.engine == TranslationEngineId.deepL
+                  ? (prefs.apiKey.trim().isEmpty
+                        ? l10n.translationSummary
+                        : l10n.translationDeepL)
+                  : (prefs.baseUrl.trim().isEmpty
+                        ? l10n.translationSummary
+                        : prefs.baseUrl.trim());
+              return ListTile(
+                leading: const Icon(Icons.translate),
+                title: Text(l10n.translation),
+                subtitle: Text(subtitle),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () async {
+                  await showTranslationSettingsSheet(context);
+                  await _reloadTranslationPrefs();
+                },
+              );
+            },
+          ),
 
           _header(tg, l10n.about),
           Padding(

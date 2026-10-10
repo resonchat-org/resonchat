@@ -38,6 +38,7 @@
 4. **终端安全边界**——设备被入侵则加密无效，与所有 E2EE 一致。
 5. **Web / 桌面 PQ**——走纯 Dart `pqcrypto`；Android 真机走 liboqs。
 6. **换机**——设备密钥仅存本机 Keystore，无密钥备份时会话需重建。
+7. **录音前静音探测非整平台**——仅 Linux / Android；Web / iOS / macOS / Windows 当前跳过。上其他桌面时必须补检测（见 [05-ui-telegram.md](05-ui-telegram.md) §3.1），否则静音麦会录出无声文件却仍发送。
 
 ## 4. 当前待办优先级
 
@@ -45,6 +46,6 @@
 2. 设备密钥备份与恢复
 3. liboqs on iOS（当前仅 Android 两 ABI）
 4. 「不保存明文」选项与消息删除策略
-5. UI 打磨（动画、平板、附件面板）与 M7 发布项
+5. UI 打磨（动画、平板、附件面板）与 M7 发布项；**Windows 录音静音检测**（§3.1）
 
 贯穿始终：遵守 01 文档 §7 与 [10-track-selection.md](10-track-selection.md) 的不变量。

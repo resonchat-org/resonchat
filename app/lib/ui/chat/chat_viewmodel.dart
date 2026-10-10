@@ -755,6 +755,7 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
     required String fileName,
     required ChatTrackConfirm confirm,
     required AppLocalizations l10n,
+    String? mimeOverride,
   }) async {
     if (state.sending) return const ChatAttachResult();
     final xmpp = _xmpp;
@@ -778,6 +779,7 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
         data,
         fileName: fileName,
         encrypt: outcomeTrack != Track.none,
+        mimeOverride: mimeOverride,
       );
       final cached = await xmpp.httpFiles.cacheLocalBytes(
         data,

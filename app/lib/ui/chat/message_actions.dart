@@ -22,6 +22,8 @@ class MessageActions {
     required this.canForward,
     required this.canReact,
     required this.canCopy,
+    required this.canTranslate,
+    required this.canSelect,
     required this.canEdit,
     required this.canRetract,
     required this.canSaveFile,
@@ -45,6 +47,12 @@ class MessageActions {
   final bool canReact;
 
   final bool canCopy;
+
+  /// External HTTP translation for translatable plaintext (not files / emoji).
+  final bool canTranslate;
+
+  /// Enter multi-select with this message as the first pick (addressable only).
+  final bool canSelect;
 
   /// Only our own messages: an edit replaces content, and we cannot replace
   /// somebody else's.
@@ -70,12 +78,15 @@ class MessageActions {
     required bool addressable,
     required bool pinned,
     bool canSaveFile = false,
+    bool canTranslate = false,
   }) {
     return MessageActions(
       canReply: !retracted && addressable,
       canForward: !retracted && decrypted,
       canReact: !retracted,
       canCopy: decrypted && !retracted,
+      canTranslate: canTranslate,
+      canSelect: !retracted && addressable,
       canEdit: mine && !retracted && decrypted,
       canRetract: mine && !retracted && addressable,
       canSaveFile: !retracted && canSaveFile,
@@ -87,6 +98,8 @@ class MessageActions {
       !canReply &&
       !canReact &&
       !canCopy &&
+      !canTranslate &&
+      !canSelect &&
       !canEdit &&
       !canForward &&
       !canRetract &&
@@ -94,7 +107,18 @@ class MessageActions {
 }
 
 /// The result of the menu.
-enum MessageAction { reply, react, copy, edit, forward, pin, retract, saveFile }
+enum MessageAction {
+  reply,
+  react,
+  copy,
+  translate,
+  select,
+  edit,
+  forward,
+  pin,
+  retract,
+  saveFile,
+}
 
 /// Shows the menu and returns what the user picked, or null.
 Future<MessageAction?> showMessageMenu(
@@ -127,6 +151,18 @@ Future<MessageAction?> showMessageMenu(
               leading: const Icon(Icons.copy),
               title: Text(l10n.copyText),
               onTap: () => Navigator.of(context).pop(MessageAction.copy),
+            ),
+          if (actions.canTranslate)
+            ListTile(
+              leading: const Icon(Icons.translate),
+              title: Text(l10n.translate),
+              onTap: () => Navigator.of(context).pop(MessageAction.translate),
+            ),
+          if (actions.canSelect)
+            ListTile(
+              leading: const Icon(Icons.checklist),
+              title: Text(l10n.selectMessages),
+              onTap: () => Navigator.of(context).pop(MessageAction.select),
             ),
           if (actions.canForward)
             ListTile(

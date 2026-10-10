@@ -28,6 +28,36 @@
   "socks5ProxyApplied": "代理已更新。请重新连接以便 XMPP 生效。",
   "socks5ProxyInvalidPort": "请输入 1–65535 之间的端口",
   "socks5ProxyInvalidHost": "请输入代理地址（IP 或主机名）",
+  "translation": "消息翻译",
+  "translationSummary": "通过 LibreTranslate 或 DeepL 翻译聊天消息（目标语言跟随界面语言）",
+  "translationEngine": "引擎",
+  "translationLibreTranslate": "LibreTranslate",
+  "translationDeepL": "DeepL",
+  "translationBaseUrl": "服务地址",
+  "translationBaseUrlHint": "http://127.0.0.1:5000",
+  "translationBaseUrlHelper": "兼容 LibreTranslate 的 HTTP 接口（自建或离线翻译器）",
+  "translationApiKey": "API 密钥",
+  "translationApiKeyOptional": "多数 LibreTranslate 服务可选",
+  "translationApiKeyRequired": "DeepL 必填",
+  "translationDeepLPro": "DeepL Pro 主机",
+  "translationDeepLProSummary": "使用 api.deepl.com，而非 api-free.deepl.com",
+  "translationTestConnection": "测试连接",
+  "translationTestOk": "翻译正常",
+  "translationTestFailed": "翻译失败：{error}",
+  "@translationTestFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "translationSettingsSaved": "翻译设置已保存",
+  "translationNotConfigured": "请先在「设置 → 消息翻译」中配置翻译服务",
+  "translationFailed": "无法翻译：{error}",
+  "@translationFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "translate": "翻译",
   "manageAccounts": "账号",
   "addAccount": "添加账号",
   "noAccountsYet": "还没有账号",
@@ -286,6 +316,15 @@
   "uploadFailed": "上传失败：{error}",
   "httpUploadUnavailable": "当前服务器不支持 HTTP 文件上传",
   "attachFile": "添加文件",
+  "holdToRecord": "按住录音",
+  "slideToCancel": "左滑取消",
+  "releaseToSend": "松手发送",
+  "releaseToCancel": "松手取消",
+  "voiceTooShort": "语音太短",
+  "voicePermissionDenied": "需要麦克风权限才能录制语音",
+  "voiceNotSupported": "当前平台不支持语音消息",
+  "voiceMicMuted": "麦克风已关闭或音量为 0% — 请在声音设置中打开并调高后再试",
+  "recordingVoice": "正在录音…",
   "messageComposerHint": "消息",
   "noMessagesYet": "还没有消息",
   "unableToDecrypt": "无法解密此消息。",

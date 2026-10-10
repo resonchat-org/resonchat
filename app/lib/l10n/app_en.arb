@@ -28,6 +28,36 @@
   "socks5ProxyApplied": "Proxy updated. Reconnect for XMPP to use the new setting.",
   "socks5ProxyInvalidPort": "Enter a port between 1 and 65535",
   "socks5ProxyInvalidHost": "Enter a proxy host (IP or hostname)",
+  "translation": "Message translation",
+  "translationSummary": "Translate chat messages via LibreTranslate or DeepL (target follows UI language)",
+  "translationEngine": "Engine",
+  "translationLibreTranslate": "LibreTranslate",
+  "translationDeepL": "DeepL",
+  "translationBaseUrl": "Base URL",
+  "translationBaseUrlHint": "http://127.0.0.1:5000",
+  "translationBaseUrlHelper": "LibreTranslate-compatible HTTP endpoint (self-host or Offline Translator)",
+  "translationApiKey": "API key",
+  "translationApiKeyOptional": "Optional for many LibreTranslate servers",
+  "translationApiKeyRequired": "Required for DeepL",
+  "translationDeepLPro": "DeepL Pro host",
+  "translationDeepLProSummary": "Use api.deepl.com instead of api-free.deepl.com",
+  "translationTestConnection": "Test connection",
+  "translationTestOk": "Translation OK",
+  "translationTestFailed": "Translation failed: {error}",
+  "@translationTestFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "translationSettingsSaved": "Translation settings saved",
+  "translationNotConfigured": "Configure translation in Settings → Message translation",
+  "translationFailed": "Could not translate: {error}",
+  "@translationFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "translate": "Translate",
   "manageAccounts": "Accounts",
   "addAccount": "Add account",
   "noAccountsYet": "No accounts yet",
@@ -341,6 +371,15 @@
   },
   "httpUploadUnavailable": "This server does not support HTTP File Upload",
   "attachFile": "Attach file",
+  "holdToRecord": "Hold to record",
+  "slideToCancel": "Slide to cancel",
+  "releaseToSend": "Release to send",
+  "releaseToCancel": "Release to cancel",
+  "voiceTooShort": "Voice message is too short",
+  "voicePermissionDenied": "Microphone permission is required to record voice messages",
+  "voiceNotSupported": "Voice messages are not supported on this platform",
+  "voiceMicMuted": "Microphone is off or at 0% — turn it on in sound settings, then try again",
+  "recordingVoice": "Recording…",
   "messageComposerHint": "Message",
   "noMessagesYet": "No messages yet",
   "unableToDecrypt": "Unable to decrypt this message.",

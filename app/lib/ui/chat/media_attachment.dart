@@ -25,6 +25,12 @@ bool isImageMime(String mime, String pathOrName) {
   return guessed.toLowerCase().startsWith('image/');
 }
 
+bool isAudioMime(String mime, String pathOrName) {
+  if (mime.toLowerCase().startsWith('audio/')) return true;
+  final guessed = lookupMimeType(pathOrName) ?? '';
+  return guessed.toLowerCase().startsWith('audio/');
+}
+
 /// Renders a downloaded image or a download affordance for a file message.
 class MediaAttachment extends ConsumerStatefulWidget {
   const MediaAttachment({super.key, required this.message, this.chatKey});
@@ -136,10 +142,9 @@ class _MediaAttachmentState extends ConsumerState<MediaAttachment> {
     final name = m.mediaName.isNotEmpty
         ? m.mediaName
         : (m.mediaUrl.isNotEmpty ? l10n.fileAttachment : '');
-    final image = isImageMime(
-      m.mediaMime,
-      m.localPath.isNotEmpty ? m.localPath : name,
-    );
+    final pathOrName = m.localPath.isNotEmpty ? m.localPath : name;
+    final image = isImageMime(m.mediaMime, pathOrName);
+    final audio = isAudioMime(m.mediaMime, pathOrName);
 
     if (_hasLocal && image && _imageBytes != null) {
       return Material(
@@ -172,6 +177,7 @@ class _MediaAttachmentState extends ConsumerState<MediaAttachment> {
         error: _error,
         subtitle: l10n.tapToOpen,
         onTap: _openLocal,
+        audio: audio,
       );
     }
 
@@ -181,6 +187,7 @@ class _MediaAttachmentState extends ConsumerState<MediaAttachment> {
       error: _error,
       subtitle: l10n.tapToDownload,
       onTap: _busy ? null : _download,
+      audio: audio,
     );
   }
 }
@@ -192,6 +199,7 @@ class _FileRow extends StatelessWidget {
     required this.error,
     this.subtitle,
     this.onTap,
+    this.audio = false,
   });
 
   final String name;
@@ -199,6 +207,7 @@ class _FileRow extends StatelessWidget {
   final String? error;
   final String? subtitle;
   final VoidCallback? onTap;
+  final bool audio;
 
   @override
   Widget build(BuildContext context) {
@@ -228,7 +237,7 @@ class _FileRow extends StatelessWidget {
                   )
                 else
                   Icon(
-                    Icons.insert_drive_file_outlined,
+                    audio ? Icons.mic : Icons.insert_drive_file_outlined,
                     color: tg.textSecondary,
                   ),
                 const SizedBox(width: 8),

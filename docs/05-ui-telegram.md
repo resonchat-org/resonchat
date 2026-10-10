@@ -64,15 +64,37 @@
 | 订阅请求 | `RequestsPage` |
 | `Theme` / `ThemeColors` | `design_tokens.dart` + `theme.dart` |
 | 双击/长按/滑动回复 | `message_actions.dart` + 手势 |
-| 录音按住说话 | 输入栏空内容时麦克风（进行中） |
+| 录音按住说话 | `_InputBar` 按住麦克风 + `VoiceRecorder`（见 §3.1） |
+
+### 3.1 语音消息与麦克风静音检测
+
+交互对齐 Telegram `ChatActivityEnterView`：输入框为空时显示麦克风，**按住录音、左滑取消、松手发送**（过短丢弃）；上传走既有 XEP-0363 附件路径（`sendAttachmentBytes`）。
+
+录音**开始前**做一次「输入是否可用」探测（`VoiceRecorder.isSystemMicMuted` → `isDefaultMicMuted`）。只有返回 `true` 才拦截并提示；返回 `null`（该平台查不到）则**不阻塞**，照常开录。
+
+桌面设置里「关闭麦克风」常见两种表现：`Mute: yes`，或 **Mute 仍为 no 但音量为 0%**（GNOME 等）。Linux 必须两种都拦。
+
+| 平台 | 实现 | 说明 |
+|---|---|---|
+| Linux | `pactl get-source-mute` **或** `get-source-volume` 全通道 0% | PipeWire/Pulse 默认输入源 |
+| Android | `AudioManager.isMicrophoneMute`（MethodChannel `org.resonchat.resonchat/audio`） | 软静音，非隐私开关 |
+| Web | 不检测（stub → `null`） | 浏览器无可靠系统麦静音 API |
+| iOS / macOS | 不检测（`null`） | 无对等的简单软静音查询 |
+| **Windows** | **尚未适配（`null`）** | **日后做 Windows / 其他桌面构建时必须补上等价检测**（静音与/或 0% 音量，WinRT / WASAPI 等），并写入本表；在适配完成前不得假定「开录即有声」 |
+
+代码入口：
+
+- `app/lib/platform/voice_recorder.dart`
+- `app/lib/platform/voice_mic_check_io.dart` / `voice_mic_check_stub.dart`
+- `app/android/.../MainActivity.kt`（Android channel）
 
 ## 4. 关键交互（必须还原）
 
 1. **会话列表**：长按多选、滑动归档/删除、未读计数徽标、置顶/静音图标、在线状态点；统一收件箱跨账号（`AccountHub`）
 2. **聊天页**：
-   - 发送按钮 → 变成麦克风（输入框为空时）
+   - 发送按钮 → 变成麦克风（输入框为空时）；按住录音 / 左滑取消（§3.1）
    - 上滑到底部按钮（FAB）
-   - 长按消息弹出上下文菜单，可滑动回复
+   - 长按消息弹出上下文菜单（含「选择消息」进入多选、「翻译」等），可滑动回复；翻译经外部 LibreTranslate 兼容或 DeepL API，目标语言跟随界面语言，结果显示在气泡下方
    - 日期分隔气泡、未读分隔线
    - 顶栏 EncBadge → 协议选择（PO / OM / NO）
 3. **顶栏**：返回手势、头像点击进资料页、右上角菜单
@@ -86,7 +108,7 @@
 | UI-1 | 主题 Token、字体、会话列表 | 已完成 |
 | UI-2 | 聊天页：气泡、输入栏、日期分隔、滚动到底 | 已完成 |
 | UI-3 | 接入真实 XMPP 数据（roster/MAM） | 已完成 |
-| UI-4 | 附件、图片查看器、录音、表情面板 | 部分完成 |
+| UI-4 | 附件、图片查看器、录音、表情面板 | 部分完成（录音已接；Windows 静音检测待适配） |
 | UI-5 | 资料页、设置页、加密/指纹页、账号管理 | 已完成骨架 |
 | UI-6 | 动画打磨、暗色主题、横屏/平板适配 | 进行中 |
 
