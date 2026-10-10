@@ -26,12 +26,19 @@ android {
         versionName = flutter.versionName
         multiDexEnabled = true
 
-        // arm64-v8a covers essentially all real devices; x86_64 is the
-        // emulator. 32-bit ABIs are dropped: liboqs performance there is
-        // poor and the APK size matters more (docs/04 §2.3).
+        // Default: arm64-v8a (devices) + x86_64 (emulator). CD sets
+        // RESONCHAT_ANDROID_ABIS=arm64-v8a|x86_64 for split APKs.
+        // 32-bit ABIs are dropped (docs/04 §2.3).
         ndk {
             abiFilters.clear()
-            abiFilters += listOf("arm64-v8a", "x86_64")
+            val fromEnv = System.getenv("RESONCHAT_ANDROID_ABIS")
+            val fromProp = project.findProperty("androidAbis") as String?
+            val abis = (fromEnv ?: fromProp)
+                ?.split(',')
+                ?.map { it.trim() }
+                ?.filter { it.isNotEmpty() }
+                ?: listOf("arm64-v8a", "x86_64")
+            abiFilters += abis
         }
 
         // Native ML-KEM-768 bridge (liboqs), see cpp/CMakeLists.txt.

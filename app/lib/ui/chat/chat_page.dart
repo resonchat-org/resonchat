@@ -633,17 +633,27 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final effect = await _vm.applyMemberResult(
       roomJid: chat.roomJid,
       leaving: result.leaving,
+      destroyed: result.destroyed,
       jid: result.jid,
       mucPmNick: result.mucPmNick,
     );
     if (!mounted) return;
     switch (effect.kind) {
       case ChatMemberEffectKind.left:
+        if (result.destroyed) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(context.l10n.destroyRoomSucceeded)),
+          );
+        }
         if (widget.embedded) {
           clearSelectedChat(context);
         } else {
           unawaited(Navigator.of(context).maybePop());
         }
+      case ChatMemberEffectKind.destroyFailed:
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(context.l10n.destroyRoomFailed)));
       case ChatMemberEffectKind.openChat:
         final accountId = resolveChatKey(widget.chatJid).session.account.id;
         openChat(context, ChatRef(accountId: accountId, jid: effect.jid!).key);
@@ -744,8 +754,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   /// Fetches a translation and shows it under the bubble for this open chat.
   Future<void> _translateMessage(Message message, String body) async {
     final l10n = context.l10n;
-    final cacheKey =
-        message.stanzaId.isNotEmpty ? message.stanzaId : 'body:${body.hashCode}';
+    final cacheKey = message.stanzaId.isNotEmpty
+        ? message.stanzaId
+        : 'body:${body.hashCode}';
     if (_translations.containsKey(cacheKey)) {
       if (mounted) setState(() {});
       return;
@@ -753,9 +764,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final prefs = await TranslationPrefs.load();
     if (!mounted) return;
     if (!translationService.isConfigured(prefs)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.translationNotConfigured)),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(l10n.translationNotConfigured)));
       return;
     }
     setState(() => _translating.add(cacheKey));
@@ -774,9 +784,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _translating.remove(cacheKey));
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.translationFailed('$e'))),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(l10n.translationFailed('$e'))));
     }
   }
 
@@ -1093,24 +1102,12 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                       behavior: HitTestBehavior.opaque,
                       child: Row(
                         children: [
-                          ui.isGroup
-                              ? CircleAvatar(
-                                  radius: TgDimens.avatarChat / 2,
-                                  backgroundColor: tg.accent.withValues(
-                                    alpha: 0.18,
-                                  ),
-                                  child: Icon(
-                                    Icons.groups_outlined,
-                                    color: tg.accent,
-                                    size: TgDimens.avatarChat * 0.55,
-                                  ),
-                                )
-                              : ContactAvatar(
-                                  jid: _peerJid,
-                                  title: title,
-                                  radius: TgDimens.avatarChat / 2,
-                                  hero: true,
-                                ),
+                          ContactAvatar(
+                            jid: _peerJid,
+                            title: title,
+                            radius: TgDimens.avatarChat / 2,
+                            hero: true,
+                          ),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Column(

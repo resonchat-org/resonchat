@@ -66,11 +66,7 @@ class TranslationService {
     required TranslationPrefs prefs,
     required String uiLanguageCode,
   }) async {
-    await translateOnce(
-      'Hello',
-      prefs: prefs,
-      uiLanguageCode: uiLanguageCode,
-    );
+    await translateOnce('Hello', prefs: prefs, uiLanguageCode: uiLanguageCode);
   }
 }
 

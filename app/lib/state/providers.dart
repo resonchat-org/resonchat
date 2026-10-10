@@ -308,25 +308,41 @@ final contactAvatarProvider = FutureProvider.family<Uint8List?, String>((
   ref.watch(avatarRevisionProvider);
   final xmpp = ref.watch(xmppServiceProvider);
   final manager = xmpp.avatarManager;
-  if (manager == null) return null;
   final db = ref.watch(databaseProvider);
+  final bare = JID.fromString(jid).toBare();
 
-  final id = await latestAvatarId(manager, JID.fromString(jid).toBare());
-  if (id == null) return null;
-  // Same item id as last time means the bytes are the same, and the fetch is
-  // the expensive part.
-  if (await lastAvatarHash(db, jid) == id) {
-    return _avatarBlobCache[jid];
+  // XEP-0084 (own / contact PEP avatars).
+  if (manager != null) {
+    final id = await latestAvatarId(manager, bare);
+    if (id != null) {
+      // Same item id as last time means the bytes are the same, and the fetch
+      // is the expensive part.
+      if (await lastAvatarHash(db, jid) == id) {
+        return _avatarBlobCache[jid];
+      }
+      final avatar = await fetchAvatar(manager, bare, id: id);
+      if (avatar != null) {
+        await noteAvatarChanged(db, jid, id);
+        _avatarBlobCache[jid] = avatar.bytes;
+        return avatar.bytes;
+      }
+    }
   }
-  final avatar = await fetchAvatar(
-    manager,
-    JID.fromString(jid).toBare(),
-    id: id,
-  );
-  if (avatar == null) return null;
-  await noteAvatarChanged(db, jid, id);
-  _avatarBlobCache[jid] = avatar.bytes;
-  return avatar.bytes;
+
+  // Local publish this session (own avatar or MUC vCard) — keep showing it
+  // even when PEP metadata is empty (rooms never publish XEP-0084).
+  final seeded = _avatarBlobCache[jid];
+  if (seeded != null && seeded.isNotEmpty) return seeded;
+
+  // MUC room avatars: vCard-temp PHOTO (Conversations publishMucAvatar).
+  final vcard = xmpp.vcard;
+  if (vcard == null) return null;
+  final fromVcard = await fetchVCardAvatar(vcard, bare);
+  if (fromVcard == null) return null;
+  _avatarBlobCache[jid] = fromVcard.bytes;
+  final hash = await fromVcard.hash;
+  await noteAvatarChanged(db, jid, hash);
+  return fromVcard.bytes;
 });
 
 /// Bumped when any contact republishes their avatar.
@@ -334,6 +350,11 @@ final avatarRevisionProvider = StateProvider<int>((ref) => 0);
 
 /// Bytes already fetched this session, so a re-render never re-fetches.
 final _avatarBlobCache = <String, Uint8List>{};
+
+/// Seed the in-memory avatar cache after a local publish (own / MUC).
+void seedAvatarCache(String jid, Uint8List bytes) {
+  _avatarBlobCache[jid] = bytes;
+}
 
 /// The room we are currently in, or null.
 ///

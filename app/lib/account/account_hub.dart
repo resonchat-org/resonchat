@@ -288,6 +288,7 @@ class AccountHub extends ChangeNotifier {
       jid: jid.trim(),
       password: password,
       host: (host == null || host.trim().isEmpty) ? null : host.trim(),
+      displayName: existing?.displayName ?? '',
     );
     await _store.upsert(account);
     _accounts = await _store.loadAll();
@@ -316,6 +317,24 @@ class AccountHub extends ChangeNotifier {
     notifyListeners();
     _sessionChanges.add(null);
     _chatsTick.add(null);
+  }
+
+  /// Persist local display name and publish XEP-0172 nick when online.
+  Future<bool> setDisplayName(String accountId, String displayName) async {
+    final i = _accounts.indexWhere((a) => a.id == accountId);
+    if (i < 0) return false;
+    final updated = _accounts[i].copyWith(displayName: displayName.trim());
+    await _store.upsert(updated);
+    _accounts = await _store.loadAll();
+    final session = _sessions[accountId];
+    if (session != null) {
+      session.account = updated;
+      final ok = await session.xmpp.publishDisplayName(updated.displayName);
+      notifyListeners();
+      return ok;
+    }
+    notifyListeners();
+    return true;
   }
 
   Future<void> removeAccount(String accountId) async {

@@ -1293,6 +1293,19 @@ class AppDatabase extends _$AppDatabase {
     return [for (final r in rows) r.localPath];
   }
 
+  /// Drops a chat row and its messages/pins (after room destroy / leave wipe).
+  Future<void> deleteChat(String chatJid) {
+    return transaction(() async {
+      await (delete(
+        pinnedMessages,
+      )..where((p) => p.chatJid.equals(chatJid))).go();
+      await (delete(messages)..where((m) => m.chatJid.equals(chatJid))).go();
+      await (delete(chats)..where((c) => c.jid.equals(chatJid))).go();
+      await deleteMetaValue('draft:$chatJid');
+      await deleteMetaValue('plaintext_ack:$chatJid');
+    });
+  }
+
   /// Removes every stored message of one conversation from this device.
   ///
   /// The server is untouched: the other side keeps its copy, and archived

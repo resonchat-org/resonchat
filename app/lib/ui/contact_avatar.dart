@@ -102,6 +102,71 @@ class _Fallback extends StatelessWidget {
   }
 }
 
+/// Outer padding so [AvatarCameraBadge] (which hangs past the circle) is not
+/// clipped by a parent. Match [AvatarCameraBadge.outsetFor].
+EdgeInsets avatarCameraBadgePadding(double avatarRadius) {
+  final o = AvatarCameraBadge.outsetFor(avatarRadius);
+  return EdgeInsets.only(right: o, bottom: o);
+}
+
+/// Camera affordance on an editable avatar (account profile / room sheet).
+///
+/// Sized and offset as fractions of [avatarRadius] so a 48px room icon and a
+/// 96px profile photo keep the same badge∶avatar proportions.
+class AvatarCameraBadge extends StatelessWidget {
+  const AvatarCameraBadge({
+    super.key,
+    required this.avatarRadius,
+    required this.tooltip,
+    this.onPressed,
+  });
+
+  final double avatarRadius;
+  final String tooltip;
+  final VoidCallback? onPressed;
+
+  /// Badge diameter ≈ 72% of radius (≈ 36% of avatar diameter).
+  ///
+  /// Middle ground: smaller than a full [IconButton] on a 96px profile photo,
+  /// larger than the tiny room-sheet chip.
+  static double badgeSizeFor(double avatarRadius) => avatarRadius * 0.72;
+
+  /// Glyph ≈ 45% of radius (≈ 62% of the badge).
+  static double iconSizeFor(double avatarRadius) => avatarRadius * 0.45;
+
+  /// How far past the circle's bottom-right the badge hangs.
+  static double outsetFor(double avatarRadius) => avatarRadius * 0.14;
+
+  @override
+  Widget build(BuildContext context) {
+    final tg = context.tg;
+    final badge = badgeSizeFor(avatarRadius);
+    final icon = iconSizeFor(avatarRadius);
+    final outset = outsetFor(avatarRadius);
+    final pad = ((badge - icon) / 2).clamp(2.0, 12.0);
+    return Positioned(
+      right: -outset,
+      bottom: -outset,
+      child: Tooltip(
+        message: tooltip,
+        child: Material(
+          color: tg.accent,
+          shape: const CircleBorder(),
+          elevation: 1,
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: onPressed,
+            child: Padding(
+              padding: EdgeInsets.all(pad),
+              child: Icon(Icons.camera_alt, size: icon, color: Colors.white),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// A stable colour for [jid], derived from the JID itself.
 ///
 /// Deterministic from the address rather than from the display name, because a

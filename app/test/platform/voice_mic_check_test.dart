@@ -1,28 +1,37 @@
 // Copyright (C) 2026 resonchat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:resonchat/platform/voice_mic_check_io.dart';
 
 void main() {
-  test('Linux treats mute or 0% volume as disabled', () async {
+  test('parsePactlMuteStdout reads Mute: yes/no', () {
+    expect(parsePactlMuteStdout('Mute: yes\n'), isTrue);
+    expect(parsePactlMuteStdout('Mute: no\n'), isFalse);
+    expect(parsePactlMuteStdout(''), isNull);
+  });
+
+  test('parsePactlVolumeSilentStdout treats all-zero % as silent', () {
+    expect(
+      parsePactlVolumeSilentStdout(
+        'Volume: front-left: 0 /   0% / -inf dB,   '
+        'front-right: 0 /   0% / -inf dB',
+      ),
+      isTrue,
+    );
+    expect(
+      parsePactlVolumeSilentStdout(
+        'Volume: front-left: 65536 / 100% / 0.00 dB,   '
+        'front-right: 65536 / 100% / 0.00 dB',
+      ),
+      isFalse,
+    );
+    expect(parsePactlVolumeSilentStdout('no percents here'), isNull);
+  });
+
+  test('isDefaultMicMuted does not throw without PulseAudio', () async {
+    // CI runners often lack pactl; the check must return null, not throw.
     final disabled = await isDefaultMicMuted();
-    final mute = await Process.run('pactl', [
-      'get-source-mute',
-      '@DEFAULT_SOURCE@',
-    ]);
-    final vol = await Process.run('pactl', [
-      'get-source-volume',
-      '@DEFAULT_SOURCE@',
-    ]);
-    final muted = (mute.stdout as String).toLowerCase().contains('yes');
-    final percents = RegExp(r'(\d+)\s*%')
-        .allMatches(vol.stdout as String)
-        .map((m) => int.parse(m.group(1)!))
-        .toList();
-    final zero = percents.isNotEmpty && percents.every((p) => p == 0);
-    expect(disabled, muted || zero);
-  }, skip: !Platform.isLinux);
+    expect(disabled, anyOf(isNull, isTrue, isFalse));
+  });
 }

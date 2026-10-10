@@ -78,9 +78,8 @@ class _TranslationSettingsSheetState extends State<_TranslationSettingsSheet> {
     final l10n = context.l10n;
     final prefs = _current();
     if (!translationService.isConfigured(prefs)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.translationNotConfigured)),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(l10n.translationNotConfigured)));
       return;
     }
     final lang = Localizations.localeOf(context).languageCode;

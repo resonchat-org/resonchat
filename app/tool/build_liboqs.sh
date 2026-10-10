@@ -6,11 +6,12 @@
 #
 #   1. a host-side reference binary that emits deterministic KAT vectors
 #      (skipped with --android-only)
-#   2. Android static libraries (arm64-v8a + x86_64) for the FFI backend
+#   2. Android static libraries (arm64-v8a and/or x86_64) for the FFI backend
 #
 # Usage:
 #   ./tool/build_liboqs.sh                 # host ref + Android ABIs
 #   ./tool/build_liboqs.sh --android-only  # APK packaging path
+#   ./tool/build_liboqs.sh --android-only --abis="arm64-v8a"
 #   ./tool/build_liboqs.sh [liboqs-source-dir]
 #
 # Requires: Android NDK, cmake, ninja, a C compiler (host build only).
@@ -33,12 +34,17 @@ APP="$(cd "$HERE/.." && pwd)"
 ALGORITHMS="KEM_ml_kem_768;SIG_ml_dsa_65"
 ANDROID_ONLY=0
 LIBOQS="$APP/third_party/liboqs"
+ANDROID_ABIS=(arm64-v8a x86_64)
 
 for arg in "$@"; do
   case "$arg" in
     --android-only) ANDROID_ONLY=1 ;;
+    --abis=*)
+      # shellcheck disable=SC2206
+      ANDROID_ABIS=(${arg#--abis=})
+      ;;
     -h|--help)
-      sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *)
@@ -78,7 +84,7 @@ if [[ "$ANDROID_ONLY" -eq 0 ]]; then
   echo "    → $APP/build/liboqs-ref/mlkem_ref"
 fi
 
-for abi in arm64-v8a x86_64; do
+for abi in "${ANDROID_ABIS[@]}"; do
   echo "==> building liboqs for $abi"
   cmake -GNinja -S "$LIBOQS" -B "$LIBOQS/build-$abi" \
     -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK/build/cmake/android.toolchain.cmake" \

@@ -17,6 +17,7 @@ class StoredAccount {
     required this.password,
     this.host,
     this.enabled = true,
+    this.displayName = '',
   });
 
   /// Stable id (Conversations account UUID). Used in the account DB filename.
@@ -30,11 +31,23 @@ class StoredAccount {
   /// When false, the hub does not open a session (Conversations OPTION_DISABLED).
   final bool enabled;
 
+  /// XEP-0172 nick published for this account (local cache).
+  final String displayName;
+
   bool get hasHost => host != null && host!.isNotEmpty;
 
   String get bareJid {
     final at = jid.indexOf('/');
     return (at < 0 ? jid : jid.substring(0, at)).toLowerCase();
+  }
+
+  /// UI title: display name, else localpart.
+  String get label {
+    final nick = displayName.trim();
+    if (nick.isNotEmpty) return nick;
+    final bare = bareJid;
+    final at = bare.indexOf('@');
+    return at > 0 ? bare.substring(0, at) : bare;
   }
 
   StoredAccount copyWith({
@@ -43,6 +56,7 @@ class StoredAccount {
     String? password,
     String? host,
     bool? enabled,
+    String? displayName,
     bool clearHost = false,
   }) => StoredAccount(
     id: id ?? this.id,
@@ -50,6 +64,7 @@ class StoredAccount {
     password: password ?? this.password,
     host: clearHost ? null : (host ?? this.host),
     enabled: enabled ?? this.enabled,
+    displayName: displayName ?? this.displayName,
   );
 
   Map<String, dynamic> toJson() => {
@@ -58,6 +73,7 @@ class StoredAccount {
     'password': password,
     if (hasHost) 'host': host,
     'enabled': enabled,
+    if (displayName.trim().isNotEmpty) 'displayName': displayName.trim(),
   };
 
   factory StoredAccount.fromJson(Map<String, dynamic> json) => StoredAccount(
@@ -66,6 +82,7 @@ class StoredAccount {
     password: json['password'] as String,
     host: json['host'] as String?,
     enabled: json['enabled'] as bool? ?? true,
+    displayName: (json['displayName'] as String?)?.trim() ?? '',
   );
 }
 

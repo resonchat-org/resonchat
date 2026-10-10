@@ -23,6 +23,7 @@ import 'socks5_proxy_sheet.dart';
 import 'translation_settings_sheet.dart';
 import '../../translate/translation_engine.dart';
 import '../../translate/translation_prefs.dart';
+import '../../xmpp/channel_discovery.dart';
 
 /// App settings. Deliberately free of branding that would suggest any
 /// affiliation with other messengers (docs/05 §6).
@@ -35,17 +36,25 @@ class SettingsPage extends ConsumerStatefulWidget {
 
 class _SettingsPageState extends ConsumerState<SettingsPage> {
   TranslationPrefs? _translationPrefs;
+  ChannelDiscoveryMethod _channelMethod = ChannelDiscoveryMethod.jabberNetwork;
 
   @override
   void initState() {
     super.initState();
     unawaited(_reloadTranslationPrefs());
+    unawaited(_reloadChannelMethod());
   }
 
   Future<void> _reloadTranslationPrefs() async {
     final prefs = await TranslationPrefs.load();
     if (!mounted) return;
     setState(() => _translationPrefs = prefs);
+  }
+
+  Future<void> _reloadChannelMethod() async {
+    final method = await loadChannelDiscoveryMethod();
+    if (!mounted) return;
+    setState(() => _channelMethod = method);
   }
 
   @override
@@ -202,6 +211,16 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               );
             },
           ),
+          ListTile(
+            leading: const Icon(Icons.travel_explore_outlined),
+            title: Text(l10n.channelDiscoveryMethod),
+            subtitle: Text(
+              _channelMethod == ChannelDiscoveryMethod.localServer
+                  ? l10n.channelDiscoveryLocalServer
+                  : l10n.channelDiscoveryJabberNetwork,
+            ),
+            onTap: () => unawaited(_pickChannelDiscoveryMethod()),
+          ),
 
           _header(tg, l10n.about),
           Padding(
@@ -248,6 +267,46 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     AutomaticMessageDeletion.sixMonths =>
       l10n.automaticMessageDeletionSixMonths,
   };
+
+  Future<void> _pickChannelDiscoveryMethod() async {
+    final l10n = context.l10n;
+    final chosen = await showModalBottomSheet<ChannelDiscoveryMethod>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text(
+                l10n.channelDiscoverySummary,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+            for (final method in ChannelDiscoveryMethod.values)
+              ListTile(
+                title: Text(
+                  method == ChannelDiscoveryMethod.localServer
+                      ? l10n.channelDiscoveryLocalServer
+                      : l10n.channelDiscoveryJabberNetwork,
+                ),
+                trailing: method == _channelMethod
+                    ? const Icon(Icons.check)
+                    : null,
+                onTap: () => Navigator.pop(ctx, method),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (chosen == null || !mounted) return;
+    await saveChannelDiscoveryMethod(chosen);
+    setState(() => _channelMethod = chosen);
+  }
 
   Future<void> _pickAutomaticDeletion(
     BuildContext context,

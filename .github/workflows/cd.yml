@@ -1,4 +1,4 @@
-# Build release APK + Linux AppImage and attach them to the GitHub Release.
+# Build release APKs (arm + x86) + Linux AppImage and attach them to the GitHub Release.
 #
 # Trigger: publish a Release in the GitHub UI (or `gh release create`).
 # Assets land on that Release page — the usual place for downloadable binaries.
@@ -21,8 +21,18 @@ env:
 
 jobs:
   build-apk:
-    name: Build release APK
+    name: Build APK (${{ matrix.name }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: arm64
+            abi: arm
+            artifact: android-arm64
+          - name: x86_64
+            abi: x86
+            artifact: android-x86_64
     steps:
       - uses: actions/checkout@v4
         with:
@@ -59,7 +69,7 @@ jobs:
         working-directory: app
         run: dart run build_runner build
 
-      - name: Build APK
+      - name: Build APK (${{ matrix.name }})
         working-directory: app
         # Release currently signs with the debug keystore (see
         # android/app/build.gradle.kts); swap in a real keystore later.
@@ -70,7 +80,7 @@ jobs:
           export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$(ls -d "$ANDROID_HOME"/ndk/* | sort -V | tail -1)}"
           echo "ANDROID_HOME=$ANDROID_HOME"
           echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
-          ./tool/build_android.sh --release
+          ./tool/build_android.sh --release --abi "${{ matrix.abi }}"
 
       - name: Stage APK
         run: |
@@ -78,12 +88,12 @@ jobs:
           mkdir -p dist
           src=app/build/app/outputs/flutter-apk/app-release.apk
           test -f "$src"
-          cp "$src" "dist/resonchat-${TAG}-android.apk"
+          cp "$src" "dist/resonchat-${TAG}-${{ matrix.artifact }}.apk"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: apk
-          path: dist/resonchat-*-android.apk
+          name: apk-${{ matrix.artifact }}
+          path: dist/resonchat-*-${{ matrix.artifact }}.apk
           if-no-files-found: error
 
   build-appimage:
@@ -163,6 +173,7 @@ jobs:
         with:
           tag_name: ${{ env.TAG }}
           files: |
-            dist/resonchat-*-android.apk
+            dist/resonchat-*-android-arm64.apk
+            dist/resonchat-*-android-x86_64.apk
             dist/resonchat-*-x86_64.AppImage
           fail_on_unmatched_files: true

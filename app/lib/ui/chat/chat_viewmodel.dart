@@ -105,7 +105,13 @@ class ChatForwardResult {
 typedef ChatDeleteResult = ({int mine, int deleted});
 
 /// Navigation the page should do after [ChatViewModel.applyMemberResult].
-enum ChatMemberEffectKind { left, openChat, privateMessage, none }
+enum ChatMemberEffectKind {
+  left,
+  openChat,
+  privateMessage,
+  destroyFailed,
+  none,
+}
 
 class ChatMemberEffect {
   const ChatMemberEffect(this.kind, {this.jid});
@@ -392,15 +398,33 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
     await _db.upsertChat(roomJid, isGroup: true, mucNick: '');
   }
 
+  /// Conversations `destroyRoom`: tear down on the server, then drop local chat.
+  ///
+  /// Returns false when the IQ failed (room stays).
+  Future<bool> destroyRoom(String roomJid) async {
+    final ok = await _xmpp.destroyRoom(roomJid);
+    if (!ok) return false;
+    await _db.deleteChat(roomJid);
+    return true;
+  }
+
   /// Applies the side effects of a member-sheet result and says what the page
   /// should do next. Mirrors Conversations startConversation /
   /// privateMessageWith / nextCounterpart.
   Future<ChatMemberEffect> applyMemberResult({
     required String roomJid,
     required bool leaving,
+    bool destroyed = false,
     String? jid,
     String? mucPmNick,
   }) async {
+    if (destroyed) {
+      final ok = await destroyRoom(roomJid);
+      if (!ok) {
+        return const ChatMemberEffect(ChatMemberEffectKind.destroyFailed);
+      }
+      return const ChatMemberEffect(ChatMemberEffectKind.left);
+    }
     if (leaving) {
       await leaveRoom(roomJid);
       return const ChatMemberEffect(ChatMemberEffectKind.left);

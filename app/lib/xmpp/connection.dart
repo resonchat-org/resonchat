@@ -6,6 +6,7 @@
 // omemo_dart; this class owns lifecycle and event fan-out.
 
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:logging/logging.dart';
 import 'package:moxlib/moxlib.dart';
@@ -19,12 +20,14 @@ import '../crypto/omemo/track_resolver.dart';
 import '../crypto/omemo/protocol.dart';
 import '../store/omemo_device_store.dart';
 import 'aesgcm_url.dart';
+import 'avatar.dart';
 import 'b_track_manager.dart';
 import 'blocked_inbound.dart';
 import 'blocking.dart';
 import 'eme.dart';
 import 'http_files.dart';
 import 'muc.dart';
+import 'muc_create.dart';
 import 'capabilities.dart';
 import 'pq_incoming.dart';
 import 'pq_stanza.dart';
@@ -700,6 +703,239 @@ class XmppService {
     final manager = muc;
     if (manager == null) return;
     await manager.setSubject(JID.fromString(roomJid).toBare(), subject);
+  }
+
+  /// Publish XEP-0172 nick (Conversations `publishDisplayName`).
+  Future<bool> publishDisplayName(String name) async {
+    final manager = nick;
+    if (manager == null) return false;
+    final result = await manager.publish(name);
+    return result.isType<bool>() && result.get<bool>();
+  }
+
+  /// Publish own XEP-0084 avatar from raw image bytes.
+  Future<bool> publishOwnAvatarBytes(
+    Uint8List bytes, {
+    bool public = true,
+  }) async {
+    final manager = avatarManager;
+    if (manager == null) return false;
+    final prepared = await prepareAvatarImage(bytes);
+    if (prepared == null) return false;
+    return publishOwnAvatar(manager, prepared, public: public);
+  }
+
+  /// MUC room avatar via vCard PHOTO (Conversations `publishMucAvatar`).
+  /// Owner-only on the server; callers must gate with [RoomSelfCapabilities.canConfigureRoom].
+  Future<bool> publishMucAvatar(String roomJid, Uint8List bytes) async {
+    final manager = vcard;
+    if (manager == null) return false;
+    final prepared = await prepareAvatarImage(bytes);
+    if (prepared == null) return false;
+    final result = await manager.publishPhoto(
+      JID.fromString(roomJid).toBare(),
+      prepared.mimeType,
+      prepared.bytes,
+    );
+    return result.isType<bool>() && result.get<bool>();
+  }
+
+  /// Owner-only room name (`muc#roomconfig_roomname`), Conversations
+  /// `ConferenceDetailsActivity.onMucInfoUpdated`.
+  Future<bool> setRoomName(String roomJid, String name) async {
+    return applyRoomConfigOptions(roomJid, {
+      'muc#roomconfig_persistentroom': true,
+      'muc#roomconfig_roomname': name.trim(),
+    });
+  }
+
+  /// Merge [options] into the room owner config form and submit
+  /// (Conversations `MultiUserChatManager.pushConfiguration`).
+  Future<bool> applyRoomConfigOptions(
+    String roomJid,
+    Map<String, Object> options,
+  ) async {
+    final form = await fetchRoomConfigForm(roomJid);
+    if (form == null) return false;
+    final fields = <DataFormField>[];
+    final applied = <String>{};
+    for (final f in form.fields) {
+      final key = f.varAttr;
+      if (key != null && options.containsKey(key)) {
+        applied.add(key);
+        fields.add(
+          DataFormField(
+            varAttr: f.varAttr,
+            type: f.type,
+            label: f.label,
+            description: f.description,
+            isRequired: f.isRequired,
+            values: [roomConfigFormValue(options[key]!)],
+            options: f.options,
+          ),
+        );
+      } else {
+        fields.add(f);
+      }
+    }
+    for (final entry in options.entries) {
+      if (applied.contains(entry.key)) continue;
+      fields.add(
+        DataFormField(
+          varAttr: entry.key,
+          type: entry.value is bool ? 'boolean' : 'text-single',
+          isRequired: false,
+          values: [roomConfigFormValue(entry.value)],
+          options: const [],
+        ),
+      );
+    }
+    return submitRoomConfigForm(
+      roomJid,
+      DataForm(
+        type: 'submit',
+        title: form.title,
+        instructions: form.instructions,
+        fields: fields,
+        reported: form.reported,
+        items: form.items,
+      ),
+    );
+  }
+
+  /// First MUC host from disco (Conversations `getMucService`).
+  Future<String?> discoverMucServiceHost() async {
+    final dm = disco;
+    if (dm == null) return null;
+    var services = dm.mucServices;
+    if (services.isEmpty) {
+      await dm.performDiscoSweep();
+      services = dm.mucServices;
+    }
+    if (services.isNotEmpty) {
+      return services.first.toBare().toString();
+    }
+    // Fallback conference.<domain> when disco lists none.
+    final bare = myJid;
+    if (bare == null) return null;
+    final at = bare.indexOf('@');
+    if (at < 0 || at >= bare.length - 1) return null;
+    return 'conference.${bare.substring(at + 1)}';
+  }
+
+  /// Conversations `createPrivateGroupChat`: join new room → private config →
+  /// invite [inviteeJids].
+  Future<CreateRoomResult> createPrivateGroupChat({
+    String? name,
+    List<String> inviteeJids = const [],
+    String? nick,
+  }) async {
+    final service = await discoverMucServiceHost();
+    if (service == null) {
+      return const CreateRoomResult.fail('no_muc_service');
+    }
+    final roomJid = '${pronounceableRoomLocalpart()}@$service';
+    return _createAndConfigureRoom(
+      roomJid: roomJid,
+      nick: nick,
+      name: name,
+      options: defaultGroupChatConfiguration(name: name),
+      inviteeJids: inviteeJids,
+    );
+  }
+
+  /// Conversations `createPublicChannel`.
+  Future<CreateRoomResult> createPublicChannel({
+    required String roomJid,
+    String? name,
+    String? nick,
+  }) async {
+    final bare = JID.fromString(roomJid).toBare().toString();
+    if (!bare.contains('@') || bare.endsWith('@')) {
+      return const CreateRoomResult.fail('invalid_jid');
+    }
+    return _createAndConfigureRoom(
+      roomJid: bare,
+      nick: nick,
+      name: name,
+      options: defaultChannelConfiguration(name: name),
+    );
+  }
+
+  Future<CreateRoomResult> _createAndConfigureRoom({
+    required String roomJid,
+    required Map<String, Object> options,
+    String? name,
+    String? nick,
+    List<String> inviteeJids = const [],
+  }) async {
+    final joinNick = (nick ?? _defaultMucNick()).trim();
+    if (joinNick.isEmpty) {
+      return const CreateRoomResult.fail('no_nick');
+    }
+    final joinErr = await joinGroupChat(roomJid, joinNick);
+    if (joinErr != null) {
+      return CreateRoomResult.fail('$joinErr');
+    }
+    final configured = await applyRoomConfigOptions(roomJid, options);
+    if (!configured) {
+      _log.warning('create room $roomJid: config submit failed (room joined)');
+    }
+    for (final invitee in inviteeJids) {
+      final jid = invitee.trim();
+      if (jid.isEmpty) continue;
+      await inviteToRoom(roomJid, jid);
+    }
+    final features = await queryRoomFeatures(roomJid);
+    return CreateRoomResult.ok(
+      roomJid: roomJid,
+      nick: joinNick,
+      title: (name != null && name.trim().isNotEmpty) ? name.trim() : roomJid,
+      privateNonAnonymous: isPrivateAndNonAnonymous(features),
+    );
+  }
+
+  String _defaultMucNick() {
+    final bare = myJid;
+    if (bare == null) return '';
+    final at = bare.indexOf('@');
+    return at > 0 ? bare.substring(0, at) : bare;
+  }
+
+  /// XEP-0045 §10.9 destroy room (Conversations `MultiUserChatManager.destroy`).
+  /// Owner-only on the server.
+  Future<bool> destroyRoom(String roomJid) async {
+    final connection = _connection;
+    if (connection == null) return false;
+    final bare = JID.fromString(roomJid).toBare().toString();
+    try {
+      final result = await connection
+          .sendStanza(
+            StanzaDetails(
+              Stanza.iq(
+                to: bare,
+                type: 'set',
+                children: [
+                  XMLNode.xmlns(
+                    tag: 'query',
+                    xmlns: mucOwnerXmlns,
+                    children: [XMLNode(tag: 'destroy')],
+                  ),
+                ],
+              ),
+              shouldEncrypt: false,
+            ),
+          )
+          .timeout(const Duration(seconds: 20));
+      if (result == null || result.attributes['type'] != 'result') {
+        return false;
+      }
+      await leaveGroupChat(bare);
+      return true;
+    } catch (e) {
+      _log.warning('destroyRoom $bare: $e');
+      return false;
+    }
   }
 
   /// XEP-0045 §10.2 — request the room configuration data form (`muc#owner`).
@@ -1454,6 +1690,15 @@ class XmppService {
   /// The XEP-0045 manager, or null before connecting.
   MUCManager? get muc => _connection?.getManagerById<MUCManager>(mucManager);
 
+  DiscoManager? get disco =>
+      _connection?.getManagerById<DiscoManager>(discoManager);
+
+  NickManager? get nick =>
+      _connection?.getManagerById<NickManager>(nickManager);
+
+  VCardManager? get vcard =>
+      _connection?.getManagerById<VCardManager>(vcardManager);
+
   /// The XEP-0084 avatar manager, or null before connecting.
   UserAvatarManager? get avatarManager =>
       _connection?.getManagerById<UserAvatarManager>(userAvatarManager);
@@ -1686,6 +1931,10 @@ class XmppService {
       // XEP-0084 avatars. Needs the PubSub manager, which is why it is
       // registered alongside everything else rather than lazily.
       UserAvatarManager(),
+      // XEP-0172 User Nickname (Conversations NickManager).
+      NickManager(),
+      // XEP-0054 vCard-temp (MUC room avatars via PHOTO).
+      VCardManager(),
       // XEP-0045 group chats.
       MUCManager(),
       // Incoming room invites before MessageManager (empty-bubble prevention).

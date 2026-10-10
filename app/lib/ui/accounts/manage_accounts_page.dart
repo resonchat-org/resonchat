@@ -6,12 +6,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../account/account_color.dart';
 import '../../account/account_hub.dart';
 import '../../l10n/l10n.dart';
 import '../../state/providers.dart';
 import '../../xmpp/connection.dart';
+import '../contact_avatar.dart';
 import '../theme.dart';
+import 'account_profile_page.dart';
 
 class ManageAccountsPage extends ConsumerWidget {
   const ManageAccountsPage({super.key});
@@ -49,22 +50,24 @@ class ManageAccountsPage extends ConsumerWidget {
                     final session = hub.session(a.id);
                     final state =
                         session?.xmpp.state ?? XmppConnectionState.disconnected;
-                    final accent = accountAccent(a.bareJid);
                     return ListTile(
-                      onLongPress: () =>
-                          _confirmRemove(context, hub, a.id, a.bareJid),
-                      leading: CircleAvatar(
-                        backgroundColor: accent.withValues(alpha: 0.2),
-                        child: Text(
-                          a.bareJid.isEmpty ? '?' : a.bareJid[0].toUpperCase(),
-                          style: TextStyle(
-                            color: accent,
-                            fontWeight: FontWeight.w700,
-                          ),
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => AccountProfilePage(accountId: a.id),
                         ),
                       ),
-                      title: Text(a.bareJid),
-                      subtitle: Text(_statusLabel(l10n, state, a.enabled)),
+                      onLongPress: () =>
+                          _confirmRemove(context, hub, a.id, a.bareJid),
+                      leading: ContactAvatar(
+                        jid: a.bareJid,
+                        title: a.label,
+                        radius: 22,
+                      ),
+                      title: Text(a.label),
+                      subtitle: Text(
+                        '${a.bareJid}\n${_statusLabel(l10n, state, a.enabled)}',
+                      ),
+                      isThreeLine: true,
                       trailing: Switch(
                         value: a.enabled,
                         onChanged: (v) => hub.setEnabled(a.id, v),

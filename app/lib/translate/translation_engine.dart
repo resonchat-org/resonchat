@@ -2,10 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 /// Which external HTTP engine to use (no in-app MT).
-enum TranslationEngineId {
-  libreTranslate,
-  deepL,
-}
+enum TranslationEngineId { libreTranslate, deepL }
 
 extension TranslationEngineIdX on TranslationEngineId {
   String get stored => switch (this) {

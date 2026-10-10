@@ -230,18 +230,9 @@ class _AccountAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tg = context.tg;
-    final child = chat.isGroup
-        ? CircleAvatar(
-            radius: TgDimens.avatarChats / 2,
-            backgroundColor: tg.accent.withValues(alpha: 0.18),
-            child: Icon(
-              Icons.groups_outlined,
-              color: tg.accent,
-              size: TgDimens.avatarChats * 0.55,
-            ),
-          )
-        : ContactAvatar(jid: chat.jid, title: title, hero: true);
+    // Groups use the same widget: XEP-0084 when present, else vCard PHOTO
+    // (Conversations room avatars), else coloured initial.
+    final child = ContactAvatar(jid: chat.jid, title: title, hero: true);
     if (!ring) return child;
     return Container(
       padding: const EdgeInsets.all(2),

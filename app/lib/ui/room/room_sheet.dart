@@ -8,6 +8,10 @@
 // property of the join, not of the room. Somebody who is "alice" on Monday and
 // "alice2" on Tuesday is two different occupants of the same room.
 
+import 'dart:async';
+import 'dart:typed_data';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:moxxmpp/moxxmpp.dart';
@@ -17,10 +21,13 @@ import '../../account/chat_ref.dart';
 import '../../l10n/l10n.dart';
 import '../../state/providers.dart';
 import '../../store/database.dart';
+import '../../xmpp/avatar.dart';
 import '../../xmpp/connection.dart';
 import '../../xmpp/muc.dart';
+import 'channel_discovery_page.dart';
 import 'room_config_page.dart';
 import '../chats/notify_mode_sheet.dart';
+import '../contact_avatar.dart';
 import '../home/open_chat.dart';
 import '../theme.dart';
 
@@ -158,6 +165,19 @@ class _JoinRoomSheetState extends ConsumerState<JoinRoomSheet> {
             onPressed: _busy ? null : _join,
             child: Text(_busy ? l10n.joining : l10n.join),
           ),
+          TextButton(
+            onPressed: _busy
+                ? null
+                : () {
+                    Navigator.of(context).pop();
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const ChannelDiscoveryPage(),
+                      ),
+                    );
+                  },
+            child: Text(l10n.discoverChannels),
+          ),
         ],
       ),
     );
@@ -191,7 +211,7 @@ Future<RoomSheetResult?> showRoomSheet(
   );
 }
 
-class _RoomSheet extends StatefulWidget {
+class _RoomSheet extends ConsumerStatefulWidget {
   const _RoomSheet({
     required this.chat,
     required this.chatKey,
@@ -209,14 +229,17 @@ class _RoomSheet extends StatefulWidget {
   final Future<void> Function(String subject)? onSetSubject;
 
   @override
-  State<_RoomSheet> createState() => _RoomSheetState();
+  ConsumerState<_RoomSheet> createState() => _RoomSheetState();
 }
 
-class _RoomSheetState extends State<_RoomSheet> {
+class _RoomSheetState extends ConsumerState<_RoomSheet> {
   late String? _subject = widget.chat.subject;
   late List<Occupant> _occupants = List.of(widget.chat.occupants);
   late RoomSelfCapabilities? _caps = widget.caps;
   bool _loadingCaps = false;
+  String? _roomTitle;
+  Uint8List? _avatarPreview;
+  bool _avatarBusy = false;
 
   @override
   void initState() {
@@ -230,6 +253,123 @@ class _RoomSheetState extends State<_RoomSheet> {
           _loadingCaps = false;
         });
       });
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_loadTitle());
+    });
+  }
+
+  Future<void> _loadTitle() async {
+    final chat = ref.read(chatProvider(widget.chatKey)).value;
+    if (!mounted) return;
+    final t = chat?.title.trim();
+    if (t != null && t.isNotEmpty && t != widget.chat.roomJid) {
+      setState(() => _roomTitle = t);
+    }
+  }
+
+  Future<void> _confirmDestroy() async {
+    final caps = _caps;
+    if (caps == null || !caps.canConfigureRoom) return;
+    final l10n = context.l10n;
+    final tg = context.tg;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(l10n.destroyRoom),
+        content: Text(l10n.destroyRoomConfirm),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(l10n.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(l10n.destroyRoom, style: TextStyle(color: tg.danger)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    Navigator.of(context).pop(const RoomSheetResult.destroy());
+  }
+
+  Future<void> _editRoomName() async {
+    final caps = _caps;
+    if (caps == null || !caps.canConfigureRoom) return;
+    final l10n = context.l10n;
+    final controller = TextEditingController(text: _roomTitle ?? '');
+    final next = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(l10n.editRoomName),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: InputDecoration(hintText: l10n.roomNameHint),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(l10n.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(controller.text),
+            child: Text(l10n.save),
+          ),
+        ],
+      ),
+    );
+    await WidgetsBinding.instance.endOfFrame;
+    controller.dispose();
+    if (next == null || !mounted) return;
+    final trimmed = next.trim();
+    final ok = await widget.xmpp.setRoomName(widget.chat.roomJid, trimmed);
+    if (!mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(l10n.roomNameSaveFailed)));
+      return;
+    }
+    final db = ref.read(databaseProvider);
+    await db.upsertChat(
+      widget.chat.roomJid,
+      isGroup: true,
+      title: trimmed.isEmpty ? widget.chat.roomJid : trimmed,
+    );
+    if (!mounted) return;
+    setState(() => _roomTitle = trimmed.isEmpty ? null : trimmed);
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(l10n.roomNameSaved)));
+  }
+
+  Future<void> _pickRoomAvatar() async {
+    final caps = _caps;
+    if (caps == null || !caps.canConfigureRoom) return;
+    final l10n = context.l10n;
+    final picked = await FilePicker.pickFile(type: FileType.image);
+    if (picked == null) return;
+    final bytes = await picked.readAsBytes();
+    if (bytes.isEmpty) return;
+    setState(() {
+      _avatarBusy = true;
+      _avatarPreview = bytes;
+    });
+    final ok = await widget.xmpp.publishMucAvatar(widget.chat.roomJid, bytes);
+    if (!mounted) return;
+    setState(() => _avatarBusy = false);
+    if (ok) {
+      final prepared = await prepareAvatarImage(bytes);
+      if (!mounted) return;
+      if (prepared != null) {
+        seedAvatarCache(widget.chat.roomJid, prepared.bytes);
+        ref.read(avatarRevisionProvider.notifier).state++;
+      }
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(l10n.avatarPublished)));
+    } else {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(l10n.avatarPublishFailed)));
     }
   }
 
@@ -461,12 +601,104 @@ class _RoomSheetState extends State<_RoomSheet> {
               padding: const EdgeInsets.fromLTRB(20, 16, 8, 0),
               child: Row(
                 children: [
+                  Padding(
+                    padding: (caps?.canConfigureRoom ?? false)
+                        ? avatarCameraBadgePadding(24)
+                        : EdgeInsets.zero,
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        _avatarPreview != null
+                            ? ClipOval(
+                                child: Image.memory(
+                                  _avatarPreview!,
+                                  width: 48,
+                                  height: 48,
+                                  fit: BoxFit.cover,
+                                ),
+                              )
+                            : ContactAvatar(
+                                jid: widget.chat.roomJid,
+                                title: _roomTitle ?? widget.chat.roomJid,
+                                radius: 24,
+                              ),
+                        if ((caps?.canConfigureRoom ?? false) && !_avatarBusy)
+                          AvatarCameraBadge(
+                            avatarRadius: 24,
+                            tooltip: l10n.changeAvatar,
+                            onPressed: () => unawaited(_pickRoomAvatar()),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
                   Expanded(
-                    child: Text(
-                      widget.chat.roomJid,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleMedium,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          LayoutBuilder(
+                            builder: (context, constraints) {
+                              final canEdit = caps?.canConfigureRoom ?? false;
+                              const pencilW = 28.0;
+                              return Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  ConstrainedBox(
+                                    constraints: BoxConstraints(
+                                      maxWidth: canEdit
+                                          ? (constraints.maxWidth - pencilW)
+                                                .clamp(0.0, double.infinity)
+                                          : constraints.maxWidth,
+                                    ),
+                                    child: Text(
+                                      (_roomTitle != null &&
+                                              _roomTitle!.isNotEmpty)
+                                          ? _roomTitle!
+                                          : widget.chat.roomJid,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      textAlign: TextAlign.start,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .titleMedium,
+                                    ),
+                                  ),
+                                  if (canEdit)
+                                    IconButton(
+                                      tooltip: l10n.editRoomName,
+                                      visualDensity: VisualDensity.compact,
+                                      padding: const EdgeInsets.only(left: 2),
+                                      constraints: const BoxConstraints(
+                                        minWidth: pencilW,
+                                        minHeight: 28,
+                                      ),
+                                      onPressed: () =>
+                                          unawaited(_editRoomName()),
+                                      icon: Icon(
+                                        Icons.edit_outlined,
+                                        size: 18,
+                                        color: tg.textSecondary,
+                                      ),
+                                    ),
+                                ],
+                              );
+                            },
+                          ),
+                          if (_roomTitle != null && _roomTitle!.isNotEmpty)
+                            Text(
+                              widget.chat.roomJid,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.start,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: tg.textSecondary,
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
                   ),
                   if (caps?.canInvite ?? false)
@@ -487,6 +719,14 @@ class _RoomSheetState extends State<_RoomSheet> {
                         );
                       },
                       icon: const Icon(Icons.tune),
+                    ),
+                  if (caps?.canConfigureRoom ?? false)
+                    TextButton(
+                      onPressed: () => unawaited(_confirmDestroy()),
+                      child: Text(
+                        l10n.destroyRoom,
+                        style: TextStyle(color: tg.danger),
+                      ),
                     ),
                   TextButton(
                     onPressed: () =>
@@ -594,15 +834,32 @@ enum _MemberAction { openJid, mucPm, kick }
 
 /// What the room sheet produced for the chat page.
 class RoomSheetResult {
-  const RoomSheetResult.leave() : leaving = true, jid = null, mucPmNick = null;
+  const RoomSheetResult.leave()
+    : leaving = true,
+      destroyed = false,
+      jid = null,
+      mucPmNick = null;
+
+  const RoomSheetResult.destroy()
+    : leaving = true,
+      destroyed = true,
+      jid = null,
+      mucPmNick = null;
 
   const RoomSheetResult.openJidChat(this.jid)
     : leaving = false,
+      destroyed = false,
       mucPmNick = null;
 
-  const RoomSheetResult.mucPm(this.mucPmNick) : leaving = false, jid = null;
+  const RoomSheetResult.mucPm(this.mucPmNick)
+    : leaving = false,
+      destroyed = false,
+      jid = null;
 
   final bool leaving;
+
+  /// Owner destroyed the room on the server (Conversations destroyRoom).
+  final bool destroyed;
 
   /// Bare real JID for a 1:1 chat (non-anonymous rooms).
   final String? jid;

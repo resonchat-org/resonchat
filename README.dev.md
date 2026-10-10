@@ -93,9 +93,13 @@ flutter test                         # test/{crypto,rooms,store,messages,session
 ### 发布（CD）
 
 GitHub 上 **Publish a release**（或 `gh release create vX.Y.Z`）会触发
-`.github/workflows/cd.yml`：打 release APK + x86_64 AppImage，并挂到该
-Release 的 Assets（网页下载区）。产物名形如
-`resonchat-<tag>-android.apk` / `resonchat-<tag>-x86_64.AppImage`。
+`.github/workflows/cd.yml`：打两份 release APK（arm64 / x86_64）+ x86_64
+AppImage，并挂到该 Release 的 Assets。产物名形如
+`resonchat-<tag>-android-arm64.apk` /
+`resonchat-<tag>-android-x86_64.apk` /
+`resonchat-<tag>-x86_64.AppImage`。
+
+本地单 ABI：`./tool/build_android.sh --release --abi arm` 或 `--abi x86`。
 
 > 当前 release APK 仍用 debug 签名（`android/app/build.gradle.kts`）；上架
 > 商店前需换成正式 keystore。

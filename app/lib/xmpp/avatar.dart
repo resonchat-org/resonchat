@@ -1,26 +1,19 @@
 // Copyright (C) 2026 resonchat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// Avatars (XEP-0084), on the pubsub avatar node.
+// Avatars (XEP-0084) on the pubsub avatar node, plus helpers shared with
+// MUC vCard PHOTO publishing.
 //
-// Why this file avoids picking a photo from the device: that needs a media
-// permission, and this app asks for none. So the avatar is *generated* from
-// something the user already chose — the colour of their theme accent and the
-// first letter of their nickname.
+// Publish path: prepareAvatarImage → publishOwnAvatar (account) or
+// VCardManager.publishPhoto (room). Fetch / cache / fallback live here too.
 //
-// That is a real constraint, not a workaround pretending to be a feature. What
-// makes it worth having is everything around it: the publish, the metadata, the
-// per-contact fetch, the cache, and the fallback when a contact has no avatar.
-// Those are the parts that have to work for any avatar source, and they are the
-// parts that were missing.
-//
-// The fallback matters most and is easy to get wrong. "No avatar" must not look
-// like "this person chose to hide their face": the circle is drawn in the
-// contact's own accent colour rather than a uniform grey, so an absent avatar
-// reads as *unknown* instead of *refused*.
+// "No avatar" must not look like "this person chose to hide their face": the
+// UI draws the circle in the contact's own accent colour rather than a uniform
+// grey, so an absent avatar reads as *unknown* instead of *refused*.
 
 import 'dart:convert';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:cryptography/cryptography.dart';
 
@@ -165,6 +158,32 @@ String sniffMimeType(List<int> bytes) {
   return 'application/octet-stream';
 }
 
+/// Decode / downscale [raw] to a square PNG suitable for XEP-0084 / vCard.
+///
+/// Returns null when the bytes are not a decodable image.
+Future<AvatarData?> prepareAvatarImage(
+  Uint8List raw, {
+  int maxSide = 192,
+}) async {
+  try {
+    final codec = await ui.instantiateImageCodec(
+      raw,
+      targetWidth: maxSide,
+      targetHeight: maxSide,
+    );
+    final frame = await codec.getNextFrame();
+    final image = frame.image;
+    final bd = await image.toByteData(format: ui.ImageByteFormat.png);
+    image.dispose();
+    if (bd == null) return null;
+    final bytes = bd.buffer.asUint8List();
+    if (bytes.isEmpty) return null;
+    return AvatarData(bytes: bytes, mimeType: 'image/png');
+  } catch (_) {
+    return null;
+  }
+}
+
 /// Publishes [avatar] as our own, visible to [public] contacts.
 Future<bool> publishOwnAvatar(
   UserAvatarManager manager,
@@ -191,6 +210,24 @@ Future<bool> publishOwnAvatar(
     public,
   );
   return meta.isType<bool>();
+}
+
+/// MUC / legacy avatar via vCard-temp PHOTO (Conversations room avatars).
+///
+/// Returns null when there is no PHOTO or the payload cannot be decoded.
+Future<AvatarData?> fetchVCardAvatar(VCardManager manager, JID jid) async {
+  final result = await manager.requestVCard(jid.toBare());
+  if (!result.isType<VCard>()) return null;
+  final binval = result.get<VCard>().photo?.binval;
+  if (binval == null || binval.isEmpty) return null;
+  try {
+    final compact = binval.replaceAll(RegExp(r'\s'), '');
+    final bytes = Uint8List.fromList(base64Decode(compact));
+    if (bytes.isEmpty) return null;
+    return AvatarData(bytes: bytes, mimeType: sniffMimeType(bytes));
+  } catch (_) {
+    return null;
+  }
 }
 
 /// Records that [jid]'s avatar changed so the next view re-fetches it.

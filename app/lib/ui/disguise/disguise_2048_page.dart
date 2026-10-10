@@ -9,8 +9,16 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../l10n/l10n.dart';
 import '../../security/app_lock.dart';
+import '../../store/prefs_database.dart';
 import 'game_2048.dart';
+
+/// App-wide best score for the disguise board ([PrefsDatabase]).
+const prefDisguise2048BestKey = 'pref_disguise_2048_best';
+
+/// Shared width so SCORE / BEST boxes stay aligned across locales.
+const _scoreBoxWidth = 96.0;
 
 class Disguise2048Page extends StatefulWidget {
   const Disguise2048Page({super.key, required this.onUnlocked});
@@ -35,11 +43,23 @@ class _Disguise2048PageState extends State<Disguise2048Page> {
   @override
   void initState() {
     super.initState();
+    unawaited(_loadBest());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       for (final t in _game.tiles) {
         t.isNew = false;
       }
     });
+  }
+
+  Future<void> _loadBest() async {
+    final raw = await appPrefs.getString(prefDisguise2048BestKey);
+    final best = int.tryParse(raw ?? '') ?? 0;
+    if (!mounted || best <= 0) return;
+    setState(() => _game.best = best);
+  }
+
+  Future<void> _persistBest() async {
+    await appPrefs.setString(prefDisguise2048BestKey, '${_game.best}');
   }
 
   @override
@@ -135,12 +155,17 @@ class _Disguise2048PageState extends State<Disguise2048Page> {
     final dir = delta.dx.abs() > delta.dy.abs()
         ? (delta.dx > 0 ? Move2048.right : Move2048.left)
         : (delta.dy > 0 ? Move2048.down : Move2048.up);
+    final prevBest = _game.best;
     if (!_game.move(dir)) return;
+    if (_game.best > prevBest) {
+      unawaited(_persistBest());
+    }
     setState(_beginMoveAnimation);
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
@@ -171,25 +196,31 @@ class _Disguise2048PageState extends State<Disguise2048Page> {
                           ),
                         ),
                         const Spacer(),
-                        _ScoreBox(
-                          label: 'SCORE',
-                          value: _game.score,
-                          onTap: () => unawaited(_submitPin()),
+                        SizedBox(
+                          width: _scoreBoxWidth,
+                          child: _ScoreBox(
+                            label: l10n.game2048Score,
+                            value: _game.score,
+                            onTap: () => unawaited(_submitPin()),
+                          ),
                         ),
                         const SizedBox(width: 8),
-                        _ScoreBox(
-                          label: 'BEST',
-                          value: _game.best,
-                          onTap: _clearPin,
+                        SizedBox(
+                          width: _scoreBoxWidth,
+                          child: _ScoreBox(
+                            label: l10n.game2048Best,
+                            value: _game.best,
+                            onTap: _clearPin,
+                          ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 8),
-                    const Align(
+                    Align(
                       alignment: Alignment.centerLeft,
                       child: Text(
-                        'Join the numbers and get to the 2048 tile!',
-                        style: TextStyle(
+                        l10n.game2048Hint,
+                        style: const TextStyle(
                           color: Color(0xFF776E65),
                           fontSize: 14,
                         ),
@@ -226,7 +257,7 @@ class _Disguise2048PageState extends State<Disguise2048Page> {
                       const SizedBox(height: 12),
                       TextButton(
                         onPressed: () => setState(_game.reset),
-                        child: const Text('Try again'),
+                        child: Text(l10n.game2048TryAgain),
                       ),
                     ],
                   ],
@@ -328,7 +359,8 @@ class _ScoreBox extends StatelessWidget {
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
         decoration: BoxDecoration(
           color: const Color(0xFFBBADA0),
           borderRadius: BorderRadius.circular(4),
@@ -337,17 +369,21 @@ class _ScoreBox extends StatelessWidget {
           children: [
             Text(
               label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
               style: const TextStyle(
                 color: Color(0xFFEEE4DA),
-                fontSize: 11,
+                fontSize: 14,
                 fontWeight: FontWeight.w700,
               ),
             ),
             Text(
               '$value',
+              textAlign: TextAlign.center,
               style: const TextStyle(
                 color: Colors.white,
-                fontSize: 20,
+                fontSize: 22,
                 fontWeight: FontWeight.w700,
               ),
             ),

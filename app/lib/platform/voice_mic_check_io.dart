@@ -40,9 +40,7 @@ Future<bool?> _linuxSourceMuted() async {
       '@DEFAULT_SOURCE@',
     ]);
     if (r.exitCode != 0) return null;
-    final out = (r.stdout as String).toLowerCase();
-    if (out.contains('yes')) return true;
-    if (out.contains('no')) return false;
+    return parsePactlMuteStdout(r.stdout as String);
   } catch (_) {}
   return null;
 }
@@ -55,16 +53,29 @@ Future<bool?> _linuxSourceVolumeSilent() async {
       '@DEFAULT_SOURCE@',
     ]);
     if (r.exitCode != 0) return null;
-    final out = r.stdout as String;
-    // e.g. "front-left: 0 /   0% / -inf dB,   front-right: 0 /   0% / -inf dB"
-    final percents = RegExp(r'(\d+)\s*%')
-        .allMatches(out)
-        .map((m) => int.parse(m.group(1)!))
-        .toList();
-    if (percents.isEmpty) return null;
-    return percents.every((p) => p == 0);
+    return parsePactlVolumeSilentStdout(r.stdout as String);
   } catch (_) {}
   return null;
+}
+
+/// Parses `pactl get-source-mute` stdout (`Mute: yes` / `Mute: no`).
+bool? parsePactlMuteStdout(String stdout) {
+  final out = stdout.toLowerCase();
+  if (out.contains('yes')) return true;
+  if (out.contains('no')) return false;
+  return null;
+}
+
+/// Parses `pactl get-source-volume` stdout; `true` when every `%` is 0.
+///
+/// Example: `front-left: 0 /   0% / -inf dB,   front-right: 0 /   0% / -inf dB`
+bool? parsePactlVolumeSilentStdout(String stdout) {
+  final percents = RegExp(r'(\d+)\s*%')
+      .allMatches(stdout)
+      .map((m) => int.parse(m.group(1)!))
+      .toList();
+  if (percents.isEmpty) return null;
+  return percents.every((p) => p == 0);
 }
 
 Future<bool?> _androidMicrophoneMute() async {

@@ -5,6 +5,8 @@
 // (GPL-2.0-or-later): 54dp avatar, two-line text column, unread badge,
 // pinned affordance.
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -13,7 +15,7 @@ import '../../state/providers.dart';
 import '../accounts/accounts_icon.dart';
 import '../home/open_chat.dart';
 import '../pending/pending_requests_page.dart';
-import '../room/room_sheet.dart';
+import '../room/create_group_sheet.dart';
 import '../theme.dart';
 import 'chats_viewmodel.dart';
 import 'chat_row.dart';
@@ -94,11 +96,7 @@ class _ChatsPageState extends ConsumerState<ChatsPage> {
           IconButton(
             icon: const Icon(Icons.group_add_outlined),
             tooltip: l10n.joinGroup,
-            onPressed: () => showModalBottomSheet<void>(
-              context: context,
-              isScrollControlled: true,
-              builder: (_) => const JoinRoomSheet(),
-            ),
+            onPressed: () => unawaited(showGroupActionsSheet(context)),
           ),
           IconButton(
             // CustomPaint: MaterialIcons in this AppBar slot paint blank on

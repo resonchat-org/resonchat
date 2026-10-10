@@ -10,11 +10,7 @@ import 'package:http/http.dart' as http;
 import 'translation_engine.dart';
 
 class LibreTranslateEngine implements TranslationEngine {
-  LibreTranslateEngine({
-    required this.baseUrl,
-    this.apiKey = '',
-    this.client,
-  });
+  LibreTranslateEngine({required this.baseUrl, this.apiKey = '', this.client});
 
   final String baseUrl;
   final String apiKey;

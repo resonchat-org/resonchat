@@ -8,11 +8,7 @@ import 'package:http/http.dart' as http;
 import 'translation_engine.dart';
 
 class DeepLEngine implements TranslationEngine {
-  DeepLEngine({
-    required this.apiKey,
-    this.pro = false,
-    this.client,
-  });
+  DeepLEngine({required this.apiKey, this.pro = false, this.client});
 
   final String apiKey;
   final bool pro;
