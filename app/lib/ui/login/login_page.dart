@@ -172,6 +172,18 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                 ),
                 child: Text(_busy ? l10n.connecting : l10n.connect),
               ),
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: _busy
+                    ? null
+                    : () {
+                        Navigator.of(context).pushNamed(
+                          '/register',
+                          arguments: widget.addAccountMode,
+                        );
+                      },
+                child: Text(l10n.createAccount),
+              ),
             ],
           ),
         ),

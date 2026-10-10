@@ -15,6 +15,7 @@ import '../crypto/omemo/dual_track_manager.dart';
 import '../crypto/omemo/track.dart';
 import '../crypto/omemo/track_advice.dart';
 import '../platform/app_notifications.dart';
+import '../security/app_lock.dart';
 import '../store/database.dart';
 import '../account/chat_ref.dart';
 import '../xmpp/capabilities.dart';
@@ -78,6 +79,11 @@ class _AppWiringState extends ConsumerState<AppWiring>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     ref.read(appForegroundProvider.notifier).state =
         state == AppLifecycleState.resumed;
+    // Amarok ScreenStatusReceiver: re-lock when leaving the foreground.
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      AppLock.instance.lockAndDisguise();
+    }
   }
 
   void _bindAll() {

@@ -784,6 +784,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     });
   }
 
+  /// Telegram caps multi-select at 100 (`ChatActivity` selection).
+  static const _maxSelection = 100;
+
   /// Adds or removes [message] from the selection.
   ///
   /// A message with no addressable id cannot be forwarded or retracted, so it
@@ -791,13 +794,56 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   /// cannot act on.
   void _toggleSelected(Message message) {
     if (message.stanzaId.isEmpty || message.retracted) return;
+    final removing = _selection.contains(message.stanzaId);
+    if (!removing && _selection.length >= _maxSelection) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(context.l10n.selectionLimitReached(_maxSelection)),
+        ),
+      );
+      return;
+    }
     setState(() {
-      if (_selection.contains(message.stanzaId)) {
+      // Entering selection dismisses reply / edit / react chrome.
+      if (_selection.isEmpty) {
+        _replyingTo = null;
+        _editingId = null;
+        _editingBody = '';
+        _reactingToId = null;
+      }
+      if (removing) {
         _selection.remove(message.stanzaId);
       } else {
         _selection.add(message.stanzaId);
       }
     });
+  }
+
+  void _clearSelection() => setState(_selection.clear);
+
+  /// Copy selected message bodies in pick order (Telegram action-mode Copy).
+  Future<void> _copySelection() async {
+    if (_selection.isEmpty) return;
+    final list =
+        ref.read(messagesProvider(widget.chatJid)).value ?? const <Message>[];
+    final byId = {for (final m in list) m.stanzaId: m};
+    final parts = <String>[];
+    for (final id in _selection) {
+      final m = byId[id];
+      if (m == null || m.retracted) continue;
+      final body = m.body.trim();
+      if (body.isNotEmpty) parts.add(body);
+    }
+    if (parts.isEmpty) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(context.l10n.nothingToCopy)));
+      return;
+    }
+    await Clipboard.setData(ClipboardData(text: parts.join('\n\n')));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(context.l10n.copied)));
+    _clearSelection();
   }
 
   /// Forwards everything selected, in the order it was picked.
@@ -844,7 +890,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       );
       return;
     }
-    if (mounted) setState(_selection.clear);
+    if (mounted) _clearSelection();
   }
 
   /// Retracts the selected messages that we sent.
@@ -867,7 +913,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         ),
       );
     }
-    setState(_selection.clear);
+    _clearSelection();
   }
 
   void _showUnsentNotice() {
@@ -922,281 +968,321 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     ref.watch(draftProvider(widget.chatJid));
     _restoreDraft();
 
-    return Stack(
-      children: [
-        Scaffold(
-          appBar: AppBar(
-            titleSpacing: 0,
-            automaticallyImplyLeading: !widget.embedded,
-            // Telegram ChatAvatarContainer: one tap target → profile/room sheet.
-            // Group subtitle is member count (getChatSubtitle), not about/subject.
-            title: GestureDetector(
-              onTap: ui.isGroup
-                  ? _showMembers
-                  : () =>
-                        Navigator.of(context)
-                            .pushNamed('/profile', arguments: widget.chatJid),
-              behavior: HitTestBehavior.opaque,
-              child: Row(
-                children: [
-                  ui.isGroup
-                      ? CircleAvatar(
-                          radius: TgDimens.avatarChat / 2,
-                          backgroundColor: tg.accent.withValues(alpha: 0.18),
-                          child: Icon(
-                            Icons.groups_outlined,
-                            color: tg.accent,
-                            size: TgDimens.avatarChat * 0.55,
-                          ),
-                        )
-                      : ContactAvatar(
-                          jid: _peerJid,
-                          title: title,
-                          radius: TgDimens.avatarChat / 2,
-                          hero: true,
-                        ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        Text(
-                          ui.isGroup
-                              ? (ui.room == null
-                                    ? l10n.joining
-                                    : l10n.membersInRoom(
-                                        ui.room!.occupants.length,
-                                      ))
-                              : _peerStatusSubtitle(
-                                  context,
-                                  track,
-                                  ui.peerTyping,
-                                ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: TgDimens.timeFontSize,
-                            fontWeight: FontWeight.w400,
-                            color: Colors.white70,
-                            fontStyle:
-                                !ui.isGroup &&
-                                    (ui.peerTyping == TypingState.composing ||
-                                        ui.peerTyping == TypingState.paused)
-                                ? FontStyle.italic
-                                : FontStyle.normal,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              if (!ui.isGroup || ui.mucEncryptable)
-                EncBadge(
-                  label: track.label,
-                  locked: track != Track.none,
-                  onTap: () => showTrackPicker(context, ref, widget.chatJid),
-                ),
-              if (ui.isGroup)
-                IconButton(
-                  icon: const Icon(Icons.group_outlined),
-                  tooltip: l10n.members,
-                  onPressed: _showMembers,
-                ),
-              IconButton(
-                icon: Icon(
-                  notifyModeIcon(
-                    chatNotifyModeOf(
-                      muted: chatRow?.muted ?? false,
-                      alwaysNotify: chatRow?.alwaysNotify ?? true,
-                    ),
-                  ),
-                ),
-                tooltip: l10n.notificationSettings,
-                onPressed: () =>
-                    openChatNotifySettings(context, widget.chatJid),
-              ),
-              IconButton(
-                icon: const Icon(Icons.search),
-                tooltip: l10n.searchInChat,
-                onPressed: _openInChatSearch,
-              ),
-              IconButton(
-                icon: const Icon(Icons.palette_outlined),
-                tooltip: l10n.appearance,
-                onPressed: () => showModalBottomSheet<void>(
-                  context: context,
-                  isScrollControlled: true,
-                  builder: (sheetContext) => AppearancePicker(
-                    initial: appearance,
-                    // Written on every change rather than on dismissal: the swatches
-                    // are the preview, and waiting for "done" would mean choosing
-                    // blind.
-                    onChanged: (next) =>
-                        unawaited(setChatAppearance(ref, widget.chatJid, next)),
-                  ),
-                ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.push_pin_outlined),
-                tooltip: l10n.pinnedMessages,
-                onPressed: _showPinned,
-              ),
-              IconButton(
-                icon: const Icon(Icons.history),
-                tooltip: l10n.loadHistoryMam,
-                onPressed: _loadHistory,
-              ),
-            ],
-          ),
-          body: Column(
-            children: [
-              // Rooms are not roster contacts — no subscription banner.
-              if (!ui.isGroup) _SubscriptionBanner(chatJid: widget.chatJid),
-              if (ui.advice != null)
-                TrackAdviceBanner(
-                  advice: ui.advice!,
-                  onSwitch: _vm.adoptAdvice,
-                  onDismiss: _vm.dismissAdvice,
-                ),
-              Expanded(
-                child: Container(
-                  color: tg.pageBackground,
-                  // Painted inside the Expanded rather than behind the Scaffold,
-                  // so the pattern does not also sit under the app bar and the input
-                  // bar — Telegram draws it only behind the transcript.
-                  child: CustomPaint(
-                    painter: WallpaperPainter(
-                      wallpaper: appearance.wallpaper,
-                      base: tg.pageBackground,
-                      // Theme accent tints the pattern (per-chat colour was
-                      // removed; the app theme colour already covers that).
-                      accent: tg.accent,
-                      seed: _peerJid,
-                    ),
-                    child: messages.when(
-                      data: (list) {
-                        if (list.isNotEmpty) _ensureInitialScroll();
-                        return _MessageList(
-                          chatKey: widget.chatJid,
-                          messages: list,
-                          scroll: _scroll,
-                          onRetryDecrypt: () => _loadHistory(),
-                          onReact: _toggleReaction,
-                          onMenu: _showMessageMenu,
-                          onToggleSelected: _toggleSelected,
-                          selectionMode: _selectionMode,
-                          selectedIds: _selection,
-                          readAt: ref
-                              .watch(chatLastReadProvider(widget.chatJid))
-                              .value,
-                          unreadCount: _unreadCountHere ?? 0,
-                          unreadDividerKey: _unreadDividerKey,
-                          focusMessageAnchor: _activeFocusAnchor,
-                          focusMessageKey: _focusMessageKey,
-                          bubbleStyle: appearance.bubble,
-                          isGroup: ui.isGroup,
-                          highlightNicks: _highlightNicksFor(
-                            mucNick: ui.mucNick,
-                            chatKey: widget.chatJid,
-                          ),
-                        );
-                      },
-                      loading: () =>
-                          const Center(child: CircularProgressIndicator()),
-                      error: (e, _) => Center(child: Text('$e')),
-                    ),
-                  ),
-                ),
-              ),
-              // Editing replaces the input bar rather than sitting above it: two
-              // text fields in one chat is ambiguous about which one a keystroke
-              // goes to.
-              if (ui.mucPmNick != null)
-                Material(
-                  color: tg.accent.withValues(alpha: 0.12),
-                  child: ListTile(
-                    dense: true,
-                    leading: Icon(
-                      Icons.lock_outline,
-                      color: tg.accent,
-                      size: 20,
-                    ),
-                    title: Text(
-                      l10n.privateMessageTo(ui.mucPmNick!),
-                      style: TextStyle(color: tg.accent, fontSize: 13),
-                    ),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.close, size: 18),
+    // Telegram ChatActivity action mode: back clears selection instead of
+    // leaving the chat.
+    return PopScope(
+      canPop: !_selectionMode,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _selectionMode) _clearSelection();
+      },
+      child: Stack(
+        children: [
+          Scaffold(
+            appBar: AppBar(
+              titleSpacing: _selectionMode ? null : 0,
+              automaticallyImplyLeading: !widget.embedded && !_selectionMode,
+              leading: _selectionMode
+                  ? IconButton(
+                      icon: const Icon(Icons.close),
                       tooltip: l10n.cancel,
-                      onPressed: () => _vm.setMucPmNick(null),
+                      onPressed: _clearSelection,
+                    )
+                  : null,
+              // Telegram createActionMode: count title + bulk actions.
+              title: _selectionMode
+                  ? Text(l10n.selectedCount(_selection.length))
+                  : GestureDetector(
+                      onTap: ui.isGroup
+                          ? _showMembers
+                          : () => Navigator.of(
+                              context,
+                            ).pushNamed('/profile', arguments: widget.chatJid),
+                      behavior: HitTestBehavior.opaque,
+                      child: Row(
+                        children: [
+                          ui.isGroup
+                              ? CircleAvatar(
+                                  radius: TgDimens.avatarChat / 2,
+                                  backgroundColor: tg.accent.withValues(
+                                    alpha: 0.18,
+                                  ),
+                                  child: Icon(
+                                    Icons.groups_outlined,
+                                    color: tg.accent,
+                                    size: TgDimens.avatarChat * 0.55,
+                                  ),
+                                )
+                              : ContactAvatar(
+                                  jid: _peerJid,
+                                  title: title,
+                                  radius: TgDimens.avatarChat / 2,
+                                  hero: true,
+                                ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                Text(
+                                  ui.isGroup
+                                      ? (ui.room == null
+                                            ? l10n.joining
+                                            : l10n.membersInRoom(
+                                                ui.room!.occupants.length,
+                                              ))
+                                      : _peerStatusSubtitle(
+                                          context,
+                                          track,
+                                          ui.peerTyping,
+                                        ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: TgDimens.timeFontSize,
+                                    fontWeight: FontWeight.w400,
+                                    color: Colors.white70,
+                                    fontStyle:
+                                        !ui.isGroup &&
+                                            (ui.peerTyping ==
+                                                    TypingState.composing ||
+                                                ui.peerTyping ==
+                                                    TypingState.paused)
+                                        ? FontStyle.italic
+                                        : FontStyle.normal,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+              actions: _selectionMode
+                  ? [
+                      IconButton(
+                        icon: const Icon(Icons.copy),
+                        tooltip: l10n.copyText,
+                        onPressed: _copySelection,
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.forward),
+                        tooltip: l10n.forward,
+                        onPressed: _forwardSelection,
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline),
+                        tooltip: l10n.deleteMine,
+                        onPressed: _deleteSelection,
+                      ),
+                    ]
+                  : [
+                      if (!ui.isGroup || ui.mucEncryptable)
+                        EncBadge(
+                          label: track.label,
+                          locked: track != Track.none,
+                          onTap: () =>
+                              showTrackPicker(context, ref, widget.chatJid),
+                        ),
+                      if (ui.isGroup)
+                        IconButton(
+                          icon: const Icon(Icons.group_outlined),
+                          tooltip: l10n.members,
+                          onPressed: _showMembers,
+                        ),
+                      IconButton(
+                        icon: Icon(
+                          notifyModeIcon(
+                            chatNotifyModeOf(
+                              muted: chatRow?.muted ?? false,
+                              alwaysNotify: chatRow?.alwaysNotify ?? true,
+                            ),
+                          ),
+                        ),
+                        tooltip: l10n.notificationSettings,
+                        onPressed: () =>
+                            openChatNotifySettings(context, widget.chatJid),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.search),
+                        tooltip: l10n.searchInChat,
+                        onPressed: _openInChatSearch,
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.palette_outlined),
+                        tooltip: l10n.appearance,
+                        onPressed: () => showModalBottomSheet<void>(
+                          context: context,
+                          isScrollControlled: true,
+                          builder: (sheetContext) => AppearancePicker(
+                            initial: appearance,
+                            // Written on every change rather than on dismissal: the swatches
+                            // are the preview, and waiting for "done" would mean choosing
+                            // blind.
+                            onChanged: (next) => unawaited(
+                              setChatAppearance(ref, widget.chatJid, next),
+                            ),
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.push_pin_outlined),
+                        tooltip: l10n.pinnedMessages,
+                        onPressed: _showPinned,
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.history),
+                        tooltip: l10n.loadHistoryMam,
+                        onPressed: _loadHistory,
+                      ),
+                    ],
+            ),
+            body: Column(
+              children: [
+                // Rooms are not roster contacts — no subscription banner.
+                if (!ui.isGroup) _SubscriptionBanner(chatJid: widget.chatJid),
+                if (ui.advice != null)
+                  TrackAdviceBanner(
+                    advice: ui.advice!,
+                    onSwitch: _vm.adoptAdvice,
+                    onDismiss: _vm.dismissAdvice,
+                  ),
+                Expanded(
+                  child: Container(
+                    color: tg.pageBackground,
+                    // Painted inside the Expanded rather than behind the Scaffold,
+                    // so the pattern does not also sit under the app bar and the input
+                    // bar — Telegram draws it only behind the transcript.
+                    child: CustomPaint(
+                      painter: WallpaperPainter(
+                        wallpaper: appearance.wallpaper,
+                        base: tg.pageBackground,
+                        // Theme accent tints the pattern (per-chat colour was
+                        // removed; the app theme colour already covers that).
+                        accent: tg.accent,
+                        seed: _peerJid,
+                      ),
+                      child: messages.when(
+                        data: (list) {
+                          if (list.isNotEmpty) _ensureInitialScroll();
+                          return _MessageList(
+                            chatKey: widget.chatJid,
+                            messages: list,
+                            scroll: _scroll,
+                            onRetryDecrypt: () => _loadHistory(),
+                            onReact: _toggleReaction,
+                            onMenu: _showMessageMenu,
+                            onToggleSelected: _toggleSelected,
+                            selectionMode: _selectionMode,
+                            selectedIds: _selection,
+                            readAt: ref
+                                .watch(chatLastReadProvider(widget.chatJid))
+                                .value,
+                            unreadCount: _unreadCountHere ?? 0,
+                            unreadDividerKey: _unreadDividerKey,
+                            focusMessageAnchor: _activeFocusAnchor,
+                            focusMessageKey: _focusMessageKey,
+                            bubbleStyle: appearance.bubble,
+                            isGroup: ui.isGroup,
+                            highlightNicks: _highlightNicksFor(
+                              mucNick: ui.mucNick,
+                              chatKey: widget.chatJid,
+                            ),
+                          );
+                        },
+                        loading: () =>
+                            const Center(child: CircularProgressIndicator()),
+                        error: (e, _) => Center(child: Text('$e')),
+                      ),
                     ),
                   ),
                 ),
-              if (_replyingTo != null && _editingId == null)
-                ReplyPreview(
-                  author: _replyingTo!.author,
-                  body: _replyingTo!.body,
-                  onCancel: () => setState(() => _replyingTo = null),
-                ),
-              if (_selectionMode)
-                SelectionBar(
-                  count: _selection.length,
-                  onForward: _forwardSelection,
-                  onDelete: _deleteSelection,
-                  onCancel: () => setState(_selection.clear),
-                )
-              else if (_editingId != null)
-                EditComposer(
-                  initialText: _editingBody,
-                  onSubmit: _submitCorrection,
-                  onCancel: () => setState(() {
-                    _editingId = null;
-                    _editingBody = '';
-                  }),
-                )
-              else
-                _InputBar(
-                  controller: _input,
-                  focusNode: _focus,
-                  onChanged: _vm.onInputChanged,
-                  onSend: _send,
-                  onAttach: _attachFile,
-                  attachEnabled: attachEnabled,
-                ),
-              if (_reactingToId != null)
-                QuickReactionBar(
-                  emoji: kQuickReactions,
-                  onPicked: (emoji) {
-                    final target = _reactingToId;
-                    setState(() => _reactingToId = null);
-                    if (target != null) {
-                      unawaited(_toggleReaction(target, emoji));
-                    }
-                  },
-                  onDismissed: () => setState(() => _reactingToId = null),
-                ),
-            ],
+                // Editing replaces the input bar rather than sitting above it: two
+                // text fields in one chat is ambiguous about which one a keystroke
+                // goes to.
+                if (ui.mucPmNick != null)
+                  Material(
+                    color: tg.accent.withValues(alpha: 0.12),
+                    child: ListTile(
+                      dense: true,
+                      leading: Icon(
+                        Icons.lock_outline,
+                        color: tg.accent,
+                        size: 20,
+                      ),
+                      title: Text(
+                        l10n.privateMessageTo(ui.mucPmNick!),
+                        style: TextStyle(color: tg.accent, fontSize: 13),
+                      ),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.close, size: 18),
+                        tooltip: l10n.cancel,
+                        onPressed: () => _vm.setMucPmNick(null),
+                      ),
+                    ),
+                  ),
+                if (_replyingTo != null && _editingId == null)
+                  ReplyPreview(
+                    author: _replyingTo!.author,
+                    body: _replyingTo!.body,
+                    onCancel: () => setState(() => _replyingTo = null),
+                  ),
+                // Selection actions live in the AppBar (Telegram action mode).
+                // The composer stays hidden so keystrokes cannot go to a draft
+                // while the user is picking messages.
+                if (_selectionMode)
+                  const SizedBox.shrink()
+                else if (_editingId != null)
+                  EditComposer(
+                    initialText: _editingBody,
+                    onSubmit: _submitCorrection,
+                    onCancel: () => setState(() {
+                      _editingId = null;
+                      _editingBody = '';
+                    }),
+                  )
+                else
+                  _InputBar(
+                    controller: _input,
+                    focusNode: _focus,
+                    onChanged: _vm.onInputChanged,
+                    onSend: _send,
+                    onAttach: _attachFile,
+                    attachEnabled: attachEnabled,
+                  ),
+                if (_reactingToId != null)
+                  QuickReactionBar(
+                    emoji: kQuickReactions,
+                    onPicked: (emoji) {
+                      final target = _reactingToId;
+                      setState(() => _reactingToId = null);
+                      if (target != null) {
+                        unawaited(_toggleReaction(target, emoji));
+                      }
+                    },
+                    onDismissed: () => setState(() => _reactingToId = null),
+                  ),
+              ],
+            ),
+            // Two different destinations, so two different affordances. Scrolling to
+            // the bottom is "show me what just happened"; jumping to the first unread
+            // is "show me what I missed". Collapsing them means the user who scrolled
+            // up to find an older message cannot get back to the new ones in one tap.
+            floatingActionButton: _selectionMode || _atBottom
+                ? null
+                : _scrollButton(tg),
           ),
-          // Two different destinations, so two different affordances. Scrolling to
-          // the bottom is "show me what just happened"; jumping to the first unread
-          // is "show me what I missed". Collapsing them means the user who scrolled
-          // up to find an older message cannot get back to the new ones in one tap.
-          floatingActionButton: _atBottom ? null : _scrollButton(tg),
-        ),
-        // Covers app bar, transcript, FAB, and input while the OS picker is up
-        // so nothing behind it can be tapped or scrolled.
-        if (ui.pickingFile)
-          const ModalBarrier(dismissible: false, color: Color(0x66000000)),
-      ],
+          // Covers app bar, transcript, FAB, and input while the OS picker is up
+          // so nothing behind it can be tapped or scrolled.
+          if (ui.pickingFile)
+            const ModalBarrier(dismissible: false, color: Color(0x66000000)),
+        ],
+      ),
     );
   }
 
@@ -1613,15 +1699,16 @@ class _ReactionBubble extends ConsumerWidget {
       mentionsMe: message.mentionsMe,
       highlightNicks: isGroup ? highlightNicks : const [],
       onReact: onReact,
-      // A long press still opens the context menu when nothing is selected;
-      // once a selection exists, long press adds to it, which is what a user
-      // picking five messages is actually doing.
-      onLongPress: message.retracted
+      // Telegram ChatActivity: long-press → action mode; short tap → single
+      // message menu (or toggle while already selecting).
+      onLongPress: message.retracted || message.stanzaId.isEmpty
+          ? null
+          : onToggleSelected,
+      onTap: message.retracted
           ? null
           : selectionMode
           ? onToggleSelected
           : () => onMenu(message.body),
-      onTap: selectionMode ? onToggleSelected : null,
     );
   }
 }

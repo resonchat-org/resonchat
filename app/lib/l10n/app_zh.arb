@@ -3,6 +3,16 @@
   "appName": "resonchat",
   "settings": "设置",
   "privacy": "隐私",
+  "appLock": "应用锁",
+  "appLockSummary": "打开时显示 2048 小游戏。点格子输入密码（0–9A–F），点总分解锁，点最高分清空。",
+  "appLockPinSet": "设置解锁密码",
+  "appLockPinConfirm": "确认解锁密码",
+  "appLockPinHint": "密码为 0–9 与 A–F，对应 2048 棋盘从左上到右下的 16 格。",
+  "appLockPinInvalid": "密码须为 4–16 位，且仅含 0–9 与 A–F。",
+  "appLockPinMismatch": "两次输入不一致，请重试。",
+  "appLockPinNext": "下一步",
+  "appLockPinSave": "保存",
+  "appLockPinDelete": "删除",
   "interface": "界面",
   "themeColor": "主题色",
   "themeColorSummary": "动态色（Material You）或固定颜色",
@@ -73,6 +83,41 @@
   "hostOptionalWebHint": "留空则自动发现（host-meta），或填写 wss://…",
   "connect": "连接",
   "connecting": "正在连接…",
+  "createAccount": "创建账号",
+  "register": "注册",
+  "registering": "正在注册…",
+  "username": "用户名",
+  "confirmPassword": "确认密码",
+  "pickAServer": "选择服务器",
+  "serverSelectText": "你的 XMPP 地址是 用户名@服务器。下列提供商彼此互通，可任选其一，也可使用自己的服务器。",
+  "chooseYourServer": "服务器",
+  "useOwnProvider": "使用自己的提供商",
+  "serverDomain": "服务器域名",
+  "yourFullJidWillBe": "你的完整地址将是 {jid}",
+  "@yourFullJidWillBe": {
+    "placeholders": {
+      "jid": { "type": "String" }
+    }
+  },
+  "registrationNeedUsernameAndServer": "请填写用户名和服务器。",
+  "registrationInvalidUsername": "用户名至少 3 个字符，且不能含特殊字符。",
+  "registrationNeedPassword": "请填写密码。",
+  "registrationPasswordMismatch": "两次输入的密码不一致。",
+  "registrationFailed": "注册失败",
+  "registrationNotSupported": "此服务器不允许带内注册。",
+  "registrationConflict": "该用户名已被占用。",
+  "registrationPasswordTooWeak": "密码不符合此服务器的强度要求。",
+  "registrationInvalidCaptcha": "验证码不正确。",
+  "registrationPleaseWait": "请稍后再试。",
+  "registrationCaptchaTitle": "验证码",
+  "registrationCaptchaHint": "图片中的文字",
+  "registrationWebRequired": "此服务器需要在浏览器中注册：\n{url}",
+  "@registrationWebRequired": {
+    "placeholders": {
+      "url": { "type": "String" }
+    }
+  },
+  "registrationLoginAfterCreateFailed": "账号已创建，但登录失败。请到登录页再试。",
   "authenticationFailed": "身份验证失败",
   "searchMessages": "搜索消息",
   "searching": "正在搜索…",
@@ -137,6 +182,13 @@
   "deleteUnencryptedWarning": "此消息以明文发送。在此删除只会移除你这边的副本，已经读过的人仍保留内容。",
   "selectMessages": "选择消息",
   "selectedCount": "已选 {count} 条",
+  "selectionLimitReached": "最多只能选择 {count} 条消息。",
+  "@selectionLimitReached": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "nothingToCopy": "没有可复制的内容。",
   "deleteMine": "删除我的",
   "replyingTo": "回复 {author}",
   "cancelReply": "取消回复",

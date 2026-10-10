@@ -1,6 +1,8 @@
 // Copyright (C) 2026 resonchat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+import 'dart:async';
+
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -14,11 +16,14 @@ import 'l10n/l10n.dart';
 import 'net/app_network.dart';
 import 'platform/app_notifications.dart';
 import 'state/app_wiring.dart';
+import 'security/app_lock.dart';
 import 'store/prefs_database.dart';
 import 'ui/accent_theme.dart';
+import 'ui/disguise/disguise_2048_page.dart';
 import 'ui/home/home_shell.dart';
 import 'ui/column_mode_sync.dart';
 import 'ui/login/login_page.dart';
+import 'ui/login/register_page.dart';
 import 'ui/chat/chat_page.dart';
 import 'ui/accounts/manage_accounts_page.dart';
 import 'ui/security/security_page.dart';
@@ -42,6 +47,7 @@ Future<void> main() async {
 
   // Shared prefs DB first (SOCKS / locale), before any account session.
   final prefs = await openAppPrefs();
+  await AppLock.instance.load(prefs);
 
   final hub = AccountHub();
   installAccountHub(hub);
@@ -60,7 +66,13 @@ Future<void> main() async {
   await AppNotifications.instance.ensureReady();
   final launchChatKey = await AppNotifications.instance.launchChatKey();
 
-  await hub.connectAll();
+  // Skip opening a chat under the disguise gate.
+  if (!AppLock.instance.needsDisguise) {
+    await hub.connectAll();
+  } else {
+    // Still connect in the background; UI stays on 2048 until unlock.
+    unawaited(hub.connectAll());
+  }
 
   runApp(
     ProviderScope(
@@ -94,7 +106,7 @@ class _AppState extends ConsumerState<App> {
   void initState() {
     super.initState();
     final key = widget.initialChatKey;
-    if (key != null && widget.hasAccounts) {
+    if (key != null && widget.hasAccounts && !AppLock.instance.needsDisguise) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _openChatFromNotification(key);
       });
@@ -139,12 +151,29 @@ class _AppState extends ConsumerState<App> {
             }
             return const Locale('en');
           },
-          builder: (context, child) => AppWiring(
-            child: ColumnModeSync(
-              navigatorKey: appNavigatorKey,
-              child: child ?? const SizedBox.shrink(),
-            ),
-          ),
+          builder: (context, child) {
+            return AppWiring(
+              child: ListenableBuilder(
+                listenable: AppLock.instance,
+                builder: (context, _) {
+                  final body = ColumnModeSync(
+                    navigatorKey: appNavigatorKey,
+                    child: child ?? const SizedBox.shrink(),
+                  );
+                  if (!AppLock.instance.needsDisguise) return body;
+                  // Keep navigator mounted under the disguise so unlock
+                  // restores the previous route tree.
+                  return Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Offstage(child: body),
+                      Disguise2048Page(onUnlocked: () {}),
+                    ],
+                  );
+                },
+              ),
+            );
+          },
           initialRoute: widget.hasAccounts ? '/chats' : '/login',
           onGenerateRoute: (settings) {
             switch (settings.name) {
@@ -153,6 +182,12 @@ class _AppState extends ConsumerState<App> {
                 return MaterialPageRoute<void>(
                   settings: settings,
                   builder: (_) => LoginPage(addAccountMode: addAccount),
+                );
+              case '/register':
+                final addAccount = settings.arguments == true;
+                return MaterialPageRoute<void>(
+                  settings: settings,
+                  builder: (_) => RegisterPage(addAccountMode: addAccount),
                 );
               case '/chats':
                 return MaterialPageRoute<void>(

@@ -36,8 +36,7 @@ class PendingRequestsPage extends ConsumerWidget {
       body: requests.when(
         data: (rows) {
           return invites.when(
-            data: (roomRows) =>
-                _body(context, ref, tg, l10n, rows, roomRows),
+            data: (roomRows) => _body(context, ref, tg, l10n, rows, roomRows),
             loading: () => const Center(child: CircularProgressIndicator()),
             error: (e, _) => Center(child: Text('$e')),
           );
@@ -201,10 +200,9 @@ class _RoomInviteRowState extends ConsumerState<_RoomInviteRow> {
     if (_busy) return;
     setState(() => _busy = true);
     final inv = widget.invite;
-    await ref.read(xmppServiceProvider).declineRoomInvite(
-          roomJid: inv.roomJid,
-          toInviter: inv.fromJid,
-        );
+    await ref
+        .read(xmppServiceProvider)
+        .declineRoomInvite(roomJid: inv.roomJid, toInviter: inv.fromJid);
     await ref.read(databaseProvider).removeRoomInvitation(inv.roomJid);
     if (!mounted) return;
     setState(() => _busy = false);
@@ -250,9 +248,8 @@ class _RoomInviteRowState extends ConsumerState<_RoomInviteRow> {
     if (!mounted) return;
     if (failure != null) {
       setState(() => _busy = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.couldNotJoin('$failure'))),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(l10n.couldNotJoin('$failure'))));
       return;
     }
     final db = ref.read(databaseProvider);

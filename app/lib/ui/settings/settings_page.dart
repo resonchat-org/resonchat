@@ -11,11 +11,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../l10n/l10n.dart';
 import '../../net/app_network.dart';
 import '../../crypto/omemo/track.dart';
+import '../../security/app_lock.dart';
 import '../../state/providers.dart';
 import '../../xmpp/message_expiry.dart';
 import '../accent_theme.dart';
 import '../archive/archive_page.dart';
 import '../theme.dart';
+import 'app_lock_pin_sheet.dart';
 import 'settings_viewmodel.dart';
 import 'socks5_proxy_sheet.dart';
 
@@ -84,6 +86,19 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           ),
 
           _header(tg, l10n.privacy),
+          ListenableBuilder(
+            listenable: AppLock.instance,
+            builder: (context, _) {
+              final lock = AppLock.instance;
+              return SwitchListTile(
+                secondary: const Icon(Icons.visibility_off_outlined),
+                title: Text(l10n.appLock),
+                subtitle: Text(l10n.appLockSummary),
+                value: lock.enabled && lock.hasPassword,
+                onChanged: (v) => unawaited(_toggleAppLock(v)),
+              );
+            },
+          ),
           SwitchListTile(
             secondary: const Icon(Icons.done_all),
             title: Text(l10n.readReceipts),
@@ -159,6 +174,20 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         ],
       ),
     );
+  }
+
+  Future<void> _toggleAppLock(bool enable) async {
+    if (!enable) {
+      await AppLock.instance.clearPassword();
+      return;
+    }
+    if (!mounted) return;
+    final pin = await showAppLockPinSheet(context);
+    if (pin == null || !mounted) return;
+    await AppLock.instance.setPassword(pin);
+    await AppLock.instance.setEnabled(true);
+    // Stay in the real UI after configuring (Amarok unlock-after-set).
+    AppLock.instance.unlock();
   }
 
   String _languageLabel(AppLocalizations l10n, Locale? override) {

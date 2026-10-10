@@ -240,6 +240,99 @@ class MessageBubble extends StatelessWidget {
       height: 1.3,
     );
 
+    // Telegram ChatMessageCell checkbox: visible in action mode, left of the
+    // bubble for both sides so the row still reads left-to-right.
+    final checkbox = selectionMode
+        ? Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: Icon(
+              selected ? Icons.check_circle : Icons.circle_outlined,
+              size: 22,
+              color: selected ? tg.accent : tg.textSecondary,
+            ),
+          )
+        : null;
+
+    final bubble = CustomPaint(
+      painter: _BubblePainter(
+        color: color,
+        side: side,
+        radius: TgDimens.bubbleRadius,
+        tail: TgDimens.bubbleTailSize,
+        style: bubbleStyle,
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          TgDimens.bubblePaddingH + 4,
+          TgDimens.bubblePaddingV,
+          TgDimens.bubblePaddingH + 4,
+          TgDimens.bubblePaddingV,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (!retracted && message != null && message!.mediaUrl.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: MediaAttachment(message: message!, chatKey: chatKey),
+              ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Flexible(
+                  child: retracted
+                      ? Text(
+                          mine ? kRetractedNoticeMine : kRetractedNotice,
+                          style: TextStyle(
+                            fontSize: TgDimens.messageFontSize,
+                            fontStyle: FontStyle.italic,
+                            color: tg.textSecondary,
+                            height: 1.3,
+                          ),
+                        )
+                      : _shouldHideUrlBody(message, text)
+                      ? const SizedBox.shrink()
+                      : Text.rich(
+                          mentionAwareSpan(
+                            text,
+                            style: bodyStyle,
+                            highlightNicks: highlightNicks,
+                            mentionStyle: bodyStyle.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: tg.accent,
+                            ),
+                          ),
+                        ),
+                ),
+                if (edited && !retracted)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 6, bottom: 2),
+                    child: Text(
+                      context.l10n.edited,
+                      style: TextStyle(
+                        fontSize: TgDimens.timeFontSize - 1,
+                        color: tg.textSecondary,
+                      ),
+                    ),
+                  ),
+                const SizedBox(width: 8),
+                _MetaRow(
+                  time: time,
+                  delivered: delivered,
+                  displayed: displayed,
+                  failed: failed,
+                  mine: mine,
+                  track: track,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+
     return Container(
       // The selection tint is on the row, not the bubble: tinting the bubble
       // itself would hide the text it is tinting behind the highlight.
@@ -279,91 +372,20 @@ class MessageBubble extends StatelessWidget {
           GestureDetector(
             onTap: onTap,
             onLongPress: onLongPress,
-            child: CustomPaint(
-              painter: _BubblePainter(
-                color: color,
-                side: side,
-                radius: TgDimens.bubbleRadius,
-                tail: TgDimens.bubbleTailSize,
-                style: bubbleStyle,
-              ),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  TgDimens.bubblePaddingH + 4,
-                  TgDimens.bubblePaddingV,
-                  TgDimens.bubblePaddingH + 4,
-                  TgDimens.bubblePaddingV,
+            behavior: HitTestBehavior.opaque,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                ?checkbox,
+                Expanded(
+                  child: Align(
+                    alignment: mine
+                        ? Alignment.centerRight
+                        : Alignment.centerLeft,
+                    child: bubble,
+                  ),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (!retracted &&
-                        message != null &&
-                        message!.mediaUrl.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 4),
-                        child: MediaAttachment(
-                          message: message!,
-                          chatKey: chatKey,
-                        ),
-                      ),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Flexible(
-                          child: retracted
-                              ? Text(
-                                  mine
-                                      ? kRetractedNoticeMine
-                                      : kRetractedNotice,
-                                  style: TextStyle(
-                                    fontSize: TgDimens.messageFontSize,
-                                    fontStyle: FontStyle.italic,
-                                    color: tg.textSecondary,
-                                    height: 1.3,
-                                  ),
-                                )
-                              : _shouldHideUrlBody(message, text)
-                              ? const SizedBox.shrink()
-                              : Text.rich(
-                                  mentionAwareSpan(
-                                    text,
-                                    style: bodyStyle,
-                                    highlightNicks: highlightNicks,
-                                    mentionStyle: bodyStyle.copyWith(
-                                      fontWeight: FontWeight.w700,
-                                      color: tg.accent,
-                                    ),
-                                  ),
-                                ),
-                        ),
-                        if (edited && !retracted)
-                          Padding(
-                            padding: const EdgeInsets.only(left: 6, bottom: 2),
-                            child: Text(
-                              context.l10n.edited,
-                              style: TextStyle(
-                                fontSize: TgDimens.timeFontSize - 1,
-                                color: tg.textSecondary,
-                              ),
-                            ),
-                          ),
-                        const SizedBox(width: 8),
-                        _MetaRow(
-                          time: time,
-                          delivered: delivered,
-                          displayed: displayed,
-                          failed: failed,
-                          mine: mine,
-                          track: track,
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
+              ],
             ),
           ),
           if (reactions.isNotEmpty && !retracted)

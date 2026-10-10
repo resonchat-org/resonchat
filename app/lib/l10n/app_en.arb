@@ -3,6 +3,16 @@
   "appName": "resonchat",
   "settings": "Settings",
   "privacy": "Privacy",
+  "appLock": "App lock",
+  "appLockSummary": "Show a 2048 game on open. Tap tiles for the PIN (0–9A–F), SCORE to unlock, BEST to clear.",
+  "appLockPinSet": "Set unlock PIN",
+  "appLockPinConfirm": "Confirm unlock PIN",
+  "appLockPinHint": "Use digits 0–9 and A–F — the same 16 cells as the 2048 board, top-left to bottom-right.",
+  "appLockPinInvalid": "PIN must be 4–16 characters of 0–9 and A–F.",
+  "appLockPinMismatch": "PINs do not match. Try again.",
+  "appLockPinNext": "Next",
+  "appLockPinSave": "Save",
+  "appLockPinDelete": "Delete",
   "interface": "Interface",
   "themeColor": "Theme colour",
   "themeColorSummary": "Material You or a fixed colour",
@@ -73,6 +83,41 @@
   "hostOptionalWebHint": "Leave empty to use host-meta, or enter wss://…",
   "connect": "Connect",
   "connecting": "Connecting…",
+  "createAccount": "Create account",
+  "register": "Register",
+  "registering": "Registering…",
+  "username": "Username",
+  "confirmPassword": "Confirm password",
+  "pickAServer": "Pick a server",
+  "serverSelectText": "Your XMPP address is username@server. Any of these providers works with every other; pick any one, or use your own.",
+  "chooseYourServer": "Server",
+  "useOwnProvider": "Use my own provider",
+  "serverDomain": "Server domain",
+  "yourFullJidWillBe": "Your address will be {jid}",
+  "@yourFullJidWillBe": {
+    "placeholders": {
+      "jid": { "type": "String" }
+    }
+  },
+  "registrationNeedUsernameAndServer": "Enter a username and server.",
+  "registrationInvalidUsername": "Username must be at least 3 characters and contain no special characters.",
+  "registrationNeedPassword": "Enter a password.",
+  "registrationPasswordMismatch": "Passwords do not match.",
+  "registrationFailed": "Registration failed",
+  "registrationNotSupported": "This server does not allow in-band registration.",
+  "registrationConflict": "That username is already taken.",
+  "registrationPasswordTooWeak": "Password is too weak for this server.",
+  "registrationInvalidCaptcha": "Captcha was incorrect.",
+  "registrationPleaseWait": "Please wait and try again.",
+  "registrationCaptchaTitle": "Captcha",
+  "registrationCaptchaHint": "Text from the image",
+  "registrationWebRequired": "This server requires registering in a browser:\n{url}",
+  "@registrationWebRequired": {
+    "placeholders": {
+      "url": { "type": "String" }
+    }
+  },
+  "registrationLoginAfterCreateFailed": "Account was created, but login failed. Try connecting from the login screen.",
   "authenticationFailed": "Authentication failed",
   "searchMessages": "Search messages",
   "searching": "Searching…",
@@ -152,6 +197,13 @@
       "count": { "type": "int" }
     }
   },
+  "selectionLimitReached": "You can select up to {count} messages.",
+  "@selectionLimitReached": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "nothingToCopy": "Nothing to copy.",
   "deleteMine": "Delete mine",
   "replyingTo": "Replying to {author}",
   "@replyingTo": {
