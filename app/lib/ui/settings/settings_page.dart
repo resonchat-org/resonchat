@@ -23,6 +23,7 @@ import 'socks5_proxy_sheet.dart';
 import 'translation_settings_sheet.dart';
 import '../../translate/translation_engine.dart';
 import '../../translate/translation_prefs.dart';
+import '../../untracker/prefs.dart';
 import '../../xmpp/channel_discovery.dart';
 
 /// App settings. Deliberately free of branding that would suggest any
@@ -37,12 +38,14 @@ class SettingsPage extends ConsumerStatefulWidget {
 class _SettingsPageState extends ConsumerState<SettingsPage> {
   TranslationPrefs? _translationPrefs;
   ChannelDiscoveryMethod _channelMethod = ChannelDiscoveryMethod.jabberNetwork;
+  bool _removeTrackingEnabled = false;
 
   @override
   void initState() {
     super.initState();
     unawaited(_reloadTranslationPrefs());
     unawaited(_reloadChannelMethod());
+    unawaited(_reloadRemoveTracking());
   }
 
   Future<void> _reloadTranslationPrefs() async {
@@ -55,6 +58,18 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final method = await loadChannelDiscoveryMethod();
     if (!mounted) return;
     setState(() => _channelMethod = method);
+  }
+
+  Future<void> _reloadRemoveTracking() async {
+    final enabled = await loadRemoveTrackingEnabled();
+    if (!mounted) return;
+    setState(() => _removeTrackingEnabled = enabled);
+  }
+
+  Future<void> _setRemoveTracking(bool enabled) async {
+    await saveRemoveTrackingEnabled(enabled);
+    if (!mounted) return;
+    setState(() => _removeTrackingEnabled = enabled);
   }
 
   @override
@@ -165,6 +180,13 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     unawaited(_pickDefaultEncryption(context, current, vm)),
               );
             },
+          ),
+          SwitchListTile(
+            secondary: const Icon(Icons.link_off_outlined),
+            title: Text(l10n.removeTracking),
+            subtitle: Text(l10n.removeTrackingSummary),
+            value: _removeTrackingEnabled,
+            onChanged: (v) => unawaited(_setRemoveTracking(v)),
           ),
 
           _header(tg, l10n.connection),

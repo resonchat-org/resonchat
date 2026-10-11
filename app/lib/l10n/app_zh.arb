@@ -238,6 +238,7 @@
   "openChatHint": "要打开的 JID",
   "open": "打开",
   "invalidJid": "这不像是一个有效的 JID",
+  "couldNotOpenLink": "没有可以打开此链接的应用",
   "contactRequestSent": "已发送联系人请求。对方接受前，消息仅保存在本机。",
   "contactAddFailed": "无法在服务器上添加该联系人。",
   "mute": "静音",
@@ -253,6 +254,10 @@
   "copyText": "复制文本",
   "forward": "转发",
   "forwardSubtitle": "再次发送给其他人，并对他们加密。",
+  "forwardMerged": "合并转发",
+  "forwardMergedSummary": "合并为一条引用摘录。",
+  "forwardSeparately": "逐条转发",
+  "forwardSeparatelySummary": "每条选中的消息各自转发一条。",
   "edit": "编辑",
   "deleteForEveryone": "为所有人删除",
   "deleteUnencryptedWarning": "此消息以明文发送。在此删除只会移除你这边的副本，已经读过的人仍保留内容。",
@@ -416,6 +421,11 @@
   "appearanceBubbleRound": "圆角",
   "appearanceBubbleSquare": "方角",
   "appearanceBubbleTailed": "带尾",
+  "customBackground": "自定义背景",
+  "customBackgroundSet": "已设置自定义背景",
+  "customBackgroundFailed": "无法创建背景",
+  "deleteBackground": "移除聊天背景",
+  "deleteBackgroundSuccess": "已移除背景图片",
   "reset": "重置",
   "leaveRoom": "离开",
   "relationship": "关系",
@@ -581,5 +591,18 @@
   },
   "today": "今天",
   "yesterday": "昨天",
-  "unknownReason": "未知原因"
+  "unknownReason": "未知原因",
+  "removeTracking": "发送前检查追踪",
+  "removeTrackingSummary": "检测到已知追踪参数时警告并可移除。规则有限、不保证有效，请勿完全依赖。",
+  "trackingChecking": "检查中……",
+  "trackingWarning": "警告",
+  "trackingSendSafely": "安全发送",
+  "trackingSendOriginal": "发送原文",
+  "trackingWarningDetected": "检测到追踪链接。清理后的文本：\n\n{cleaned}",
+  "@trackingWarningDetected": {
+    "placeholders": {
+      "cleaned": { "type": "String" }
+    }
+  },
+  "trackingNetworkError": "检测到追踪信息，但因网络错误无法移除。是否仍发送原文？"
 }

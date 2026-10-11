@@ -16,14 +16,8 @@
 //   forward either fails silently or leaks who else was in the conversation.
 //
 // So a forward is a **new message**, re-encrypted for the new recipient on the
-// new conversation's track, carrying the original's text as a `> ` quote. That
-// is what every client the user knows actually does, and it composes with the
-// three-track design instead of fighting it.
-//
-// One thing reuse would have given us and this does not: the original's
-// ciphertext is not re-sent. That is correct, not a loss. The recipient of a
-// forward should read what the sender chose to forward, not hold a copy of an
-// encryption the sender has no reason to re-issue.
+// new conversation's track. Classic items use a `> `-quoted body plus a short
+// attribution line; preformatted items (quoted transcripts) are sent as-is.
 
 import 'package:moxxmpp/moxxmpp.dart' show JID;
 
@@ -46,6 +40,7 @@ class ForwardOutcome {
     required this.forwarded,
     this.refused,
     this.stanzaId = const [],
+    this.wireBodies = const [],
   });
 
   /// How many messages actually went out.
@@ -57,33 +52,54 @@ class ForwardOutcome {
   /// Stanza ids of what was sent, so the caller can store or roll back.
   final List<String> stanzaId;
 
+  /// Wire bodies matching [stanzaId] (for local persistence).
+  final List<String> wireBodies;
+
   bool get ok => refused == null;
 }
 
 /// One message chosen for forwarding.
 class ForwardItem {
-  const ForwardItem({required this.body, required this.chatJid});
+  const ForwardItem({
+    required this.body,
+    required this.chatJid,
+    this.preformatted = false,
+  });
 
   /// The text to forward.
   ///
-  /// The stored body, already stripped of any `> ` quote it was itself a reply
-  /// to — forwarding the quote of a quote produces an unreadable block that
-  /// grows on every hop.
+  /// When [preformatted] is false: the stored body (no nested quote of a quote).
+  /// When true: a full transcript (headers + `> ` lines), sent as the message
+  /// body without wrapping again.
   final String body;
 
   /// Where it came from, named in the attribution so the recipient knows it is
-  /// second-hand.
+  /// second-hand. Unused when [preformatted].
   final String chatJid;
+
+  /// [body] is already the wire text; do not add attribution / extra quoting.
+  final bool preformatted;
 }
 
 /// The text to put on the wire as the attribution.
 String forwardAttribution(String originJid) => 'Forwarded from $originJid';
 
+/// Builds the body that actually goes on the wire for one [item].
+String forwardWireBody(ForwardItem item) {
+  if (item.preformatted) return item.body;
+  // Attribution after the quote (same shape as a reply fallback): readers see
+  // the quoted content first, then the label. Must not go through sendReply
+  // with an empty targetId — that path drops the quote when replyTo is null.
+  return buildReplyFallback(
+    item.body,
+    forwardAttribution(item.chatJid),
+  ).wireBody;
+}
+
 /// Sends one message of a forward. Injected so the loop can be tested without
 /// a connection.
 typedef ForwardSender = Future<SendOutcome> Function(
-  String body,
-  String quote,
+  String wireBody,
   Track track,
 );
 
@@ -104,22 +120,28 @@ Future<ForwardOutcome> runForward({
     );
   }
   final sent = <String>[];
+  final bodies = <String>[];
   for (final item in items) {
-    final outcome = await send(
-      forwardAttribution(item.chatJid),
-      item.body,
-      track,
-    );
+    final wire = forwardWireBody(item);
+    final outcome = await send(wire, track);
     if (!outcome.sent) {
       return ForwardOutcome(
         forwarded: sent.length,
         refused: ForwardRefusal.trackBlocked,
         stanzaId: sent,
+        wireBodies: bodies,
       );
     }
-    if (outcome.stanzaId != null) sent.add(outcome.stanzaId!);
+    if (outcome.stanzaId != null) {
+      sent.add(outcome.stanzaId!);
+      bodies.add(wire);
+    }
   }
-  return ForwardOutcome(forwarded: sent.length, stanzaId: sent);
+  return ForwardOutcome(
+    forwarded: sent.length,
+    stanzaId: sent,
+    wireBodies: bodies,
+  );
 }
 
 /// Forwards [items] into the conversation with [toJid].
@@ -128,20 +150,12 @@ Future<ForwardOutcome> forwardMessages(
   required JID toJid,
   required List<ForwardItem> items,
   required Track track,
+  String messageType = 'chat',
 }) {
   return runForward(
     items: items,
     track: track,
-    send: (body, quote, t) => sendReply(
-      xmpp,
-      to: toJid,
-      body: body,
-      // Empty: a forward references no message of its own. The quoted text is
-      // attribution, not a reply target, and pointing a `<reply>` element at
-      // nothing would make some clients render an empty quote box.
-      targetId: '',
-      track: t,
-      quoteBody: quote,
-    ),
+    send: (wireBody, t) =>
+        xmpp.sendOnTrack(toJid, wireBody, track: t, messageType: messageType),
   );
 }

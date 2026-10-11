@@ -259,15 +259,23 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 
 /// Picks a conversation to forward into.
 class ForwardTargetSheet extends ConsumerWidget {
-  const ForwardTargetSheet({super.key, required this.items});
+  const ForwardTargetSheet({
+    super.key,
+    required this.items,
+    this.selectionCount,
+  });
 
   final List<ForwardItem> items;
+
+  /// How many messages the user selected (may differ from [items] when merged).
+  final int? selectionCount;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tg = context.tg;
     final l10n = context.l10n;
     final chats = ref.watch(chatsProvider);
+    final count = selectionCount ?? items.length;
     return DraggableScrollableSheet(
       expand: false,
       initialChildSize: 0.6,
@@ -279,9 +287,7 @@ class ForwardTargetSheet extends ConsumerWidget {
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
               child: Text(
-                items.length == 1
-                    ? l10n.forward
-                    : l10n.selectedCount(items.length),
+                count <= 1 ? l10n.forward : l10n.selectedCount(count),
                 style: Theme.of(context).textTheme.titleMedium,
               ),
             ),

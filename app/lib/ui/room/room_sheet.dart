@@ -32,8 +32,20 @@ import '../home/open_chat.dart';
 import '../theme.dart';
 
 /// Asks for a room JID and a nickname, then joins.
+/// Shows the join-room sheet, optionally prefilled from an `xmpp:?join` URI.
+Future<void> showJoinRoomSheet(BuildContext context, {String? initialRoomJid}) {
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    builder: (_) => JoinRoomSheet(initialRoomJid: initialRoomJid),
+  );
+}
+
 class JoinRoomSheet extends ConsumerStatefulWidget {
-  const JoinRoomSheet({super.key});
+  const JoinRoomSheet({super.key, this.initialRoomJid});
+
+  /// Bare room JID from an `xmpp:room@muc.example?join` link.
+  final String? initialRoomJid;
 
   @override
   ConsumerState<JoinRoomSheet> createState() => _JoinRoomSheetState();
@@ -51,6 +63,10 @@ class _JoinRoomSheetState extends ConsumerState<JoinRoomSheet> {
     // Default the nickname to our own local part: it is what everyone else
     // will see, and an empty one is rejected by the server.
     _nick.text = ref.read(xmppServiceProvider).myJid?.split('@').first ?? '';
+    final prefill = widget.initialRoomJid?.trim();
+    if (prefill != null && prefill.isNotEmpty) {
+      _room.text = prefill;
+    }
   }
 
   @override

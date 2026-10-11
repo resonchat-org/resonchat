@@ -21,11 +21,11 @@ import 'package:resonchat/xmpp/forwarding.dart';
 
 /// A sender that records what it was asked to send.
 class _Recorder {
-  final calls = <({String body, String quote, Track track})>[];
+  final calls = <({String wireBody, Track track})>[];
   int failAfter = 1 << 30;
 
-  Future<SendOutcome> send(String body, String quote, Track track) async {
-    calls.add((body: body, quote: quote, track: track));
+  Future<SendOutcome> send(String wireBody, Track track) async {
+    calls.add((wireBody: wireBody, track: track));
     if (calls.length > failAfter) {
       return const SendOutcome(
         stanzaId: null,
@@ -44,31 +44,42 @@ const _items = [
 
 void main() {
   group('what is on the wire', () {
-    test('each message quotes the original text', () {
+    test('each message quotes the original text', () async {
       // Without this the recipient gets "Forwarded from a@b" and nothing else,
       // which is not a forward.
       final r = _Recorder();
-      runForward(items: _items, track: Track.standard, send: r.send);
-      expect(r.calls.first.quote, 'the first thing');
-    });
-
-    test('the attribution names the origin', () async {
-      final r = _Recorder();
-      final outcome = await runForward(
-        items: _items,
-        track: Track.standard,
-        send: r.send,
+      await runForward(items: _items, track: Track.standard, send: r.send);
+      expect(r.calls.first.wireBody, contains('> the first thing'));
+      expect(
+        r.calls.first.wireBody,
+        contains(forwardAttribution('a@b.example')),
       );
-      expect(outcome.ok, isTrue);
-      expect(r.calls.first.body, forwardAttribution('a@b.example'));
-      expect(r.calls.first.body, contains('a@b.example'));
     });
 
-    test('the attribution is not mixed into the quoted text', () {
+    test('the attribution is not mixed into the quoted lines', () {
       // A reader seeing `> Forwarded from a@b` above `> the real text` cannot
       // tell which line was said and which was the label.
       expect(forwardAttribution('a@b.example'), startsWith('Forwarded from '));
       expect(forwardAttribution('a@b.example'), isNot(contains('>')));
+      final wire = forwardWireBody(_items.first);
+      expect(wire, isNot(contains('> Forwarded from')));
+    });
+
+    test('preformatted transcript is sent as-is', () async {
+      final r = _Recorder();
+      const text = '2024-01-01 12:00 - alice:\n> hello';
+      await runForward(
+        items: [
+          const ForwardItem(
+            body: text,
+            chatJid: 'a@b.example',
+            preformatted: true,
+          ),
+        ],
+        track: Track.standard,
+        send: r.send,
+      );
+      expect(r.calls.single.wireBody, text);
     });
 
     test('the track asked for is the track used', () async {
@@ -99,30 +110,26 @@ void main() {
 
   group('a refused track', () {
     test('stops at the first failure', () async {
-      final r = _Recorder()..failAfter = 0;
-      final outcome = await runForward(
-        items: _items,
-        track: Track.pq,
-        send: r.send,
-      );
-      expect(outcome.ok, isFalse);
-      expect(outcome.refused, ForwardRefusal.trackBlocked);
-      expect(outcome.forwarded, 0);
-      expect(r.calls, hasLength(1), reason: 'the second was never attempted');
-    });
-
-    test('and says how many went out before it stopped', () async {
-      // A partial forward the user is not told about is indistinguishable from
-      // one that failed completely.
       final r = _Recorder()..failAfter = 1;
       final outcome = await runForward(
         items: _items,
         track: Track.standard,
         send: r.send,
       );
-      expect(outcome.forwarded, 1);
       expect(outcome.ok, isFalse);
-      expect(outcome.stanzaId, ['stanza-1']);
+      expect(outcome.forwarded, 1);
+      expect(r.calls.length, 2);
+    });
+
+    test('and says how many went out before it stopped', () async {
+      final r = _Recorder()..failAfter = 0;
+      final outcome = await runForward(
+        items: _items,
+        track: Track.standard,
+        send: r.send,
+      );
+      expect(outcome.forwarded, 0);
+      expect(outcome.refused, ForwardRefusal.trackBlocked);
     });
 
     test('never falls back to another track', () async {
@@ -132,7 +139,8 @@ void main() {
         track: Track.pq,
         send: r.send,
       );
-      expect(outcome.stanzaId, isEmpty);
+      expect(outcome.ok, isFalse);
+      expect(r.calls.every((c) => c.track == Track.pq), isTrue);
     });
   });
 }

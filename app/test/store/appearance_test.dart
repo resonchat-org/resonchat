@@ -29,6 +29,16 @@ void main() {
     test('the default encodes as zeros', () {
       expect(const ChatAppearance().encode(), '00');
     });
+
+    test('custom wallpaper round trips', () {
+      const original = ChatAppearance(
+        wallpaper: Wallpaper.custom,
+        bubble: BubbleStyle.square,
+      );
+      final decoded = ChatAppearance.decode(original.encode());
+      expect(decoded.wallpaper, Wallpaper.custom);
+      expect(decoded.bubble, BubbleStyle.square);
+    });
   });
 
   group('reading a value we do not understand', () {

@@ -14,8 +14,8 @@ import '../../store/database.dart';
 import '../../xmpp/reactions.dart';
 import '../../xmpp/retraction.dart';
 import '../../utils/appearance.dart';
+import 'linkified_text.dart';
 import 'media_attachment.dart';
-import 'mention_text.dart';
 import '../theme.dart';
 
 enum BubbleSide { incoming, outgoing }
@@ -302,16 +302,20 @@ class MessageBubble extends StatelessWidget {
                         )
                       : _shouldHideUrlBody(message, text)
                       ? const SizedBox.shrink()
-                      : Text.rich(
-                          mentionAwareSpan(
-                            text,
-                            style: bodyStyle,
-                            highlightNicks: highlightNicks,
-                            mentionStyle: bodyStyle.copyWith(
-                              fontWeight: FontWeight.w700,
-                              color: tg.accent,
-                            ),
+                      : LinkifiedText(
+                          text: text,
+                          style: bodyStyle,
+                          highlightNicks: highlightNicks,
+                          mentionStyle: bodyStyle.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: tg.accent,
                           ),
+                          linkStyle: bodyStyle.copyWith(
+                            color: tg.accent,
+                            decoration: TextDecoration.underline,
+                            decorationColor: tg.accent,
+                          ),
+                          quoteColor: tg.textSecondary,
                         ),
                 ),
                 if (edited && !retracted)

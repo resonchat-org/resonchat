@@ -475,8 +475,9 @@ bool _isNeverDrawn(int r) {
   if (r < 0x20 || r == 0x7F) return true; // C0 controls and DEL
   if (r >= 0x80 && r <= 0x9F) return true; // C1 controls, including NEL
   if (r >= 0xD800 && r <= 0xDFFF) return true; // unpaired surrogate
-  if (r == 0x00AD || r == 0x061C || r == 0x180E)
+  if (r == 0x00AD || r == 0x061C || r == 0x180E) {
     return true; // soft hyphen, ALM
+  }
   if (r >= 0x200B && r <= 0x200F) return true; // ZWSP, ZWNJ, ZWJ, LRM, RLM
   if (r >= 0x202A && r <= 0x202E) return true; // bidi embedding and override
   if (r >= 0x2060 && r <= 0x2064) return true; // word joiner, invisible maths

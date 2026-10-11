@@ -139,7 +139,7 @@ Future<bool> _report(JID peer, PubSubManager pubsub) async {
   }
 
   _out(
-    '  ==> ${resolvable}/${ids.length} advertised device(s) have a fetchable '
+    '  ==> $resolvable/${ids.length} advertised device(s) have a fetchable '
     'bundle',
   );
   return resolvable == ids.length;

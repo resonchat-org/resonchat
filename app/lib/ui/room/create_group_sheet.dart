@@ -53,11 +53,7 @@ Future<void> showGroupActionsSheet(BuildContext context) async {
   if (!context.mounted || action == null) return;
   switch (action) {
     case _GroupEntryAction.join:
-      await showModalBottomSheet<void>(
-        context: context,
-        isScrollControlled: true,
-        builder: (_) => const JoinRoomSheet(),
-      );
+      await showJoinRoomSheet(context);
     case _GroupEntryAction.createPrivate:
       await showCreatePrivateGroupSheet(context);
     case _GroupEntryAction.createPublic:

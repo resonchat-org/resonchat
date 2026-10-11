@@ -995,19 +995,6 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
 
   // --- Forwarding -----------------------------------------------------------
 
-  /// Items for the stanza ids in [ids], in that order, skipping rows that are
-  /// gone or have no text.
-  Future<List<ForwardItem>> forwardItemsFor(List<String> ids) async {
-    final r = resolveChatKey(arg);
-    final messages = await r.session.db.watchMessages(r.jid).first;
-    final byId = {for (final m in messages) m.stanzaId: m};
-    return [
-      for (final id in ids)
-        if (byId[id] != null && byId[id]!.body.trim().isNotEmpty)
-          ForwardItem(body: byId[id]!.body, chatJid: r.jid),
-    ];
-  }
-
   /// Forwards [items] into the conversation [targetKey].
   ///
   /// Sent again as a new, re-encrypted message rather than reusing the
@@ -1025,14 +1012,41 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
     if (ref.read(isBlockedProvider(targetKey))) {
       return ChatForwardResult(destPeer: destPeer, blocked: true);
     }
-    final track = await ref.read(chatTrackProvider(targetKey).future);
+    var track = await ref.read(chatTrackProvider(targetKey).future);
     if (_disposed) return ChatForwardResult(destPeer: destPeer);
+
+    final chat = await dest.session.db.getChat(destPeer);
+    final isGroup = chat?.isGroup ?? false;
+    final mucEncryptable = chat?.mucPrivateNonAnonymous ?? false;
+    // Public / anonymous rooms: plaintext only (same as sendText).
+    if (isGroup && !mucEncryptable) track = Track.none;
+    final messageType = isGroup ? 'groupchat' : 'chat';
+
     final outcome = await forwardMessages(
       dest.session.xmpp,
       toJid: JID.fromString(destPeer).toBare(),
       items: items,
       track: track,
+      messageType: messageType,
     );
+    // Persist what went out into the destination chat — otherwise the sender
+    // sees an empty history and assumes nothing was delivered.
+    if (outcome.ok) {
+      final now = DateTime.now();
+      for (var i = 0; i < outcome.stanzaId.length; i++) {
+        await dest.session.db.insertMessage(
+          MessagesCompanion(
+            chatJid: Value(destPeer),
+            sender: const Value('me'),
+            stanzaId: Value(outcome.stanzaId[i]),
+            body: Value(outcome.wireBodies[i]),
+            timestamp: Value(now.add(Duration(milliseconds: i))),
+            encMode: Value(EncModeToken.of(track).wire),
+            incoming: const Value(false),
+          ),
+        );
+      }
+    }
     return ChatForwardResult(destPeer: destPeer, outcome: outcome);
   }
 

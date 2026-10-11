@@ -14,6 +14,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:moxxmpp/moxxmpp.dart' show JID;
 
+import '../../account/account_hub.dart';
 import '../../account/chat_ref.dart';
 import '../../account/resolve.dart';
 import '../../l10n/l10n.dart';
@@ -26,12 +27,15 @@ import '../../store/database.dart';
 import '../../translate/translatable_text.dart';
 import '../../translate/translation_prefs.dart';
 import '../../translate/translation_service.dart';
+import '../../untracker/untracker.dart';
 import '../../xmpp/connection.dart';
 import '../../xmpp/forwarding.dart';
 import '../../xmpp/local_nickname.dart';
 import '../../xmpp/reactions.dart';
 import '../contact_avatar.dart';
 import '../../utils/appearance.dart';
+import 'chat_wallpaper.dart';
+import 'quoted_transcript.dart';
 import 'message_actions.dart';
 import '../home/open_chat.dart';
 import '../room/room_sheet.dart';
@@ -568,8 +572,10 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
   Future<void> _send() async {
     if (_ui.sending) return;
+    final body = await _prepareBodyForSend(_input.text);
+    if (body == null || !mounted) return;
     final result = await _vm.sendText(
-      _input.text,
+      body,
       confirm: _confirm,
       l10n: context.l10n,
       reply: _replyingTo,
@@ -588,6 +594,103 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       // message and watched the box empty has no way to know what happened.
       _showUnsentNotice();
     }
+  }
+
+  /// Pre-send tracking check. Returns body to send, or null if cancelled.
+  Future<String?> _prepareBodyForSend(String raw) async {
+    final enabled = await loadRemoveTrackingEnabled();
+    if (!mounted) return null;
+    if (!enabled) return raw;
+
+    final untracker = Untracker(raw);
+    if (!untracker.inspect()) return raw;
+
+    final l10n = context.l10n;
+    var canceled = false;
+    BuildContext? checkingCtx;
+    unawaited(
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) {
+          checkingCtx = ctx;
+          return AlertDialog(
+            content: Text(l10n.trackingChecking),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  canceled = true;
+                  Navigator.of(ctx).pop();
+                },
+                child: Text(l10n.cancel),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    UntrackResult? cleaned;
+    Object? error;
+    try {
+      cleaned = await untracker.untrack();
+    } catch (e) {
+      error = e;
+    }
+    if (!mounted) return null;
+    final open = checkingCtx;
+    if (open != null && open.mounted) Navigator.of(open).pop();
+    if (canceled) return null;
+
+    if (error != null) {
+      // Tracking was detected (inspect) but network failed — still warn.
+      final sendOriginal = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(l10n.trackingWarning),
+          content: Text(l10n.trackingNetworkError),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(l10n.cancel),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(l10n.trackingSendOriginal),
+            ),
+          ],
+        ),
+      );
+      return sendOriginal == true ? raw : null;
+    }
+
+    final text = cleaned!.text;
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.trackingWarning),
+        content: Text(l10n.trackingWarningDetected(text)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(l10n.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'original'),
+            child: Text(l10n.trackingSendOriginal),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'cleaned'),
+            child: Text(l10n.trackingSendSafely),
+          ),
+        ],
+      ),
+    );
+    return switch (choice) {
+      'original' => raw,
+      'cleaned' => text,
+      _ => null,
+    };
   }
 
   /// Adds or withdraws [emoji] on the message addressed by [targetId].
@@ -828,40 +931,15 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     setState(() {});
   }
 
-  /// Forwards [body] from this conversation into another one.
+  /// Forwards [message] from this conversation into another one.
   Future<void> _forwardMessage(Message message, String body) async {
     if (!mounted) return;
-    final items = [ForwardItem(body: body, chatJid: _peerJid)];
-    final target = await showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      builder: (_) => ForwardTargetSheet(items: items),
-    );
-    if (target == null || !mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
-    final navigator = Navigator.of(context);
-    final l10n = context.l10n;
-    final result = await _vm.forwardToChat(items: items, targetKey: target);
-    final destPeer = result.destPeer;
-    if (result.blocked) {
-      messenger.showSnackBar(
-        SnackBar(content: Text(l10n.unblockBeforeForward(destPeer))),
-      );
-      return;
-    }
-    final outcome = result.outcome;
-    if (outcome == null) return;
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(
-          outcome.ok
-              ? l10n.forwardedTo(destPeer)
-              : l10n.forwardedThenStopped(outcome.forwarded, destPeer),
-        ),
-      ),
-    );
-    if (!mounted) return;
-    if (outcome.ok) navigator.pop();
+    if (body.trim().isEmpty) return;
+    // Single forward: plain body, no header / quote wrapper.
+    final items = [
+      ForwardItem(body: body, chatJid: _peerJid, preformatted: true),
+    ];
+    await _pickTargetAndForward(items, selectionCount: 1);
   }
 
   /// Sends a correction for [_editingId] and stores it.
@@ -923,47 +1001,99 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
   void _clearSelection() => setState(_selection.clear);
 
-  /// Copy selected message bodies in pick order (Telegram action-mode Copy).
+  /// Copy selected messages as a quoted transcript.
   Future<void> _copySelection() async {
     if (_selection.isEmpty) return;
-    final list =
-        ref.read(messagesProvider(widget.chatJid)).value ?? const <Message>[];
-    final byId = {for (final m in list) m.stanzaId: m};
-    final parts = <String>[];
-    for (final id in _selection) {
-      final m = byId[id];
-      if (m == null || m.retracted) continue;
-      final body = m.body.trim();
-      if (body.isNotEmpty) parts.add(body);
-    }
-    if (parts.isEmpty) {
+    final text = formatQuotedTranscript(
+      _transcriptItemsForIds(_selection.toList()),
+    );
+    if (text.isEmpty) {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(context.l10n.nothingToCopy)));
       return;
     }
-    await Clipboard.setData(ClipboardData(text: parts.join('\n\n')));
+    await Clipboard.setData(ClipboardData(text: text));
     if (!mounted) return;
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(context.l10n.copied)));
     _clearSelection();
   }
 
-  /// Forwards everything selected, in the order it was picked.
+  /// Forwards the selection: ask merge vs separate when more than one.
   Future<void> _forwardSelection() async {
-    if (!mounted) return;
-    final items = await _vm.forwardItemsFor(List<String>.from(_selection));
-    if (!mounted) return;
-    if (items.isEmpty) {
+    if (!mounted || _selection.isEmpty) return;
+    final ids = List<String>.from(_selection);
+    final transcriptItems = _transcriptItemsForIds(ids);
+    if (transcriptItems.isEmpty) {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(context.l10n.nothingToForward)));
       return;
     }
+
+    final merge = transcriptItems.length == 1
+        ? false // one message: same as separate (quote only, no header)
+        : await _pickForwardMode();
+    if (!mounted || merge == null) return;
+
+    final List<ForwardItem> items;
+    if (merge) {
+      final text = formatQuotedTranscript(transcriptItems);
+      items = [ForwardItem(body: text, chatJid: _peerJid, preformatted: true)];
+    } else {
+      // One forward per message: plain body (no header, no `>` quote).
+      items = [
+        for (final t in transcriptItems)
+          ForwardItem(body: t.body, chatJid: _peerJid, preformatted: true),
+      ];
+    }
+    final ok = await _pickTargetAndForward(
+      items,
+      selectionCount: transcriptItems.length,
+    );
+    if (ok && mounted) _clearSelection();
+  }
+
+  /// `true` = merge, `false` = separate, `null` = cancelled.
+  Future<bool?> _pickForwardMode() {
+    final l10n = context.l10n;
+    return showModalBottomSheet<bool>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.merge_type),
+              title: Text(l10n.forwardMerged),
+              subtitle: Text(l10n.forwardMergedSummary),
+              onTap: () => Navigator.pop(ctx, true),
+            ),
+            ListTile(
+              leading: const Icon(Icons.view_agenda_outlined),
+              title: Text(l10n.forwardSeparately),
+              subtitle: Text(l10n.forwardSeparatelySummary),
+              onTap: () => Navigator.pop(ctx, false),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Shows the target picker and sends. Returns whether the forward finished OK.
+  Future<bool> _pickTargetAndForward(
+    List<ForwardItem> items, {
+    required int selectionCount,
+  }) async {
+    if (!mounted || items.isEmpty) return false;
     final target = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
-      builder: (_) => ForwardTargetSheet(items: items),
+      builder: (_) =>
+          ForwardTargetSheet(items: items, selectionCount: selectionCount),
     );
-    if (target == null || !mounted) return;
+    if (target == null || !mounted) return false;
     final messenger = ScaffoldMessenger.of(context);
     final l10n = context.l10n;
     final result = await _vm.forwardToChat(items: items, targetKey: target);
@@ -972,13 +1102,11 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       messenger.showSnackBar(
         SnackBar(content: Text(l10n.unblockBeforeForward(destPeer))),
       );
-      return;
+      return false;
     }
     final outcome = result.outcome;
-    if (outcome == null) return;
-    if (!outcome.ok && mounted) {
-      // Partial forwards are reported rather than silently dropped: the user
-      // is the only one who knows which of the selected messages mattered.
+    if (outcome == null) return false;
+    if (!outcome.ok) {
       messenger.showSnackBar(
         SnackBar(
           content: Text(
@@ -990,9 +1118,51 @@ class _ChatPageState extends ConsumerState<ChatPage> {
           ),
         ),
       );
-      return;
+      return false;
     }
-    if (mounted) _clearSelection();
+    messenger.showSnackBar(SnackBar(content: Text(l10n.forwardedTo(destPeer))));
+    return true;
+  }
+
+  List<QuotedTranscriptItem> _transcriptItemsForIds(List<String> ids) {
+    final list =
+        ref.read(messagesProvider(widget.chatJid)).value ?? const <Message>[];
+    final byId = {for (final m in list) m.stanzaId: m};
+    final out = <QuotedTranscriptItem>[];
+    for (final id in ids) {
+      final m = byId[id];
+      if (m == null || m.retracted || m.body.trim().isEmpty) continue;
+      out.add(_transcriptItemFor(m));
+    }
+    return out;
+  }
+
+  QuotedTranscriptItem _transcriptItemFor(Message m) {
+    final isGroup = _ui.isGroup;
+    final peerLabel = displayName(
+      localNickname: null,
+      rosterTitle: ref.read(chatProvider(widget.chatJid)).value?.title ?? '',
+      jid: _peerJid,
+      isRoom: isGroup,
+    );
+    return QuotedTranscriptItem(
+      id: m.stanzaId,
+      body: m.body,
+      timestamp: m.timestamp,
+      senderKey: m.incoming ? m.sender : '__me__',
+      senderLabel: m.incoming
+          ? (isGroup ? (_occupantNick(m.sender) ?? m.sender) : peerLabel)
+          : _transcriptSelfLabel(),
+    );
+  }
+
+  String _transcriptSelfLabel() {
+    final account = accountHub.primarySession?.account;
+    final nick = account?.displayName.trim() ?? '';
+    if (nick.isNotEmpty) return nick;
+    final jid = ref.read(xmppServiceProvider).myJid ?? '';
+    final local = jid.split('@').first;
+    return local.isNotEmpty ? local : 'me';
   }
 
   /// Retracts the selected messages that we sent.
@@ -1057,6 +1227,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final appearance =
         ref.watch(chatAppearanceProvider(widget.chatJid)).value ??
         const ChatAppearance();
+    final backgroundEpoch = ref.watch(chatRowRevisionProvider);
     final attachEnabled = ref.watch(httpUploadAvailableProvider).value ?? false;
     final chatRow = ref.watch(chatProvider(widget.chatJid)).value;
     final title = displayName(
@@ -1210,6 +1381,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                           context: context,
                           isScrollControlled: true,
                           builder: (sheetContext) => AppearancePicker(
+                            chatJid: _peerJid,
                             initial: appearance,
                             // Written on every change rather than on dismissal: the swatches
                             // are the preview, and waiting for "done" would mean choosing
@@ -1243,54 +1415,47 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                     onDismiss: _vm.dismissAdvice,
                   ),
                 Expanded(
-                  child: Container(
-                    color: tg.pageBackground,
-                    // Painted inside the Expanded rather than behind the Scaffold,
-                    // so the pattern does not also sit under the app bar and the input
-                    // bar — Telegram draws it only behind the transcript.
-                    child: CustomPaint(
-                      painter: WallpaperPainter(
-                        wallpaper: appearance.wallpaper,
-                        base: tg.pageBackground,
-                        // Theme accent tints the pattern (per-chat colour was
-                        // removed; the app theme colour already covers that).
-                        accent: tg.accent,
-                        seed: _peerJid,
-                      ),
-                      child: messages.when(
-                        data: (list) {
-                          if (list.isNotEmpty) _ensureInitialScroll();
-                          return _MessageList(
+                  child: ChatWallpaper(
+                    chatJid: _peerJid,
+                    appearance: appearance,
+                    base: tg.pageBackground,
+                    // Theme accent tints the pattern (per-chat colour was
+                    // removed; the app theme colour already covers that).
+                    accent: tg.accent,
+                    imageEpoch: backgroundEpoch,
+                    child: messages.when(
+                      data: (list) {
+                        if (list.isNotEmpty) _ensureInitialScroll();
+                        return _MessageList(
+                          chatKey: widget.chatJid,
+                          messages: list,
+                          scroll: _scroll,
+                          onRetryDecrypt: () => _loadHistory(),
+                          onReact: _toggleReaction,
+                          onMenu: _showMessageMenu,
+                          onToggleSelected: _toggleSelected,
+                          selectionMode: _selectionMode,
+                          selectedIds: _selection,
+                          translations: _translations,
+                          translatingIds: _translating,
+                          readAt: ref
+                              .watch(chatLastReadProvider(widget.chatJid))
+                              .value,
+                          unreadCount: _unreadCountHere ?? 0,
+                          unreadDividerKey: _unreadDividerKey,
+                          focusMessageAnchor: _activeFocusAnchor,
+                          focusMessageKey: _focusMessageKey,
+                          bubbleStyle: appearance.bubble,
+                          isGroup: ui.isGroup,
+                          highlightNicks: _highlightNicksFor(
+                            mucNick: ui.mucNick,
                             chatKey: widget.chatJid,
-                            messages: list,
-                            scroll: _scroll,
-                            onRetryDecrypt: () => _loadHistory(),
-                            onReact: _toggleReaction,
-                            onMenu: _showMessageMenu,
-                            onToggleSelected: _toggleSelected,
-                            selectionMode: _selectionMode,
-                            selectedIds: _selection,
-                            translations: _translations,
-                            translatingIds: _translating,
-                            readAt: ref
-                                .watch(chatLastReadProvider(widget.chatJid))
-                                .value,
-                            unreadCount: _unreadCountHere ?? 0,
-                            unreadDividerKey: _unreadDividerKey,
-                            focusMessageAnchor: _activeFocusAnchor,
-                            focusMessageKey: _focusMessageKey,
-                            bubbleStyle: appearance.bubble,
-                            isGroup: ui.isGroup,
-                            highlightNicks: _highlightNicksFor(
-                              mucNick: ui.mucNick,
-                              chatKey: widget.chatJid,
-                            ),
-                          );
-                        },
-                        loading: () =>
-                            const Center(child: CircularProgressIndicator()),
-                        error: (e, _) => Center(child: Text('$e')),
-                      ),
+                          ),
+                        );
+                      },
+                      loading: () =>
+                          const Center(child: CircularProgressIndicator()),
+                      error: (e, _) => Center(child: Text('$e')),
                     ),
                   ),
                 ),

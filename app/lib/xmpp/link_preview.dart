@@ -965,8 +965,9 @@ Future<LinkPreview?> loadPreview({
 /// file, which is precisely why it is written down here.
 bool isFetchableUrl(String url) {
   final lower = url.toLowerCase();
-  if (!lower.startsWith('http://') && !lower.startsWith('https://'))
+  if (!lower.startsWith('http://') && !lower.startsWith('https://')) {
     return false;
+  }
   if (url.length > kMaxUrlLength) return false;
 
   final schemeEnd = lower.indexOf('://') + 3;

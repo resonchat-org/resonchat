@@ -248,6 +248,7 @@
   "openChatHint": "JID to open",
   "open": "Open",
   "invalidJid": "That does not look like a JID",
+  "couldNotOpenLink": "No app found to open this link",
   "contactRequestSent": "Contact request sent. Messages stay on this device until they accept.",
   "contactAddFailed": "Could not add the contact on the server.",
   "mute": "Mute",
@@ -263,6 +264,10 @@
   "copyText": "Copy text",
   "forward": "Forward",
   "forwardSubtitle": "Sent again to someone else, encrypted for them.",
+  "forwardMerged": "Forward as one message",
+  "forwardMergedSummary": "Combine into one quoted transcript.",
+  "forwardSeparately": "Forward separately",
+  "forwardSeparatelySummary": "Send each selected message as its own forward.",
   "edit": "Edit",
   "deleteForEveryone": "Delete for everyone",
   "deleteUnencryptedWarning": "This message went out unencrypted. Deleting it here removes your copy, but anyone who already read it still has it.",
@@ -507,6 +512,11 @@
   "appearanceBubbleRound": "Round",
   "appearanceBubbleSquare": "Square",
   "appearanceBubbleTailed": "Tailed",
+  "customBackground": "Custom background",
+  "customBackgroundSet": "Custom background set",
+  "customBackgroundFailed": "Failed to create background",
+  "deleteBackground": "Remove chat background",
+  "deleteBackgroundSuccess": "Background image removed",
   "reset": "Reset",
   "leaveRoom": "Leave",
   "relationship": "Relationship",
@@ -672,5 +682,18 @@
   },
   "today": "Today",
   "yesterday": "Yesterday",
-  "unknownReason": "unknown reason"
+  "unknownReason": "unknown reason",
+  "removeTracking": "Check tracking before send",
+  "removeTrackingSummary": "Warn and offer to strip known trackers. Limited rules — not reliable; do not depend on it alone.",
+  "trackingChecking": "Checking…",
+  "trackingWarning": "Warning",
+  "trackingSendSafely": "Send safely",
+  "trackingSendOriginal": "Send original",
+  "trackingWarningDetected": "Tracking link detected. Cleaned text:\n\n{cleaned}",
+  "@trackingWarningDetected": {
+    "placeholders": {
+      "cleaned": { "type": "String" }
+    }
+  },
+  "trackingNetworkError": "Tracking was detected, but it could not be removed (network error). Send the original text anyway?"
 }
