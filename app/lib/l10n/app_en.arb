@@ -700,5 +700,10 @@
   "connectTls": "Could not establish a secure connection to the server.",
   "connectMechanism": "The server offers no sign-in method this app can use.",
   "connectProtocol": "The server ended the connection unexpectedly.",
-  "connectFailed": "Could not connect."
+  "connectFailed": "Could not connect.",
+  "startupFailedTitle": "resonchat could not start",
+  "startupFailedBody": "Something went wrong while opening the app's own storage. Message history is kept in an encrypted database, and the app will not fall back to storing it unencrypted.",
+  "startupFailedHint": "Trying again may work. If it keeps failing, the system key store may have been reset — for example after changing how the device is unlocked.",
+  "startupFailedDetails": "Technical details",
+  "startupFailedRetry": "Try again"
 }

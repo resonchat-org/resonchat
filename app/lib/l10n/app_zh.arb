@@ -609,5 +609,10 @@
   "connectTls": "无法与服务器建立安全连接。",
   "connectMechanism": "服务器没有提供本应用可用的登录方式。",
   "connectProtocol": "服务器意外中断了连接。",
-  "connectFailed": "连接失败。"
+  "connectFailed": "连接失败。",
+  "startupFailedTitle": "resonchat 无法启动",
+  "startupFailedBody": "打开本应用自己的存储时出错。消息历史保存在加密数据库中，本应用不会退而把消息明文存盘。",
+  "startupFailedHint": "再试一次可能就好了。如果一直失败，可能是系统密钥库被重置过——例如改过设备解锁方式之后。",
+  "startupFailedDetails": "技术细节",
+  "startupFailedRetry": "重试"
 }

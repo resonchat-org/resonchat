@@ -33,7 +33,7 @@ import 'ui/settings/settings_page.dart';
 /// Root navigator — used to remap `/chat` ↔ column pane across resizes.
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
-Future<void> main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
 
   if (kDebugMode) {
@@ -45,6 +45,32 @@ Future<void> main() async {
     });
   }
 
+  // `runApp` happens exactly once, from [StartupGate]: booting can fail, and a
+  // failure needs somewhere to land that is not an unhandled exception.
+  runApp(const StartupGate());
+}
+
+/// What a successful [bootApp] hands to the UI.
+class StartupResult {
+  const StartupResult({required this.hasAccounts, this.launchChatKey});
+
+  final bool hasAccounts;
+  final String? launchChatKey;
+}
+
+/// Everything that has to happen before the first frame.
+///
+/// Separate from [main] so [StartupGate] can report a failure and try again.
+/// These steps open the on-disk databases, and opening one refuses to proceed
+/// unencrypted rather than quietly falling back to plaintext (see
+/// `openAppDatabase`). Before this split, a refusal — or an unreadable keystore,
+/// or a build without SQLCipher — surfaced as an unhandled exception *before*
+/// `runApp`: no window, no message, the reason only in logcat.
+///
+/// Public, and not inlined into [StartupGate], because it touches the platform
+/// (path provider, keystore, notifications) and so cannot be run under
+/// `flutter test`. Tests drive the gate with their own function instead.
+Future<StartupResult> bootApp() async {
   // Shared prefs DB first (SOCKS / locale), before any account session.
   final prefs = await openAppPrefs();
   await AppLock.instance.load(prefs);
@@ -74,11 +100,170 @@ Future<void> main() async {
     unawaited(hub.connectAll());
   }
 
-  runApp(
-    ProviderScope(
-      child: App(hasAccounts: hub.hasAccounts, initialChatKey: launchChatKey),
-    ),
+  return StartupResult(
+    hasAccounts: hub.hasAccounts,
+    launchChatKey: launchChatKey,
   );
+}
+
+/// Boots the app, or explains why it could not.
+///
+/// Retrying restarts the boot inside the running tree, so a failure that was
+/// temporary — a keystore not yet ready, storage briefly unavailable — costs a
+/// tap rather than a relaunch. The app itself is only ever mounted on success,
+/// so a half-initialised tree is not something the user can end up in.
+class StartupGate extends StatefulWidget {
+  const StartupGate({super.key, this.boot = bootApp});
+
+  /// Defaults to the real sequence; tests substitute one that fails on purpose.
+  final Future<StartupResult> Function() boot;
+
+  @override
+  State<StartupGate> createState() => _StartupGateState();
+}
+
+class _StartupGateState extends State<StartupGate> {
+  StartupResult? _booted;
+  Object? _error;
+  bool _running = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _run();
+  }
+
+  Future<void> _run() async {
+    setState(() {
+      _running = true;
+      _error = null;
+    });
+    try {
+      final booted = await widget.boot();
+      if (!mounted) return;
+      setState(() {
+        _booted = booted;
+        _running = false;
+      });
+    } catch (error, stack) {
+      Logger('main').severe('startup failed', error, stack);
+      if (!mounted) return;
+      setState(() {
+        _error = error;
+        _running = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final booted = _booted;
+    if (booted != null) {
+      return ProviderScope(
+        child: App(
+          hasAccounts: booted.hasAccounts,
+          initialChatKey: booted.launchChatKey,
+        ),
+      );
+    }
+    return _StartupFailureApp(
+      running: _running,
+      error: _error,
+      onRetry: _run,
+    );
+  }
+}
+
+/// Shown while booting, and when booting failed.
+///
+/// It cannot use the app's theme or stored locale — those live in the prefs
+/// database that may be exactly what failed to open — so it settles for
+/// Material defaults and the full localizations set.
+class _StartupFailureApp extends StatelessWidget {
+  const _StartupFailureApp({
+    required this.running,
+    required this.error,
+    required this.onRetry,
+  });
+
+  final bool running;
+  final Object? error;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(),
+      darkTheme: ThemeData(brightness: Brightness.dark),
+      themeMode: ThemeMode.system,
+      supportedLocales: supportedAppLocales,
+      localizationsDelegates: const [
+        AppLocalizations.delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      home: Builder(
+        builder: (context) {
+          final l10n = context.l10n;
+          final theme = Theme.of(context);
+          return Scaffold(
+            body: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 440),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        running ? Icons.hourglass_top : Icons.lock_outline,
+                        size: 40,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        l10n.startupFailedTitle,
+                        style: theme.textTheme.titleLarge,
+                      ),
+                      const SizedBox(height: 16),
+                      if (running)
+                        const Center(child: CircularProgressIndicator())
+                      else ...[
+                        Text(l10n.startupFailedBody),
+                        const SizedBox(height: 12),
+                        Text(l10n.startupFailedHint),
+                        const SizedBox(height: 20),
+                        FilledButton(
+                          onPressed: onRetry,
+                          child: Text(l10n.startupFailedRetry),
+                        ),
+                        if (error != null) ...[
+                          const SizedBox(height: 28),
+                          Text(
+                            l10n.startupFailedDetails,
+                            style: theme.textTheme.labelLarge,
+                          ),
+                          const SizedBox(height: 6),
+                          // Selectable, and not wrapped in a friendly sentence:
+                          // this is what a bug report needs to carry.
+                          SelectableText(
+                            '$error',
+                            style: theme.textTheme.bodySmall,
+                          ),
+                        ],
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
 }
 
 void _openChatFromNotification(String chatKey) {
