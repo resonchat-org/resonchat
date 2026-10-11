@@ -109,14 +109,14 @@ void main() {
         password: passA,
         reconnect: false,
       );
-      check('A connected', okA, a.service.lastError ?? '');
+      check('A connected', okA, '${a.service.lastFailure ?? ''}');
       expect(okA, isTrue);
       final okB = await b.service.connect(
         jid: peerJidB,
         password: peerPassB,
         reconnect: false,
       );
-      check('B connected', okB, b.service.lastError ?? '');
+      check('B connected', okB, '${b.service.lastFailure ?? ''}');
       expect(okB, isTrue);
 
       for (final c in [a, b]) {

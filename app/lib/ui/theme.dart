@@ -292,6 +292,10 @@ class AppThemeTokens {
 }
 
 /// Lock badge for the encryption state: `OMEMO`, `PQ`, or plaintext.
+///
+/// Colours follow the ambient [IconTheme] (AppBar `onBar`) so the chip stays
+/// readable on the tinted action bar — using [TgColors.accent] here used to
+/// paint the same colour as the bar and vanish into it.
 class EncBadge extends StatelessWidget {
   const EncBadge({
     super.key,
@@ -306,9 +310,17 @@ class EncBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tg = context.tg;
+    final theme = Theme.of(context);
+    final onBar =
+        IconTheme.of(context).color ??
+        theme.appBarTheme.foregroundColor ??
+        theme.colorScheme.onPrimary;
+    // Locked: full contrast with other AppBar actions. Open lock: slightly
+    // softer so plaintext reads as a weaker state without leaving the bar palette.
+    final color = locked ? onBar : onBar.withValues(alpha: 0.72);
     return InkWell(
       onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         child: Row(
@@ -317,7 +329,7 @@ class EncBadge extends StatelessWidget {
             Icon(
               locked ? Icons.lock_outline : Icons.lock_open_outlined,
               size: 14,
-              color: locked ? tg.accent : tg.textSecondary,
+              color: color,
             ),
             const SizedBox(width: 4),
             Text(
@@ -325,7 +337,7 @@ class EncBadge extends StatelessWidget {
               style: TextStyle(
                 fontSize: TgDimens.timeFontSize,
                 fontWeight: FontWeight.w600,
-                color: locked ? tg.accent : tg.textSecondary,
+                color: color,
               ),
             ),
           ],

@@ -15,8 +15,7 @@ class LoginResult {
   const LoginResult._({this.failure, this.success = false});
 
   const LoginResult.ok() : this._(success: true);
-  const LoginResult.fail(XmppConnectFailure failure)
-    : this._(failure: failure);
+  const LoginResult.fail(XmppConnectFailure failure) : this._(failure: failure);
 
   final bool success;
 

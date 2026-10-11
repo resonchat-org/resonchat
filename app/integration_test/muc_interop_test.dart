@@ -67,10 +67,10 @@ void main() {
 
     try {
       final okA = await a.connect(jid: jid, password: pass, reconnect: false);
-      check('A connected', okA, a.lastError ?? '');
+      check('A connected', okA, '${a.lastFailure ?? ''}');
       expect(okA, isTrue);
       final okB = await b.connect(jid: jid, password: pass, reconnect: false);
-      check('B connected', okB, b.lastError ?? '');
+      check('B connected', okB, '${b.lastFailure ?? ''}');
       expect(okB, isTrue);
 
       // Two nicknames in the same room: the whole point of the test. A room is

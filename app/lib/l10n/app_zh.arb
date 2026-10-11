@@ -426,12 +426,25 @@
   "customBackgroundFailed": "无法创建背景",
   "deleteBackground": "移除聊天背景",
   "deleteBackgroundSuccess": "已移除背景图片",
+  "codeSnippet": "代码片段",
+  "copyCodeSnippet": "复制代码片段",
   "reset": "重置",
   "leaveRoom": "离开",
   "relationship": "关系",
   "subscriptionUnknown": "未知",
   "subscriptionMutualSummary": "双方均可正常收发消息。",
   "subscriptionNotMutualSummary": "许多服务器在双方互相接受之前会拒绝投递消息。",
+  "subscriptionBannerNone": "尚非联系人 — 服务器可能会拒绝消息。",
+  "subscriptionBannerToAsked": "对方可以看到你。正在等待对方接受。",
+  "subscriptionBannerTo": "对方可以看到你，但你看不到对方。",
+  "subscriptionBannerFromAsked": "你可以看到对方。正在等待对方接受你的请求。",
+  "subscriptionBannerFrom": "你可以看到对方，但对方看不到你。",
+  "subscriptionBannerOther": "订阅状态：{status}",
+  "@subscriptionBannerOther": {
+    "placeholders": {
+      "status": { "type": "String" }
+    }
+  },
   "encryption": "加密",
   "thisConversationTrack": "此会话：{label}",
   "@thisConversationTrack": {

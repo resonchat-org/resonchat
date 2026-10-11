@@ -16,9 +16,7 @@ BaseSocketWrapper createXmppSocket({String? websocketUrl}) =>
 /// Process-wide, so the rare SRV fallback reuses one HTTP client instead of
 /// standing up a connection pool for every login attempt. Its client is created
 /// on first query, i.e. only for domains that needed SRV at all.
-final _srvResolver = DohSrvResolver(
-  clientFactory: appNetwork.createHttpClient,
-);
+final _srvResolver = DohSrvResolver(clientFactory: appNetwork.createHttpClient);
 
 /// SRV records for [name], or an empty list. Never throws.
 ///

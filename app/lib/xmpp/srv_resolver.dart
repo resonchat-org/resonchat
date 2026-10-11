@@ -150,7 +150,9 @@ class DohSrvResolver {
         MoxSrvRecord(
           priority,
           weight,
-          target.endsWith('.') ? target.substring(0, target.length - 1) : target,
+          target.endsWith('.')
+              ? target.substring(0, target.length - 1)
+              : target,
           port,
         ),
       );

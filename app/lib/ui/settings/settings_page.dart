@@ -175,7 +175,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   color: current == Track.none ? tg.danger : null,
                 ),
                 title: Text(l10n.defaultEncryption),
-                subtitle: Text(_trackShortLabel(l10n, current)),
+                subtitle: Text(current.localizedShortLabel(l10n)),
                 onTap: () =>
                     unawaited(_pickDefaultEncryption(context, current, vm)),
               );
@@ -356,13 +356,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     await vm.setAutomaticMessageDeletion(chosen);
   }
 
-  /// Leading phrase of [Track.localizedDescription] (before the em dash).
-  String _trackShortLabel(AppLocalizations l10n, Track track) {
-    final full = track.localizedDescription(l10n);
-    final i = full.indexOf('—');
-    return i > 0 ? full.substring(0, i).trim() : full;
-  }
-
   Future<void> _pickDefaultEncryption(
     BuildContext context,
     Track current,
@@ -382,7 +375,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   track.icon,
                   color: track == Track.none ? tg.danger : tg.accent,
                 ),
-                title: Text(_trackShortLabel(l10n, track)),
+                title: Text(track.localizedShortLabel(l10n)),
                 subtitle: Text(track.localizedDescription(l10n)),
                 trailing: track == current ? const Icon(Icons.check) : null,
                 onTap: () => Navigator.pop(ctx, track),

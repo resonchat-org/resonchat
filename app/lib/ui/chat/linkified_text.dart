@@ -1,9 +1,8 @@
 // Copyright (C) 2026 resonchat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// Clickable http(s)/www and xmpp: spans (Gajim open_uri / open_xmpp_iri),
-// plus Conversations IM styles (`*bold*` `_italic_` `~strike~` `` `code` ``)
-// and `>` / `»` quote bars (`QuoteHelper` / `QuoteSpan`).
+// Renders [processMessageStyling] output (Gajim MessageWidget pipeline):
+// fenced code, nested quotes, XEP-0393 spans, URI/JID links, emoji size.
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -19,21 +18,11 @@ import '../../xmpp/notify_policy.dart';
 import '../chats/chats_viewmodel.dart';
 import '../home/open_chat.dart';
 import '../room/room_sheet.dart';
-import 'im_style.dart';
-import 'quote_body.dart';
+import 'code_snippet.dart';
+import 'emoji_body.dart';
+import 'message_styling.dart';
 
-/// Web links + any `xmpp:` URI (Gajim linkifies plain jids too).
-///
-/// The host/path class must apply to `https?://` / `www.` as well as `xmpp:`;
-/// otherwise the scheme alone matches and the rest of the URL is left plain.
-final _linkPattern = RegExp(
-  r'''(?:(?:https?://|www\.)[^\s<>"']+|xmpp:[^\s<>"']+)''',
-  caseSensitive: false,
-);
-
-final _tailPunct = RegExp(r'[),.\]>]+$');
-
-/// Message body with quotes, IM styles, mention highlights, and tappable links.
+/// Message body with Gajim-unified styling.
 class LinkifiedText extends StatefulWidget {
   const LinkifiedText({
     super.key,
@@ -50,8 +39,6 @@ class LinkifiedText extends StatefulWidget {
   final Iterable<String> highlightNicks;
   final TextStyle? mentionStyle;
   final TextStyle? linkStyle;
-
-  /// Conversations `QuoteSpan` bar / quote text colour.
   final Color? quoteColor;
 
   @override
@@ -108,7 +95,7 @@ class _LinkifiedTextState extends State<LinkifiedText> {
       }
       _recognizers.clear();
       _cacheKey = key;
-      _children = _buildBlocks(
+      _children = buildStyledMessageWidgets(
         widget.text,
         style: widget.style,
         highlightNicks: widget.highlightNicks,
@@ -127,7 +114,8 @@ class _LinkifiedTextState extends State<LinkifiedText> {
   }
 }
 
-List<Widget> _buildBlocks(
+/// Gajim `MessageWidget.add_with_styling` → widgets.
+List<Widget> buildStyledMessageWidgets(
   String text, {
   required TextStyle style,
   required Iterable<String> highlightNicks,
@@ -136,93 +124,128 @@ List<Widget> _buildBlocks(
   required Color quoteColor,
   required TapGestureRecognizer Function(String url) recognizerFor,
 }) {
-  final blocks = parseBodyBlocks(text);
-  if (blocks.isEmpty) {
-    return [Text('', style: style)];
-  }
+  final result = processMessageStyling(text);
+  return _widgetsForBlocks(
+    result.blocks,
+    style: style,
+    highlightNicks: highlightNicks,
+    mentionStyle: mentionStyle,
+    linkStyle: linkStyle,
+    quoteColor: quoteColor,
+    recognizerFor: recognizerFor,
+    quoteDepth: 0,
+  );
+}
 
+List<Widget> _widgetsForBlocks(
+  List<StyleBlock> blocks, {
+  required TextStyle style,
+  required Iterable<String> highlightNicks,
+  TextStyle? mentionStyle,
+  required TextStyle linkStyle,
+  required Color quoteColor,
+  required TapGestureRecognizer Function(String url) recognizerFor,
+  required int quoteDepth,
+}) {
   final widgets = <Widget>[];
-  for (var i = 0; i < blocks.length; i++) {
-    final block = blocks[i];
-    final isQuote = block.quoteDepth > 0;
-    final blockStyle = isQuote ? style.copyWith(color: quoteColor) : style;
-    final span = styledMessageSpan(
-      block.text,
-      style: blockStyle,
-      highlightNicks: highlightNicks,
-      mentionStyle: mentionStyle,
-      linkStyle: linkStyle,
-      recognizerFor: recognizerFor,
-    );
+  for (final block in blocks) {
+    if (block is PlainBlock && block.text.isEmpty) continue;
 
-    Widget child = Text.rich(span);
+    final Widget child;
+    switch (block) {
+      case PreBlock():
+        final prepared = block.prepared;
+        child = CodeSnippet(
+          code: prepared.code,
+          language: prepared.language,
+          textStyle: quoteDepth > 0 ? style.copyWith(color: quoteColor) : style,
+        );
 
-    if (isQuote) {
-      // Nested Conversations QuoteSpans → stacked leading bars.
-      for (var d = 0; d < block.quoteDepth; d++) {
+      case QuoteBlock():
+        final inner = _widgetsForBlocks(
+          block.blocks,
+          style: style,
+          highlightNicks: highlightNicks,
+          mentionStyle: mentionStyle,
+          linkStyle: linkStyle,
+          quoteColor: quoteColor,
+          recognizerFor: recognizerFor,
+          quoteDepth: quoteDepth + 1,
+        );
+        final quoted = inner.length == 1
+            ? inner.first
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: inner,
+              );
         child = Container(
           decoration: BoxDecoration(
             border: Border(left: BorderSide(color: quoteColor, width: 2)),
           ),
           padding: const EdgeInsets.only(left: 8),
-          child: child,
+          child: quoted,
         );
-      }
-    }
 
-    // Conversations DividerSpan padding between quote and neighbouring text.
-    if (i > 0) {
-      widgets.add(const SizedBox(height: 6));
+      case PlainBlock():
+        var plainStyle = quoteDepth > 0
+            ? style.copyWith(color: quoteColor)
+            : style;
+        if (quoteDepth == 0 && isEmojiOnlyMessage(block.text)) {
+          final base = plainStyle.fontSize ?? 15;
+          plainStyle = plainStyle.copyWith(
+            fontSize: base * emojiOnlyScale(block.text),
+            height: 1.1,
+          );
+        }
+        child = Text.rich(
+          plainBlockSpan(
+            block,
+            style: plainStyle,
+            highlightNicks: highlightNicks,
+            mentionStyle: mentionStyle,
+            linkStyle: linkStyle,
+            recognizerFor: recognizerFor,
+          ),
+        );
     }
+    if (widgets.isNotEmpty) widgets.add(const SizedBox(height: 6));
     widgets.add(child);
   }
-  return widgets;
+  return widgets.isEmpty ? [Text('', style: style)] : widgets;
 }
 
-/// Builds spans with IM styles, link taps, and nick bolding.
-InlineSpan styledMessageSpan(
-  String text, {
+/// Render one [PlainBlock] as a rich span (Gajim markers stay styled).
+InlineSpan plainBlockSpan(
+  PlainBlock block, {
   required TextStyle style,
   required Iterable<String> highlightNicks,
   TextStyle? mentionStyle,
-  TextStyle? linkStyle,
+  required TextStyle linkStyle,
   required TapGestureRecognizer Function(String url) recognizerFor,
 }) {
+  final text = block.text;
   if (text.isEmpty) return TextSpan(text: text, style: style);
 
-  final styles = parseImStyles(text);
-  final links = <({int start, int end, String url})>[];
-  for (final m in _linkPattern.allMatches(text)) {
-    var match = m.group(0)!;
-    match = match.replaceFirst(_tailPunct, '');
-    if (match.isEmpty) continue;
-    final start = m.start;
-    final end = start + match.length;
-    links.add((start: start, end: end, url: match));
-  }
-
   final mentionHits = <({int start, int end})>[];
-  final names = highlightNicks.where((n) => n.trim().isNotEmpty).toList();
-  for (final name in names) {
+  for (final name in highlightNicks.where((n) => n.trim().isNotEmpty)) {
     for (final m in nickHighlightPattern(name).allMatches(text)) {
       mentionHits.add((start: m.start, end: m.end));
     }
   }
 
-  if (styles.isEmpty && links.isEmpty && mentionHits.isEmpty) {
+  if (block.spans.isEmpty && block.uris.isEmpty && mentionHits.isEmpty) {
     return TextSpan(text: text, style: style);
   }
 
   final bounds = <int>{0, text.length};
-  for (final s in styles) {
+  for (final s in block.spans) {
     bounds.add(s.start);
-    bounds.add(s.contentStart);
-    bounds.add(s.contentEnd);
-    bounds.add(s.end + 1);
+    bounds.add(s.end);
   }
-  for (final l in links) {
-    bounds.add(l.start);
-    bounds.add(l.end);
+  for (final u in block.uris) {
+    bounds.add(u.start);
+    bounds.add(u.end);
   }
   for (final h in mentionHits) {
     bounds.add(h.start);
@@ -230,11 +253,8 @@ InlineSpan styledMessageSpan(
   }
   final points = bounds.toList()..sort();
 
-  final linkStyleResolved =
-      linkStyle ?? style.copyWith(decoration: TextDecoration.underline);
   final mentionResolved =
       mentionStyle ?? style.copyWith(fontWeight: FontWeight.w700);
-  final keywordColor = imKeywordColor(style.color ?? const Color(0xFF000000));
 
   final children = <InlineSpan>[];
   for (var i = 0; i < points.length - 1; i++) {
@@ -244,31 +264,18 @@ InlineSpan styledMessageSpan(
     final chunk = text.substring(a, b);
 
     var segStyle = style;
-    for (final s in styles) {
-      if (a >= s.contentStart && b <= s.contentEnd) {
-        segStyle = imStyleForKeyword(s.keyword, segStyle);
+    for (final s in block.spans) {
+      if (a >= s.start && b <= s.end) {
+        segStyle = _styleForKind(s.kind, segStyle);
       }
-    }
-    var isKeyword = false;
-    for (final s in styles) {
-      for (final (ks, ke) in s.keywordRanges) {
-        if (a >= ks && b <= ke) {
-          isKeyword = true;
-          break;
-        }
-      }
-      if (isKeyword) break;
-    }
-    if (isKeyword) {
-      segStyle = segStyle.copyWith(color: keywordColor);
     }
 
-    final link = _linkCovering(links, a, b);
+    final link = _linkCovering(block.uris, a, b);
     if (link != null) {
       children.add(
         TextSpan(
           text: chunk,
-          style: linkStyleResolved.merge(
+          style: linkStyle.merge(
             TextStyle(
               fontWeight: segStyle.fontWeight,
               fontStyle: segStyle.fontStyle,
@@ -297,7 +304,6 @@ InlineSpan styledMessageSpan(
               fontStyle: segStyle.fontStyle,
               decoration: segStyle.decoration,
               fontFamily: segStyle.fontFamily,
-              color: isKeyword ? keywordColor : mentionResolved.color,
             ),
           ),
         ),
@@ -311,18 +317,30 @@ InlineSpan styledMessageSpan(
   return TextSpan(style: style, children: children);
 }
 
-({int start, int end, String url})? _linkCovering(
-  List<({int start, int end, String url})> links,
-  int a,
-  int b,
-) {
+TextStyle _styleForKind(StyleKind kind, TextStyle base) => switch (kind) {
+  StyleKind.strong => base.copyWith(fontWeight: FontWeight.w700),
+  StyleKind.emphasis => base.copyWith(fontStyle: FontStyle.italic),
+  StyleKind.strike => base.copyWith(decoration: TextDecoration.lineThrough),
+  StyleKind.pre => base.copyWith(
+    fontFamily: 'monospace',
+    fontFamilyFallback: const [
+      'Courier',
+      'Courier New',
+      'Menlo',
+      'Monaco',
+      'Consolas',
+    ],
+  ),
+};
+
+StyleLink? _linkCovering(List<StyleLink> links, int a, int b) {
   for (final l in links) {
     if (a >= l.start && b <= l.end) return l;
   }
   return null;
 }
 
-/// Builds spans with link taps and nick bolding (no IM styles / quotes).
+/// Builds spans with link taps (and optional IM styles via full pipeline).
 InlineSpan linkAwareSpan(
   String text, {
   required TextStyle style,
@@ -331,19 +349,40 @@ InlineSpan linkAwareSpan(
   TextStyle? linkStyle,
   required TapGestureRecognizer Function(String url) recognizerFor,
 }) {
-  return styledMessageSpan(
-    text,
+  final result = processMessageStyling(text);
+  final plain = result.blocks.whereType<PlainBlock>();
+  if (plain.length == 1 && result.blocks.length == 1) {
+    return plainBlockSpan(
+      plain.first,
+      style: style,
+      highlightNicks: highlightNicks,
+      mentionStyle: mentionStyle,
+      linkStyle:
+          linkStyle ?? style.copyWith(decoration: TextDecoration.underline),
+      recognizerFor: recognizerFor,
+    );
+  }
+  // Multi-block: flatten text with links only for callers that need a span.
+  return plainBlockSpan(
+    PlainBlock(start: 0, end: text.length, text: text, uris: processUris(text)),
     style: style,
     highlightNicks: highlightNicks,
     mentionStyle: mentionStyle,
-    linkStyle: linkStyle,
+    linkStyle:
+        linkStyle ?? style.copyWith(decoration: TextDecoration.underline),
     recognizerFor: recognizerFor,
   );
 }
 
-/// Open a web URL externally, or handle an `xmpp:` URI in-app (Gajim).
+/// Open a web / mailto / tel / geo URL, or handle an `xmpp:` URI in-app.
 Future<void> activateMessageLink(BuildContext context, String raw) async {
-  final xmpp = XmppUri.tryParse(raw);
+  final xmpp =
+      XmppUri.tryParse(raw) ??
+      (raw.contains('@') && !raw.contains('://')
+          ? XmppUri.tryParse(
+              raw.toLowerCase().startsWith('xmpp:') ? raw : 'xmpp:$raw',
+            )
+          : null);
   if (xmpp != null) {
     await handleXmppUri(context, xmpp);
     return;
@@ -354,11 +393,14 @@ Future<void> activateMessageLink(BuildContext context, String raw) async {
     href = 'https://$href';
   }
   final uri = Uri.tryParse(href);
-  if (uri == null ||
-      (uri.scheme != 'http' && uri.scheme != 'https') ||
-      !uri.hasAuthority) {
+  if (uri == null || uri.scheme.isEmpty) return;
+
+  const launchable = {'http', 'https', 'mailto', 'ftp', 'ftps', 'geo', 'tel'};
+  if (!launchable.contains(uri.scheme.toLowerCase())) return;
+  if ((uri.scheme == 'http' || uri.scheme == 'https') && !uri.hasAuthority) {
     return;
   }
+
   final l10n = context.l10n;
   try {
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
@@ -374,11 +416,9 @@ Future<void> activateMessageLink(BuildContext context, String raw) async {
   }
 }
 
-/// Gajim `MainWindow.open_xmpp_iri`: `join` / `roster` / `message`|`""`;
-/// unknown querytypes are ignored.
+/// Gajim `MainWindow.open_xmpp_iri`: `join` / `roster` / `message`|`""`.
 Future<void> handleXmppUri(BuildContext context, XmppUri uri) async {
   final kind = uri.knownQuerytype;
-  // Unknown registered-looking querytype (e.g. `?vcard`) — no handler.
   if (kind == null) return;
 
   final container = ProviderScope.containerOf(context);
@@ -401,11 +441,9 @@ Future<void> handleXmppUri(BuildContext context, XmppUri uri) async {
 
     case XmppUriQuerytype.message:
     case XmppUriQuerytype.none:
-      // Gajim: `message | ""` → start-chat (optional body).
       await _startChatFromUri(context, container, bare);
 
     case XmppUriQuerytype.roster:
-      // Gajim: add-contact; we upsert chat + roster via openChatByJid.
       await _startChatFromUri(context, container, bare);
   }
 }

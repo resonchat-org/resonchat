@@ -49,7 +49,7 @@ void main() {
         reconnect: false,
       );
       // ignore: avoid_print
-      print('connected=$ok ${xmpp.lastError ?? ''}');
+      print('connected=$ok ${xmpp.lastFailure ?? ''}');
       expect(ok, isTrue);
 
       xmpp.tracks = DualTrackManager(

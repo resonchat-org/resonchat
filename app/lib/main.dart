@@ -166,11 +166,7 @@ class _StartupGateState extends State<StartupGate> {
         ),
       );
     }
-    return _StartupFailureApp(
-      running: _running,
-      error: _error,
-      onRetry: _run,
-    );
+    return _StartupFailureApp(running: _running, error: _error, onRetry: _run);
   }
 }
 

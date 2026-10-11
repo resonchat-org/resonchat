@@ -21,13 +21,16 @@ XmppError _socketError() =>
 
 void main() {
   group('classifyConnectFailure', () {
-    test('a server that cannot be reached is "unreachable", not a bad password', () {
-      // The exact error from the bug report.
-      expect(
-        classifyConnectFailure(NoConnectionPossibleError()),
-        XmppConnectFailure.unreachable,
-      );
-    });
+    test(
+      'a server that cannot be reached is "unreachable", not a bad password',
+      () {
+        // The exact error from the bug report.
+        expect(
+          classifyConnectFailure(NoConnectionPossibleError()),
+          XmppConnectFailure.unreachable,
+        );
+      },
+    );
 
     test('socket-level failures are unreachable', () {
       expect(
@@ -91,7 +94,9 @@ void main() {
         XmppConnectFailure.auth,
       );
       expect(
-        classifyConnectFailure(NegotiatorReturnedError(InvalidServerSignatureError())),
+        classifyConnectFailure(
+          NegotiatorReturnedError(InvalidServerSignatureError()),
+        ),
         XmppConnectFailure.auth,
       );
       // ...whereas a server that skips SASL2's additional-data has not
@@ -110,7 +115,9 @@ void main() {
         XmppConnectFailure.mechanism,
       );
       expect(
-        classifyConnectFailure(NoMatchingAuthenticationMechanismAvailableError()),
+        classifyConnectFailure(
+          NoMatchingAuthenticationMechanismAvailableError(),
+        ),
         XmppConnectFailure.mechanism,
       );
       expect(
@@ -119,26 +126,29 @@ void main() {
       );
     });
 
-    test('a broken protocol conversation is distinct from all of the above', () {
-      expect(
-        classifyConnectFailure(StreamFailureError(StreamError())),
-        XmppConnectFailure.protocol,
-      );
-      expect(
-        classifyConnectFailure(UnexpectedDataError()),
-        XmppConnectFailure.protocol,
-      );
-      expect(
-        classifyConnectFailure(InvalidHandshakeCredentialsError()),
-        XmppConnectFailure.protocol,
-      );
-      expect(
-        classifyConnectFailure(
-          NegotiatorReturnedError(ResourceBindingFailedError()),
-        ),
-        XmppConnectFailure.protocol,
-      );
-    });
+    test(
+      'a broken protocol conversation is distinct from all of the above',
+      () {
+        expect(
+          classifyConnectFailure(StreamFailureError(StreamError())),
+          XmppConnectFailure.protocol,
+        );
+        expect(
+          classifyConnectFailure(UnexpectedDataError()),
+          XmppConnectFailure.protocol,
+        );
+        expect(
+          classifyConnectFailure(InvalidHandshakeCredentialsError()),
+          XmppConnectFailure.protocol,
+        );
+        expect(
+          classifyConnectFailure(
+            NegotiatorReturnedError(ResourceBindingFailedError()),
+          ),
+          XmppConnectFailure.protocol,
+        );
+      },
+    );
 
     test('an unrecognised error stays unrecognised', () {
       // Not every XmppError is one we can name. Saying so beats inventing a
@@ -165,7 +175,11 @@ void main() {
           f: connectFailureLabel(en, f),
       };
       for (final entry in labels.entries) {
-        expect(entry.value.trim(), isNotEmpty, reason: '${entry.key} is silent');
+        expect(
+          entry.value.trim(),
+          isNotEmpty,
+          reason: '${entry.key} is silent',
+        );
       }
       // The whole point: "unreachable" must not read like "wrong password".
       expect(

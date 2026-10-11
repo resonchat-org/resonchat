@@ -517,12 +517,25 @@
   "customBackgroundFailed": "Failed to create background",
   "deleteBackground": "Remove chat background",
   "deleteBackgroundSuccess": "Background image removed",
+  "codeSnippet": "Code snippet",
+  "copyCodeSnippet": "Copy code snippet",
   "reset": "Reset",
   "leaveRoom": "Leave",
   "relationship": "Relationship",
   "subscriptionUnknown": "unknown",
   "subscriptionMutualSummary": "Messages are delivered both ways.",
   "subscriptionNotMutualSummary": "Many servers refuse messages until both sides have accepted each other.",
+  "subscriptionBannerNone": "Not a contact yet — the server may refuse messages.",
+  "subscriptionBannerToAsked": "They can see you. Waiting for them to accept.",
+  "subscriptionBannerTo": "They can see you, but you cannot see them.",
+  "subscriptionBannerFromAsked": "You can see them. Waiting for them to accept your request.",
+  "subscriptionBannerFrom": "You can see them, but they cannot see you.",
+  "subscriptionBannerOther": "Subscription state: {status}",
+  "@subscriptionBannerOther": {
+    "placeholders": {
+      "status": { "type": "String" }
+    }
+  },
   "encryption": "Encryption",
   "thisConversationTrack": "This conversation: {label}",
   "@thisConversationTrack": {

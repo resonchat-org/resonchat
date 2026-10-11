@@ -66,6 +66,14 @@ enum Track {
     Track.pq => l10n.trackDescriptionPq,
   };
 
+  /// Leading phrase of [localizedDescription] (before the em dash), for
+  /// compact UI such as the chat AppBar subtitle.
+  String localizedShortLabel(AppLocalizations l10n) {
+    final full = localizedDescription(l10n);
+    final i = full.indexOf('—');
+    return i > 0 ? full.substring(0, i).trim() : full;
+  }
+
   /// Recovers the track from a received EME declaration.
   ///
   /// Null when the message carried no `<encryption/>` element, which means

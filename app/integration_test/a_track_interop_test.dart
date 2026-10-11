@@ -63,10 +63,10 @@ void main() {
     try {
       // --- connect both ---------------------------------------------------
       final okA = await a.connect(jid: jidA, password: passA, reconnect: false);
-      check('A connected to $jidA', okA, a.lastError ?? '');
+      check('A connected to $jidA', okA, '${a.lastFailure ?? ''}');
       expect(okA, isTrue);
       final okB = await b.connect(jid: jidB, password: passB, reconnect: false);
-      check('B connected to $jidB', okB, b.lastError ?? '');
+      check('B connected to $jidB', okB, '${b.lastFailure ?? ''}');
       expect(okB, isTrue);
 
       // Wire the dual-dialect track manager into both ends, exactly as the

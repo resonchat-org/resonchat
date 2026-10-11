@@ -21,7 +21,8 @@ import 'package:resonchat/store/database_connection_io.dart';
 ///
 /// Delegates to the production probe rather than re-implementing it: that probe
 /// is what is under test, and a copy here could drift away from it.
-void applyKey(Database db, List<int> passphrase) => applyCipherKey(db, passphrase);
+void applyKey(Database db, List<int> passphrase) =>
+    applyCipherKey(db, passphrase);
 
 void main() {
   late Directory dir;

@@ -84,7 +84,7 @@ void main() {
         rosterState: DriftRosterStateManager(db),
         reconnect: false,
       );
-      check('connected to $jid', ok, xmpp.lastError ?? '');
+      check('connected to $jid', ok, '${xmpp.lastFailure ?? ''}');
       expect(ok, isTrue, reason: 'cannot continue without a connection');
 
       // --- our own device, as a real client would have ------------------

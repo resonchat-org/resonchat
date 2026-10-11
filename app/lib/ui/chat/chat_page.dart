@@ -373,7 +373,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     return switch (peerTyping) {
       TypingState.composing => l10n.contactIsTyping(name),
       TypingState.paused => l10n.contactStoppedTyping(name),
-      TypingState.inactive => track.description.split(' — ').first,
+      TypingState.inactive => track.localizedShortLabel(l10n),
     };
   }
 
@@ -2080,17 +2080,18 @@ class _SubscriptionBanner extends ConsumerWidget {
     // Nothing to say before the roster has loaded, or when all is well.
     if (state == null || state.isMutual) return const SizedBox.shrink();
 
+    final l10n = context.l10n;
     final text = switch (state.subscription) {
-      'none' => 'Not a contact yet — the server may refuse messages.',
+      'none' => l10n.subscriptionBannerNone,
       'to' =>
         state.asked
-            ? 'They can see you. Waiting for them to accept.'
-            : 'They can see you, but you cannot see them.',
+            ? l10n.subscriptionBannerToAsked
+            : l10n.subscriptionBannerTo,
       'from' =>
         state.asked
-            ? 'You can see them. Waiting for them to accept your request.'
-            : 'You can see them, but they cannot see you.',
-      _ => 'Subscription state: ${state.subscription}',
+            ? l10n.subscriptionBannerFromAsked
+            : l10n.subscriptionBannerFrom,
+      _ => l10n.subscriptionBannerOther(state.subscription),
     };
 
     return Material(

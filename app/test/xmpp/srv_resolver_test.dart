@@ -23,9 +23,8 @@ Map<String, Object?> _srv(String data) => {'type': 33, 'data': data};
 DohSrvResolver _resolverReturning(String body, {int status = 200}) =>
     DohSrvResolver(
       endpoint: Uri.parse('https://resolver.invalid/dns-query'),
-      clientFactory: () => MockClient(
-        (request) async => http.Response(body, status),
-      ),
+      clientFactory: () =>
+          MockClient((request) async => http.Response(body, status)),
     );
 
 void main() {
@@ -100,9 +99,7 @@ void main() {
 
     test('a DNS error status means "no records", not an exception', () async {
       // NXDOMAIN. The caller falls back to the direct address.
-      final resolver = _resolverReturning(
-        _answer(const [], status: 3),
-      );
+      final resolver = _resolverReturning(_answer(const [], status: 3));
 
       expect(await resolver.query('_xmpp-client._tcp.example.org'), isEmpty);
     });
@@ -127,24 +124,24 @@ void main() {
         ),
       );
 
-      expect(
-        await resolver.query('_xmpp-client._tcp.example.org'),
-        isEmpty,
-      );
-    });
-
-    test('a hanging resolver gives up rather than stalling the login', () async {
-      final resolver = DohSrvResolver(
-        endpoint: Uri.parse('https://resolver.invalid/dns-query'),
-        timeout: const Duration(milliseconds: 10),
-        clientFactory: () => MockClient((request) async {
-          await Future<void>.delayed(const Duration(milliseconds: 300));
-          return http.Response(_answer(const []), 200);
-        }),
-      );
-
       expect(await resolver.query('_xmpp-client._tcp.example.org'), isEmpty);
     });
+
+    test(
+      'a hanging resolver gives up rather than stalling the login',
+      () async {
+        final resolver = DohSrvResolver(
+          endpoint: Uri.parse('https://resolver.invalid/dns-query'),
+          timeout: const Duration(milliseconds: 10),
+          clientFactory: () => MockClient((request) async {
+            await Future<void>.delayed(const Duration(milliseconds: 300));
+            return http.Response(_answer(const []), 200);
+          }),
+        );
+
+        expect(await resolver.query('_xmpp-client._tcp.example.org'), isEmpty);
+      },
+    );
 
     test('the result is modifiable, because the connect path sorts it', () async {
       // `TCPSocketWrapper._rfc6120Connect` calls `results.sort(...)`. Returning
@@ -155,9 +152,8 @@ void main() {
       ).query('_xmpp-client._tcp.example.org');
       expect(() => withRecords.sort((a, b) => 0), returnsNormally);
 
-      final empty = await _resolverReturning(
-        _answer(const []),
-      ).query('_xmpp-client._tcp.example.org');
+      final empty = await _resolverReturning(_answer(const []))
+          .query('_xmpp-client._tcp.example.org');
       expect(() => empty.sort((a, b) => 0), returnsNormally);
     });
   });

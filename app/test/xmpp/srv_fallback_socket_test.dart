@@ -42,25 +42,28 @@ SrvFallbackSocketWrapper _wrapper(
 );
 
 void main() {
-  test('a server that answers on its own address is never looked up in DNS',
-      () async {
-    final server = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
-    addTearDown(server.close);
-    server.listen((socket) => socket.destroy());
+  test(
+    'a server that answers on its own address is never looked up in DNS',
+    () async {
+      final server = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(server.close);
+      server.listen((socket) => socket.destroy());
 
-    final recorder = _Recorder();
-    final wrapper = _wrapper(
-      recorder,
-      connect: (host, port) => Socket.connect(InternetAddress.loopbackIPv4, server.port),
-    );
-    addTearDown(wrapper.destroy);
+      final recorder = _Recorder();
+      final wrapper = _wrapper(
+        recorder,
+        connect: (host, port) =>
+            Socket.connect(InternetAddress.loopbackIPv4, server.port),
+      );
+      addTearDown(wrapper.destroy);
 
-    expect(await wrapper.connect('example.org'), isTrue);
+      expect(await wrapper.connect('example.org'), isTrue);
 
-    // The whole privacy argument for the inverted order rests on this.
-    expect(recorder.queries, isEmpty);
-    expect(recorder.events, ['tcp example.org:5222']);
-  });
+      // The whole privacy argument for the inverted order rests on this.
+      expect(recorder.queries, isEmpty);
+      expect(recorder.events, ['tcp example.org:5222']);
+    },
+  );
 
   test('DNS is consulted only after the direct address has failed', () async {
     final recorder = _Recorder();
@@ -95,7 +98,10 @@ void main() {
     );
     addTearDown(wrapper.destroy);
 
-    expect(await wrapper.connect('example.org', host: 'other.example', port: 5223), isFalse);
+    expect(
+      await wrapper.connect('example.org', host: 'other.example', port: 5223),
+      isFalse,
+    );
 
     // The user named a host and a port; guessing a different one would
     // override an explicit instruction.
@@ -122,11 +128,12 @@ void main() {
         if (host == 'example.org') throw const SocketException('refused');
         return Socket.connect(InternetAddress.loopbackIPv4, server.port);
       },
-      secureSocket: (socket, {host, supportedProtocols, onBadCertificate}) async {
-        recorder.events.add('direct-tls $host');
-        socket.destroy();
-        throw const HandshakeException('direct TLS refused');
-      },
+      secureSocket:
+          (socket, {host, supportedProtocols, onBadCertificate}) async {
+            recorder.events.add('direct-tls $host');
+            socket.destroy();
+            throw const HandshakeException('direct TLS refused');
+          },
     );
     addTearDown(wrapper.destroy);
 
@@ -142,8 +149,7 @@ void main() {
     ]);
   });
 
-  test('a suppressed lookup still hands back a list the base class can sort',
-      () async {
+  test('a suppressed lookup still hands back a list the base class can sort', () async {
     // `TCPSocketWrapper` sorts the records in place. An unmodifiable list here
     // throws from inside `connect`, before a single byte is sent.
     final recorder = _Recorder();
@@ -153,7 +159,10 @@ void main() {
     );
     addTearDown(wrapper.destroy);
 
-    final records = await wrapper.srvQuery('_xmpp-client._tcp.example.org', false);
+    final records = await wrapper.srvQuery(
+      '_xmpp-client._tcp.example.org',
+      false,
+    );
 
     expect(records, isEmpty);
     expect(() => records.sort((a, b) => 0), returnsNormally);
