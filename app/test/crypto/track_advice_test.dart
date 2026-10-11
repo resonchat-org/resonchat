@@ -25,6 +25,7 @@ ChatCapabilities caps({
   return ChatCapabilities(
     mode: EncMode.standardOmemo,
     recipientDevices: all,
+    peerDevices: all,
     omemoDevices: omemo ?? all,
     pqDevices: pq ?? const {},
     checkedAt: DateTime(2026),

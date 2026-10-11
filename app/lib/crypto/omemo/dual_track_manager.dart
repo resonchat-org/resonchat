@@ -498,16 +498,38 @@ class DualTrackManager {
       final items = await pm.getItems(jid, node);
       if (!items.isType<List<PubSubItem>>()) continue;
       for (final item in items.get<List<PubSubItem>>()) {
+        final AxolotlBundle bundle;
         try {
           final doc = XmlDocument.parse(item.payload.toXml());
-          return parseOmemoBundle(
+          bundle = parseOmemoBundle(
             doc.rootElement,
             jid: jid.toBare().toString(),
             deviceId: deviceId,
           );
         } catch (_) {
           // Try the next item, then the next dialect.
+          continue;
         }
+        // Parsing is not reachability.
+        //
+        // An account accumulates devices — reinstalls, test runs, a signed
+        // prekey rotated out from under its own signature — and every bundle
+        // that no longer verifies is a device *no* client can open a session
+        // with. Offering one to the session builder does not merely lose that
+        // device: the failure is recorded as an error against the recipient,
+        // and an error against the recipient cancels the send as a whole
+        // (`canSendAllDevicesReached`). One dead entry is therefore enough to
+        // make the contact unmessageable, which is exactly what the 33 dead
+        // entries on the peer account did. Conversations skips such a device
+        // and delivers to the rest; so do we.
+        if (!omemoBundleUsable(bundle)) {
+          _log.fine(
+            '$jid:$deviceId: bundle on $node does not verify, '
+            'skipping device',
+          );
+          continue;
+        }
+        return bundle;
       }
     }
     return null;

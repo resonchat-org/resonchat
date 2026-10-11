@@ -22,6 +22,11 @@ dependencies:
   omemo_dart:
     path: ../packages/omemo_dart
 
+  # Used directly to decide whether a published device can be written to at
+  # all: the signature over its signed prekey is checked before the device is
+  # counted as reachable (lib/crypto/omemo/defacto.dart).
+  libsignal_protocol_dart: ^0.8.2
+
   cryptography: ^2.9.0
   pqcrypto: ^0.4.2
   xml: ^6.5.0

@@ -8,6 +8,7 @@
 
 import 'dart:convert';
 
+import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart';
 import 'package:omemo_dart/omemo_dart_axolotl.dart';
 import 'package:xml/xml.dart';
 
@@ -188,6 +189,44 @@ bool omemoBundleLooksSane(AxolotlBundle b) {
     }
     return true;
   } catch (_) {
+    return false;
+  }
+}
+
+/// Whether a session can be opened with the device that published [b].
+///
+/// This is the check every client runs before it can write to a device: the
+/// signature over the signed prekey, verified against the identity key that
+/// came in the same bundle. It is what decides whether a message can be
+/// *read*, as opposed to merely parsed.
+///
+/// Deliberately not stricter than that. In particular an empty one-time
+/// prekey pool is **not** a reason to skip a device: a device that has handed
+/// out all of its prekeys still publishes a bundle without any and libsignal
+/// opens a session without one, so treating that as unreachable would drop a
+/// device that is merely replenishing. [omemoBundleLooksSane] is the
+/// structural question and is stricter in exactly that place; this is the
+/// question that decides reachability.
+///
+/// Skipping is the whole point. A single stale entry on a contact's account —
+/// the test account here publishes 57 devices, 33 of whose bundles no longer
+/// verify — otherwise makes the contact permanently unmessageable, because
+/// the session builder refuses the device and the send is cancelled as a
+/// whole. Conversations skips such devices and delivers to the rest; so do we
+/// (see `DualTrackManager.getOmemoBundle`).
+bool omemoBundleUsable(AxolotlBundle b) {
+  try {
+    final bundle = b.toPreKeyBundle();
+    final spk = bundle.getSignedPreKey();
+    if (spk == null) return false;
+    return Curve.verifySignature(
+      bundle.getIdentityKey().publicKey,
+      spk.serialize(),
+      bundle.getSignedPreKeySignature(),
+    );
+  } catch (_) {
+    // A bundle whose key material cannot even be decoded is a bundle we
+    // cannot open a session with.
     return false;
   }
 }

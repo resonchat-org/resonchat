@@ -20,6 +20,9 @@ import 'package:resonchat/xmpp/capabilities.dart';
 
 ChatCapabilities caps({
   required Set<int> devices,
+  /// Devices the *peer* publishes, when they differ from the recipient set
+  /// (which also carries our own other devices).
+  Set<int>? peer,
   Set<int>? omemo,
   Set<int>? pq,
   bool reliable = true,
@@ -29,6 +32,9 @@ ChatCapabilities caps({
     // resolution: what is sent is decided by the user's choice, not by it.
     mode: EncMode.standardOmemo,
     recipientDevices: devices,
+    // The tests are written from the peer's side: `devices` is what they
+    // publish.
+    peerDevices: peer ?? devices,
     omemoDevices: omemo ?? devices,
     pqDevices: pq ?? const {},
     checkedAt: DateTime(2026),
@@ -94,6 +100,28 @@ void main() {
       expect(r.canSend, isFalse);
       expect(r.blocked, TrackBlocked.standardUnavailable);
       expect(r.alternative, Track.standard);
+    });
+
+    test('a peer with nothing we can encrypt to blocks, and offers the clear', () {
+      // The peer *does* publish devices — this is not an unreadable list — but
+      // not one of their bundles verifies any more (a signed prekey rotated
+      // out from under its signature, a client reinstalled over its own
+      // account). `7` is our own device: it has to be able to read the message
+      // and it is the only thing left in the recipient set, which is exactly
+      // how "they have no reachable device" used to be impossible to conclude.
+      final r = resolveTrack(
+        requested: Track.standard,
+        capabilities: caps(devices: const {7}, peer: const {}),
+      );
+      expect(r.canSend, isFalse);
+      // Not track-shaped: no track can reach them, so naming one would send
+      // the user to the picker for a problem the picker cannot fix.
+      expect(r.blocked, TrackBlocked.unreachableDevices);
+      // Not plaintext as the remedy: offering the clear for an encryption
+      // failure is a downgrade prompt the user answers under pressure, which
+      // this project refuses even where plaintext is the only way left. (The
+      // offer is therefore a dead end for a standard request; tracked.)
+      expect(r.alternative, isNot(Track.none));
     });
 
     test('an unreadable capability lookup blocks every encrypted track', () {
@@ -170,6 +198,7 @@ void main() {
       final verdictSaysPq = ChatCapabilities(
         mode: EncMode.pqOmemo,
         recipientDevices: const {1, 2},
+        peerDevices: const {1, 2},
         omemoDevices: const {1, 2},
         pqDevices: const {1},
         checkedAt: DateTime(2026),

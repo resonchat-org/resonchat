@@ -621,7 +621,7 @@ packages:
     source: hosted
     version: "3.0.2"
   libsignal_protocol_dart:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: libsignal_protocol_dart
       sha256: "3ed4455f09c7299934a6b9ca0028daff87940d446142056e1ec25997de0e41bf"

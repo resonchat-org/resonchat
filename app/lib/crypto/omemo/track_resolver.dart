@@ -144,9 +144,13 @@ class TrackResolution {
   /// applied on their behalf.
   Track? get alternative => switch (blocked) {
     null => null,
+    // Never [Track.none], even where plaintext really is the only way left
+    // ([TrackBlocked.unreachableDevices] says so in its own wording). Offering
+    // plaintext is a downgrade prompt, and an answer given under pressure is
+    // not a decision. MUC holds the same line in its own test.
     TrackBlocked.unknownPeers ||
     TrackBlocked.unreachableDevices ||
-    TrackBlocked.standardUnavailable => Track.standard,
+    TrackBlocked.standardUnavailable ||
     TrackBlocked.pqUnavailable => Track.standard,
   };
 }
@@ -176,11 +180,27 @@ TrackResolution resolveTrack({
     );
   }
 
+  // One verdict, not one per track: if the peer publishes no device we can
+  // encrypt to, changing track cannot help. Reported as a track-specific
+  // failure it would send the user to the track picker for a problem the
+  // track picker cannot fix, and whichever track they then picked would fail
+  // the same way — later, and less visibly.
+  //
+  // [ChatCapabilities.peerDevices], not [recipientDevices]: the latter also
+  // holds our own other devices. Those have to be able to read the message,
+  // but they are not who it is for, and counting them as "the peer is
+  // reachable" is how a peer with nothing usable left looked fine.
+  if (caps.peerDevices.isEmpty) {
+    return TrackResolution(
+      track: requested,
+      blocked: TrackBlocked.unreachableDevices,
+    );
+  }
+
   final allReachable = caps.recipientDevices.every(caps.omemoDevices.contains);
   final allPq =
       caps.recipientDevices.isNotEmpty &&
       caps.recipientDevices.every(caps.pqDevices.contains);
-
   switch (requested) {
     case Track.none:
       return const TrackResolution(track: Track.none, blocked: null);
@@ -189,13 +209,11 @@ TrackResolution resolveTrack({
       if (allReachable) {
         return const TrackResolution(track: Track.standard, blocked: null);
       }
-      // Distinguish "we don't know them" from "we know and cannot reach
-      // them": the first may resolve on a retry, the second will not.
-      return TrackResolution(
+      // They publish devices and at least one of them is one we cannot write
+      // to. (No reachable device at all was already answered above.)
+      return const TrackResolution(
         track: Track.standard,
-        blocked: caps.recipientDevices.isEmpty
-            ? TrackBlocked.unreachableDevices
-            : TrackBlocked.standardUnavailable,
+        blocked: TrackBlocked.standardUnavailable,
       );
 
     case Track.pq:

@@ -21,6 +21,7 @@ class ChatCapabilities {
   const ChatCapabilities({
     required this.mode,
     required this.recipientDevices,
+    required this.peerDevices,
     required this.omemoDevices,
     required this.pqDevices,
     required this.checkedAt,
@@ -33,6 +34,16 @@ class ChatCapabilities {
   /// Every device the message must be readable by, including our own
   /// other devices (Carbons fan-out).
   final Set<int> recipientDevices;
+
+  /// Devices the peer itself publishes that we can actually encrypt to.
+  ///
+  /// Kept apart from [recipientDevices], which also carries our own other
+  /// devices. Folding the two together made "they have no reachable device"
+  /// unreachable *as a verdict*: our own id alone kept the set non-empty, so a
+  /// peer whose every bundle had gone stale — 33 of 57 on the account this was
+  /// found with — looked perfectly reachable, the send was allowed, and the
+  /// rejection arrived later as a cancelled stanza nobody reported.
+  final Set<int> peerDevices;
 
   /// Devices supporting standard OMEMO.
   final Set<int> omemoDevices;
@@ -121,7 +132,11 @@ class CapabilityService {
     // everyone. See lib/crypto/omemo/defacto.dart.
     final resolved = await tracks().resolveOmemoDevices(bare);
 
-    final devices = <int>{...resolved.devices};
+    // The peer's own usable devices, before ours are folded in. Two different
+    // questions: [peerDevices] answers "is there anybody out there to encrypt
+    // to", [recipientDevices] answers "who has to be able to read this".
+    final peerDevices = <int>{...resolved.devices};
+    final devices = <int>{...peerDevices};
     final ours = <int>{};
     if (ourId != null) ours.add(ourId);
     devices.addAll(ours);
@@ -148,6 +163,7 @@ class CapabilityService {
     final caps = ChatCapabilities(
       mode: mode,
       recipientDevices: devices,
+      peerDevices: peerDevices,
       omemoDevices: omemo,
       pqDevices: pq,
       checkedAt: DateTime.now(),
@@ -161,7 +177,9 @@ class CapabilityService {
     // visible cause. The cost is one line per capability refresh, which is
     // bounded by the TTL and happens a handful of times a session.
     _log.warning(
-      'caps($bare): ${caps.mode.name} devices=${caps.recipientDevices} '
+      'caps($bare): ${caps.mode.name} '
+      'peerDevices=${caps.peerDevices.length} '
+      'devices=${caps.recipientDevices} '
       'pq=${caps.pqDevices} reliable=${caps.reliable}',
     );
     // Not cached when unreliable: an unreadable snapshot is about the network,
