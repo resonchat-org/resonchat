@@ -50,10 +50,22 @@ const int kBundleFetchConcurrency = 3;
 
 /// How long a device list may take before we treat it as unreadable.
 ///
-/// Twelve seconds. Long enough that a server answering slowly still gets to
-/// finish a large list, short enough that a stalled connection produces a refusal
-/// the user can read and retry rather than a spinner they have to trust.
-const Duration kDeviceListDeadline = Duration(seconds: 12);
+/// **Thirty seconds, and twelve was a number that refused real contacts.** The
+/// resolution is not one round-trip: every listed device needs its own bundle
+/// probe, and a probe asks the de-facto node first and the spec node second, so
+/// a device that publishes one dialect costs two IQs. At
+/// [kBundleFetchConcurrency] — three, because a wider burst aborts the socket
+/// (see above) — a contact with thirty-odd published ids, which is what an
+/// account collects over a few reinstalls, spends twenty round-trips on the
+/// sweep alone.
+///
+/// What a timeout produces is not a slow answer, it is *"we know nothing"*, and
+/// that blocks sending (`TrackBlocked.unknownPeers`). So twelve seconds made a
+/// busy but healthy contact unsendable, with a dialog that offers a substitute
+/// track that cannot be carried out either. Thirty still turns a genuinely
+/// stalled connection into a refusal the user can read and retry; it just no
+/// longer converts a large device list into one.
+const Duration kDeviceListDeadline = Duration(seconds: 30);
 
 /// Owns the B track's PEP state and the outbound-track decision.
 ///
@@ -197,8 +209,8 @@ class DualTrackManager {
     try {
       return await _resolveOmemoDevices(jid);
     } on TimeoutException {
-      // "We could not read it in time" is the same answer as "we could not read
-      // it", and it has to be, because the caller can only act on one of those.
+      // The caller can only act on one of the two answers, so "we could not
+      // read it in time" has to be the same answer as "we could not read it".
       // Returning the ids we happened to collect instead would be the dangerous
       // version: a partial list looks exactly like a complete one, so every
       // device that had not answered yet would read as "this contact has no such
@@ -208,6 +220,15 @@ class DualTrackManager {
       //
       // So a timeout yields "we know nothing", the track blocks, and the user is
       // told the truth rather than handed a message addressed to a guess.
+      //
+      // Logged, because this is the one path where the app refuses to send and
+      // the UI can only say "we could not check": without a line here there is
+      // no record anywhere of *why*, which makes it the hardest failure in this
+      // app to read from outside.
+      _log.warning(
+        'device list for $jid did not finish within $kDeviceListDeadline; '
+        'treating it as unreadable, which blocks sending',
+      );
       return (devices: const <int>{}, listReadable: false);
     }
   }
@@ -227,6 +248,7 @@ class DualTrackManager {
     final pm = pubsubOf();
     final listed = <int>{};
     var listReadable = false;
+    final started = DateTime.now();
     for (final node in [omemoDefactoDevicesNode, ...omemoSpecDevicesNodes]) {
       final items = await pm.getItems(jid, node);
       if (!items.isType<List<PubSubItem>>()) continue;
@@ -243,6 +265,12 @@ class DualTrackManager {
       }
     }
     if (!listReadable) return (devices: const <int>{}, listReadable: false);
+
+    // Both numbers, because the deadline above is a budget for the sweep and
+    // the sweep is the only part whose cost grows with the contact's history.
+    // "30 devices, 22 bundles" and "30 devices, 0 bundles" are the same
+    // `reliable` value and completely different situations.
+    _log.fine('$jid publishes ${listed.length} OMEMO device ids');
 
     // One round-trip per device, and *concurrently* rather than one after
     // another.
@@ -263,6 +291,11 @@ class DualTrackManager {
     await forEachBounded(listed, kBundleFetchConcurrency, (id) async {
       if (await getOmemoBundle(jid, id) != null) devices.add(id);
     });
+    _log.fine(
+      '$jid: ${devices.length} of ${listed.length} device bundles usable, '
+      'took ${DateTime.now().difference(started).inMilliseconds}ms '
+      '(budget ${kDeviceListDeadline.inSeconds}s)',
+    );
     return (devices: devices, listReadable: true);
   }
 
