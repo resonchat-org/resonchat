@@ -131,8 +131,18 @@ Future<MessageAction?> showMessageMenu(
     context: context,
     showDragHandle: true,
     builder: (context) => SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+      // Scrollable, and shrink-wrapped so a short menu still hugs its content.
+      //
+      // A Column here does not scroll, it overflows: the menu offers up to ten
+      // rows and a modal sheet is capped at 9/16 of the screen, which on a
+      // normal phone is under the height of a message that can be replied to,
+      // reacted to, copied, translated, selected, forwarded, saved, edited,
+      // pinned and retracted. The rows that fell off the bottom — "delete for
+      // everyone" among them — were drawn outside the sheet and could not be
+      // tapped at all.
+      child: ListView(
+        shrinkWrap: true,
+        padding: EdgeInsets.zero,
         children: [
           if (actions.canReply)
             ListTile(
