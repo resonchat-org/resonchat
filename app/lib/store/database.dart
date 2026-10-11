@@ -625,6 +625,14 @@ class AppDatabase extends _$AppDatabase {
 
   Future<List<RosterEntry>> allRosterEntries() => (select(rosterEntries)).get();
 
+  /// Live roster for the Contacts tab (RFC 6121 pushes land in [commitRoster]).
+  Stream<List<RosterEntry>> watchRoster() =>
+      (select(rosterEntries)..orderBy([
+            (r) => OrderingTerm.asc(r.name),
+            (r) => OrderingTerm.asc(r.jid),
+          ]))
+          .watch();
+
   /// Records that the server refused the message sent with [stanzaId].
   ///
   /// Returns true when a row was updated, so a caller can tell whether the
@@ -1174,20 +1182,37 @@ class AppDatabase extends _$AppDatabase {
     String? mucNick,
     bool? mucPrivateNonAnonymous,
   }) async {
+    final row = ChatsCompanion(
+      jid: Value(jid),
+      // New rows need a title; omit [title] and we seed with the address.
+      title: Value(title ?? jid),
+      lastActivity: Value(at ?? chatActivityEpoch),
+      isGroup: isGroup != null ? Value(isGroup) : const Value.absent(),
+      mucNick: mucNick != null ? Value(mucNick) : const Value.absent(),
+      mucPrivateNonAnonymous: mucPrivateNonAnonymous != null
+          ? Value(mucPrivateNonAnonymous)
+          : const Value.absent(),
+    );
+    // Drift cannot emit `DO UPDATE SET` with zero columns. When the caller
+    // only ensures the row exists, insert-or-ignore leaves an existing title /
+    // nick / flags alone.
+    final hasConflictUpdate =
+        title != null ||
+        at != null ||
+        isGroup != null ||
+        mucNick != null ||
+        mucPrivateNonAnonymous != null;
+    if (!hasConflictUpdate) {
+      await into(chats).insert(row, mode: InsertMode.insertOrIgnore);
+      return;
+    }
     await into(chats).insert(
-      ChatsCompanion(
-        jid: Value(jid),
-        title: Value(title ?? jid),
-        lastActivity: Value(at ?? chatActivityEpoch),
-        isGroup: isGroup != null ? Value(isGroup) : const Value.absent(),
-        mucNick: mucNick != null ? Value(mucNick) : const Value.absent(),
-        mucPrivateNonAnonymous: mucPrivateNonAnonymous != null
-            ? Value(mucPrivateNonAnonymous)
-            : const Value.absent(),
-      ),
+      row,
       onConflict: DoUpdate(
         (_) => ChatsCompanion(
-          title: Value(title ?? jid),
+          // Never clobber a bookmark/disco name just because a message arrived
+          // without an explicit title.
+          title: title != null ? Value(title) : const Value.absent(),
           lastActivity: at != null ? Value(at) : const Value.absent(),
           isGroup: isGroup != null ? Value(isGroup) : const Value.absent(),
           mucNick: mucNick != null ? Value(mucNick) : const Value.absent(),

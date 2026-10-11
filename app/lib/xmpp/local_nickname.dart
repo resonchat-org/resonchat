@@ -183,7 +183,8 @@ const String unknownName = '?';
 /// A room is not a contact. Nothing in a roster is titled with a room's JID, so
 /// every value this parameter can actually hold for a room is either the
 /// address again or somebody's name — and somebody's name is the wrong answer
-/// to "what is this conversation called".
+/// to "what is this conversation called". The room's own name comes through
+/// [roomTitle] (bookmark / disco / roomconfig), never through [rosterTitle].
 ///
 /// ```dart
 /// /// A room's title never falls back to an occupant.
@@ -195,15 +196,16 @@ const String unknownName = '?';
 /// displayName(
 ///   localNickname: null,
 ///   rosterTitle: 'Bob',                      // Bob is *in* this room
+///   roomTitle: 'Engineering',
 ///   jid: 'team@muc.example.org',
 ///   isRoom: true,
-/// ) // 'team@muc.example.org'
+/// ) // 'Engineering'
 /// ```
 ///
-/// The fallback for a room is the full address rather than the local part, so
-/// `team@a.example` and `team@b.example` are two different rows: the slug is
-/// often an opaque token, and the domain is the only part of the address that
-/// tells two same-named rooms apart.
+/// When [roomTitle] is empty the fallback for a room is the full address rather
+/// than the local part, so `team@a.example` and `team@b.example` are two
+/// different rows: the slug is often an opaque token, and the domain is the
+/// only part of the address that tells two same-named rooms apart.
 ///
 /// The result is never empty. A conversation row with no address at all is not
 /// something the app can normally produce, and when it happens the user needs to
@@ -213,10 +215,13 @@ String displayName({
   required String rosterTitle,
   required String jid,
   required bool isRoom,
+  String roomTitle = '',
 }) {
   final nickname = LocalNickname.tryParse(localNickname);
   if (nickname != null) return nickname.value;
   if (isRoom) {
+    final named = roomTitle.trim();
+    if (named.isNotEmpty) return named;
     final room = jid.trim();
     return room.isEmpty ? unknownName : room;
   }

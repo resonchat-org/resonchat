@@ -1,9 +1,26 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
-    <uses-permission android:name="android.permission.VIBRATE"/>
-    <!-- Hold-to-talk voice messages (Telegram ChatActivityEnterView). -->
-    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
-    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- App declares no permissions of its own.
+         POST_NOTIFICATIONS / VIBRATE come from flutter_local_notifications;
+         RECORD_AUDIO from record_android. Both are prompted only on first use
+         in Dart (shade post / hold-to-talk), never at launch.
+
+         open_filex merges in gallery-scan READ_* permissions we do not need
+         (we open via FileProvider/VIEW and pick via SAF). tools:node=remove
+         strips them from the merged manifest — these lines do not request. -->
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        tools:node="remove"/>
+    <uses-permission
+        android:name="android.permission.READ_MEDIA_IMAGES"
+        tools:node="remove"/>
+    <uses-permission
+        android:name="android.permission.READ_MEDIA_VIDEO"
+        tools:node="remove"/>
+    <uses-permission
+        android:name="android.permission.READ_MEDIA_AUDIO"
+        tools:node="remove"/>
+
     <application
         android:label="resonchat"
         android:name="${applicationName}"

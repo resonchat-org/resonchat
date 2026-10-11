@@ -38,9 +38,9 @@ import 'chat_wallpaper.dart';
 import 'quoted_transcript.dart';
 import 'message_actions.dart';
 import '../home/open_chat.dart';
+import '../room/room_profile_page.dart';
 import '../room/room_sheet.dart';
 import '../chats/search.dart';
-import '../chats/notify_mode_sheet.dart';
 import 'message_bubble.dart';
 import 'track_dialogs.dart';
 import 'chat_viewmodel.dart';
@@ -72,9 +72,6 @@ class ChatPage extends ConsumerStatefulWidget {
 class _ChatPageState extends ConsumerState<ChatPage> {
   /// Peer bare JID for XMPP (not the opaque [ChatRef.key]).
   String get _peerJid => resolveChatKey(widget.chatJid).jid;
-
-  /// Only for handing to the room sheet; all domain work goes through [_vm].
-  XmppService get _xmpp => resolveChatKey(widget.chatJid).session.xmpp;
 
   /// Domain logic and UI state live in the view model; this State keeps only
   /// what needs a `BuildContext` or a widget controller.
@@ -714,24 +711,20 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     );
   }
 
-  Future<void> _showMembers() async {
+  /// Opens [ProfilePage] or [RoomProfilePage], same entry as tapping the header.
+  Future<void> _openChatProfile() async {
     final ui = _ui;
+    if (!ui.isGroup) {
+      await Navigator.of(context)
+          .pushNamed('/profile', arguments: widget.chatJid);
+      return;
+    }
     final chat = ui.room;
     if (chat == null) return;
-    // Telegram ChatAvatarContainer → Profile: about/subject lives in the
-    // room sheet, not as AppBar subtitle (subtitle stays member count).
-    final caps = await _xmpp.roomSelfCapabilities(chat.roomJid);
-    if (!mounted) return;
-    final result = await showRoomSheet(
+    // About/subject lives on the room profile; AppBar subtitle stays member count.
+    final result = await Navigator.of(
       context,
-      chat,
-      chatKey: widget.chatJid,
-      xmpp: _xmpp,
-      caps: caps,
-      canChangeSubject: ui.canChangeSubject || caps.canChangeSubject,
-      onSetSubject: (subject) =>
-          _xmpp.setGroupChatSubject(chat.roomJid, subject),
-    );
+    ).pushNamed<RoomProfileResult>('/room-profile', arguments: widget.chatJid);
     if (!mounted || result == null) return;
     final effect = await _vm.applyMemberResult(
       roomJid: chat.roomJid,
@@ -1139,9 +1132,12 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
   QuotedTranscriptItem _transcriptItemFor(Message m) {
     final isGroup = _ui.isGroup;
+    final storedTitle =
+        ref.read(chatProvider(widget.chatJid)).value?.title ?? '';
     final peerLabel = displayName(
       localNickname: null,
-      rosterTitle: ref.read(chatProvider(widget.chatJid)).value?.title ?? '',
+      rosterTitle: storedTitle,
+      roomTitle: isGroup ? storedTitle : '',
       jid: _peerJid,
       isRoom: isGroup,
     );
@@ -1230,9 +1226,11 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final backgroundEpoch = ref.watch(chatRowRevisionProvider);
     final attachEnabled = ref.watch(httpUploadAvailableProvider).value ?? false;
     final chatRow = ref.watch(chatProvider(widget.chatJid)).value;
+    final storedTitle = chatRow?.title ?? '';
     final title = displayName(
       localNickname: null,
-      rosterTitle: chatRow?.title ?? '',
+      rosterTitle: storedTitle,
+      roomTitle: ui.isGroup ? storedTitle : '',
       jid: _peerJid,
       isRoom: ui.isGroup,
     );
@@ -1265,11 +1263,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
               title: _selectionMode
                   ? Text(l10n.selectedCount(_selection.length))
                   : GestureDetector(
-                      onTap: ui.isGroup
-                          ? _showMembers
-                          : () => Navigator.of(
-                              context,
-                            ).pushNamed('/profile', arguments: widget.chatJid),
+                      onTap: _openChatProfile,
                       behavior: HitTestBehavior.opaque,
                       child: Row(
                         children: [
@@ -1350,25 +1344,6 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                           onTap: () =>
                               showTrackPicker(context, ref, widget.chatJid),
                         ),
-                      if (ui.isGroup)
-                        IconButton(
-                          icon: const Icon(Icons.group_outlined),
-                          tooltip: l10n.members,
-                          onPressed: _showMembers,
-                        ),
-                      IconButton(
-                        icon: Icon(
-                          notifyModeIcon(
-                            chatNotifyModeOf(
-                              muted: chatRow?.muted ?? false,
-                              alwaysNotify: chatRow?.alwaysNotify ?? true,
-                            ),
-                          ),
-                        ),
-                        tooltip: l10n.notificationSettings,
-                        onPressed: () =>
-                            openChatNotifySettings(context, widget.chatJid),
-                      ),
                       IconButton(
                         icon: const Icon(Icons.search),
                         tooltip: l10n.searchInChat,

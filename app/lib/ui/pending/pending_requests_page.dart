@@ -7,6 +7,8 @@
 // automatically would mean anyone can subscribe or pull you into a room with
 // no say in it.
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:moxxmpp/moxxmpp.dart' show JID;
@@ -266,6 +268,7 @@ class _RoomInviteRowState extends ConsumerState<_RoomInviteRow> {
       title: inv.roomJid,
       mucPrivateNonAnonymous: encryptable,
     );
+    unawaited(xmpp.publishConferenceBookmark(roomJid: inv.roomJid, nick: nick));
     await db.removeRoomInvitation(inv.roomJid);
     if (!mounted) return;
     setState(() => _busy = false);

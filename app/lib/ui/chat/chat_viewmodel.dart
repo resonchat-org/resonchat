@@ -343,16 +343,24 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
     final jid = state.roomJid;
     if (jid == null) return;
     final xmpp = _xmpp;
-    final features = await xmpp.queryRoomFeatures(jid);
+    final info = await xmpp.queryRoomInformation(jid);
+    final features = info?.features ?? const <String>[];
     final encryptable = isPrivateAndNonAnonymous(features);
     // Conversations fetchMembers when private+non-anonymous.
     await xmpp.refreshRoomMembership(jid, privateNonAnonymous: encryptable);
+    final discoName = info?.name.trim();
+    final titleUpdate = await _roomTitleFromDisco(jid, discoName);
     await _db.upsertChat(
       jid,
+      title: titleUpdate,
       isGroup: true,
       mucPrivateNonAnonymous: encryptable,
     );
     if (_disposed) return;
+    if (titleUpdate != null) {
+      ref.invalidate(chatProvider(arg));
+      ref.read(chatRowRevisionProvider.notifier).state++;
+    }
     if (encryptable != state.mucEncryptable) {
       state = state.copyWith(mucEncryptable: encryptable);
     }
@@ -362,6 +370,20 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
     if (_disposed || chat == null) return;
     state = state.copyWith(room: chat);
     await refreshCanChangeSubject();
+  }
+
+  /// Disco / bookmark name when the stored title is still a JID placeholder.
+  Future<String?> _roomTitleFromDisco(String jid, String? discoName) async {
+    final name = discoName?.trim() ?? '';
+    if (name.isEmpty) return null;
+    final row = await _db.getChat(jid);
+    final current = row?.title.trim() ?? '';
+    final at = jid.indexOf('@');
+    final local = at > 0 ? jid.substring(0, at) : jid;
+    final placeholder = current.isEmpty || current == jid || current == local;
+    if (!placeholder) return null;
+    if (current == name) return null;
+    return name;
   }
 
   Future<void> loadRoom() async {
@@ -394,8 +416,10 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
   /// until the user joins again. Navigation stays in the page.
   Future<void> leaveRoom(String roomJid) async {
     await _xmpp.leaveGroupChat(roomJid);
-    // Keep isGroup; clear nick (bookmark autojoin can restore it later).
+    // Keep isGroup; clear nick. Retract the PEP bookmark so other devices
+    // (and the next login) do not auto-rejoin a room we just left.
     await _db.upsertChat(roomJid, isGroup: true, mucNick: '');
+    await _xmpp.retractConferenceBookmark(roomJid);
   }
 
   /// Conversations `destroyRoom`: tear down on the server, then drop local chat.
@@ -408,8 +432,8 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
     return true;
   }
 
-  /// Applies the side effects of a member-sheet result and says what the page
-  /// should do next. Mirrors Conversations startConversation /
+  /// Applies the side effects of a [RoomProfilePage] result and says what the
+  /// page should do next. Mirrors Conversations startConversation /
   /// privateMessageWith / nextCounterpart.
   Future<ChatMemberEffect> applyMemberResult({
     required String roomJid,

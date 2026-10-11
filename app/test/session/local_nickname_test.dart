@@ -412,11 +412,25 @@ void main() {
       );
     });
 
+    test('a room uses its bookmark/disco name, not a roster occupant', () {
+      expect(
+        displayName(
+          localNickname: null,
+          rosterTitle: 'Bob',
+          roomTitle: 'Engineering',
+          jid: 'team@muc.example.org',
+          isRoom: true,
+        ),
+        'Engineering',
+      );
+    });
+
     test('a room the user has named locally takes that name', () {
       expect(
         displayName(
           localNickname: 'The Team',
           rosterTitle: 'Bob',
+          roomTitle: 'Engineering',
           jid: 'team@muc.example.org',
           isRoom: true,
         ),

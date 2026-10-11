@@ -23,6 +23,7 @@ import '../../l10n/l10n.dart';
 import '../../crypto/omemo/track.dart';
 import '../../state/providers.dart';
 import '../../store/database.dart';
+import '../../xmpp/local_nickname.dart';
 import '../contact_avatar.dart';
 import '../theme.dart';
 import 'notify_mode_sheet.dart';
@@ -52,9 +53,13 @@ class ChatRow extends ConsumerWidget {
     final chatKey = entry.ref.key;
     final accent = entry.accent;
     final multi = ref.watch(accountHubProvider).accounts.length > 1;
-    final title = chat.isGroup
-        ? (chat.title.isEmpty ? chat.jid : chat.title)
-        : (chat.title.isEmpty ? chat.jid : chat.title);
+    final title = displayName(
+      localNickname: null,
+      rosterTitle: chat.title,
+      roomTitle: chat.isGroup ? chat.title : '',
+      jid: chat.jid,
+      isRoom: chat.isGroup,
+    );
     final track = chat.isGroup && !chat.mucPrivateNonAnonymous
         ? Track.none
         : ref.watch(chatTrackProvider(chatKey)).value ?? Track.standard;

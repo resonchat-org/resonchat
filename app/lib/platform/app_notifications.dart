@@ -13,6 +13,9 @@ import '../xmpp/notify_policy.dart';
 /// Policy stays in [notificationFor] / [decide]; this class is the mechanism
 /// only. A null preview becomes [kNoPreviewText] so the shade never shows an
 /// empty body line.
+///
+/// Android 13+ [POST_NOTIFICATIONS] is requested only on the first [post],
+/// never at cold start.
 final class AppNotifications {
   AppNotifications._();
 
@@ -27,11 +30,13 @@ final class AppNotifications {
 
   bool _ready = false;
   Future<void>? _init;
+  Future<void>? _permission;
 
   /// Called when the user taps a shade entry. Payload is a [ChatRef.key].
   void Function(String chatKey)? onOpenChat;
 
-  /// Idempotent init + Android 13+ permission request.
+  /// Idempotent plugin init (channel create). Does **not** prompt for
+  /// notification permission — see [_ensurePermission].
   Future<void> ensureReady() {
     return _init ??= _doInit();
   }
@@ -62,7 +67,6 @@ final class AppNotifications {
           .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin
           >();
-      await androidPlugin?.requestNotificationsPermission();
       await androidPlugin?.createNotificationChannel(
         const AndroidNotificationChannel(
           _channelId,
@@ -74,6 +78,24 @@ final class AppNotifications {
     }
 
     _ready = true;
+  }
+
+  /// Android 13+ runtime prompt, once, when we actually need the shade.
+  Future<void> _ensurePermission() {
+    return _permission ??= _doRequestPermission();
+  }
+
+  Future<void> _doRequestPermission() async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
+    final androidPlugin = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+    try {
+      await androidPlugin?.requestNotificationsPermission();
+    } catch (e, st) {
+      _log.fine('notification permission request failed: $e', e, st);
+    }
   }
 
   void _onSelect(NotificationResponse response) {
@@ -107,6 +129,7 @@ final class AppNotifications {
   }) async {
     await ensureReady();
     if (!_ready) return;
+    await _ensurePermission();
 
     final chatKey = ChatRef(accountId: accountId, jid: chatJid).key;
     final body = request.preview ?? kNoPreviewText;

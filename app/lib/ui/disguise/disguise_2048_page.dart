@@ -52,14 +52,20 @@ class _Disguise2048PageState extends State<Disguise2048Page> {
   }
 
   Future<void> _loadBest() async {
-    final raw = await appPrefs.getString(prefDisguise2048BestKey);
-    final best = int.tryParse(raw ?? '') ?? 0;
-    if (!mounted || best <= 0) return;
-    setState(() => _game.best = best);
+    try {
+      final raw = await appPrefs.getString(prefDisguise2048BestKey);
+      final best = int.tryParse(raw ?? '') ?? 0;
+      if (!mounted || best <= 0) return;
+      setState(() => _game.best = best);
+    } catch (_) {
+      // Prefs not open yet (cold-start disguise host) — play without a best.
+    }
   }
 
   Future<void> _persistBest() async {
-    await appPrefs.setString(prefDisguise2048BestKey, '${_game.best}');
+    try {
+      await appPrefs.setString(prefDisguise2048BestKey, '${_game.best}');
+    } catch (_) {}
   }
 
   @override

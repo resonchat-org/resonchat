@@ -192,11 +192,6 @@ extension TgTheme on BuildContext {
 class AppThemeTokens {
   const AppThemeTokens._();
 
-  /// Font family used across the app. On Android this resolves to
-  /// Roboto, which is what Telegram uses; overridable so the preview
-  /// harness can substitute a locally available font.
-  static String fontFamily = 'Roboto';
-
   static ThemeData light([TgColors? tg]) {
     return lightOrDark(tg ?? const TgColors.light(), Brightness.light);
   }
@@ -269,7 +264,6 @@ class AppThemeTokens {
       useMaterial3: true,
       colorScheme: scheme,
       brightness: brightness,
-      fontFamily: fontFamily,
       scaffoldBackgroundColor: tg.pageBackground,
       // Telegram's action bar has no elevation and no shadow.
       appBarTheme: AppBarTheme(

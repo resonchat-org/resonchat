@@ -6,11 +6,11 @@
 // The split this file enforces: the *policy* is here, the *mechanism* is not.
 // Posting a notification is the part that changes with every Android release
 // and every OEM skin — channel importance, heads-up permission, the
-// POST_NOTIFICATIONS runtime prompt, a per-app battery exemption — while what
-// we want said when somebody writes to us has not changed in twenty years. A
-// file that mixes the two gets rewritten per platform release with the
-// judgement calls buried in the middle of channel plumbing, and the judgement
-// calls are the only part worth reviewing.
+// POST_NOTIFICATIONS runtime prompt (asked on first shade post, not at
+// launch), a per-app battery exemption — while what we want said when somebody
+// writes to us has not changed in twenty years. A file that mixes the two gets
+// rewritten per platform release with the judgement calls buried in the middle
+// of channel plumbing, and the judgement calls are the only part worth reviewing.
 //
 // Three of the decisions below look arbitrary and are not:
 //

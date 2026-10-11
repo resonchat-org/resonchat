@@ -16,10 +16,10 @@ import '../../state/providers.dart';
 import '../../xmpp/muc_create.dart';
 import '../home/open_chat.dart';
 import '../theme.dart';
+import 'channel_discovery_sheet.dart';
 import 'room_sheet.dart';
 
-/// Bottom sheet: join / create private / create public (same pattern as
-/// notify-mode and settings pickers).
+/// Bottom sheet: join / discover / create private / create public.
 Future<void> showGroupActionsSheet(BuildContext context) async {
   final l10n = context.l10n;
   final action = await showModalBottomSheet<_GroupEntryAction>(
@@ -32,6 +32,12 @@ Future<void> showGroupActionsSheet(BuildContext context) async {
             leading: const Icon(Icons.login),
             title: Text(l10n.joinGroup),
             onTap: () => Navigator.pop(sheetContext, _GroupEntryAction.join),
+          ),
+          ListTile(
+            leading: const Icon(Icons.travel_explore_outlined),
+            title: Text(l10n.discoverChannels),
+            onTap: () =>
+                Navigator.pop(sheetContext, _GroupEntryAction.discover),
           ),
           ListTile(
             leading: const Icon(Icons.group_add_outlined),
@@ -54,6 +60,8 @@ Future<void> showGroupActionsSheet(BuildContext context) async {
   switch (action) {
     case _GroupEntryAction.join:
       await showJoinRoomSheet(context);
+    case _GroupEntryAction.discover:
+      await showChannelDiscoverySheet(context);
     case _GroupEntryAction.createPrivate:
       await showCreatePrivateGroupSheet(context);
     case _GroupEntryAction.createPublic:
@@ -61,7 +69,7 @@ Future<void> showGroupActionsSheet(BuildContext context) async {
   }
 }
 
-enum _GroupEntryAction { join, createPrivate, createPublic }
+enum _GroupEntryAction { join, discover, createPrivate, createPublic }
 
 /// Conversations “Create private group chat”.
 Future<void> showCreatePrivateGroupSheet(BuildContext context) {
@@ -154,6 +162,7 @@ class _CreatePrivateGroupSheetState
 
   Future<void> _persistAndOpen(CreateRoomResult result) async {
     final db = ref.read(databaseProvider);
+    final xmpp = ref.read(xmppServiceProvider);
     final roomJid = result.roomJid!;
     await db.upsertChat(
       roomJid,
@@ -161,6 +170,13 @@ class _CreatePrivateGroupSheetState
       mucNick: result.nick,
       title: result.title,
       mucPrivateNonAnonymous: result.privateNonAnonymous,
+    );
+    unawaited(
+      xmpp.publishConferenceBookmark(
+        roomJid: roomJid,
+        name: result.title,
+        nick: result.nick,
+      ),
     );
     if (!mounted) return;
     Navigator.of(context).pop();
@@ -326,6 +342,13 @@ class _CreatePublicChannelSheetState
       mucNick: result.nick,
       title: result.title,
       mucPrivateNonAnonymous: result.privateNonAnonymous,
+    );
+    unawaited(
+      xmpp.publishConferenceBookmark(
+        roomJid: result.roomJid!,
+        name: result.title,
+        nick: result.nick,
+      ),
     );
     if (!mounted) return;
     Navigator.of(context).pop();

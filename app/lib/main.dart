@@ -28,6 +28,7 @@ import 'ui/chat/chat_page.dart';
 import 'ui/accounts/manage_accounts_page.dart';
 import 'ui/security/security_page.dart';
 import 'ui/profile/profile_page.dart';
+import 'ui/room/room_profile_page.dart';
 import 'ui/settings/settings_page.dart';
 
 /// Root navigator — used to remap `/chat` ↔ column pane across resizes.
@@ -108,10 +109,8 @@ Future<StartupResult> bootApp() async {
 
 /// Boots the app, or explains why it could not.
 ///
-/// Retrying restarts the boot inside the running tree, so a failure that was
-/// temporary — a keystore not yet ready, storage briefly unavailable — costs a
-/// tap rather than a relaunch. The app itself is only ever mounted on success,
-/// so a half-initialised tree is not something the user can end up in.
+/// UI rule (same as [App] after mount): while [AppLock.needsDisguise], only
+/// 2048 is shown — progress / "could not start" wait until unlock.
 class StartupGate extends StatefulWidget {
   const StartupGate({super.key, this.boot = bootApp});
 
@@ -130,13 +129,26 @@ class _StartupGateState extends State<StartupGate> {
   @override
   void initState() {
     super.initState();
-    _run();
+    // [bootApp] loads AppLock early; rebuild so 2048 can cover mid-boot.
+    AppLock.instance.addListener(_onLockChanged);
+    unawaited(_run());
+  }
+
+  @override
+  void dispose() {
+    AppLock.instance.removeListener(_onLockChanged);
+    super.dispose();
+  }
+
+  void _onLockChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _run() async {
     setState(() {
       _running = true;
       _error = null;
+      _booted = null;
     });
     try {
       final booted = await widget.boot();
@@ -157,6 +169,13 @@ class _StartupGateState extends State<StartupGate> {
 
   @override
   Widget build(BuildContext context) {
+    // Same condition [App] uses — one gate everywhere.
+    if (AppLock.instance.needsDisguise) {
+      return _StartupShell(
+        child: Disguise2048Page(onUnlocked: () => setState(() {})),
+      );
+    }
+
     final booted = _booted;
     if (booted != null) {
       return ProviderScope(
@@ -166,25 +185,30 @@ class _StartupGateState extends State<StartupGate> {
         ),
       );
     }
-    return _StartupFailureApp(running: _running, error: _error, onRetry: _run);
+
+    // Still booting: spinner only (no "could not start" title — that page is
+    // for failures, and would flash before 2048 when disguise turns on).
+    if (_running) {
+      return const MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(
+          backgroundColor: Color(0xFFFAF8EF),
+          body: Center(child: CircularProgressIndicator()),
+        ),
+      );
+    }
+
+    return _StartupShell(
+      child: _StartupStatusBody(error: _error, onRetry: _run),
+    );
   }
 }
 
-/// Shown while booting, and when booting failed.
-///
-/// It cannot use the app's theme or stored locale — those live in the prefs
-/// database that may be exactly what failed to open — so it settles for
-/// Material defaults and the full localizations set.
-class _StartupFailureApp extends StatelessWidget {
-  const _StartupFailureApp({
-    required this.running,
-    required this.error,
-    required this.onRetry,
-  });
+/// Minimal MaterialApp for pre-[App] chrome (2048 or boot status).
+class _StartupShell extends StatelessWidget {
+  const _StartupShell({required this.child});
 
-  final bool running;
-  final Object? error;
-  final VoidCallback onRetry;
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
@@ -200,63 +224,60 @@ class _StartupFailureApp extends StatelessWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      home: Builder(
-        builder: (context) {
-          final l10n = context.l10n;
-          final theme = Theme.of(context);
-          return Scaffold(
-            body: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 440),
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(
-                        running ? Icons.hourglass_top : Icons.lock_outline,
-                        size: 40,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        l10n.startupFailedTitle,
-                        style: theme.textTheme.titleLarge,
-                      ),
-                      const SizedBox(height: 16),
-                      if (running)
-                        const Center(child: CircularProgressIndicator())
-                      else ...[
-                        Text(l10n.startupFailedBody),
-                        const SizedBox(height: 12),
-                        Text(l10n.startupFailedHint),
-                        const SizedBox(height: 20),
-                        FilledButton(
-                          onPressed: onRetry,
-                          child: Text(l10n.startupFailedRetry),
-                        ),
-                        if (error != null) ...[
-                          const SizedBox(height: 28),
-                          Text(
-                            l10n.startupFailedDetails,
-                            style: theme.textTheme.labelLarge,
-                          ),
-                          const SizedBox(height: 6),
-                          // Selectable, and not wrapped in a friendly sentence:
-                          // this is what a bug report needs to carry.
-                          SelectableText(
-                            '$error',
-                            style: theme.textTheme.bodySmall,
-                          ),
-                        ],
-                      ],
-                    ],
-                  ),
+      home: child,
+    );
+  }
+}
+
+/// Failure body after boot threw (hosted by [_StartupShell]).
+class _StartupStatusBody extends StatelessWidget {
+  const _StartupStatusBody({required this.error, required this.onRetry});
+
+  final Object? error;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final theme = Theme.of(context);
+    return Scaffold(
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 440),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.lock_outline, size: 40),
+                const SizedBox(height: 16),
+                Text(
+                  l10n.startupFailedTitle,
+                  style: theme.textTheme.titleLarge,
                 ),
-              ),
+                const SizedBox(height: 16),
+                Text(l10n.startupFailedBody),
+                const SizedBox(height: 12),
+                Text(l10n.startupFailedHint),
+                const SizedBox(height: 20),
+                FilledButton(
+                  onPressed: onRetry,
+                  child: Text(l10n.startupFailedRetry),
+                ),
+                if (error != null) ...[
+                  const SizedBox(height: 28),
+                  Text(
+                    l10n.startupFailedDetails,
+                    style: theme.textTheme.labelLarge,
+                  ),
+                  const SizedBox(height: 6),
+                  SelectableText('$error', style: theme.textTheme.bodySmall),
+                ],
+              ],
             ),
-          );
-        },
+          ),
+        ),
       ),
     );
   }
@@ -389,6 +410,12 @@ class _AppState extends ConsumerState<App> {
                   settings: settings,
                   builder: (_) =>
                       ProfilePage(chatJid: settings.arguments! as String),
+                );
+              case '/room-profile':
+                return MaterialPageRoute<RoomProfileResult>(
+                  settings: settings,
+                  builder: (_) =>
+                      RoomProfilePage(chatJid: settings.arguments! as String),
                 );
               case '/encryption':
                 return MaterialPageRoute<void>(

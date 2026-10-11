@@ -251,6 +251,28 @@
   "couldNotOpenLink": "No app found to open this link",
   "contactRequestSent": "Contact request sent. Messages stay on this device until they accept.",
   "contactAddFailed": "Could not add the contact on the server.",
+  "tabChats": "Chats",
+  "tabContacts": "Contacts",
+  "tabMe": "Me",
+  "addContact": "Add contact",
+  "addContactHint": "JID to add",
+  "noContactsYet": "No contacts yet",
+  "groupBookmarks": "Groups",
+  "groupBookmarksEmpty": "No group bookmarks yet",
+  "groupBookmarksCount": "{count} groups",
+  "@groupBookmarksCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "bookmarkAutoJoin": "Auto-join",
+  "removeBookmark": "Remove bookmark",
+  "removeBookmarkConfirm": "Remove {name} from bookmarks on the server?",
+  "@removeBookmarkConfirm": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
   "mute": "Mute",
   "unmute": "Unmute",
   "notificationSettings": "Notifications",

@@ -40,15 +40,9 @@ void main() {
   // and ticks are still reviewable. For real text use a device or the
   // desktop build. We do not load a font here because FontLoader
   // deadlocks `flutter test` on Linux.
-  final previewFont = AppThemeTokens.fontFamily;
-
   Widget lightSample() => MaterialApp(
     debugShowCheckedModeBanner: false,
     theme: AppThemeTokens.light(),
-    builder: (context, child) => DefaultTextStyle.merge(
-      style: TextStyle(fontFamily: previewFont),
-      child: child!,
-    ),
     home: Scaffold(
       body: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -91,10 +85,6 @@ void main() {
   Widget darkSample() => MaterialApp(
     debugShowCheckedModeBanner: false,
     theme: AppThemeTokens.dark(),
-    builder: (context, child) => DefaultTextStyle.merge(
-      style: TextStyle(fontFamily: previewFont),
-      child: child!,
-    ),
     home: Scaffold(
       body: Column(
         mainAxisAlignment: MainAxisAlignment.center,

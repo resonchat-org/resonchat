@@ -20,6 +20,7 @@ import 'package:resonchat/xmpp/capabilities.dart';
 
 ChatCapabilities caps({
   required Set<int> devices,
+
   /// Devices the *peer* publishes, when they differ from the recipient set
   /// (which also carries our own other devices).
   Set<int>? peer,

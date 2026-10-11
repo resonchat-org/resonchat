@@ -208,7 +208,7 @@
   "roomNameHint": "群名称",
   "roomNameSaved": "群名称已保存",
   "roomNameSaveFailed": "无法保存群名称（仅群主）",
-  "discoverChannels": "发现公开群聊",
+  "discoverChannels": "发现公开频道",
   "searchChannels": "搜索群聊",
   "noChannelsFound": "未找到群聊",
   "channelDiscoveryMethod": "群聊发现方式",
@@ -241,6 +241,28 @@
   "couldNotOpenLink": "没有可以打开此链接的应用",
   "contactRequestSent": "已发送联系人请求。对方接受前，消息仅保存在本机。",
   "contactAddFailed": "无法在服务器上添加该联系人。",
+  "tabChats": "聊天",
+  "tabContacts": "联系人",
+  "tabMe": "我",
+  "addContact": "添加联系人",
+  "addContactHint": "输入要添加的 JID",
+  "noContactsYet": "暂无联系人",
+  "groupBookmarks": "群聊",
+  "groupBookmarksEmpty": "暂无群聊书签",
+  "groupBookmarksCount": "{count} 个群聊",
+  "@groupBookmarksCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "bookmarkAutoJoin": "自动加入",
+  "removeBookmark": "移除书签",
+  "removeBookmarkConfirm": "从服务器书签中移除 {name}？",
+  "@removeBookmarkConfirm": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
   "mute": "静音",
   "unmute": "取消静音",
   "notificationSettings": "通知",

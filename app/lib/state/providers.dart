@@ -138,6 +138,18 @@ final chatsProvider = StreamProvider<List<AccountChat>>((ref) {
   return accountHub.watchMergedChats();
 });
 
+/// Unified multi-account roster (Contacts tab).
+final rosterProvider = StreamProvider<List<AccountContact>>((ref) {
+  ref.watch(accountHubProvider);
+  return accountHub.watchMergedRoster();
+});
+
+/// Unified multi-account MUC bookmarks (Groups page).
+final bookmarksProvider = StreamProvider<List<AccountBookmark>>((ref) {
+  ref.watch(accountHubProvider);
+  return accountHub.watchMergedBookmarks();
+});
+
 /// One chat row, or null while loading / unknown ([ChatRef.key]).
 final chatProvider = FutureProvider.family<Chat?, String>((ref, chatKey) {
   final r = resolveChatKey(chatKey);

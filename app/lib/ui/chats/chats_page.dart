@@ -3,23 +3,24 @@
 //
 // Chat list translated from Telegram for Android's `DialogsActivity`
 // (GPL-2.0-or-later): 54dp avatar, two-line text column, unread badge,
-// pinned affordance.
+// pinned affordance. Top pill searches messages (not add-contact).
 
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../account/account_hub.dart';
 import '../../l10n/l10n.dart';
 import '../../state/providers.dart';
-import '../accounts/accounts_icon.dart';
+import '../chat/chat_page.dart';
 import '../home/open_chat.dart';
 import '../pending/pending_requests_page.dart';
 import '../room/create_group_sheet.dart';
 import '../theme.dart';
-import 'chats_viewmodel.dart';
 import 'chat_row.dart';
 import 'search.dart';
+import 'unread.dart';
 
 class ChatsPage extends ConsumerStatefulWidget {
   const ChatsPage({super.key, this.activeChatKey});
@@ -32,58 +33,50 @@ class ChatsPage extends ConsumerStatefulWidget {
 }
 
 class _ChatsPageState extends ConsumerState<ChatsPage> {
-  final _jid = TextEditingController();
+  final _query = TextEditingController();
+  String _needle = '';
+  Timer? _debounce;
 
   @override
   void dispose() {
-    _jid.dispose();
+    _debounce?.cancel();
+    _query.dispose();
     super.dispose();
   }
 
-  /// Opens a conversation, adding the contact first when online.
-  Future<void> _openChat() async {
-    final raw = _jid.text.trim();
-    if (raw.isEmpty) return;
-    final result = await ref
-        .read(chatsViewModelProvider.notifier)
-        .openChatByJid(raw);
+  void _onQueryChanged(String value) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 280), () {
+      if (mounted) setState(() => _needle = value.trim());
+    });
+  }
+
+  Future<void> _openHit(SearchHit hit) async {
+    final chats = await accountHub.snapshotChats();
+    final match = chats.where((c) => c.chat.jid == hit.chatJid).firstOrNull;
+    final key = match?.ref.key ?? hit.chatJid;
     if (!mounted) return;
-    final l10n = context.l10n;
-    if (result.invalidJid) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(l10n.invalidJid)));
-      return;
-    }
-    if (result.chatKey == null) return;
-    _jid.clear();
-    final added = result.contactAdded;
-    if (added != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            added ? l10n.contactRequestSent : l10n.contactAddFailed,
-          ),
-        ),
-      );
-    }
-    openChat(context, result.chatKey!);
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            ChatPage(chatJid: key, focusMessageAnchor: hit.messageAnchor),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final chats = ref.watch(chatsProvider);
     final l10n = context.l10n;
+    final searching = _needle.isNotEmpty;
+    final results = searching
+        ? ref.watch(messageSearchProvider(_needle))
+        : null;
+
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.appName),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.search),
-            tooltip: l10n.searchMessages,
-            onPressed: () => Navigator.of(
-              context,
-            ).push(MaterialPageRoute<void>(builder: (_) => const SearchPage())),
-          ),
           IconButton(
             icon: const Icon(Icons.person_add_alt),
             tooltip: l10n.pendingRequests,
@@ -99,13 +92,6 @@ class _ChatsPageState extends ConsumerState<ChatsPage> {
             onPressed: () => unawaited(showGroupActionsSheet(context)),
           ),
           IconButton(
-            // CustomPaint: MaterialIcons in this AppBar slot paint blank on
-            // some Linux builds even when the glyph exists in the OTF.
-            icon: const AccountsIcon(),
-            tooltip: l10n.manageAccounts,
-            onPressed: () => Navigator.of(context).pushNamed('/accounts'),
-          ),
-          IconButton(
             icon: const Icon(Icons.settings),
             tooltip: l10n.settings,
             onPressed: () => Navigator.of(context).pushNamed('/settings'),
@@ -114,46 +100,102 @@ class _ChatsPageState extends ConsumerState<ChatsPage> {
       ),
       body: Column(
         children: [
-          _OpenChatBar(controller: _jid, onOpen: _openChat),
+          _MessageSearchBar(
+            controller: _query,
+            onChanged: _onQueryChanged,
+            onClear: () {
+              _query.clear();
+              setState(() => _needle = '');
+            },
+            hasQuery: _needle.isNotEmpty || _query.text.isNotEmpty,
+          ),
           Expanded(
-            child: chats.when(
-              data: (list) => list.isEmpty
-                  ? Center(child: Text(l10n.noConversationsYet))
-                  : ListView.separated(
-                      itemCount: list.length,
-                      separatorBuilder: (_, _) => Padding(
-                        padding: const EdgeInsets.only(left: 82),
-                        child: Divider(
-                          height: 0.5,
-                          color: context.tg.separator,
-                        ),
-                      ),
-                      itemBuilder: (context, i) {
-                        final entry = list[i];
-                        final key = entry.ref.key;
-                        return ChatRow(
-                          entry: entry,
-                          selected: widget.activeChatKey == key,
-                          onOpen: () => openChat(context, key),
-                        );
-                      },
+            child: searching
+                ? results!.when(
+                    data: (messages) {
+                      final titles = _chatTitles(ref);
+                      final hits = [
+                        for (final m in messages)
+                          SearchHit(
+                            chatJid: m.chatJid,
+                            chatTitle: titles[m.chatJid] ?? m.chatJid,
+                            body: m.body,
+                            time: m.timestamp,
+                            incoming: m.incoming,
+                            messageAnchor: unreadAnchorOf(m),
+                          ),
+                      ];
+                      return SearchResults(
+                        hits: hits,
+                        running: false,
+                        onOpen: _openHit,
+                      );
+                    },
+                    loading: () => SearchResults(
+                      hits: const [],
+                      running: true,
+                      onOpen: (_) {},
                     ),
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(child: Text('$e')),
-            ),
+                    error: (e, _) => Center(
+                      child: Text(
+                        l10n.searchFailed('$e'),
+                        style: TextStyle(color: context.tg.danger),
+                      ),
+                    ),
+                  )
+                : chats.when(
+                    data: (list) => list.isEmpty
+                        ? Center(child: Text(l10n.noConversationsYet))
+                        : ListView.separated(
+                            itemCount: list.length,
+                            separatorBuilder: (_, _) => Padding(
+                              padding: const EdgeInsets.only(left: 82),
+                              child: Divider(
+                                height: 0.5,
+                                color: context.tg.separator,
+                              ),
+                            ),
+                            itemBuilder: (context, i) {
+                              final entry = list[i];
+                              final key = entry.ref.key;
+                              return ChatRow(
+                                entry: entry,
+                                selected: widget.activeChatKey == key,
+                                onOpen: () => openChat(context, key),
+                              );
+                            },
+                          ),
+                    loading: () =>
+                        const Center(child: CircularProgressIndicator()),
+                    error: (e, _) => Center(child: Text('$e')),
+                  ),
           ),
         ],
       ),
     );
   }
+
+  Map<String, String> _chatTitles(WidgetRef ref) {
+    final list = ref.read(chatsProvider).asData?.value ?? const [];
+    return {
+      for (final c in list)
+        c.chat.jid: c.chat.title.isEmpty ? c.chat.jid : c.chat.title,
+    };
+  }
 }
 
-/// "Open chat by JID" affordance; replaced by search in later milestones.
-class _OpenChatBar extends StatelessWidget {
-  const _OpenChatBar({required this.controller, required this.onOpen});
+class _MessageSearchBar extends StatelessWidget {
+  const _MessageSearchBar({
+    required this.controller,
+    required this.onChanged,
+    required this.onClear,
+    required this.hasQuery,
+  });
 
   final TextEditingController controller;
-  final VoidCallback onOpen;
+  final ValueChanged<String> onChanged;
+  final VoidCallback onClear;
+  final bool hasQuery;
 
   @override
   Widget build(BuildContext context) {
@@ -168,13 +210,21 @@ class _OpenChatBar extends StatelessWidget {
       ),
       child: TextField(
         controller: controller,
-        onSubmitted: (_) => onOpen(),
+        onChanged: onChanged,
+        textInputAction: TextInputAction.search,
         style: TextStyle(fontSize: TgDimens.chatSubtitleFontSize),
         decoration: InputDecoration(
           isDense: true,
-          hintText: l10n.openChatHint,
+          hintText: l10n.searchMessages,
           hintStyle: TextStyle(color: tg.textSecondary),
           prefixIcon: Icon(Icons.search, size: 18, color: tg.textSecondary),
+          suffixIcon: hasQuery
+              ? IconButton(
+                  icon: Icon(Icons.close, size: 18, color: tg.textSecondary),
+                  tooltip: l10n.clear,
+                  onPressed: onClear,
+                )
+              : null,
           filled: true,
           fillColor: tg.separator.withValues(alpha: 0.35),
           contentPadding: const EdgeInsets.symmetric(

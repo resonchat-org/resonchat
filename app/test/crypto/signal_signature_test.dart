@@ -44,59 +44,65 @@ void main() {
     expect(Curve.verifySignature(pair.publicKey, message, signature), isTrue);
   });
 
-  test('a bundle we publish ourselves is usable, and one bit off is not', () async {
-    // The gate that decides whether a device counts as reachable. A bundle
-    // nobody can verify is a device that cannot be written to, and the send
-    // path must skip it rather than fail on it.
-    final device = await AxolotlDevice.generateNewDevice(
-      'peer@example.org',
-      preKeyCount: 4,
-    );
-    final bundle = await device.toBundle();
-    expect(omemoBundleUsable(bundle), isTrue);
+  test(
+    'a bundle we publish ourselves is usable, and one bit off is not',
+    () async {
+      // The gate that decides whether a device counts as reachable. A bundle
+      // nobody can verify is a device that cannot be written to, and the send
+      // path must skip it rather than fail on it.
+      final device = await AxolotlDevice.generateNewDevice(
+        'peer@example.org',
+        preKeyCount: 4,
+      );
+      final bundle = await device.toBundle();
+      expect(omemoBundleUsable(bundle), isTrue);
 
-    // One flipped bit, which is what a signed prekey that no longer matches
-    // its signature looks like from the outside.
-    final signature = base64Decode(bundle.signedPreKeySignatureEncoded);
-    signature[0] ^= 0x01;
-    expect(
-      omemoBundleUsable(
-        AxolotlBundle(
-          jid: bundle.jid,
-          deviceId: bundle.deviceId,
-          signedPreKeyId: bundle.signedPreKeyId,
-          signedPreKeyPublicEncoded: bundle.signedPreKeyPublicEncoded,
-          signedPreKeySignatureEncoded: base64Encode(signature),
-          identityKeyEncoded: bundle.identityKeyEncoded,
-          preKeysEncoded: bundle.preKeysEncoded,
+      // One flipped bit, which is what a signed prekey that no longer matches
+      // its signature looks like from the outside.
+      final signature = base64Decode(bundle.signedPreKeySignatureEncoded);
+      signature[0] ^= 0x01;
+      expect(
+        omemoBundleUsable(
+          AxolotlBundle(
+            jid: bundle.jid,
+            deviceId: bundle.deviceId,
+            signedPreKeyId: bundle.signedPreKeyId,
+            signedPreKeyPublicEncoded: bundle.signedPreKeyPublicEncoded,
+            signedPreKeySignatureEncoded: base64Encode(signature),
+            identityKeyEncoded: bundle.identityKeyEncoded,
+            preKeysEncoded: bundle.preKeysEncoded,
+          ),
         ),
-      ),
-      isFalse,
-    );
-  });
+        isFalse,
+      );
+    },
+  );
 
-  test('a device that has handed out all of its prekeys is still usable', () async {
-    // libsignal opens a session without a one-time prekey, and a device that
-    // has given all of its own out still publishes a bundle with none.
-    // Skipping it would drop somebody who is merely replenishing.
-    final device = await AxolotlDevice.generateNewDevice(
-      'peer@example.org',
-      preKeyCount: 4,
-    );
-    final bundle = await device.toBundle();
-    expect(
-      omemoBundleUsable(
-        AxolotlBundle(
-          jid: bundle.jid,
-          deviceId: bundle.deviceId,
-          signedPreKeyId: bundle.signedPreKeyId,
-          signedPreKeyPublicEncoded: bundle.signedPreKeyPublicEncoded,
-          signedPreKeySignatureEncoded: bundle.signedPreKeySignatureEncoded,
-          identityKeyEncoded: bundle.identityKeyEncoded,
-          preKeysEncoded: const {},
+  test(
+    'a device that has handed out all of its prekeys is still usable',
+    () async {
+      // libsignal opens a session without a one-time prekey, and a device that
+      // has given all of its own out still publishes a bundle with none.
+      // Skipping it would drop somebody who is merely replenishing.
+      final device = await AxolotlDevice.generateNewDevice(
+        'peer@example.org',
+        preKeyCount: 4,
+      );
+      final bundle = await device.toBundle();
+      expect(
+        omemoBundleUsable(
+          AxolotlBundle(
+            jid: bundle.jid,
+            deviceId: bundle.deviceId,
+            signedPreKeyId: bundle.signedPreKeyId,
+            signedPreKeyPublicEncoded: bundle.signedPreKeyPublicEncoded,
+            signedPreKeySignatureEncoded: bundle.signedPreKeySignatureEncoded,
+            identityKeyEncoded: bundle.identityKeyEncoded,
+            preKeysEncoded: const {},
+          ),
         ),
-      ),
-      isTrue,
-    );
-  });
+        isTrue,
+      );
+    },
+  );
 }

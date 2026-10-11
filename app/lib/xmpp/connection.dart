@@ -287,7 +287,16 @@ class XmppService {
 
   XmppConnection? _connection;
   PubSubManager? _pubsub;
+  BookmarksManager? _bookmarks;
   axolotl.AxolotlOmemoManager? _omemo;
+
+  /// Fires when XEP-0402 / legacy bookmarks change (fetch, push, publish).
+  final _bookmarksChanges = StreamController<void>.broadcast();
+  Stream<void> get bookmarksChanges => _bookmarksChanges.stream;
+
+  /// Current bookmark cache (empty until [fetchBookmarks] or a PEP push).
+  List<ConferenceBookmark> get cachedBookmarks =>
+      _bookmarks?.bookmarks ?? const [];
 
   /// HTTP PUT/GET + aesgcm on top of registered [HttpFileUploadManager].
   late final HttpFileService httpFiles = HttpFileService(() => _connection);
@@ -642,20 +651,83 @@ class XmppService {
     }
   }
 
+  /// Fetches PEP bookmarks (XEP-0402, else legacy conversion).
+  Future<List<ConferenceBookmark>> fetchBookmarks() async {
+    final bm = _bookmarks;
+    if (bm == null) return const [];
+    final result = await bm.fetch();
+    if (result.isType<PubSubError>()) {
+      _log.info('fetchBookmarks failed: ${result.get<PubSubError>()}');
+      return bm.bookmarks;
+    }
+    if (!_bookmarksChanges.isClosed) _bookmarksChanges.add(null);
+    return result.get<List<ConferenceBookmark>>();
+  }
+
+  /// Publishes / updates one conference bookmark (autojoin by default).
+  Future<bool> publishConferenceBookmark({
+    required String roomJid,
+    String? name,
+    String? nick,
+    String? password,
+    bool autoJoin = true,
+  }) async {
+    final bm = _bookmarks;
+    if (bm == null) return false;
+    final result = await bm.publish(
+      ConferenceBookmark(
+        jid: roomJid,
+        name: name,
+        nick: nick,
+        password: password,
+        autoJoin: autoJoin,
+      ),
+    );
+    if (result.isType<PubSubError>()) {
+      _log.info('publishBookmark failed: ${result.get<PubSubError>()}');
+      return false;
+    }
+    if (!_bookmarksChanges.isClosed) _bookmarksChanges.add(null);
+    return true;
+  }
+
+  /// Removes a conference bookmark.
+  Future<bool> retractConferenceBookmark(String roomJid) async {
+    final bm = _bookmarks;
+    if (bm == null) return false;
+    final result = await bm.retract(roomJid);
+    if (result.isType<PubSubError>()) {
+      _log.info('retractBookmark failed: ${result.get<PubSubError>()}');
+      return false;
+    }
+    if (!_bookmarksChanges.isClosed) _bookmarksChanges.add(null);
+    return true;
+  }
+
   /// Disco#info features for a room (Conversations fetch after join).
   ///
   /// Used to decide [isPrivateAndNonAnonymous] — only then may OMEMO run.
   /// Also caches `muc#roominfo_changesubject` / `muc#roomconfig_changesubject`
   /// for [canChangeSubject].
   Future<List<String>> queryRoomFeatures(String roomJid) async {
+    final info = await queryRoomInformation(roomJid);
+    if (info == null) return const [];
+    return List<String>.from(info.features);
+  }
+
+  /// Full disco#info for a room, or null when the query fails.
+  ///
+  /// [RoomInformation.name] is the conference identity name — what the UI
+  /// should show instead of the bare JID / localpart.
+  Future<RoomInformation?> queryRoomInformation(String roomJid) async {
     final manager = muc;
-    if (manager == null) return const [];
+    if (manager == null) return null;
     final bare = JID.fromString(roomJid).toBare().toString();
     final result = await manager.queryRoomInformation(JID.fromString(bare));
-    if (!result.isType<RoomInformation>()) return const [];
+    if (!result.isType<RoomInformation>()) return null;
     final info = result.get<RoomInformation>();
     _cacheRoomPolicy(bare, info);
-    return List<String>.from(info.features);
+    return info;
   }
 
   /// Conversations `MucOptions.canChangeSubject`:
@@ -1901,6 +1973,7 @@ class XmppService {
 
     _carbons = CarbonsManager();
     _pubsub = PubSubManager();
+    _bookmarks = BookmarksManager();
     final messageManager = MessageManager();
     // The B track rides along as a stanza extension, and moxxmpp only knows
     // how to serialise the ones it ships with. Without this callback the PQ
@@ -1916,6 +1989,8 @@ class XmppService {
       ),
       DiscoManager(const []),
       _pubsub!,
+      // XEP-0402 PEP Native Bookmarks (+ XEP-0048 PEP-conversion fallback).
+      _bookmarks!,
       messageManager,
       MessageDeliveryReceiptManager(),
       ChatStateManager(),
@@ -2956,6 +3031,8 @@ class XmppService {
       }
     } else if (event is BlocklistUnblockPushEvent) {
       if (!_blocklistChanges.isClosed) _blocklistChanges.add(const {});
+    } else if (event is BookmarksUpdatedEvent) {
+      if (!_bookmarksChanges.isClosed) _bookmarksChanges.add(null);
     } else if (event is PubSubNotificationEvent) {
       _onPepNotification(event);
     } else if (event is MessageEvent) {

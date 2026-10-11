@@ -11,6 +11,7 @@ import 'dart:ui' show Color;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:logging/logging.dart';
+import 'package:moxxmpp/moxxmpp.dart' show ConferenceBookmark;
 
 import '../net/app_network.dart';
 import '../xmpp/connect_failure.dart';
@@ -34,6 +35,31 @@ class AccountChat {
   ChatRef get ref => ChatRef(accountId: account.id, jid: chat.jid);
 
   /// Accent for list chrome (stripe / avatar ring), not for contact text.
+  Color get accent => accountAccent(account.bareJid);
+}
+
+/// One roster contact across accounts.
+class AccountContact {
+  const AccountContact({required this.account, required this.entry});
+
+  final StoredAccount account;
+  final RosterEntry entry;
+
+  ChatRef get ref => ChatRef(accountId: account.id, jid: entry.jid);
+  Color get accent => accountAccent(account.bareJid);
+
+  String get displayName =>
+      entry.name.trim().isNotEmpty ? entry.name.trim() : entry.jid;
+}
+
+/// One MUC bookmark (XEP-0402 / legacy) across accounts.
+class AccountBookmark {
+  const AccountBookmark({required this.account, required this.bookmark});
+
+  final StoredAccount account;
+  final ConferenceBookmark bookmark;
+
+  ChatRef get ref => ChatRef(accountId: account.id, jid: bookmark.jid);
   Color get accent => accountAccent(account.bareJid);
 }
 
@@ -69,6 +95,9 @@ class AccountHub extends ChangeNotifier {
   final StreamController<void> _sessionChanges =
       StreamController<void>.broadcast();
   final StreamController<void> _chatsTick = StreamController<void>.broadcast();
+  final StreamController<void> _rosterTick = StreamController<void>.broadcast();
+  final StreamController<void> _bookmarksTick =
+      StreamController<void>.broadcast();
 
   Stream<void> get sessionChanges => _sessionChanges.stream;
 
@@ -159,6 +188,12 @@ class AccountHub extends ChangeNotifier {
     session.subs.add(
       db.watchArchivedChats().listen((_) => _chatsTick.add(null)),
     );
+    session.subs.add(db.watchRoster().listen((_) => _rosterTick.add(null)));
+    session.subs.add(
+      session.xmpp.bookmarksChanges.listen((_) {
+        unawaited(_applyBookmarksToDb(session));
+      }),
+    );
     _sessions[account.id] = session;
     return session;
   }
@@ -197,7 +232,7 @@ class AccountHub extends ChangeNotifier {
     return true;
   }
 
-  /// Roster / OMEMO / MUC rejoin / MAM catch-up after a successful login.
+  /// Roster / OMEMO / bookmarks / MUC rejoin / MAM catch-up after a successful login.
   ///
   /// Cold start used to skip this (only the login page ran it), leaving
   /// sessions "connected" without an OMEMO device — encrypted sends fail.
@@ -216,6 +251,9 @@ class AccountHub extends ChangeNotifier {
       await xmpp.ensureOmemoDevice();
       await xmpp.replenishPrekeys();
       await xmpp.initialiseBTrack();
+      // XEP-0402 / legacy bookmarks → local group rows, then rejoin autojoin.
+      await xmpp.fetchBookmarks();
+      await _applyBookmarksToDb(session);
       final rooms = await db.groupChatsForJoin();
       await xmpp.rejoinGroupChats([
         for (final c in rooms) (roomJid: c.jid, nick: c.mucNick),
@@ -271,6 +309,10 @@ class AccountHub extends ChangeNotifier {
   XmppConnectFailure? lastConnectFailure;
 
   /// Add (or update) an account and connect it.
+  ///
+  /// Credentials are written to the account store only after a successful
+  /// connect. A failed attempt must not leave a never-logged-in row in the
+  /// list (tapping it would only fail again).
   Future<bool> addAndConnect({
     required String jid,
     required String password,
@@ -292,15 +334,28 @@ class AccountHub extends ChangeNotifier {
       host: (host == null || host.trim().isEmpty) ? null : host.trim(),
       displayName: existing?.displayName ?? '',
     );
-    await _store.upsert(account);
-    _accounts = await _store.loadAll();
     final session = await _ensureSession(account);
     final ok = await _connectAndBootstrap(session.account.id);
-    if (!ok) lastConnectFailure = session.xmpp.lastFailure;
+    if (!ok) {
+      lastConnectFailure = session.xmpp.lastFailure;
+      if (existing == null) {
+        // Brand-new account: drop the ephemeral session; nothing to persist.
+        _sessions.remove(account.id);
+        await session.dispose();
+      } else {
+        // Keep the previously stored credentials in memory.
+        session.account = existing;
+      }
+      notifyListeners();
+      _sessionChanges.add(null);
+      return false;
+    }
+    await _store.upsert(account);
+    _accounts = await _store.loadAll();
     notifyListeners();
     _sessionChanges.add(null);
     _chatsTick.add(null);
-    return ok;
+    return true;
   }
 
   Future<void> setEnabled(String accountId, bool enabled) async {
@@ -392,6 +447,119 @@ class AccountHub extends ChangeNotifier {
     return controller.stream;
   }
 
+  Future<List<AccountContact>> snapshotRoster() async {
+    final rows = <AccountContact>[];
+    for (final s in _sessions.values) {
+      final list = await s.db.allRosterEntries();
+      for (final e in list) {
+        rows.add(AccountContact(account: s.account, entry: e));
+      }
+    }
+    rows.sort(
+      (a, b) =>
+          a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()),
+    );
+    return rows;
+  }
+
+  Stream<List<AccountContact>> watchMergedRoster() {
+    late final StreamController<List<AccountContact>> controller;
+    StreamSubscription<void>? tickSub;
+    StreamSubscription<void>? sessionSub;
+
+    Future<void> emit() async {
+      final rows = await snapshotRoster();
+      if (!controller.isClosed) controller.add(rows);
+    }
+
+    controller = StreamController<List<AccountContact>>(
+      onListen: () {
+        unawaited(emit());
+        tickSub = _rosterTick.stream.listen((_) => unawaited(emit()));
+        sessionSub = _sessionChanges.stream.listen((_) => unawaited(emit()));
+      },
+      onCancel: () async {
+        await tickSub?.cancel();
+        await sessionSub?.cancel();
+      },
+    );
+    return controller.stream;
+  }
+
+  Future<List<AccountBookmark>> snapshotBookmarks() async {
+    final rows = <AccountBookmark>[];
+    for (final s in _sessions.values) {
+      for (final b in s.xmpp.cachedBookmarks) {
+        rows.add(AccountBookmark(account: s.account, bookmark: b));
+      }
+    }
+    rows.sort(
+      (a, b) => a.bookmark.displayName.toLowerCase().compareTo(
+        b.bookmark.displayName.toLowerCase(),
+      ),
+    );
+    return rows;
+  }
+
+  Stream<List<AccountBookmark>> watchMergedBookmarks() {
+    late final StreamController<List<AccountBookmark>> controller;
+    StreamSubscription<void>? tickSub;
+    StreamSubscription<void>? sessionSub;
+
+    Future<void> emit() async {
+      final rows = await snapshotBookmarks();
+      if (!controller.isClosed) controller.add(rows);
+    }
+
+    controller = StreamController<List<AccountBookmark>>(
+      onListen: () {
+        unawaited(emit());
+        tickSub = _bookmarksTick.stream.listen((_) => unawaited(emit()));
+        sessionSub = _sessionChanges.stream.listen((_) => unawaited(emit()));
+      },
+      onCancel: () async {
+        await tickSub?.cancel();
+        await sessionSub?.cancel();
+      },
+    );
+    return controller.stream;
+  }
+
+  /// Persist bookmark rooms locally so rejoin / UI see them without mixing
+  /// into the roster.
+  Future<void> _applyBookmarksToDb(AccountSession session) async {
+    final db = session.db;
+    final fallbackNick = session.account.bareJid.split('@').first;
+    for (final b in session.xmpp.cachedBookmarks) {
+      final nick = (b.nick != null && b.nick!.trim().isNotEmpty)
+          ? b.nick!.trim()
+          : fallbackNick;
+      // autojoin → store nick so [groupChatsForJoin] rejoins; otherwise keep
+      // the row but clear nick so connect does not force presence.
+      // Only write a title when the bookmark carries a real name — otherwise
+      // leave disco-filled / previously-set names alone (localpart fallback
+      // would wipe them on every sync).
+      final bookmarkName = b.name?.trim();
+      await db.upsertChat(
+        b.jid,
+        title: (bookmarkName != null && bookmarkName.isNotEmpty)
+            ? bookmarkName
+            : null,
+        isGroup: true,
+        mucNick: b.autoJoin ? nick : '',
+      );
+    }
+    _bookmarksTick.add(null);
+    _chatsTick.add(null);
+  }
+
+  /// Call after a live bookmark push so group rows stay aligned.
+  Future<void> applyBookmarksFor(String accountId) async {
+    final session = _sessions[accountId];
+    if (session == null) return;
+    await _applyBookmarksToDb(session);
+  }
+
   @override
   void dispose() {
     for (final s in _sessions.values) {
@@ -400,6 +568,8 @@ class AccountHub extends ChangeNotifier {
     _sessions.clear();
     unawaited(_sessionChanges.close());
     unawaited(_chatsTick.close());
+    unawaited(_rosterTick.close());
+    unawaited(_bookmarksTick.close());
     super.dispose();
   }
 }
