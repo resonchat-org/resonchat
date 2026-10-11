@@ -24,6 +24,37 @@
 
 应用侧另有 **MAM 保留策略**（`urn:xmpp:mam:prefs:0`，`app/lib/xmpp/mam_prefs.dart`）与**多账号枢纽**（`app/lib/account/`）。
 
+### 1.1 地址发现（SRV）—— 应用侧必须补的钩子
+
+上表的 XEP-0368 是**底层类里的逻辑**，不是开箱可用的能力：`TCPSocketWrapper`
+把 DNS 查询委托给 `srvQuery`，而它默认返回空列表。不实现该钩子，客户端就只
+会拨 `<JID 域名>:5222`，C2S 端点不在该域 A 记录上的服务端一律连不上。
+
+本应用补上了这个钩子，见 `app/lib/xmpp/xmpp_socket_io.dart`
+（`SrvFallbackSocketWrapper`）与 `app/lib/xmpp/srv_resolver.dart`
+（`DohSrvResolver`，走 DNS-over-HTTPS）。
+
+**查找顺序（与上游相反，原因是隐私）**
+
+1. 用户手填的 host/port —— 直接采用，不做任何发现；
+2. `域名:5222` 直连；
+3. 仅当第 2 步失败：`_xmpps-client._tcp`（XEP-0368，直连 TLS）；
+4. 仍未成功：`_xmpp-client._tcp`（RFC 6120，STARTTLS）。
+
+上游（及 RFC 6120）是 SRV 优先。这里反过来，因为本应用的 SRV 走 DoH：**每次
+建连都会把 JID 域名告诉第三方解析器**，而绝大多数服务端在自己的地址上就能应答、
+根本不需要 SRV。先试直连，就把这次泄露限制在「本来就连不上」的那一小撮域名上。
+这是**单调**改动：原先能连的照旧能连，且不产生任何 DoH 查询。
+
+**不是降级**：明文 5222 排在直连 TLS 之前不会泄露口令 —— SCRAM 与 PLAIN 协商器
+在 socket 未加密时直接拒绝匹配（`sasl/scram.dart`、`sasl/plain.dart`），没有
+STARTTLS 的服务端会登录失败，而不是明文认证。
+
+**契约**：`srvQuery` 返回的列表必须是**可变**的，基类会原地做 RFC 2782 排序；
+返回 `const []` 会在建连路径里抛 `Unsupported operation`。解析失败、超时、
+DNS 非 0 状态码一律降级为「无记录」，绝不抛异常。
+
+
 ## 2. PEP 节点清单
 
 | 节点 | 轨道 | 内容 | max_items | 访问模型 |
