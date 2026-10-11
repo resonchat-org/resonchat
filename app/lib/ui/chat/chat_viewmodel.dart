@@ -22,6 +22,7 @@ import '../../state/app_wiring.dart';
 import '../../state/providers.dart';
 import '../../store/database.dart';
 import '../../xmpp/connection.dart';
+import '../../xmpp/conversation_archive.dart';
 import '../../xmpp/forwarding.dart';
 import '../../xmpp/muc.dart';
 import '../../xmpp/reactions.dart';
@@ -312,7 +313,13 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
   /// Loads MODE_MULTI state from the chat row (bare room JID + nick).
   Future<void> bootstrapRoom() async {
     final r = resolveChatKey(arg);
-    final row = await r.session.db.getChat(r.jid);
+    // Conversations findOrCreateConversation → restoreFromArchive on open.
+    var row = await r.session.db.getChat(r.jid);
+    if (row != null && row.archived) {
+      await restoreFromArchive(arg);
+      if (_disposed) return;
+      row = await r.session.db.getChat(r.jid);
+    }
     if (_disposed || row == null || !row.isGroup) return;
     state = state.copyWith(
       isGroup: true,

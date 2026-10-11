@@ -1,12 +1,13 @@
 // Copyright (C) 2026 resonchat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// Room profile page — subject, notification mode, members, leave/destroy.
+// Room profile page — description, subject/topic, notification mode, members,
+// leave/destroy.
 //
-// Symmetric with [ProfilePage]: tap the chat AppBar header to open. A bottom
-// sheet was wrong for the same reason a contact profile is a route:
-// leave/destroy/kick need a full page, and notification settings belong next
-// to the other room controls, not in the chat chrome.
+// Description (`muc#roominfo_description` / `muc#roomconfig_roomdesc`) is not
+// the subject: Conversations `Room.of` reads description from disco; subject is
+// the live MUC topic. Symmetric with [ProfilePage]: tap the chat AppBar header
+// to open.
 
 import 'dart:async';
 import 'dart:typed_data';
@@ -80,6 +81,7 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
   RoomSelfCapabilities? _caps;
   bool _loadingCaps = true;
   String? _roomTitle;
+  String? _description;
   String? _editedSubject;
   Uint8List? _avatarPreview;
   bool _avatarBusy = false;
@@ -94,6 +96,7 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
     unawaited(_loadCaps());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_loadTitle());
+      unawaited(_loadDescription());
     });
   }
 
@@ -113,6 +116,12 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
     if (t != null && t.isNotEmpty && t != _roomJid) {
       setState(() => _roomTitle = t);
     }
+  }
+
+  Future<void> _loadDescription() async {
+    final desc = await _xmpp.queryRoomDescription(_roomJid);
+    if (!mounted) return;
+    setState(() => _description = desc);
   }
 
   void _popResult(RoomProfileResult result) {
@@ -227,6 +236,51 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(l10n.avatarPublishFailed)));
     }
+  }
+
+  Future<void> _editDescription() async {
+    final caps = _caps;
+    if (caps == null || !caps.canConfigureRoom) return;
+    final l10n = context.l10n;
+    final controller = TextEditingController(text: _description ?? '');
+    final next = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(l10n.editRoomDescription),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLines: 4,
+          decoration: InputDecoration(hintText: l10n.roomDescriptionHint),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(l10n.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(controller.text),
+            child: Text(l10n.save),
+          ),
+        ],
+      ),
+    );
+    await WidgetsBinding.instance.endOfFrame;
+    controller.dispose();
+    if (next == null || !mounted) return;
+    final trimmed = next.trim();
+    if (trimmed == (_description ?? '').trim()) return;
+    final ok = await _xmpp.setRoomDescription(_roomJid, trimmed);
+    if (!mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l10n.roomDescriptionSaveFailed)));
+      return;
+    }
+    setState(() => _description = trimmed.isEmpty ? null : trimmed);
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(l10n.roomDescriptionSaved)));
   }
 
   Future<void> _editSubject(String? current) async {
@@ -420,6 +474,8 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
       jid: _roomJid,
       isRoom: true,
     );
+    final desc = _description?.trim();
+    final canEditDescription = caps?.canConfigureRoom ?? false;
     final subject = (_editedSubject ?? room?.subject)?.trim();
     final hasSubject = subject != null && subject.isNotEmpty;
     final canChangeSubject = caps?.canChangeSubject ?? false;
@@ -503,6 +559,31 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
                       ),
                     ],
                   ),
+                ),
+
+                _section(tg, l10n.roomDescription),
+                ListTile(
+                  title: Text(
+                    (desc != null && desc.isNotEmpty)
+                        ? desc
+                        : (canEditDescription
+                              ? l10n.editRoomDescription
+                              : l10n.roomDescriptionHint),
+                    style: TextStyle(
+                      color: (desc != null && desc.isNotEmpty)
+                          ? tg.textPrimary
+                          : tg.textSecondary,
+                      fontStyle: (desc != null && desc.isNotEmpty)
+                          ? FontStyle.normal
+                          : FontStyle.italic,
+                    ),
+                  ),
+                  trailing: canEditDescription
+                      ? const Icon(Icons.chevron_right)
+                      : null,
+                  onTap: canEditDescription
+                      ? () => unawaited(_editDescription())
+                      : null,
                 ),
 
                 _section(tg, l10n.subjectHint),

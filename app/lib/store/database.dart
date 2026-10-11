@@ -780,6 +780,16 @@ class AppDatabase extends _$AppDatabase {
     )..where((r) => r.jid.equals(jid) & r.outgoing.equals(outgoing))).go();
   }
 
+  /// True when [jid] has asked to subscribe to us (Conversations
+  /// `Contact.Options.PENDING_SUBSCRIPTION_REQUEST`).
+  Future<bool> hasIncomingSubscriptionRequest(String jid) async {
+    final row =
+        await (select(subscriptionRequests)
+              ..where((r) => r.jid.equals(jid) & r.outgoing.equals(false)))
+            .getSingleOrNull();
+    return row != null;
+  }
+
   Stream<List<RoomInvitation>> watchRoomInvitations() => (select(
     roomInvitations,
   )..orderBy([(r) => OrderingTerm.desc(r.invitedAt)])).watch();

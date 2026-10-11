@@ -4,7 +4,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../account/resolve.dart';
 import '../../l10n/l10n.dart';
 import '../../state/providers.dart';
 import '../chats/chat_row.dart';
@@ -40,24 +39,9 @@ class ArchivePage extends ConsumerWidget {
             ),
             itemBuilder: (context, i) {
               final entry = list[i];
-              return Dismissible(
-                key: ValueKey('archived-${entry.ref.key}'),
-                direction: DismissDirection.endToStart,
-                background: SwipeBackground(
-                  alignment: Alignment.centerRight,
-                  icon: Icons.unarchive_outlined,
-                  label: l10n.restore,
-                  color: tg.accent,
-                ),
-                confirmDismiss: (_) async {
-                  await dbForChatKey(entry.ref.key)
-                      .setChatFlag(entry.chat.jid, archived: false);
-                  return false;
-                },
-                child: ChatRow(
-                  entry: entry,
-                  onOpen: () => openChat(context, entry.ref.key),
-                ),
+              return ChatRow(
+                entry: entry,
+                onOpen: () => openChat(context, entry.ref.key),
               );
             },
           );

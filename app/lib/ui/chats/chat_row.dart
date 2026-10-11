@@ -8,13 +8,15 @@
 // count, and four user-set flags, and inlining all of that into the list page
 // made the list unreadable.
 //
-// The flags (pinned, muted, archived) are per conversation and local. There is
-// no standard way to tell a server "stop notifying me about this contact", and
-// pretending otherwise would produce a setting that silently does nothing on
-// the user's other device.
+// Pin / mute are local. Archive follows Conversations: local flag plus, for
+// groups, leave + bookmark autoJoin=false (see conversation_archive.dart).
+//
+// Trailing swipe follows Telegram DialogsActivity.SwipeController: reveal an
+// action pane (flutter_slidable), then tap — never fire on release alone.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_slidable/flutter_slidable.dart';
 
 import '../../account/account_color.dart';
 import '../../account/account_hub.dart';
@@ -23,6 +25,7 @@ import '../../l10n/l10n.dart';
 import '../../crypto/omemo/track.dart';
 import '../../state/providers.dart';
 import '../../store/database.dart';
+import '../../xmpp/conversation_archive.dart';
 import '../../xmpp/local_nickname.dart';
 import '../contact_avatar.dart';
 import '../theme.dart';
@@ -70,140 +73,196 @@ class ChatRow extends ConsumerWidget {
       alwaysNotify: chat.alwaysNotify,
     );
     final silenced = notifyMode.isSilenced;
+    final l10n = context.l10n;
+    // Fully muted only for this shortcut (never ↔ all). Highlights stays in
+    // the room/contact profile.
+    final fullyMuted = notifyMode == ChatNotifyMode.never;
 
-    // Swipe trailing edge to pin/unpin only. Notification mode lives in the
-    // chat AppBar / profile / room sheet — not a second swipe affordance.
-    return Dismissible(
-      key: ValueKey('chat-row-$chatKey'),
-      direction: DismissDirection.endToStart,
-      background: SwipeBackground(
-        alignment: Alignment.centerRight,
-        icon: chat.pinned ? Icons.push_pin_outlined : Icons.push_pin,
-        label: chat.pinned ? context.l10n.unpin : context.l10n.pin,
-        color: tg.accent,
-      ),
-      confirmDismiss: (_) async {
-        await dbForChatKey(chatKey).setChatFlag(chat.jid, pinned: !chat.pinned);
-        return false;
-      },
-      child: InkWell(
-        onTap: onOpen,
-        child: Container(
-          height: TgDimens.chatsRowHeight,
-          decoration: BoxDecoration(
-            color: selected ? tg.accent.withValues(alpha: 0.12) : null,
-            border: multi && showAccountChrome
-                ? Border(left: BorderSide(color: accent, width: 3))
-                : null,
-          ),
-          padding: const EdgeInsets.symmetric(
-            horizontal: TgDimens.chatsHorizontalPadding,
-          ),
-          child: Row(
-            children: [
-              _AccountAvatar(
-                chat: chat,
-                title: title,
-                accent: accent,
-                ring: multi && showAccountChrome,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        if (chat.pinned)
-                          _Flag(icon: Icons.push_pin, color: tg.textSecondary),
-                        if (silenced)
-                          _Flag(
-                            icon: notifyModeIcon(notifyMode),
-                            color: tg.textSecondary,
-                          ),
-                        if (locked) _Flag(icon: Icons.lock, color: tg.accent),
-                        Expanded(
-                          child: Text(
-                            title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: TgDimens.chatTitleFontSize,
-                              fontWeight: chat.unreadCount > 0 && !silenced
-                                  ? FontWeight.w700
-                                  : FontWeight.w500,
-                              color: tg.textPrimary,
-                            ),
-                          ),
+    // Open restores from archive (Conversations findOrCreate), so archived
+    // rows are not slidable. Main list: reveal pin / mute / archive.
+    final row = InkWell(
+      onTap: onOpen,
+      child: Container(
+        height: TgDimens.chatsRowHeight,
+        decoration: BoxDecoration(
+          color: selected ? tg.accent.withValues(alpha: 0.12) : null,
+          border: multi && showAccountChrome
+              ? Border(left: BorderSide(color: accent, width: 3))
+              : null,
+        ),
+        padding: const EdgeInsets.symmetric(
+          horizontal: TgDimens.chatsHorizontalPadding,
+        ),
+        child: Row(
+          children: [
+            _AccountAvatar(
+              chat: chat,
+              title: title,
+              accent: accent,
+              ring: multi && showAccountChrome,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      if (chat.pinned)
+                        _Flag(icon: Icons.push_pin, color: tg.textSecondary),
+                      if (silenced)
+                        _Flag(
+                          icon: notifyModeIcon(notifyMode),
+                          color: tg.textSecondary,
                         ),
-                        // Before the time, as Telegram draws it: the badge is
-                        // what the user is acting on and the time is context.
-                        // Mention `@` sits beside the count (DialogCell
-                        // drawMention + drawCount).
-                        if (chat.unreadMentions > 0) ...[
-                          MentionBadge(muted: silenced),
-                          const SizedBox(width: 4),
-                        ],
-                        if (chat.unreadCount > 0) ...[
-                          UnreadBadge(count: chat.unreadCount, muted: silenced),
-                          const SizedBox(width: 6),
-                        ],
-                        Text(
-                          _timeOf(chat.lastActivity),
+                      if (locked) _Flag(icon: Icons.lock, color: tg.accent),
+                      Expanded(
+                        child: Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontSize: TgDimens.timeFontSize,
-                            color: chat.unreadCount > 0 && !silenced
-                                ? tg.accent
-                                : tg.textSecondary,
+                            fontSize: TgDimens.chatTitleFontSize,
+                            fontWeight: chat.unreadCount > 0 && !silenced
+                                ? FontWeight.w700
+                                : FontWeight.w500,
+                            color: tg.textPrimary,
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: TgDimens.chatsTitleGap),
-                    if (multi && showAccountChrome)
-                      Text(
-                        accountViaLabel(entry.account.bareJid),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: TgDimens.timeFontSize,
-                          color: accent,
-                          fontWeight: FontWeight.w600,
                         ),
                       ),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            preview.value ?? '',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: TgDimens.chatSubtitleFontSize,
-                              color: tg.textSecondary,
-                            ),
+                      // Before the time, as Telegram draws it: the badge is
+                      // what the user is acting on and the time is context.
+                      // Mention `@` sits beside the count (DialogCell
+                      // drawMention + drawCount).
+                      if (chat.unreadMentions > 0) ...[
+                        MentionBadge(muted: silenced),
+                        const SizedBox(width: 4),
+                      ],
+                      if (chat.unreadCount > 0) ...[
+                        UnreadBadge(count: chat.unreadCount, muted: silenced),
+                        const SizedBox(width: 6),
+                      ],
+                      Text(
+                        _timeOf(chat.lastActivity),
+                        style: TextStyle(
+                          fontSize: TgDimens.timeFontSize,
+                          color: chat.unreadCount > 0 && !silenced
+                              ? tg.accent
+                              : tg.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: TgDimens.chatsTitleGap),
+                  if (multi && showAccountChrome)
+                    Text(
+                      accountViaLabel(entry.account.bareJid),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: TgDimens.timeFontSize,
+                        color: accent,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          preview.value ?? '',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: TgDimens.chatSubtitleFontSize,
+                            color: tg.textSecondary,
                           ),
                         ),
-                        if (locked)
-                          Text(
-                            track.label,
-                            style: TextStyle(
-                              fontSize: TgDimens.timeFontSize,
-                              color: tg.accent,
-                              fontWeight: FontWeight.w600,
-                            ),
+                      ),
+                      if (locked)
+                        Text(
+                          track.label,
+                          style: TextStyle(
+                            fontSize: TgDimens.timeFontSize,
+                            color: tg.accent,
+                            fontWeight: FontWeight.w600,
                           ),
-                      ],
-                    ),
-                  ],
-                ),
+                        ),
+                    ],
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
+
+    if (chat.archived) return row;
+
+    return Slidable(
+      key: ValueKey('chat-row-$chatKey'),
+      endActionPane: ActionPane(
+        motion: const DrawerMotion(),
+        extentRatio: 0.58,
+        children: [
+          SlidableAction(
+            onPressed: (ctx) => _togglePinned(ctx, chatKey, chat),
+            backgroundColor: tg.accent,
+            foregroundColor: Colors.white,
+            icon: chat.pinned ? Icons.push_pin_outlined : Icons.push_pin,
+            label: chat.pinned ? l10n.unpin : l10n.pin,
+          ),
+          SlidableAction(
+            onPressed: (ctx) => _toggleMute(ctx, chatKey, chat, fullyMuted),
+            backgroundColor: tg.textSecondary,
+            foregroundColor: Colors.white,
+            icon: fullyMuted
+                ? Icons.notifications_none
+                : Icons.notifications_off,
+            label: fullyMuted ? l10n.unmute : l10n.mute,
+          ),
+          SlidableAction(
+            onPressed: (ctx) => _archive(ctx, chatKey, chat),
+            backgroundColor: tg.danger,
+            foregroundColor: Colors.white,
+            icon: Icons.archive_outlined,
+            label: l10n.archive,
+          ),
+        ],
+      ),
+      child: row,
+    );
+  }
+
+  static Future<void> _togglePinned(
+    BuildContext context,
+    String chatKey,
+    Chat chat,
+  ) async {
+    await dbForChatKey(chatKey).setChatFlag(chat.jid, pinned: !chat.pinned);
+    if (context.mounted) await Slidable.of(context)?.close();
+  }
+
+  static Future<void> _toggleMute(
+    BuildContext context,
+    String chatKey,
+    Chat chat,
+    bool fullyMuted,
+  ) async {
+    final next = fullyMuted ? ChatNotifyMode.all : ChatNotifyMode.never;
+    await dbForChatKey(chatKey).setChatNotifyMode(chat.jid, next);
+    if (context.mounted) await Slidable.of(context)?.close();
+  }
+
+  /// Conversations overview / menu archive.
+  static Future<void> _archive(
+    BuildContext context,
+    String chatKey,
+    Chat chat,
+  ) async {
+    await archiveConversation(chatKey);
+    if (context.mounted) await Slidable.of(context)?.close();
   }
 
   static String _timeOf(DateTime t) {
@@ -262,49 +321,6 @@ class _Flag extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(right: 4),
       child: Icon(icon, size: 12, color: color),
-    );
-  }
-}
-
-/// The panel revealed behind a swiped row.
-class SwipeBackground extends StatelessWidget {
-  const SwipeBackground({
-    super.key,
-    required this.alignment,
-    required this.icon,
-    required this.label,
-    this.color,
-  });
-
-  final Alignment alignment;
-  final IconData icon;
-  final String label;
-  final Color? color;
-
-  @override
-  Widget build(BuildContext context) {
-    final tint = color ?? context.tg.danger;
-    final atStart = alignment == Alignment.centerLeft;
-    return Container(
-      color: tint,
-      alignment: alignment,
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Icon leads on the trailing side so it stays under the thumb as the
-          // finger travels inward.
-          if (!atStart) ...[
-            Text(label, style: const TextStyle(color: Colors.white)),
-            const SizedBox(width: 8),
-          ],
-          Icon(icon, color: Colors.white),
-          if (atStart) ...[
-            const SizedBox(width: 8),
-            Text(label, style: const TextStyle(color: Colors.white)),
-          ],
-        ],
-      ),
     );
   }
 }

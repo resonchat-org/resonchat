@@ -9,6 +9,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_slidable/flutter_slidable.dart';
 
 import '../../account/account_hub.dart';
 import '../../l10n/l10n.dart';
@@ -146,24 +147,26 @@ class _ChatsPageState extends ConsumerState<ChatsPage> {
                 : chats.when(
                     data: (list) => list.isEmpty
                         ? Center(child: Text(l10n.noConversationsYet))
-                        : ListView.separated(
-                            itemCount: list.length,
-                            separatorBuilder: (_, _) => Padding(
-                              padding: const EdgeInsets.only(left: 82),
-                              child: Divider(
-                                height: 0.5,
-                                color: context.tg.separator,
+                        : SlidableAutoCloseBehavior(
+                            child: ListView.separated(
+                              itemCount: list.length,
+                              separatorBuilder: (_, _) => Padding(
+                                padding: const EdgeInsets.only(left: 82),
+                                child: Divider(
+                                  height: 0.5,
+                                  color: context.tg.separator,
+                                ),
                               ),
+                              itemBuilder: (context, i) {
+                                final entry = list[i];
+                                final key = entry.ref.key;
+                                return ChatRow(
+                                  entry: entry,
+                                  selected: widget.activeChatKey == key,
+                                  onOpen: () => openChat(context, key),
+                                );
+                              },
                             ),
-                            itemBuilder: (context, i) {
-                              final entry = list[i];
-                              final key = entry.ref.key;
-                              return ChatRow(
-                                entry: entry,
-                                selected: widget.activeChatKey == key,
-                                onOpen: () => openChat(context, key),
-                              );
-                            },
                           ),
                     loading: () =>
                         const Center(child: CircularProgressIndicator()),

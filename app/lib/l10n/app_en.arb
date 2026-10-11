@@ -76,8 +76,8 @@
   "about": "About",
   "defaultEncryption": "Default encryption",
   "archivedConversations": "Archived conversations",
+  "archive": "Archive",
   "archived": "Archived",
-  "restore": "Restore",
   "noArchivedConversations": "No archived conversations",
   "readReceipts": "Read receipts",
   "readReceiptsSummary": "When enabled, contacts see when you have read their messages",
@@ -151,7 +151,6 @@
       "url": { "type": "String" }
     }
   },
-  "registrationLoginAfterCreateFailed": "Account was created, but login failed. Try connecting from the login screen.",
   "authenticationFailed": "Authentication failed",
   "searchMessages": "Search messages",
   "searching": "Searching…",
@@ -213,6 +212,11 @@
   "roomNameHint": "Group name",
   "roomNameSaved": "Group name saved",
   "roomNameSaveFailed": "Could not save group name (owner only)",
+  "roomDescription": "Description",
+  "editRoomDescription": "Edit description",
+  "roomDescriptionHint": "A brief description of the room",
+  "roomDescriptionSaved": "Description saved",
+  "roomDescriptionSaveFailed": "Could not save description (owner only)",
   "discoverChannels": "Discover channels",
   "searchChannels": "Search channels",
   "noChannelsFound": "No channels found",
@@ -245,7 +249,6 @@
   },
   "noConversationsYet": "No conversations yet",
   "selectConversation": "Select a conversation",
-  "openChatHint": "JID to open",
   "open": "Open",
   "invalidJid": "That does not look like a JID",
   "couldNotOpenLink": "No app found to open this link",
@@ -446,13 +449,11 @@
   "attachFile": "Attach file",
   "holdToRecord": "Hold to record",
   "slideToCancel": "Slide to cancel",
-  "releaseToSend": "Release to send",
   "releaseToCancel": "Release to cancel",
   "voiceTooShort": "Voice message is too short",
   "voicePermissionDenied": "Microphone permission is required to record voice messages",
   "voiceNotSupported": "Voice messages are not supported on this platform",
   "voiceMicMuted": "Microphone is off or at 0% — turn it on in sound settings, then try again",
-  "recordingVoice": "Recording…",
   "messageComposerHint": "Message",
   "noMessagesYet": "No messages yet",
   "unableToDecrypt": "Unable to decrypt this message.",
@@ -534,7 +535,6 @@
   "appearanceBubbleRound": "Round",
   "appearanceBubbleSquare": "Square",
   "appearanceBubbleTailed": "Tailed",
-  "customBackground": "Custom background",
   "customBackgroundSet": "Custom background set",
   "customBackgroundFailed": "Failed to create background",
   "deleteBackground": "Remove chat background",
@@ -682,13 +682,6 @@
   "forwardedTo": "Forwarded to {contact}",
   "@forwardedTo": {
     "placeholders": {
-      "contact": { "type": "String" }
-    }
-  },
-  "forwardedThenStopped": "Forwarded {count}, then stopped: the {contact} track cannot be used right now.",
-  "@forwardedThenStopped": {
-    "placeholders": {
-      "count": { "type": "int" },
       "contact": { "type": "String" }
     }
   },

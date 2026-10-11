@@ -22,10 +22,13 @@ import '../theme.dart';
 
 /// Capsule height. Telegram's `MAIN_TABS_HEIGHT` is 56 for vertical
 /// icon-over-label tabs; ours are horizontal, so a shorter pill fits.
-const double kMainTabsHeight = 44;
+const double kMainTabsHeight = 38;
 
-/// Telegram `DialogsActivity.MAIN_TABS_MARGIN`.
-const double kMainTabsMargin = 8;
+/// Outer gap from the left / right screen edges.
+const double kMainTabsMargin = 16;
+
+/// Outer gap above the system inset (slightly tighter than the sides).
+const double kMainTabsMarginBottom = 12;
 
 /// One destination in [MainTabsLayout] (Telegram `GlassTabView`).
 class GlassTab {
@@ -53,9 +56,8 @@ class MainTabsLayout extends StatelessWidget {
   final ValueChanged<int> onSelected;
   final List<GlassTab> tabs;
 
-  /// Content inset: height + bottom margin (Telegram MAIN_TABS_HEIGHT_WITH_MARGINS
-  /// is height + 2×margin; lists only need the bottom clearance).
-  static const double contentInset = kMainTabsHeight + kMainTabsMargin;
+  /// Content inset: height + bottom margin (lists only need the bottom clearance).
+  static const double contentInset = kMainTabsHeight + kMainTabsMarginBottom;
 
   @override
   Widget build(BuildContext context) {
@@ -101,7 +103,7 @@ class MainTabsLayout extends StatelessWidget {
               child: SizedBox(
                 height: kMainTabsHeight,
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 2),
                   child: Row(
                     children: [
                       for (var i = 0; i < tabs.length; i++)
@@ -167,18 +169,17 @@ class _GlassTabButton extends StatelessWidget {
           children: [
             Icon(
               selected ? tab.selectedIcon : tab.icon,
-              size: 22,
+              size: 20,
               color: color,
             ),
-            const SizedBox(width: 6),
+            const SizedBox(width: 4),
             Flexible(
               child: Text(
                 tab.label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  // GlassTabView text is 12sp bold.
-                  fontSize: 12,
+                  fontSize: 13,
                   fontWeight: FontWeight.w600,
                   color: color,
                 ),

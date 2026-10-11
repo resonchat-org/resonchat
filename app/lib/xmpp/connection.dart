@@ -822,6 +822,28 @@ class XmppService {
     });
   }
 
+  /// Disco `muc#roominfo_description` (Conversations `Room.of`).
+  ///
+  /// Not the MUC subject/topic: subject is a live groupchat field; description
+  /// is the natural-language blurb from room configuration / disco.
+  Future<String?> queryRoomDescription(String roomJid) async {
+    final info = await queryRoomInformation(roomJid);
+    final values = info?.roomInfo
+        ?.getFieldByVar('muc#roominfo_description')
+        ?.values;
+    if (values == null || values.isEmpty) return null;
+    final v = values.first.trim();
+    return v.isEmpty ? null : v;
+  }
+
+  /// Owner-only room description (`muc#roomconfig_roomdesc`, XEP-0045).
+  Future<bool> setRoomDescription(String roomJid, String description) async {
+    return applyRoomConfigOptions(roomJid, {
+      'muc#roomconfig_persistentroom': true,
+      'muc#roomconfig_roomdesc': description.trim(),
+    });
+  }
+
   /// Merge [options] into the room owner config form and submit
   /// (Conversations `MultiUserChatManager.pushConfiguration`).
   Future<bool> applyRoomConfigOptions(

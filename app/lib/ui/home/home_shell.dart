@@ -1,9 +1,10 @@
 // Copyright (C) 2026 resonchat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// Home after login: Telegram-style Chats / Contacts / Me via
-// [MainTabsLayout] (Telegram `MainTabsLayout` + `GlassTabView`).
-// Wide windows keep FluffyChat-style master/detail for the Chats tab only.
+// Home after login: Telegram-style Chats / Contacts / Me.
+// Portrait uses [MainTabsLayout] (floating glass capsule); landscape uses a
+// normal [NavigationRail] on the left. Wide windows keep FluffyChat-style
+// master/detail for the Chats tab only.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -16,10 +17,11 @@ import '../column_mode.dart';
 import '../contacts/contacts_page.dart';
 import '../empty_chat_pane.dart';
 import '../me/me_page.dart';
+import '../theme.dart';
 import '../two_column_layout.dart';
 import 'main_tabs_layout.dart';
 
-/// Route `/chats`: [MainTabsLayout] shell.
+/// Route `/chats`: main-tab shell.
 class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key});
 
@@ -36,8 +38,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     final wide = isColumnMode(context);
     final selected = ref.watch(selectedChatKeyProvider);
     final media = MediaQuery.of(context);
-    // DialogsActivity.MAIN_TABS_MARGIN = 8 above the system inset.
-    final bottomGap = media.padding.bottom + kMainTabsMargin;
+    final landscape = media.orientation == Orientation.landscape;
 
     final chatsBody = wide
         ? TwoColumnLayout(
@@ -52,6 +53,62 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           )
         : const ChatsPage();
 
+    final pages = [chatsBody, const ContactsPage(), const MePage()];
+
+    if (landscape) {
+      final tg = context.tg;
+      return Scaffold(
+        body: Row(
+          children: [
+            NavigationRail(
+              selectedIndex: _tab,
+              onDestinationSelected: (i) => setState(() => _tab = i),
+              labelType: NavigationRailLabelType.all,
+              backgroundColor: tg.pageBackground,
+              // Match portrait MainTabsLayout: accent selected, textPrimary idle.
+              indicatorColor: tg.accent.withValues(alpha: 0.09),
+              selectedIconTheme: IconThemeData(color: tg.accent, size: 24),
+              unselectedIconTheme: IconThemeData(
+                color: tg.textPrimary,
+                size: 24,
+              ),
+              selectedLabelTextStyle: TextStyle(
+                color: tg.accent,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+              unselectedLabelTextStyle: TextStyle(
+                color: tg.textPrimary,
+                fontSize: 13,
+              ),
+              destinations: [
+                NavigationRailDestination(
+                  icon: const Icon(Icons.chat_bubble_outline),
+                  selectedIcon: const Icon(Icons.chat_bubble),
+                  label: Text(l10n.tabChats),
+                ),
+                NavigationRailDestination(
+                  icon: const Icon(Icons.people_outline),
+                  selectedIcon: const Icon(Icons.people),
+                  label: Text(l10n.tabContacts),
+                ),
+                NavigationRailDestination(
+                  icon: const Icon(Icons.person_outline),
+                  selectedIcon: const Icon(Icons.person),
+                  label: Text(l10n.tabMe),
+                ),
+              ],
+            ),
+            VerticalDivider(width: 1, thickness: 1, color: tg.separator),
+            Expanded(
+              child: IndexedStack(index: _tab, children: pages),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final bottomGap = media.padding.bottom + kMainTabsMarginBottom;
     final paddedMedia = media.copyWith(
       padding: media.padding.copyWith(
         bottom: media.padding.bottom + MainTabsLayout.contentInset,
@@ -68,10 +125,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           Positioned.fill(
             child: MediaQuery(
               data: paddedMedia,
-              child: IndexedStack(
-                index: _tab,
-                children: [chatsBody, const ContactsPage(), const MePage()],
-              ),
+              child: IndexedStack(index: _tab, children: pages),
             ),
           ),
           Positioned(

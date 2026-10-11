@@ -76,8 +76,8 @@
   "about": "关于",
   "defaultEncryption": "默认加密方式",
   "archivedConversations": "已归档会话",
+  "archive": "归档",
   "archived": "已归档",
-  "restore": "恢复",
   "noArchivedConversations": "没有已归档的会话",
   "readReceipts": "已读回执",
   "readReceiptsSummary": "开启后，联系人可以看到你已阅读他们的消息",
@@ -151,7 +151,6 @@
       "url": { "type": "String" }
     }
   },
-  "registrationLoginAfterCreateFailed": "账号已创建，但登录失败。请到登录页再试。",
   "authenticationFailed": "身份验证失败",
   "searchMessages": "搜索消息",
   "searching": "正在搜索…",
@@ -208,6 +207,11 @@
   "roomNameHint": "群名称",
   "roomNameSaved": "群名称已保存",
   "roomNameSaveFailed": "无法保存群名称（仅群主）",
+  "roomDescription": "描述",
+  "editRoomDescription": "编辑描述",
+  "roomDescriptionHint": "房间的简短说明",
+  "roomDescriptionSaved": "描述已保存",
+  "roomDescriptionSaveFailed": "无法保存描述（仅群主）",
   "discoverChannels": "发现公开频道",
   "searchChannels": "搜索群聊",
   "noChannelsFound": "未找到群聊",
@@ -235,7 +239,6 @@
   "couldNotJoin": "无法加入：{error}",
   "noConversationsYet": "还没有会话",
   "selectConversation": "选择一个会话",
-  "openChatHint": "要打开的 JID",
   "open": "打开",
   "invalidJid": "这不像是一个有效的 JID",
   "couldNotOpenLink": "没有可以打开此链接的应用",
@@ -391,13 +394,11 @@
   "attachFile": "添加文件",
   "holdToRecord": "按住录音",
   "slideToCancel": "左滑取消",
-  "releaseToSend": "松手发送",
   "releaseToCancel": "松手取消",
   "voiceTooShort": "语音太短",
   "voicePermissionDenied": "需要麦克风权限才能录制语音",
   "voiceNotSupported": "当前平台不支持语音消息",
   "voiceMicMuted": "麦克风已关闭或音量为 0% — 请在声音设置中打开并调高后再试",
-  "recordingVoice": "正在录音…",
   "messageComposerHint": "消息",
   "noMessagesYet": "还没有消息",
   "unableToDecrypt": "无法解密此消息。",
@@ -443,7 +444,6 @@
   "appearanceBubbleRound": "圆角",
   "appearanceBubbleSquare": "方角",
   "appearanceBubbleTailed": "带尾",
-  "customBackground": "自定义背景",
   "customBackgroundSet": "已设置自定义背景",
   "customBackgroundFailed": "无法创建背景",
   "deleteBackground": "移除聊天背景",
@@ -591,13 +591,6 @@
   "forwardedTo": "已转发至 {contact}",
   "@forwardedTo": {
     "placeholders": {
-      "contact": { "type": "String" }
-    }
-  },
-  "forwardedThenStopped": "已转发 {count} 条后停止：当前无法使用 {contact} 的加密轨。",
-  "@forwardedThenStopped": {
-    "placeholders": {
-      "count": { "type": "int" },
       "contact": { "type": "String" }
     }
   },

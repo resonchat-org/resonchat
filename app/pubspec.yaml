@@ -52,6 +52,7 @@ dependencies:
   flutter_local_notifications: ^19.0.0
   record: ^7.1.2
   web: ^1.1.1
+  flutter_slidable: ^4.0.3
 hooks:
   user_defines:
     sqlite3:

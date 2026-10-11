@@ -22,6 +22,7 @@ import '../store/omemo_device_store.dart';
 import '../store/roster_state.dart';
 import '../xmpp/b_track_manager.dart';
 import '../xmpp/connection.dart';
+import '../xmpp/conversation_archive.dart';
 import 'account_color.dart';
 import 'chat_ref.dart';
 
@@ -540,6 +541,13 @@ class AccountHub extends ChangeNotifier {
       // leave disco-filled / previously-set names alone (localpart fallback
       // would wipe them on every sync).
       final bookmarkName = b.name?.trim();
+      // Snapshot before upsert. Conversations only archives when PEP says
+      // autoJoin=false *and* the conference is still in the active list
+      // (`service.find`). Our stand-in for "active" is a non-empty mucNick
+      // (joined / would rejoin). Bookmark stubs with autoJoin already false
+      // must not be swept into the archive on every bookmarksChanges — that
+      // misfired after we archived one room and the full list re-applied.
+      final prior = await db.getChat(b.jid);
       await db.upsertChat(
         b.jid,
         title: (bookmarkName != null && bookmarkName.isNotEmpty)
@@ -548,6 +556,14 @@ class AccountHub extends ChangeNotifier {
         isGroup: true,
         mucNick: b.autoJoin ? nick : '',
       );
+      if (!b.autoJoin &&
+          prior != null &&
+          prior.isGroup &&
+          !prior.archived &&
+          prior.mucNick.isNotEmpty) {
+        final key = ChatRef(accountId: session.account.id, jid: b.jid).key;
+        await archiveConversation(key, syncBookmarks: false);
+      }
     }
     _bookmarksTick.add(null);
     _chatsTick.add(null);
