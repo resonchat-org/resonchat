@@ -48,6 +48,15 @@ XmppConnectFailure classifyConnectFailure(XmppError error) {
   if (error is NegotiatorReturnedError) {
     return _classifyNegotiatorError(error.error);
   }
+  // A negotiator error also comes back *bare*. Seen on device: connecting to a
+  // STARTTLS server returned a plain `StartTLSFailedError`, not the wrapper
+  // above, and it fell all the way through to `unknown` — the login screen said
+  // "Could not connect." for what is really "the encrypted stream could not be
+  // set up". [NegotiatorError] extends [XmppError] directly, so the checks
+  // below never matched it.
+  if (error is NegotiatorError) {
+    return _classifyNegotiatorError(error);
+  }
   if (error is StreamFailureError) {
     return _classifyBaseError(error.error);
   }
@@ -75,6 +84,16 @@ XmppConnectFailure _classifyNegotiatorError(NegotiatorError error) {
   // decides. The named ones below are the cases a user can act on; the
   // unspecified one still means "the server did not accept us".
   if (error is SaslError) return XmppConnectFailure.auth;
+
+  // SCRAM's own failures are *not* [SaslError]s: `SaslScramError` extends
+  // [NegotiatorError] directly, so without this they fall to `unknown`.
+  //
+  //  * a server signature that does not verify means the password did not
+  //    derive the key the server holds — check the password.
+  //  * missing SASL2 additional-data means the server skipped a step SASL2
+  //    requires: the credentials were never contradicted.
+  if (error is InvalidServerSignatureError) return XmppConnectFailure.auth;
+  if (error is NoAdditionalDataError) return XmppConnectFailure.protocol;
 
   if (error is StartTLSFailedError) return XmppConnectFailure.tls;
 

@@ -62,6 +62,46 @@ void main() {
       );
     });
 
+    test('a negotiator error is classified bare as well as wrapped', () {
+      // Found on device: `connect` handed back a plain StartTLSFailedError
+      // (no NegotiatorReturnedError around it) and the login screen showed
+      // "Could not connect." — the generic label — because only the wrapped
+      // form was unwrapped. Both shapes are the same failure and must read
+      // the same.
+      expect(
+        classifyConnectFailure(StartTLSFailedError()),
+        XmppConnectFailure.tls,
+      );
+      expect(
+        classifyConnectFailure(SaslNotAuthorizedError()),
+        XmppConnectFailure.auth,
+      );
+      expect(
+        classifyConnectFailure(ResourceBindingFailedError()),
+        XmppConnectFailure.protocol,
+      );
+    });
+
+    test('SCRAM failures are authentication, not "unknown"', () {
+      // SaslScramError extends NegotiatorError directly rather than SaslError,
+      // so these used to fall through to the generic label. A server signature
+      // that does not verify is the password being wrong.
+      expect(
+        classifyConnectFailure(InvalidServerSignatureError()),
+        XmppConnectFailure.auth,
+      );
+      expect(
+        classifyConnectFailure(NegotiatorReturnedError(InvalidServerSignatureError())),
+        XmppConnectFailure.auth,
+      );
+      // ...whereas a server that skips SASL2's additional-data has not
+      // contradicted the credentials at all.
+      expect(
+        classifyConnectFailure(NoAdditionalDataError()),
+        XmppConnectFailure.protocol,
+      );
+    });
+
     test('no usable mechanism is a server problem, not a credentials one', () {
       expect(
         classifyConnectFailure(
