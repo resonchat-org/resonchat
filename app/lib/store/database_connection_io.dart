@@ -35,6 +35,33 @@ Future<QueryExecutor> openAccountDatabaseConnection(String accountId) {
   );
 }
 
+/// Unlocks [db] with [passphrase] and proves that it worked.
+///
+/// Proving it is the whole point. `PRAGMA key` is silently ignored by a plain
+/// SQLite build (unknown pragmas are not errors), and an *incorrect* key is
+/// only detected on the first read — so a probe that merely issues the pragma
+/// happily reports success on a connection that is not encrypted. Both checks
+/// below turn a silent downgrade into a loud failure:
+///
+///  * `cipher_version` is empty unless SQLCipher is actually linked in;
+///  * the `sqlite_master` read forces the key to be used, and throws if the
+///    file does not open with it.
+///
+/// Exposed rather than private so `test/store/` can pin both behaviours.
+void applyCipherKey(Database db, List<int> passphrase) {
+  db.execute("PRAGMA key = \"x'${_hex(passphrase)}'\";");
+
+  final cipher = db.select('PRAGMA cipher_version;');
+  if (cipher.isEmpty || cipher.first.values.first == null) {
+    throw StateError(
+      'SQLCipher is not available in this build (cipher_version is empty), '
+      'so the database cannot be encrypted. Refusing to open it unencrypted.',
+    );
+  }
+
+  db.select('SELECT count(*) FROM sqlite_master;');
+}
+
 /// Opens a Drift [QueryExecutor] for one SQLite file on IO platforms.
 Future<QueryExecutor> _openFile(
   String name, {
@@ -46,27 +73,34 @@ Future<QueryExecutor> _openFile(
 
   final passphrase = await _databasePassphrase();
   if (passphrase != null) {
+    // Probe before handing the file to Drift, so a failure is reported here,
+    // with a message about the key, instead of surfacing later as a query error.
+    final probe = sqlite3.open(file.path);
     try {
-      void applyKey(Database db) {
-        db.execute("PRAGMA key = \"x'${_hex(passphrase)}'\";");
-        db.select('SELECT count(*) FROM sqlite_master;');
-      }
-
-      // Probe SQLCipher before handing the file to Drift.
-      final probe = sqlite3.open(file.path);
-      try {
-        applyKey(probe);
-      } finally {
-        probe.close();
-      }
-
-      return NativeDatabase.createInBackground(file, setup: applyKey);
-    } catch (e) {
-      debugPrint('SQLCipher unavailable, falling back to plain SQLite: $e');
+      applyCipherKey(probe, passphrase);
+    } finally {
+      probe.close();
     }
+
+    return NativeDatabase.createInBackground(
+      file,
+      setup: (db) => applyCipherKey(db, passphrase),
+    );
   }
 
-  return NativeDatabase.createInBackground(file);
+  // No key: the secure store could not be read. Opening the file here would put
+  // chat history on disk in the clear and still report success, so an existing
+  // file is left alone and a new one is not created.
+  if (await file.exists()) {
+    throw StateError(
+      'The database key is unavailable, so ${file.path} cannot be opened. '
+      'Not falling back to an unencrypted database.',
+    );
+  }
+  throw StateError(
+    'The database key is unavailable, so ${file.path} cannot be created. '
+    'Not creating an unencrypted database.',
+  );
 }
 
 /// Wipe only databases from a *newer* build than this one can read.

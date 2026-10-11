@@ -15,13 +15,13 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqlite3/sqlite3.dart';
 import 'package:resonchat/store/database.dart';
+import 'package:resonchat/store/database_connection_io.dart';
 
-/// Applies the SQLCipher key pragma, mirroring what openAppDatabase does.
-void applyKey(Database db, List<int> passphrase) {
-  final hex = passphrase.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
-  db.execute("PRAGMA key = \"x'$hex'\";");
-  db.select('SELECT count(*) FROM sqlite_master;');
-}
+/// Unlocks the database the way `openAppDatabase` does.
+///
+/// Delegates to the production probe rather than re-implementing it: that probe
+/// is what is under test, and a copy here could drift away from it.
+void applyKey(Database db, List<int> passphrase) => applyCipherKey(db, passphrase);
 
 void main() {
   late Directory dir;
@@ -155,6 +155,30 @@ void main() {
       _containsSublist(bytes, utf8.encode('plaintext-canary-9f3a2b')),
       isTrue,
     );
+  });
+
+  test('the key probe refuses a file that is not encrypted', () async {
+    // The bug this pins down: the open path used to catch *any* probe failure
+    // and fall back to opening the file unkeyed. A file that is not encrypted
+    // would then keep working, silently, while the app went on telling the user
+    // (docs/04 §4, docs/08 Q5) that message history is encrypted at rest.
+    // Refusing is the only honest outcome — the alternative is a database that
+    // quietly is not the one we claim.
+    final file = File('${dir.path}/downgrade.sqlite3');
+    final plain = AppDatabase(NativeDatabase.createInBackground(file));
+    await plain.upsertChat('erin@example.org');
+    await plain.close();
+
+    final raw = sqlite3.open(file.path);
+    try {
+      expect(
+        () => applyKey(raw, List<int>.filled(32, 3)),
+        throwsA(anything),
+        reason: 'a plaintext file must not open as if it were keyed',
+      );
+    } finally {
+      raw.close();
+    }
   });
 }
 
