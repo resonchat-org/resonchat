@@ -87,10 +87,20 @@ class CapabilityService {
   void invalidateAll() => _cache.clear();
 
   /// Returns the cached answer if it is still fresh, else resolves.
+  ///
+  /// Only a *reliable* answer is ever reused. "We could not read their device
+  /// list" is a statement about the network at one instant, not a fact about
+  /// the contact — and an unreadable snapshot blocks sending — so serving one
+  /// from the cache for the whole [ttl] is how a single timeout turns into five
+  /// minutes of "this app will not send to this person". A fresh lookup costs
+  /// at most [DualTrackManager.deviceListDeadline], and callers that arrive
+  /// while one is running still share it.
   Future<ChatCapabilities> forChat(JID jid) {
     final key = jid.toBare().toString();
     final cached = _cache[key];
-    if (cached != null && DateTime.now().difference(cached.checkedAt) < ttl) {
+    if (cached != null &&
+        cached.reliable &&
+        DateTime.now().difference(cached.checkedAt) < ttl) {
       return Future.value(cached);
     }
     return _inflight[key] ??= _resolve(jid).whenComplete(() {
@@ -154,7 +164,12 @@ class CapabilityService {
       'caps($bare): ${caps.mode.name} devices=${caps.recipientDevices} '
       'pq=${caps.pqDevices} reliable=${caps.reliable}',
     );
-    _cache[bare.toString()] = caps;
+    // Not cached when unreliable: an unreadable snapshot is about the network,
+    // not the contact, and a cached one would block sending for the whole TTL.
+    // See [forChat].
+    if (caps.reliable) {
+      _cache[bare.toString()] = caps;
+    }
     return caps;
   }
 }

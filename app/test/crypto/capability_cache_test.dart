@@ -8,11 +8,43 @@
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:moxxmpp/moxxmpp.dart';
+import 'package:resonchat/crypto/omemo/dual_track_manager.dart';
 import 'package:resonchat/xmpp/capabilities.dart';
 
 /// Thrown by the fake tracks() so we can count resolution attempts.
 class _Boom implements Exception {
   const _Boom();
+}
+
+/// A [DualTrackManager] whose two lookups this file controls.
+///
+/// `implements` plus `noSuchMethod` rather than a real manager: only these two
+/// methods are reached, and satisfying the superclass constructor would mean
+/// building an [OmemoManager], which needs a live connection for no benefit.
+class _FakeTracks implements DualTrackManager {
+  _FakeTracks({required this.devices, required this.readable, this.onResolve});
+
+  final Set<int> devices;
+  final bool readable;
+
+  /// Counted here rather than in the `tracks` closure, which `_resolve` calls
+  /// once per lookup (OMEMO and PQ) rather than once per resolution.
+  final void Function()? onResolve;
+
+  @override
+  Future<({Set<int> devices, bool listReadable})> resolveOmemoDevices(
+    JID jid,
+  ) async {
+    onResolve?.call();
+    return (devices: devices, listReadable: readable);
+  }
+
+  @override
+  Future<Set<int>> getPqCapableDevices(JID jid) async => const <int>{};
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('${invocation.memberName} is not used here');
 }
 
 void main() {
@@ -69,6 +101,43 @@ void main() {
       1,
       reason: 'concurrent lookups must share one in-flight resolution',
     );
+  });
+
+  test('an unreadable snapshot is not reused', () async {
+    // A lookup that finishes but could read nothing is the timeout path, and it
+    // blocks sending. Caching it is what turns one slow moment into "this app
+    // will not send to this person" for the whole TTL.
+    var resolves = 0;
+    final service = CapabilityService(
+      tracks: () => _FakeTracks(
+        devices: const {},
+        readable: false,
+        onResolve: () => resolves++,
+      ),
+      ourDeviceId: () async => 100,
+    );
+    final jid = JID.fromString('bob@example.org');
+
+    expect((await service.forChat(jid)).reliable, isFalse);
+    expect((await service.forChat(jid)).reliable, isFalse);
+    expect(resolves, 2, reason: 'unreadable answers must be looked up again');
+  });
+
+  test('a readable snapshot is reused until it expires', () async {
+    var resolves = 0;
+    final service = CapabilityService(
+      tracks: () => _FakeTracks(
+        devices: const {1},
+        readable: true,
+        onResolve: () => resolves++,
+      ),
+      ourDeviceId: () async => 100,
+    );
+    final jid = JID.fromString('bob@example.org');
+
+    expect((await service.forChat(jid)).reliable, isTrue);
+    expect((await service.forChat(jid)).reliable, isTrue);
+    expect(resolves, 1, reason: 'a usable answer is what the cache is for');
   });
 
   test('invalidate and invalidateAll are safe on an empty cache', () {
