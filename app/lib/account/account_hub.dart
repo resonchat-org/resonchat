@@ -13,6 +13,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:logging/logging.dart';
 
 import '../net/app_network.dart';
+import '../xmpp/connect_failure.dart';
 import '../crypto/omemo/dual_track_manager.dart';
 import '../store/account_store.dart';
 import '../store/database.dart';
@@ -174,7 +175,7 @@ class AccountHub extends ChangeNotifier {
       rosterState: DriftRosterStateManager(session.db),
     );
     if (!ok) {
-      _log.warning('connect failed for ${a.jid}: ${session.xmpp.lastError}');
+      _log.warning('connect failed for ${a.jid}: ${session.xmpp.lastFailure}');
       notifyListeners();
       _sessionChanges.add(null);
       return false;
@@ -265,8 +266,9 @@ class AccountHub extends ChangeNotifier {
     );
   }
 
-  /// Last error from [addAndConnect], if any.
-  String? lastConnectError;
+  /// Last failure from [addAndConnect], if any. The UI renders it in its own
+  /// (localized) words — see `connectFailureLabel`.
+  XmppConnectFailure? lastConnectFailure;
 
   /// Add (or update) an account and connect it.
   Future<bool> addAndConnect({
@@ -274,7 +276,7 @@ class AccountHub extends ChangeNotifier {
     required String password,
     String? host,
   }) async {
-    lastConnectError = null;
+    lastConnectFailure = null;
     final bare = (jid.contains('/') ? jid.split('/').first : jid).toLowerCase();
     StoredAccount? existing;
     for (final a in _accounts) {
@@ -294,7 +296,7 @@ class AccountHub extends ChangeNotifier {
     _accounts = await _store.loadAll();
     final session = await _ensureSession(account);
     final ok = await _connectAndBootstrap(session.account.id);
-    if (!ok) lastConnectError = session.xmpp.lastError;
+    if (!ok) lastConnectFailure = session.xmpp.lastFailure;
     notifyListeners();
     _sessionChanges.add(null);
     _chatsTick.add(null);

@@ -695,5 +695,10 @@
       "cleaned": { "type": "String" }
     }
   },
-  "trackingNetworkError": "Tracking was detected, but it could not be removed (network error). Send the original text anyway?"
+  "trackingNetworkError": "Tracking was detected, but it could not be removed (network error). Send the original text anyway?",
+  "connectUnreachable": "Could not reach the server. Check your connection and the server address.",
+  "connectTls": "Could not establish a secure connection to the server.",
+  "connectMechanism": "The server offers no sign-in method this app can use.",
+  "connectProtocol": "The server ended the connection unexpectedly.",
+  "connectFailed": "Could not connect."
 }

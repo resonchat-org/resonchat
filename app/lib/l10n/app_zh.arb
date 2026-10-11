@@ -604,5 +604,10 @@
       "cleaned": { "type": "String" }
     }
   },
-  "trackingNetworkError": "检测到追踪信息，但因网络错误无法移除。是否仍发送原文？"
+  "trackingNetworkError": "检测到追踪信息，但因网络错误无法移除。是否仍发送原文？",
+  "connectUnreachable": "无法连接到服务器。请检查网络和服务器地址。",
+  "connectTls": "无法与服务器建立安全连接。",
+  "connectMechanism": "服务器没有提供本应用可用的登录方式。",
+  "connectProtocol": "服务器意外中断了连接。",
+  "connectFailed": "连接失败。"
 }

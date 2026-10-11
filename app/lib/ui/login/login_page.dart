@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
+import '../../l10n/connect_failure_label.dart';
 import '../../net/app_network.dart';
 import '../theme.dart';
 import '../settings/socks5_proxy_sheet.dart';
@@ -73,16 +74,13 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     });
     final result = await ref
         .read(loginViewModelProvider.notifier)
-        .connect(
-          jid: _jid.text,
-          password: _password.text,
-          host: _host.text,
-          authFailedLabel: context.l10n.authenticationFailed,
-        );
+        .connect(jid: _jid.text, password: _password.text, host: _host.text);
     if (!mounted) return;
     setState(() => _busy = false);
     if (!result.success) {
-      setState(() => _error = result.error);
+      setState(
+        () => _error = connectFailureLabel(context.l10n, result.failure),
+      );
       return;
     }
     if (widget.addAccountMode) {

@@ -12,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:moxxmpp/moxxmpp.dart' show ExtendedRegistration;
 
 import '../../l10n/l10n.dart';
+import '../../l10n/connect_failure_label.dart';
 import '../../net/app_network.dart';
 import '../../xmpp/registration.dart';
 import '../settings/socks5_proxy_sheet.dart';
@@ -180,18 +181,11 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
     // Account exists on the server — log in like a normal connect.
     final login = await ref
         .read(loginViewModelProvider.notifier)
-        .connect(
-          jid: jid,
-          password: password,
-          host: _host.text,
-          authFailedLabel: l10n.authenticationFailed,
-        );
+        .connect(jid: jid, password: password, host: _host.text);
     if (!mounted) return;
     setState(() => _busy = false);
     if (!login.success) {
-      setState(
-        () => _error = login.error ?? l10n.registrationLoginAfterCreateFailed,
-      );
+      setState(() => _error = connectFailureLabel(l10n, login.failure));
       return;
     }
     if (widget.addAccountMode) {

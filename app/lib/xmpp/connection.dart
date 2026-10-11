@@ -23,6 +23,7 @@ import 'aesgcm_url.dart';
 import 'avatar.dart';
 import 'b_track_manager.dart';
 import 'blocked_inbound.dart';
+import 'connect_failure.dart';
 import 'blocking.dart';
 import 'eme.dart';
 import 'http_files.dart';
@@ -1812,8 +1813,14 @@ class XmppService {
   bool get carbonsEnabled => _carbonsEnabled;
   bool _carbonsEnabled = false;
 
-  /// Reason the last [connect] failed, for display in the UI.
-  String? lastError;
+  /// Why the last [connect] failed, for the UI to put in its own words.
+  ///
+  /// An enum rather than a string: moxxmpp's error classes define no
+  /// `toString()`, so interpolating one produced `Instance of
+  /// 'NoConnectionPossibleError'` on the login screen, and the wording is the
+  /// UI's business anyway — it has to be localized, and this layer has no
+  /// business holding user-facing text.
+  XmppConnectFailure? lastFailure;
 
   /// Whether the server advertises the MAM archive (XEP-0313). Queried
   /// lazily; cached per connection.
@@ -1990,12 +1997,14 @@ class XmppService {
     );
     final ok = result.isType<bool>() && result.get<bool>();
     if (!ok) {
-      // Surface the actual reason: "authentication failed" is useless
-      // when the real cause is a TLS or SRV problem.
-      lastError = result.isType<XmppError>()
-          ? '${result.get<XmppError>()}'
-          : 'connection failed (${result.dataRuntimeType})';
-      _log.severe('connect failed: $lastError');
+      // The raw object goes to the log, where naming the exact class is what a
+      // bug report needs; the UI gets the classified reason instead of a Dart
+      // type name.
+      final error = result.isType<XmppError>() ? result.get<XmppError>() : null;
+      lastFailure = error == null
+          ? XmppConnectFailure.unknown
+          : classifyConnectFailure(error);
+      _log.severe('connect failed: $lastFailure ($error)');
     }
     _connection = ok ? connection : null;
     _state = ok
