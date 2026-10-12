@@ -5,8 +5,10 @@
 //   native → SQLCipher / SQLite file (`database_connection_io.dart`)
 //   web    → sqlite3.wasm over OPFS / IndexedDB (`database_connection_web.dart`)
 
+import 'dart:convert';
+
 import 'package:drift/drift.dart';
-import 'package:moxxmpp/moxxmpp.dart' show XmppRosterItem;
+import 'package:moxxmpp/moxxmpp.dart' show ConferenceBookmark, XmppRosterItem;
 import 'package:resonchat/crypto/omemo/track.dart';
 
 import 'chat_notify_mode.dart';
@@ -1470,6 +1472,63 @@ class AppDatabase extends _$AppDatabase {
 
   Future<void> setSendChatStates(bool enabled) =>
       setMetaValue('pref_chat_states', enabled ? '1' : '0');
+
+  /// Own RFC 6121 `<show/>` preference (`online` / `chat` / `away` / `xa` / `dnd`).
+  Future<String> ownPresenceShowWire() async =>
+      (await metaValue('pref_presence_show')) ?? 'chat';
+
+  Future<void> setOwnPresenceShowWire(String show) =>
+      setMetaValue('pref_presence_show', show);
+
+  static const _conferenceBookmarksMetaKey = 'conference_bookmarks';
+
+  /// Last-known XEP-0402 / legacy conference bookmarks (cold-start UI cache).
+  ///
+  /// Replaced wholesale on each successful PEP sync. Not a second source of
+  /// truth — only bridges the gap until [fetchBookmarks] finishes.
+  Future<List<ConferenceBookmark>> loadConferenceBookmarks() async {
+    final raw = await metaValue(_conferenceBookmarksMetaKey);
+    if (raw == null || raw.isEmpty) return const [];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return const [];
+      final out = <ConferenceBookmark>[];
+      for (final item in decoded) {
+        if (item is! Map) continue;
+        final jid = item['jid'];
+        if (jid is! String || jid.isEmpty) continue;
+        out.add(
+          ConferenceBookmark(
+            jid: jid,
+            name: item['name'] is String ? item['name'] as String : null,
+            nick: item['nick'] is String ? item['nick'] as String : null,
+            password: item['password'] is String
+                ? item['password'] as String
+                : null,
+            autoJoin: item['autoJoin'] == true,
+          ),
+        );
+      }
+      return out;
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<void> saveConferenceBookmarks(List<ConferenceBookmark> list) async {
+    final payload = [
+      for (final b in list)
+        {
+          'jid': b.jid,
+          if (b.name != null && b.name!.isNotEmpty) 'name': b.name,
+          if (b.nick != null && b.nick!.isNotEmpty) 'nick': b.nick,
+          if (b.password != null && b.password!.isNotEmpty)
+            'password': b.password,
+          'autoJoin': b.autoJoin,
+        },
+    ];
+    await setMetaValue(_conferenceBookmarksMetaKey, jsonEncode(payload));
+  }
 
   /// Newest message timestamp across all chats.
   ///

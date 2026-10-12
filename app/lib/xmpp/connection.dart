@@ -32,11 +32,13 @@ import 'muc_create.dart';
 import 'capabilities.dart';
 import 'pq_incoming.dart';
 import 'pq_stanza.dart';
+import 'presence_store.dart';
 import 'reactions.dart';
 import 'replies.dart';
 import 'room_invite.dart';
 import 'xmpp_socket.dart';
 
+export 'presence_store.dart' show ContactPresence, PresenceStore;
 export 'room_invite.dart' show RoomInvite;
 
 /// Decrypted inbound chat message, either track or plaintext.
@@ -294,9 +296,14 @@ class XmppService {
   final _bookmarksChanges = StreamController<void>.broadcast();
   Stream<void> get bookmarksChanges => _bookmarksChanges.stream;
 
-  /// Current bookmark cache (empty until [fetchBookmarks] or a PEP push).
+  /// Current bookmark cache (seeded from local DB, then refreshed by PEP).
   List<ConferenceBookmark> get cachedBookmarks =>
       _bookmarks?.bookmarks ?? const [];
+
+  /// Loads last-known bookmarks into memory before the network fetch.
+  void seedBookmarks(List<ConferenceBookmark> bookmarks) {
+    _bookmarks?.seedCache(bookmarks);
+  }
 
   /// HTTP PUT/GET + aesgcm on top of registered [HttpFileUploadManager].
   late final HttpFileService httpFiles = HttpFileService(() => _connection);
@@ -310,6 +317,15 @@ class XmppService {
   final _deliveryReceipts = StreamController<DeliveryReceipt>.broadcast();
   final _readReceipts = StreamController<ReadReceipt>.broadcast();
   final _typingStates = StreamController<TypingNotification>.broadcast();
+
+  /// Contact presence (RFC 6121), aggregated per bare JID.
+  final presence = PresenceStore();
+  final _presenceChanges = StreamController<void>.broadcast();
+  Stream<void> get presenceChanges => _presenceChanges.stream;
+
+  /// Our advertised availability (RFC 6121 `<show/>`).
+  PresenceShow _ownShow = PresenceShow.chat;
+  PresenceShow get ownShow => _ownShow;
 
   /// Last chat state we sent per bare JID (Conversations ChatStateManager.outgoing).
   final _outgoingChatState = <String, TypingState>{};
@@ -1806,9 +1822,18 @@ class XmppService {
 
   /// Sends an "available" presence, announcing this resource to contacts.
   Future<void> sendAvailablePresence() async {
-    await _connection
-        ?.getManagerById<PresenceManager>(presenceManager)
-        ?.sendInitialPresence();
+    await _presenceManager()?.sendPresence(show: _ownShow);
+  }
+
+  /// Sets and (when connected) broadcasts our RFC 6121 availability.
+  Future<void> setOwnPresence(PresenceShow show) async {
+    _ownShow = show;
+    final manager = _presenceManager();
+    if (manager == null) return;
+    manager.configure(show: show);
+    if (_state == XmppConnectionState.connected) {
+      await manager.sendPresence(show: show);
+    }
   }
 
   PresenceManager? _presenceManager() =>
@@ -2086,6 +2111,13 @@ class XmppService {
       RosterFeatureNegotiator(),
       ResourceBindingNegotiator(),
     ]);
+
+    // RFC 6121: PresenceManager sends initial presence on stream setup.
+    // Configure our <show/> before connect so the first broadcast is correct.
+    connection
+        .getManagerById<PresenceManager>(presenceManager)
+        ?.configure(show: _ownShow);
+    presence.clear();
 
     _eventsSub = connection.asBroadcastStream().listen(_onEvent);
     final result = await connection.connect(
@@ -2810,6 +2842,8 @@ class XmppService {
     _eventsSub = null;
     await _connection?.disconnect();
     _connection = null;
+    presence.clear();
+    if (!_presenceChanges.isClosed) _presenceChanges.add(null);
     _state = XmppConnectionState.disconnected;
   }
 
@@ -3072,6 +3106,11 @@ class XmppService {
           body: event.get<MessageBodyData>()?.body ?? '',
         ),
       );
+    } else if (event is PresenceReceivedEvent) {
+      // MUC occupant presence is consumed by MUCManager (higher priority).
+      // What reaches here is roster / 1:1 availability (RFC 6121 §4).
+      presence.apply(event.data);
+      if (!_presenceChanges.isClosed) _presenceChanges.add(null);
     } else if (event is SubscriptionRequestReceivedEvent) {
       // Recorded, not approved. Auto-approving means anyone can subscribe and
       // start messaging you with no say in it, which is the whole reason a

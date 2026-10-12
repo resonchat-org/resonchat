@@ -5,6 +5,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:resonchat/platform/voice_mic_check_io.dart';
 
 void main() {
+  test('parseWpctlVolumeStdout reads mute and zero volume', () {
+    expect(parseWpctlVolumeStdout('Volume: 1.00\n'), isFalse);
+    expect(parseWpctlVolumeStdout('Volume: 0.50 [MUTED]\n'), isTrue);
+    expect(parseWpctlVolumeStdout('Volume: 0.00\n'), isTrue);
+    expect(parseWpctlVolumeStdout(''), isNull);
+  });
+
   test('parsePactlMuteStdout reads Mute: yes/no', () {
     expect(parsePactlMuteStdout('Mute: yes\n'), isTrue);
     expect(parsePactlMuteStdout('Mute: no\n'), isFalse);
@@ -29,9 +36,8 @@ void main() {
     expect(parsePactlVolumeSilentStdout('no percents here'), isNull);
   });
 
-  test('isDefaultMicMuted does not throw without PulseAudio', () async {
-    // CI runners often lack pactl; the check must return null, not throw.
-    final disabled = await isDefaultMicMuted();
-    expect(disabled, anyOf(isNull, isTrue, isFalse));
+  test('probeDefaultMicMute does not throw', () async {
+    final probe = await probeDefaultMicMute();
+    expect(probe.muted, anyOf(isNull, isTrue, isFalse));
   });
 }

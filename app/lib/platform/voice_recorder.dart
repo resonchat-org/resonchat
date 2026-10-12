@@ -9,10 +9,13 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:record/record.dart';
 
+import 'linux_cli_io.dart' if (dart.library.js_interop) 'linux_cli_stub.dart';
 import 'voice_mic_check_io.dart'
     if (dart.library.js_interop) 'voice_mic_check_stub.dart';
 import 'voice_recording_io.dart'
     if (dart.library.js_interop) 'voice_recording_web.dart';
+
+export 'linux_cli_types.dart';
 
 /// Telegram discards clips shorter than ~700 ms.
 const kMinVoiceMs = 700;
@@ -66,10 +69,8 @@ class VoiceRecorder {
 
   Future<bool> ensurePermission() => _rec.hasPermission();
 
-  /// Soft-mute probe where available (Linux Pulse/PipeWire, Android
-  /// AudioManager). `null` on web / iOS / desktop without a check — caller
-  /// must not block recording when unknown.
-  static Future<bool?> isSystemMicMuted() => isDefaultMicMuted();
+  /// Soft-mute probe. See [MicMuteProbe]; never throws.
+  static Future<MicMuteProbe> probeSystemMicMute() => probeDefaultMicMute();
 
   Future<_Codec> _pickCodec() async {
     if (!kIsWeb) {
@@ -96,6 +97,8 @@ class VoiceRecorder {
 
   Future<void> start() async {
     if (_active) return;
+    // Host CLIs only (AppImage does not bundle them). No-op off Linux.
+    await ensureLinuxVoiceCaptureCli();
     final codec = await _pickCodec();
     final path = await prepareRecordingPath(codec.extension);
     await _rec.start(

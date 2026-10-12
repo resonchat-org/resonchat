@@ -1,36 +1,24 @@
 // Copyright (C) 2026 resonchat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// Floating main-tab bar translated from Telegram for Android's
-// `MainTabsLayout` + `GlassTabView` + `BlurredBackgroundProviderImpl.mainTabs`
-// (GPL-2.0-or-later).
-//
-// Colour mapping (Theme.java fallbacks → our [TgColors]):
-//   key_glass_tabSelected / SelectedText → key_chat_messagePanelSend → accent
-//   key_glass_tabUnselected → key_windowBackgroundWhiteBlackText → textPrimary
-//   glass fill → windowBackgroundWhite @ ~0.76–0.85 → pageBackground @ alpha
-//
-// Geometry: DialogsActivity.MAIN_TABS_HEIGHT=56, MAIN_TABS_MARGIN=8, radius =
-// height/2. We keep icon+label horizontal (shorter than Telegram's vertical
-// GlassTabView) but the capsule still uses the same margin / pill radius rules.
-
-import 'dart:ui';
+// Floating main-tab capsule (portrait). Solid track + sliding thumb + ink
+// ripples — same interaction model as the chats Messages/Unread filter.
+// Glass / BackdropFilter were dropped so hover and splash stay visible.
 
 import 'package:flutter/material.dart';
 
 import '../theme.dart';
 
-/// Capsule height. Telegram's `MAIN_TABS_HEIGHT` is 56 for vertical
-/// icon-over-label tabs; ours are horizontal, so a shorter pill fits.
+/// Capsule height (horizontal icon+label tabs).
 const double kMainTabsHeight = 38;
 
 /// Outer gap from the left / right screen edges.
 const double kMainTabsMargin = 16;
 
-/// Outer gap above the system inset (slightly tighter than the sides).
+/// Outer gap above the system inset.
 const double kMainTabsMarginBottom = 12;
 
-/// One destination in [MainTabsLayout] (Telegram `GlassTabView`).
+/// One destination in [MainTabsLayout].
 class GlassTab {
   const GlassTab({
     required this.icon,
@@ -43,7 +31,7 @@ class GlassTab {
   final String label;
 }
 
-/// Telegram `MainTabsLayout`: floating glass capsule of main tabs.
+/// Floating capsule of main tabs with a sliding selection thumb.
 class MainTabsLayout extends StatelessWidget {
   const MainTabsLayout({
     super.key,
@@ -56,82 +44,78 @@ class MainTabsLayout extends StatelessWidget {
   final ValueChanged<int> onSelected;
   final List<GlassTab> tabs;
 
-  /// Content inset: height + bottom margin (lists only need the bottom clearance).
+  /// Content inset: height + bottom margin.
   static const double contentInset = kMainTabsHeight + kMainTabsMarginBottom;
+
+  static const _pad = 2.0;
+  static const _slide = Duration(milliseconds: 220);
 
   @override
   Widget build(BuildContext context) {
     final tg = context.tg;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final n = tabs.length;
+    if (n == 0) return const SizedBox.shrink();
 
-    // BlurredBackgroundProviderImpl.mainTabs: windowBackgroundWhite @ 0.76
-    // (0.85 with liquid glass). Mapped to our page background.
-    final fill = tg.pageBackground.withValues(alpha: isDark ? 0.85 : 0.76);
-    // setStrokeColorTop / Bottom approximations.
-    final border = isDark ? const Color(0x11FFFFFF) : const Color(0x11000000);
-    // setShadowColor + setShadowLayer(~2.67, 0, 0.85).
-    final shadow = isDark ? const Color(0x04000000) : const Color(0x20000000);
-
-    // Fully rounded ends: Telegram setRadius(MAIN_TABS_HEIGHT / 2).
+    // Match landscape [NavigationRail]: white/page track, darker accent
+    // indicator pill, accent selected / textPrimary idle.
+    final track = tg.pageBackground;
+    final thumb = tg.accent.withValues(alpha: 0.12);
     const radius = kMainTabsHeight / 2;
+    final index = selectedIndex.clamp(0, n - 1);
 
-    // Shadow outside the clip (Telegram setShadowLayer sits under the glass).
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(radius),
-        boxShadow: [
-          BoxShadow(
-            color: shadow,
-            blurRadius: 2.67,
-            offset: const Offset(0, 0.85),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        elevation: 0,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(radius),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: fill,
-                borderRadius: BorderRadius.circular(radius),
-                border: Border.all(color: border, width: 0.4),
-              ),
-              child: SizedBox(
-                height: kMainTabsHeight,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 2),
-                  child: Row(
-                    children: [
-                      for (var i = 0; i < tabs.length; i++)
-                        Expanded(
-                          child: _GlassTabButton(
-                            tab: tabs[i],
-                            selected: selectedIndex == i,
-                            // Theme.key_glass_tabSelected / SelectedText
-                            selectedColor: tg.accent,
-                            // Theme.key_glass_tabUnselected
-                            unselectedColor: tg.textPrimary,
-                            onTap: () => onSelected(i),
-                          ),
-                        ),
-                    ],
+    // Material default shadow colours; elevation slightly above the usual 2
+    // so the capsule reads against the chat list.
+    return Material(
+      color: track,
+      elevation: 4,
+      borderRadius: BorderRadius.circular(radius),
+      clipBehavior: Clip.antiAlias,
+      child: SizedBox(
+        height: kMainTabsHeight,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final tabW = constraints.maxWidth / n;
+            return Stack(
+              children: [
+                AnimatedPositioned(
+                  duration: _slide,
+                  curve: Curves.easeOutCubic,
+                  left: index * tabW + _pad,
+                  top: _pad,
+                  bottom: _pad,
+                  width: (tabW - 2 * _pad).clamp(0.0, tabW),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: thumb,
+                      borderRadius: BorderRadius.circular(radius - _pad),
+                    ),
                   ),
                 ),
-              ),
-            ),
-          ),
+                Row(
+                  children: [
+                    for (var i = 0; i < n; i++)
+                      Expanded(
+                        child: _TabHit(
+                          tab: tabs[i],
+                          selected: index == i,
+                          selectedColor: tg.accent,
+                          unselectedColor: tg.textPrimary,
+                          onTap: () => onSelected(i),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            );
+          },
         ),
       ),
     );
   }
 }
 
-class _GlassTabButton extends StatelessWidget {
-  const _GlassTabButton({
+class _TabHit extends StatelessWidget {
+  const _TabHit({
     required this.tab,
     required this.selected,
     required this.selectedColor,
@@ -148,44 +132,43 @@ class _GlassTabButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = selected ? selectedColor : unselectedColor;
-    return InkWell(
-      onTap: onTap,
-      // GlassTabView selected pill uses half of the tab height as corner radius.
+    final shape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(kMainTabsHeight / 2),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOut,
-        alignment: Alignment.center,
-        // GlassTabView: Theme.multAlpha(colorSelected, 0.09).
-        decoration: BoxDecoration(
-          color: selected
-              ? selectedColor.withValues(alpha: 0.09)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(kMainTabsHeight / 2),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              selected ? tab.selectedIcon : tab.icon,
-              size: 20,
-              color: color,
-            ),
-            const SizedBox(width: 4),
-            Flexible(
-              child: Text(
-                tab.label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: color,
+    );
+    return Material(
+      type: MaterialType.transparency,
+      child: InkWell(
+        customBorder: shape,
+        onTap: onTap,
+        child: SizedBox(
+          height: kMainTabsHeight,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                selected ? tab.selectedIcon : tab.icon,
+                size: 20,
+                color: color,
+              ),
+              const SizedBox(width: 4),
+              Flexible(
+                child: AnimatedDefaultTextStyle(
+                  duration: MainTabsLayout._slide,
+                  curve: Curves.easeOutCubic,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: color,
+                  ),
+                  child: Text(
+                    tab.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

@@ -11,7 +11,7 @@ import 'dart:ui' show Color;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:logging/logging.dart';
-import 'package:moxxmpp/moxxmpp.dart' show ConferenceBookmark;
+import 'package:moxxmpp/moxxmpp.dart' show ConferenceBookmark, PresenceShow;
 
 import '../net/app_network.dart';
 import '../xmpp/connect_failure.dart';
@@ -195,6 +195,10 @@ class AccountHub extends ChangeNotifier {
         unawaited(_applyBookmarksToDb(session));
       }),
     );
+    // Cold-start: Contacts reads the on-disk snapshot before PEP fetch.
+    // (BookmarksManager does not exist until connect — seed happens in
+    // bootstrapSession.)
+    _bookmarksTick.add(null);
     _sessions[account.id] = session;
     return session;
   }
@@ -204,6 +208,9 @@ class AccountHub extends ChangeNotifier {
     if (session == null) return false;
     final a = session.account;
     await appNetwork.waitUntilReady();
+    // RFC 6121 availability for the initial presence broadcast.
+    final showWire = await session.db.ownPresenceShowWire();
+    await session.xmpp.setOwnPresence(PresenceShow.parse(showWire));
     final ok = await session.xmpp.connect(
       jid: a.jid,
       password: a.password,
@@ -253,6 +260,9 @@ class AccountHub extends ChangeNotifier {
       await xmpp.replenishPrekeys();
       await xmpp.initialiseBTrack();
       // XEP-0402 / legacy bookmarks → local group rows, then rejoin autojoin.
+      // Seed from disk so the UI is non-empty and legacy rewrites see the
+      // full set if the fetch is slow or fails.
+      xmpp.seedBookmarks(await db.loadConferenceBookmarks());
       await xmpp.fetchBookmarks();
       await _applyBookmarksToDb(session);
       final rooms = await db.groupChatsForJoin();
@@ -490,7 +500,14 @@ class AccountHub extends ChangeNotifier {
   Future<List<AccountBookmark>> snapshotBookmarks() async {
     final rows = <AccountBookmark>[];
     for (final s in _sessions.values) {
-      for (final b in s.xmpp.cachedBookmarks) {
+      // Prefer the live PEP cache when it has been seeded / fetched; otherwise
+      // fall back to the on-disk snapshot so Contacts shows a non-zero count
+      // before bootstrap finishes.
+      var list = s.xmpp.cachedBookmarks;
+      if (list.isEmpty) {
+        list = await s.db.loadConferenceBookmarks();
+      }
+      for (final b in list) {
         rows.add(AccountBookmark(account: s.account, bookmark: b));
       }
     }
@@ -530,8 +547,11 @@ class AccountHub extends ChangeNotifier {
   /// into the roster.
   Future<void> _applyBookmarksToDb(AccountSession session) async {
     final db = session.db;
+    final bookmarks = session.xmpp.cachedBookmarks;
+    // Disk snapshot for cold start (Contacts count before the next PEP fetch).
+    await db.saveConferenceBookmarks(bookmarks);
     final fallbackNick = session.account.bareJid.split('@').first;
-    for (final b in session.xmpp.cachedBookmarks) {
+    for (final b in bookmarks) {
       final nick = (b.nick != null && b.nick!.trim().isNotEmpty)
           ? b.nick!.trim()
           : fallbackNick;

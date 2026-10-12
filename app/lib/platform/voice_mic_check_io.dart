@@ -2,63 +2,111 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // Best-effort "will this capture be silent?" before hold-to-talk.
-// Supported: Linux (pactl mute **or** 0% volume), Android (AudioManager mute).
-// Others (iOS / macOS / Windows / web): return null — skip the check.
+// Linux: wpctl, else pactl. Android: AudioManager. Others: skip.
 
 import 'dart:io';
 
 import 'package:flutter/services.dart';
 
+import 'linux_cli_io.dart';
+
+export 'linux_cli_types.dart' show MicMuteProbe;
+
 const _audioChannel = MethodChannel('org.resonchat.resonchat/audio');
 
-/// `true` when capture is effectively off, `false` when usable, `null` unknown.
-///
-/// On Linux, GNOME/KDE "turn off mic" often sets volume to 0% without Mute=yes
-/// — both must be treated as blocked.
-Future<bool?> isDefaultMicMuted() async {
-  if (Platform.isLinux) return _linuxInputDisabled();
-  if (Platform.isAndroid) return _androidMicrophoneMute();
+/// Soft-mute probe. Never throws.
+Future<MicMuteProbe> probeDefaultMicMute() async {
+  if (Platform.isLinux) return _linuxProbe();
+  if (Platform.isAndroid) {
+    final muted = await _androidMicrophoneMute();
+    return MicMuteProbe(muted: muted);
+  }
+  return const MicMuteProbe();
+}
+
+/// Convenience: mute flag only (`null` = skip / unknown).
+Future<bool?> isDefaultMicMuted() async => (await probeDefaultMicMute()).muted;
+
+Future<MicMuteProbe> _linuxProbe() async {
+  final hasWpctl = await linuxCliExists('wpctl');
+  final hasPactl = await linuxCliExists('pactl');
+
+  if (hasWpctl) {
+    final muted = await _linuxWpctlInputDisabled();
+    if (muted != null) return MicMuteProbe(muted: muted);
+  }
+  if (hasPactl) {
+    final muted = await _linuxPactlInputDisabled();
+    if (muted != null) return MicMuteProbe(muted: muted);
+  }
+
+  final missing = <String>[if (!hasWpctl) 'wpctl', if (!hasPactl) 'pactl'];
+  // Tools present but unreadable → unknown, no "missing" snackbar.
+  return MicMuteProbe(missingCli: missing);
+}
+
+Future<bool?> _linuxWpctlInputDisabled() async {
+  try {
+    final r = await Process.run(
+      'wpctl',
+      ['get-volume', '@DEFAULT_AUDIO_SOURCE@'],
+      environment: {'LC_ALL': 'C'},
+    );
+    if (r.exitCode != 0) return null;
+    return parseWpctlVolumeStdout(r.stdout as String);
+  } catch (_) {}
   return null;
 }
 
-Future<bool?> _linuxInputDisabled() async {
-  final muted = await _linuxSourceMuted();
+Future<bool?> _linuxPactlInputDisabled() async {
+  final muted = await _linuxPactlSourceMuted();
   if (muted == true) return true;
-  final silentVol = await _linuxSourceVolumeSilent();
+  final silentVol = await _linuxPactlSourceVolumeSilent();
   if (silentVol == true) return true;
-  // Known unmuted with non-zero volume.
   if (muted == false && silentVol == false) return false;
-  // Unmuted but volume unknown → allow; muted unknown + volume ok → allow.
   if (muted == false || silentVol == false) return false;
   return null;
 }
 
-Future<bool?> _linuxSourceMuted() async {
+Future<bool?> _linuxPactlSourceMuted() async {
   try {
-    final r = await Process.run('pactl', [
-      'get-source-mute',
-      '@DEFAULT_SOURCE@',
-    ]);
+    final r = await Process.run(
+      'pactl',
+      ['get-source-mute', '@DEFAULT_SOURCE@'],
+      environment: {'LC_ALL': 'C'},
+    );
     if (r.exitCode != 0) return null;
     return parsePactlMuteStdout(r.stdout as String);
   } catch (_) {}
   return null;
 }
 
-/// `true` when every reported channel is 0%.
-Future<bool?> _linuxSourceVolumeSilent() async {
+Future<bool?> _linuxPactlSourceVolumeSilent() async {
   try {
-    final r = await Process.run('pactl', [
-      'get-source-volume',
-      '@DEFAULT_SOURCE@',
-    ]);
+    final r = await Process.run(
+      'pactl',
+      ['get-source-volume', '@DEFAULT_SOURCE@'],
+      environment: {'LC_ALL': 'C'},
+    );
     if (r.exitCode != 0) return null;
     return parsePactlVolumeSilentStdout(r.stdout as String);
   } catch (_) {}
   return null;
 }
 
-/// Parses `pactl get-source-mute` stdout (`Mute: yes` / `Mute: no`).
+/// Parses `wpctl get-volume` (`Volume: 1.00`, `Volume: 0.50 [MUTED]`).
+bool? parseWpctlVolumeStdout(String stdout) {
+  final match = RegExp(
+    r'Volume:\s*([0-9]*\.?[0-9]+)\s*(\[MUTED\])?',
+    caseSensitive: false,
+  ).firstMatch(stdout);
+  if (match == null) return null;
+  final volume = double.tryParse(match.group(1)!);
+  if (volume == null) return null;
+  if (match.group(2) != null) return true;
+  return volume <= 0.0;
+}
+
 bool? parsePactlMuteStdout(String stdout) {
   final out = stdout.toLowerCase();
   if (out.contains('yes')) return true;
@@ -66,9 +114,6 @@ bool? parsePactlMuteStdout(String stdout) {
   return null;
 }
 
-/// Parses `pactl get-source-volume` stdout; `true` when every `%` is 0.
-///
-/// Example: `front-left: 0 /   0% / -inf dB,   front-right: 0 /   0% / -inf dB`
 bool? parsePactlVolumeSilentStdout(String stdout) {
   final percents = RegExp(r'(\d+)\s*%')
       .allMatches(stdout)

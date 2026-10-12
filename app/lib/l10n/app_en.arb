@@ -110,6 +110,13 @@
   "statusConnected": "Connected",
   "statusConnecting": "Connecting…",
   "statusDisconnected": "Not connected",
+  "presenceStatus": "Status",
+  "presenceOnline": "Online",
+  "presenceChat": "Free for chat",
+  "presenceAway": "Away",
+  "presenceXa": "Extended away",
+  "presenceDnd": "Do not disturb",
+  "presenceOffline": "Offline",
   "aboutBody": "resonchat — a dual-track OMEMO client for XMPP.\nLicensed GPL-3.0-or-later.\n\nIndependent project. Not affiliated with, endorsed by, or derived from any other messaging product.\n\nThe post-quantum track is a custom extension and has not been independently audited. Use at your own risk.",
   "jid": "JID",
   "password": "Password",
@@ -248,6 +255,11 @@
     }
   },
   "noConversationsYet": "No conversations yet",
+  "noUnreadConversations": "No unread conversations",
+  "filterMessages": "Messages",
+  "filterUnread": "Unread",
+  "filterAccounts": "Accounts",
+  "filterAllAccounts": "All accounts",
   "selectConversation": "Select a conversation",
   "open": "Open",
   "invalidJid": "That does not look like a JID",
@@ -259,6 +271,17 @@
   "tabMe": "Me",
   "addContact": "Add contact",
   "addContactHint": "JID to add",
+  "searchContactsHint": "Search contacts and groups",
+  "noContactsMatch": "No matches",
+  "searchSectionContacts": "Contacts",
+  "searchSectionGroups": "Groups",
+  "searchShowMore": "Show {count} more",
+  "@searchShowMore": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "searchShowLess": "Show less",
   "noContactsYet": "No contacts yet",
   "groupBookmarks": "Groups",
   "groupBookmarksEmpty": "No group bookmarks yet",
@@ -454,6 +477,12 @@
   "voicePermissionDenied": "Microphone permission is required to record voice messages",
   "voiceNotSupported": "Voice messages are not supported on this platform",
   "voiceMicMuted": "Microphone is off or at 0% — turn it on in sound settings, then try again",
+  "linuxCliMissing": "Missing system command: {tools}",
+  "@linuxCliMissing": {
+    "placeholders": {
+      "tools": { "type": "String" }
+    }
+  },
   "messageComposerHint": "Message",
   "noMessagesYet": "No messages yet",
   "unableToDecrypt": "Unable to decrypt this message.",

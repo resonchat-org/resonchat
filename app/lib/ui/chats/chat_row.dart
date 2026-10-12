@@ -97,6 +97,7 @@ class ChatRow extends ConsumerWidget {
           children: [
             _AccountAvatar(
               chat: chat,
+              chatKey: chatKey,
               title: title,
               accent: accent,
               ring: multi && showAccountChrome,
@@ -279,24 +280,36 @@ class ChatRow extends ConsumerWidget {
 }
 
 /// Avatar with optional account-colored ring (not the contact name).
-class _AccountAvatar extends StatelessWidget {
+class _AccountAvatar extends ConsumerWidget {
   const _AccountAvatar({
     required this.chat,
+    required this.chatKey,
     required this.title,
     required this.accent,
     required this.ring,
   });
 
   final Chat chat;
+  final String chatKey;
   final String title;
   final Color accent;
   final bool ring;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     // Groups use the same widget: XEP-0084 when present, else vCard PHOTO
-    // (Conversations room avatars), else coloured initial.
-    final child = ContactAvatar(jid: chat.jid, title: title, hero: true);
+    // (Conversations room avatars), else coloured initial. Presence dots are
+    // 1:1 only (Telegram DialogCell; MUC uses occupant lists instead).
+    final presence = chat.isGroup
+        ? null
+        : ref.watch(contactPresenceProvider(chatKey)).value?.show;
+    final child = ContactAvatar(
+      jid: chat.jid,
+      title: title,
+      hero: true,
+      showPresence: !chat.isGroup,
+      presence: presence,
+    );
     if (!ring) return child;
     return Container(
       padding: const EdgeInsets.all(2),

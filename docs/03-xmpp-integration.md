@@ -9,6 +9,7 @@
 | 连接/SASL | XEP-0368, SASL SCRAM-SHA-256（及强度降级） | 认证 |
 | 传输 | TCP + SOCKS5（原生）；RFC 7395 WebSocket + XEP-0156（Web，在 moxxmpp 内） | 建连 |
 | Roster | RFC 6121 | 联系人（含版本控制；无变更时保留本地缓存） |
+| Presence | RFC 6121 §4 | 在线状态（`<show/>`：online/chat/away/xa/dnd；`<status/>`、`<priority/>`） |
 | 消息回执 | XEP-0184 | 送达状态 |
 | 输入状态 | XEP-0085 | 「正在输入」 |
 | 已读标记 | XEP-0333 | displayed |

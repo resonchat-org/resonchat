@@ -108,11 +108,16 @@ cp "$DESKTOP_SRC" "$APPDIR/usr/share/applications/resonchat.desktop"
 mkdir -p "$APPDIR/usr/share/metainfo"
 cp "$METAINFO_SRC" "$APPDIR/usr/share/metainfo/org.resonchat.resonchat.metainfo.xml"
 
+mkdir -p "$APPDIR/helpers"
+install -m 0755 "linux/packaging/parecord-shim.sh" "$APPDIR/helpers/parecord"
+
 cat > "$APPDIR/AppRun" <<'EOF'
 #!/bin/bash
 set -euo pipefail
 HERE="$(dirname "$(readlink -f "$0")")"
 export LD_LIBRARY_PATH="${HERE}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+# parecord shim → pw-record, else host parecord (stock record_linux).
+export PATH="${HERE}/helpers${PATH:+:$PATH}"
 cd "$HERE"
 exec "$HERE/resonchat" "$@"
 EOF

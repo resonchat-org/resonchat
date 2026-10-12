@@ -140,7 +140,18 @@ jobs:
         working-directory: app
         run: ./tool/build_appimage.sh
 
-      - name: Stage AppImage
+      - name: Install native packaging tools
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y dpkg-dev rpm
+
+      - name: Build .deb / .rpm
+        # Reuses the Flutter bundle from the AppImage step (--skip-build).
+        # Linked .so → dpkg-shlibdeps / rpm AutoReq; CLI deps → tool/linux_pkg_deps.sh.
+        working-directory: app
+        run: ./tool/build_deb_rpm.sh --skip-build
+
+      - name: Stage Linux artifacts
         run: |
           set -euo pipefail
           mkdir -p dist
@@ -148,11 +159,20 @@ jobs:
           test -f "$src"
           cp "$src" "dist/resonchat-${TAG}-x86_64.AppImage"
           chmod +x "dist/resonchat-${TAG}-x86_64.AppImage"
+          deb=$(ls app/build/resonchat_*.deb | head -1)
+          test -f "$deb"
+          cp "$deb" "dist/resonchat-${TAG}-amd64.deb"
+          rpm=$(ls app/build/resonchat-*.rpm | head -1)
+          test -f "$rpm"
+          cp "$rpm" "dist/resonchat-${TAG}-x86_64.rpm"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: appimage
-          path: dist/resonchat-*-x86_64.AppImage
+          name: linux-packages
+          path: |
+            dist/resonchat-*-x86_64.AppImage
+            dist/resonchat-*-amd64.deb
+            dist/resonchat-*-x86_64.rpm
           if-no-files-found: error
 
   upload-release:
@@ -176,4 +196,6 @@ jobs:
             dist/resonchat-*-android-arm64.apk
             dist/resonchat-*-android-x86_64.apk
             dist/resonchat-*-x86_64.AppImage
+            dist/resonchat-*-amd64.deb
+            dist/resonchat-*-x86_64.rpm
           fail_on_unmatched_files: true

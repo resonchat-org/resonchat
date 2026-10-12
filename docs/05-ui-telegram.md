@@ -76,7 +76,7 @@
 
 | 平台 | 实现 | 说明 |
 |---|---|---|
-| Linux | `pactl get-source-mute` **或** `get-source-volume` 全通道 0% | PipeWire/Pulse 默认输入源 |
+| Linux | 优先 `wpctl get-volume`；否则 `pactl`。CLI 缺失 → SnackBar 提示并跳过检测，仍可开录 | 录音另需 `pw-record`/`parecord` + `ffmpeg`；缺则 SnackBar，不崩溃 |
 | Android | `AudioManager.isMicrophoneMute`（MethodChannel `org.resonchat.resonchat/audio`） | 软静音，非隐私开关 |
 | Web | 不检测（stub → `null`） | 浏览器无可靠系统麦静音 API |
 | iOS / macOS | 不检测（`null`） | 无对等的简单软静音查询 |

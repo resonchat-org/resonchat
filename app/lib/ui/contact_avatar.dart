@@ -16,6 +16,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:moxxmpp/moxxmpp.dart' show PresenceShow;
 
 import '../state/providers.dart';
 import '../xmpp/avatar.dart';
@@ -28,6 +29,8 @@ class ContactAvatar extends ConsumerWidget {
     required this.title,
     this.radius = TgDimens.avatarChats / 2,
     this.hero = false,
+    this.showPresence = false,
+    this.presence,
   });
 
   final String jid;
@@ -39,6 +42,13 @@ class ContactAvatar extends ConsumerWidget {
 
   /// Wrapped in a [Hero] so the circle carries across the chat transition.
   final bool hero;
+
+  /// When true, draw the corner status dot (1:1 only; never for group chats).
+  final bool showPresence;
+
+  /// RFC 6121 availability; null = offline (grey dot). Ignored unless
+  /// [showPresence] is true.
+  final PresenceShow? presence;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -69,8 +79,82 @@ class ContactAvatar extends ConsumerWidget {
       circle = fallback;
     }
 
-    if (!hero) return circle;
-    return Hero(tag: 'avatar-$jid', child: circle);
+    final withDot = !showPresence
+        ? circle
+        : SizedBox(
+            width: radius * 2,
+            height: radius * 2,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                circle,
+                PresenceStatusDot(avatarRadius: radius, show: presence),
+              ],
+            ),
+          );
+
+    if (!hero) return withDot;
+    return Hero(tag: 'avatar-$jid', child: withDot);
+  }
+}
+
+/// Telegram DialogCell online circle: white ring + coloured fill at bottom-right.
+///
+/// Colours follow Gajim status CSS (`gajim-status-online/away/dnd/offline`).
+class PresenceStatusDot extends StatelessWidget {
+  const PresenceStatusDot({super.key, required this.avatarRadius, this.show});
+
+  final double avatarRadius;
+
+  /// null = offline (grey).
+  final PresenceShow? show;
+
+  /// Gajim `default.css` status colours (`gajim-status-offline` = rgb(154,154,154)).
+  static Color colorFor(PresenceShow? show) => switch (show) {
+    null => const Color(0xFF9A9A9A),
+    PresenceShow.online || PresenceShow.chat => const Color(0xFF66BF10),
+    PresenceShow.away => const Color(0xFFFF8533),
+    PresenceShow.dnd || PresenceShow.xa => const Color(0xFFE62E00),
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final diameter = avatarRadius * 2;
+    // Telegram DialogCell: outer dp(7), inner dp(5) on a ~54dp chats avatar.
+    final outer = diameter * (7 / 54);
+    final inner = diameter * (5 / 54);
+    final insetRight = diameter * (6 / 54);
+    final insetBottom = diameter * (8 / 54);
+    final bg = Theme.of(context).scaffoldBackgroundColor;
+
+    // Centre of the dot sits insetRight/insetBottom from the avatar corner
+    // (Telegram DialogCell: avatar.right - 6dp, avatar.bottom - 8dp).
+    return Positioned(
+      right: insetRight - outer,
+      bottom: insetBottom - outer,
+      child: SizedBox(
+        width: outer * 2,
+        height: outer * 2,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Container(
+              width: outer * 2,
+              height: outer * 2,
+              decoration: BoxDecoration(shape: BoxShape.circle, color: bg),
+            ),
+            Container(
+              width: inner * 2,
+              height: inner * 2,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: colorFor(show), // null → grey offline
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

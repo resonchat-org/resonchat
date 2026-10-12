@@ -15,6 +15,8 @@ import 'package:open_filex/open_filex.dart';
 import '../../account/account_hub.dart';
 import '../../account/resolve.dart';
 import '../../l10n/l10n.dart';
+import '../../platform/linux_cli_io.dart'
+    if (dart.library.js_interop) '../../platform/linux_cli_stub.dart';
 import '../../platform/media_store.dart';
 import '../../store/database.dart';
 import '../theme.dart';
@@ -119,6 +121,15 @@ class _MediaAttachmentState extends ConsumerState<MediaAttachment> {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(context.l10n.tapToOpen)));
+      return;
+    }
+    try {
+      await ensureLinuxXdgOpen();
+    } on MissingLinuxCli catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.linuxCliMissing(e.toolsJoined))),
+      );
       return;
     }
     final result = await OpenFilex.open(m.localPath);

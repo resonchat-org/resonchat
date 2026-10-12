@@ -20,6 +20,7 @@ import '../pending/pending_requests_page.dart';
 import '../room/create_group_sheet.dart';
 import '../theme.dart';
 import 'chat_row.dart';
+import 'chats_filter_bar.dart';
 import 'search.dart';
 import 'unread.dart';
 
@@ -33,17 +34,47 @@ class ChatsPage extends ConsumerStatefulWidget {
   ConsumerState<ChatsPage> createState() => _ChatsPageState();
 }
 
-class _ChatsPageState extends ConsumerState<ChatsPage> {
+class _ChatsPageState extends ConsumerState<ChatsPage>
+    with SingleTickerProviderStateMixin {
   final _query = TextEditingController();
   String _needle = '';
   Timer? _debounce;
 
+  /// Display-only: Messages vs Unread. Receiving is unchanged.
+  ChatsListScope _scope = ChatsListScope.messages;
+
+  /// Display-only: null = every account.
+  String? _accountId;
+
+  /// Account panel slides from this page’s start edge (right of the landscape
+  /// [NavigationRail]), not from the window’s left via [Scaffold.drawer].
+  late final AnimationController _accountPanel;
+  late final Animation<Offset> _accountSlide;
+
+  @override
+  void initState() {
+    super.initState();
+    _accountPanel = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 280),
+    );
+    _accountSlide = Tween<Offset>(begin: const Offset(-1, 0), end: Offset.zero)
+        .animate(
+          CurvedAnimation(parent: _accountPanel, curve: Curves.easeOutCubic),
+        );
+  }
+
   @override
   void dispose() {
     _debounce?.cancel();
+    _accountPanel.dispose();
     _query.dispose();
     super.dispose();
   }
+
+  void _openAccountPanel() => unawaited(_accountPanel.forward());
+
+  void _closeAccountPanel() => unawaited(_accountPanel.reverse());
 
   void _onQueryChanged(String value) {
     _debounce?.cancel();
@@ -74,8 +105,12 @@ class _ChatsPageState extends ConsumerState<ChatsPage> {
         ? ref.watch(messageSearchProvider(_needle))
         : null;
 
+    final hub = ref.watch(accountHubProvider);
+
     return Scaffold(
       appBar: AppBar(
+        // Filter hamburger opens the account panel; no AppBar drawer leading.
+        automaticallyImplyLeading: false,
         title: Text(l10n.appName),
         actions: [
           IconButton(
@@ -99,83 +134,194 @@ class _ChatsPageState extends ConsumerState<ChatsPage> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          _MessageSearchBar(
-            controller: _query,
-            onChanged: _onQueryChanged,
-            onClear: () {
-              _query.clear();
-              setState(() => _needle = '');
-            },
-            hasQuery: _needle.isNotEmpty || _query.text.isNotEmpty,
-          ),
-          Expanded(
-            child: searching
-                ? results!.when(
-                    data: (messages) {
-                      final titles = _chatTitles(ref);
-                      final hits = [
-                        for (final m in messages)
-                          SearchHit(
-                            chatJid: m.chatJid,
-                            chatTitle: titles[m.chatJid] ?? m.chatJid,
-                            body: m.body,
-                            time: m.timestamp,
-                            incoming: m.incoming,
-                            messageAnchor: unreadAnchorOf(m),
-                          ),
-                      ];
-                      return SearchResults(
-                        hits: hits,
-                        running: false,
-                        onOpen: _openHit,
-                      );
-                    },
-                    loading: () => SearchResults(
-                      hits: const [],
-                      running: true,
-                      onOpen: (_) {},
-                    ),
-                    error: (e, _) => Center(
-                      child: Text(
-                        l10n.searchFailed('$e'),
-                        style: TextStyle(color: context.tg.danger),
+      // ClipRect: SlideTransition moves the panel by its own width to the
+      // left of this body. Without clipping it paints over the landscape
+      // NavigationRail; with clipping it emerges from this page’s start
+      // edge (= rail’s right edge).
+      body: ClipRect(
+        child: AnimatedBuilder(
+          animation: _accountPanel,
+          builder: (context, child) {
+            final open = _accountPanel.status != AnimationStatus.dismissed;
+            return Stack(
+              children: [
+                child!,
+                if (open) ...[
+                  Positioned.fill(
+                    child: GestureDetector(
+                      onTap: _closeAccountPanel,
+                      behavior: HitTestBehavior.opaque,
+                      child: ColoredBox(
+                        color: Colors.black.withValues(
+                          alpha: 0.32 * _accountPanel.value,
+                        ),
                       ),
                     ),
-                  )
-                : chats.when(
-                    data: (list) => list.isEmpty
-                        ? Center(child: Text(l10n.noConversationsYet))
-                        : SlidableAutoCloseBehavior(
-                            child: ListView.separated(
-                              itemCount: list.length,
-                              separatorBuilder: (_, _) => Padding(
-                                padding: const EdgeInsets.only(left: 82),
-                                child: Divider(
-                                  height: 0.5,
-                                  color: context.tg.separator,
+                  ),
+                  Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: SlideTransition(
+                      position: _accountSlide,
+                      child: ChatsAccountDrawer(
+                        accounts: hub.accounts,
+                        selectedAccountId: _accountId,
+                        onSelected: (id) {
+                          setState(() => _accountId = id);
+                          _closeAccountPanel();
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            );
+          },
+          child: Column(
+            children: [
+              _MessageSearchBar(
+                controller: _query,
+                onChanged: _onQueryChanged,
+                onClear: () {
+                  _query.clear();
+                  setState(() => _needle = '');
+                },
+                hasQuery: _needle.isNotEmpty || _query.text.isNotEmpty,
+              ),
+              Expanded(
+                child: searching
+                    ? results!.when(
+                        data: (messages) {
+                          final titles = _chatTitles(ref);
+                          final hits = [
+                            for (final m in messages)
+                              if (_accountId == null ||
+                                  _messageMatchesAccount(
+                                    m.chatJid,
+                                    _accountId!,
+                                  ))
+                                SearchHit(
+                                  chatJid: m.chatJid,
+                                  chatTitle: titles[m.chatJid] ?? m.chatJid,
+                                  body: m.body,
+                                  time: m.timestamp,
+                                  incoming: m.incoming,
+                                  messageAnchor: unreadAnchorOf(m),
                                 ),
-                              ),
-                              itemBuilder: (context, i) {
-                                final entry = list[i];
-                                final key = entry.ref.key;
-                                return ChatRow(
-                                  entry: entry,
-                                  selected: widget.activeChatKey == key,
-                                  onOpen: () => openChat(context, key),
-                                );
-                              },
+                          ];
+                          return _filteredScroll(
+                            body: SearchResults(
+                              hits: hits,
+                              running: false,
+                              onOpen: _openHit,
+                            ),
+                          );
+                        },
+                        loading: () => _filteredScroll(
+                          body: SearchResults(
+                            hits: const [],
+                            running: true,
+                            onOpen: (_) {},
+                          ),
+                        ),
+                        error: (e, _) => _filteredScroll(
+                          body: Center(
+                            child: Text(
+                              l10n.searchFailed('$e'),
+                              style: TextStyle(color: context.tg.danger),
                             ),
                           ),
-                    loading: () =>
-                        const Center(child: CircularProgressIndicator()),
-                    error: (e, _) => Center(child: Text('$e')),
-                  ),
+                        ),
+                      )
+                    : chats.when(
+                        data: (list) {
+                          final filtered = _applyFilters(list);
+                          final emptyLabel = list.isEmpty
+                              ? l10n.noConversationsYet
+                              : (_scope == ChatsListScope.unread
+                                    ? l10n.noUnreadConversations
+                                    : l10n.noConversationsYet);
+                          return SlidableAutoCloseBehavior(
+                            child: CustomScrollView(
+                              slivers: [
+                                SliverToBoxAdapter(child: _filterBar()),
+                                if (filtered.isEmpty)
+                                  SliverFillRemaining(
+                                    hasScrollBody: false,
+                                    child: Center(child: Text(emptyLabel)),
+                                  )
+                                else
+                                  SliverList.separated(
+                                    itemCount: filtered.length,
+                                    separatorBuilder: (_, _) => Padding(
+                                      padding: const EdgeInsets.only(left: 82),
+                                      child: Divider(
+                                        height: 0.5,
+                                        color: context.tg.separator,
+                                      ),
+                                    ),
+                                    itemBuilder: (context, i) {
+                                      final entry = filtered[i];
+                                      final key = entry.ref.key;
+                                      return ChatRow(
+                                        entry: entry,
+                                        selected: widget.activeChatKey == key,
+                                        onOpen: () => openChat(context, key),
+                                      );
+                                    },
+                                  ),
+                              ],
+                            ),
+                          );
+                        },
+                        loading: () =>
+                            const Center(child: CircularProgressIndicator()),
+                        error: (e, _) => Center(child: Text('$e')),
+                      ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
+  }
+
+  Widget _filterBar() => ChatsFilterBar(
+    scope: _scope,
+    onScopeChanged: (s) => setState(() => _scope = s),
+    onOpenAccounts: _openAccountPanel,
+  );
+
+  /// Filter header + nested scrollable body (search results).
+  Widget _filteredScroll({required Widget body}) {
+    return CustomScrollView(
+      slivers: [
+        SliverToBoxAdapter(child: _filterBar()),
+        SliverFillRemaining(hasScrollBody: true, child: body),
+      ],
+    );
+  }
+
+  List<AccountChat> _applyFilters(List<AccountChat> list) {
+    Iterable<AccountChat> rows = list;
+    final accountId = _accountId;
+    if (accountId != null) {
+      rows = rows.where((c) => c.account.id == accountId);
+    }
+    if (_scope == ChatsListScope.unread) {
+      rows = rows.where(
+        (c) => c.chat.unreadCount > 0 || c.chat.unreadMentions > 0,
+      );
+    }
+    return rows.toList(growable: false);
+  }
+
+  /// Search hits store bare chat JID; resolve against the filtered account.
+  bool _messageMatchesAccount(String chatJid, String accountId) {
+    final list = ref.read(chatsProvider).asData?.value ?? const [];
+    for (final c in list) {
+      if (c.chat.jid == chatJid && c.account.id == accountId) return true;
+    }
+    return false;
   }
 
   Map<String, String> _chatTitles(WidgetRef ref) {

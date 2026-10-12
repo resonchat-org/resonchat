@@ -407,6 +407,18 @@ final roomOccupantsProvider = StreamProvider.family<List<Occupant>, String>((
       .map((chat) => chat?.occupants ?? const []);
 });
 
+/// Aggregated RFC 6121 presence for a 1:1 chat (null = offline / unknown).
+final contactPresenceProvider = StreamProvider.family<ContactPresence?, String>(
+  (ref, chatKey) async* {
+    final r = resolveChatKey(chatKey);
+    final xmpp = r.session.xmpp;
+    yield xmpp.presence.of(r.jid);
+    await for (final _ in xmpp.presenceChanges) {
+      yield xmpp.presence.of(r.jid);
+    }
+  },
+);
+
 /// Archived conversations across accounts.
 final archivedChatsProvider = StreamProvider<List<AccountChat>>((ref) {
   ref.watch(accountHubProvider);

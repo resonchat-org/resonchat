@@ -117,6 +117,14 @@ chmod +x build/resonchat-*-x86_64.AppImage
 ./build/resonchat-*-x86_64.AppImage
 ```
 
+Debian / RPM（同一 release bundle；链接库依赖由打包工具自动推断，CLI 依赖见 `app/tool/linux_runtime_deps.md`）：
+
+```bash
+cd app
+./tool/build_deb_rpm.sh          # 或 --skip-build 复用已有 bundle
+# → build/resonchat_*.deb  /  build/resonchat-*.rpm
+```
+
 更完整的工具链版本、分析与测试命令见 [`README.dev.md`](README.dev.md)。
 
 ## 开发

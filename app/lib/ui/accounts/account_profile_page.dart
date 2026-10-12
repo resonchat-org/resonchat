@@ -10,6 +10,7 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:moxxmpp/moxxmpp.dart' show PresenceShow;
 
 import '../../account/account_hub.dart';
 import '../../l10n/l10n.dart';
@@ -184,10 +185,96 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
                       )
                     : Text(l10n.save),
               ),
+              const SizedBox(height: 28),
+              Text(
+                l10n.presenceStatus,
+                style: TextStyle(
+                  color: tg.textSecondary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              _PresencePicker(accountId: widget.accountId, enabled: !_busy),
             ],
           ),
         );
       },
     );
+  }
+}
+
+/// RFC 6121 `<show/>` picker — broadcasts via [XmppService.setOwnPresence].
+class _PresencePicker extends StatefulWidget {
+  const _PresencePicker({required this.accountId, required this.enabled});
+
+  final String accountId;
+  final bool enabled;
+
+  @override
+  State<_PresencePicker> createState() => _PresencePickerState();
+}
+
+class _PresencePickerState extends State<_PresencePicker> {
+  static const _options = <PresenceShow>[
+    PresenceShow.online,
+    PresenceShow.chat,
+    PresenceShow.away,
+    PresenceShow.xa,
+    PresenceShow.dnd,
+  ];
+
+  late PresenceShow _current;
+
+  @override
+  void initState() {
+    super.initState();
+    _current =
+        accountHub.session(widget.accountId)?.xmpp.ownShow ?? PresenceShow.chat;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final session = accountHub.session(widget.accountId);
+
+    String label(PresenceShow show) => switch (show) {
+      PresenceShow.online => l10n.presenceOnline,
+      PresenceShow.chat => l10n.presenceChat,
+      PresenceShow.away => l10n.presenceAway,
+      PresenceShow.xa => l10n.presenceXa,
+      PresenceShow.dnd => l10n.presenceDnd,
+    };
+
+    return Column(
+      children: [
+        for (final show in _options)
+          ListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            leading: Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: PresenceStatusDot.colorFor(show),
+              ),
+            ),
+            title: Text(label(show)),
+            trailing: _current == show
+                ? Icon(Icons.check, color: context.tg.accent)
+                : null,
+            onTap: !widget.enabled || session == null
+                ? null
+                : () => unawaited(_set(session, show)),
+          ),
+      ],
+    );
+  }
+
+  Future<void> _set(AccountSession session, PresenceShow show) async {
+    await session.xmpp.setOwnPresence(show);
+    await session.db.setOwnPresenceShowWire(show.wire ?? 'online');
+    if (mounted) setState(() => _current = show);
   }
 }

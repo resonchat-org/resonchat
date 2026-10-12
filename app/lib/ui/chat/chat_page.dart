@@ -12,7 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:moxxmpp/moxxmpp.dart' show JID;
+import 'package:moxxmpp/moxxmpp.dart' show JID, PresenceShow;
 
 import '../../account/account_hub.dart';
 import '../../account/chat_ref.dart';
@@ -358,19 +358,30 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     super.dispose();
   }
 
-  /// AppBar subtitle: peer typing (Conversations contact_is_typing) or track.
+  /// AppBar subtitle: typing or RFC 6121 presence (1:1 only).
   String _peerStatusSubtitle(
     BuildContext context,
-    Track track,
-    TypingState peerTyping,
-  ) {
+    TypingState peerTyping, {
+    PresenceShow? presence,
+  }) {
     // Prefer a short local name when the JID is long.
     final name = _peerJid.split('@').first;
     final l10n = context.l10n;
     return switch (peerTyping) {
       TypingState.composing => l10n.contactIsTyping(name),
       TypingState.paused => l10n.contactStoppedTyping(name),
-      TypingState.inactive => track.localizedShortLabel(l10n),
+      TypingState.inactive => _presenceLabel(l10n, presence),
+    };
+  }
+
+  static String _presenceLabel(AppLocalizations l10n, PresenceShow? show) {
+    return switch (show) {
+      null => l10n.presenceOffline,
+      PresenceShow.online => l10n.presenceOnline,
+      PresenceShow.chat => l10n.presenceChat,
+      PresenceShow.away => l10n.presenceAway,
+      PresenceShow.xa => l10n.presenceXa,
+      PresenceShow.dnd => l10n.presenceDnd,
     };
   }
 
@@ -1272,6 +1283,15 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                             title: title,
                             radius: TgDimens.avatarChat / 2,
                             hero: true,
+                            showPresence: !ui.isGroup,
+                            presence: ui.isGroup
+                                ? null
+                                : ref
+                                      .watch(
+                                        contactPresenceProvider(widget.chatJid),
+                                      )
+                                      .value
+                                      ?.show,
                           ),
                           const SizedBox(width: 10),
                           Expanded(
@@ -1293,8 +1313,15 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                                               ))
                                       : _peerStatusSubtitle(
                                           context,
-                                          track,
                                           ui.peerTyping,
+                                          presence: ref
+                                              .watch(
+                                                contactPresenceProvider(
+                                                  widget.chatJid,
+                                                ),
+                                              )
+                                              .value
+                                              ?.show,
                                         ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
@@ -1790,9 +1817,16 @@ class _InputBarState extends State<_InputBar> {
             .showSnackBar(SnackBar(content: Text(l10n.voicePermissionDenied)));
         return;
       }
-      final muted = await VoiceRecorder.isSystemMicMuted();
+      final probe = await VoiceRecorder.probeSystemMicMute();
       if (!mounted || !_pointerHeld) return;
-      if (muted == true) {
+      if (probe.missingCli.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(l10n.linuxCliMissing(probe.missingCli.join(', '))),
+          ),
+        );
+      }
+      if (probe.muted == true) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text(l10n.voiceMicMuted)));
         return;
@@ -1809,6 +1843,12 @@ class _InputBarState extends State<_InputBar> {
         _elapsed = Duration.zero;
       });
       _startTick();
+    } on MissingLinuxCli catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.linuxCliMissing(e.toolsJoined))),
+        );
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
