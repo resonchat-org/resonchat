@@ -401,6 +401,10 @@ class XmppService {
     }
   }
 
+  /// Allocates a locally-unique origin-id before the row is inserted
+  /// (Conversations creates the message UUID first, then sends).
+  String allocateStanzaId() => _nextStanzaId();
+
   /// Sends [body] to [to] on exactly [track], or refuses.
   ///
   /// The single entry point for outbound chat messages. There is deliberately
@@ -419,6 +423,9 @@ class XmppService {
     String? quoteAuthor,
     String? oobUrl,
 
+    /// Pre-allocated origin-id from [allocateStanzaId]; generated when null.
+    String? originId,
+
     /// `chat` for 1:1; `groupchat` for XEP-0045 room messages (Conversations).
     String messageType = 'chat',
   }) async {
@@ -432,6 +439,7 @@ class XmppService {
         replyTo: replyTo,
         quoteBody: quoteBody,
         oobUrl: oobUrl,
+        originId: originId,
       );
     }
 
@@ -473,6 +481,7 @@ class XmppService {
           replyTo: replyTo,
           quoteBody: quoteBody,
           replyFallback: fallback,
+          originId: originId,
         );
       case Track.standard:
         stanzaId = await sendOmemoMessage(
@@ -482,6 +491,7 @@ class XmppService {
           replyTo: replyTo,
           quoteBody: quoteBody,
           replyFallback: fallback,
+          originId: originId,
         );
       case Track.none:
         stanzaId = await sendUnencryptedMessage(
@@ -492,6 +502,7 @@ class XmppService {
           quoteBody: quoteBody,
           replyFallback: fallback,
           oobUrl: wireOob,
+          originId: originId,
         );
     }
 
@@ -1453,6 +1464,9 @@ class XmppService {
     String? replyTo,
     String? quoteBody,
     String? oobUrl,
+
+    /// Pre-allocated origin-id from [allocateStanzaId]; generated when null.
+    String? originId,
   }) async {
     final fallback = replyTo == null || quoteBody == null
         ? null
@@ -1469,6 +1483,7 @@ class XmppService {
         replyFallback: fallback,
         oobUrl: oobUrl,
         messageType: 'groupchat',
+        originId: originId,
       );
       if (stanzaId == null) {
         return const SendOutcome(
@@ -1502,6 +1517,7 @@ class XmppService {
         replyTo: replyTo,
         quoteBody: quoteBody,
         replyFallback: fallback,
+        originId: originId,
       );
       if (stanzaId == null) {
         return const SendOutcome(
@@ -1521,6 +1537,7 @@ class XmppService {
       replyTo: replyTo,
       quoteBody: quoteBody,
       replyFallback: fallback,
+      originId: originId,
     );
     if (stanzaId == null) {
       return const SendOutcome(
@@ -1554,6 +1571,7 @@ class XmppService {
     String? replyTo,
     String? quoteBody,
     ReplyFallback? replyFallback,
+    String? originId,
   }) async {
     final track = bTrack;
     if (track == null || !track.ready) return null;
@@ -1570,7 +1588,7 @@ class XmppService {
 
     final mm = _connection?.getManagerById<MessageManager>(messageManager);
     if (mm == null) throw StateError('not connected');
-    final id = _nextStanzaId();
+    final id = originId ?? _nextStanzaId();
     await mm.sendMessage(
       roomBare,
       TypedMap<StanzaHandlerExtension>.fromList([
@@ -1600,11 +1618,12 @@ class XmppService {
     String? replyTo,
     String? quoteBody,
     ReplyFallback? replyFallback,
+    String? originId,
   }) async {
     final connection = _connection;
     if (connection == null) throw StateError('not connected');
     if (recipientJids.isEmpty) return null;
-    final id = _nextStanzaId();
+    final id = originId ?? _nextStanzaId();
     final children = <XMLNode>[
       MessageBodyData(body).toXML(),
       StableIdData(id, const []).toOriginIdElement(),
@@ -2636,6 +2655,7 @@ class XmppService {
     String? replyTo,
     String? quoteBody,
     ReplyFallback? replyFallback,
+    String? originId,
   }) async {
     final track = bTrack;
     if (track == null || !track.ready) return null;
@@ -2648,7 +2668,7 @@ class XmppService {
 
     final mm = _connection?.getManagerById<MessageManager>(messageManager);
     if (mm == null) throw StateError('not connected');
-    final id = _nextStanzaId();
+    final id = originId ?? _nextStanzaId();
 
     await mm.sendMessage(
       to,
@@ -2694,15 +2714,17 @@ class XmppService {
     String? replyTo,
     String? quoteBody,
     ReplyFallback? replyFallback,
+    String? originId,
   }) async {
     final mm = _connection?.getManagerById<MessageManager>(messageManager);
     if (mm == null) throw StateError('not connected');
-    final id = _nextStanzaId();
+    final id = originId ?? _nextStanzaId();
     await mm.sendMessage(
       to,
       TypedMap<StanzaHandlerExtension>.fromList([
         MessageBodyData(body),
         MessageIdData(id),
+        StableIdData(id, const []),
         if (replyTo != null)
           ReplyData(
             replyTo,
@@ -2737,10 +2759,11 @@ class XmppService {
 
     /// `chat` (1:1) or `groupchat` (XEP-0045 to bare room).
     String messageType = 'chat',
+    String? originId,
   }) async {
     final connection = _connection;
     if (connection == null) throw StateError('not connected');
-    final id = _nextStanzaId();
+    final id = originId ?? _nextStanzaId();
 
     // Built here rather than through MessageManager so `shouldEncrypt: false`
     // is stated on the stanza itself.

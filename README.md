@@ -1,5 +1,7 @@
 # resonchat
 
+[![CI](https://github.com/resonchat-org/resonchat/actions/workflows/ci.yml/badge.svg)](https://github.com/resonchat-org/resonchat/actions/workflows/ci.yml)
+
 一个基于 Flutter 的 XMPP 客户端：在**不修改服务端、不引入新 XEP** 的前提下，实现与 OMEMO 同构的**后量子加密**（X25519 + ML-KEM-768），同时**保持与标准 OMEMO 客户端互通**；UI 采用 Telegram Android 观感。Android 优先。
 
 ## 特性
@@ -12,7 +14,7 @@
 | 零服务端改动 / 零新 XEP | 已完成 | 复用 PEP、EME 等既有标准 |
 | 数据库落盘加密 | 已完成 | SQLCipher，口令由 Android Keystore 保护 |
 | 标准协议扩展 | 已完成 | MAM（XEP-0313）历史同步、回执（XEP-0184）、输入状态（XEP-0085）、Carbons（XEP-0280） |
-| 平台支持 | 部分完成 | Android（arm64-v8a / x86_64，liboqs）；Web（Drift WASM + WebSocket）；Linux AppImage（`pqcrypto`）；iOS 未做 |
+| 平台支持 | 部分完成 | Android（arm64-v8a / x86_64，liboqs）；Web（Drift WASM + WebSocket）；Linux AppImage（`pqcrypto`）；Windows 安装包；iOS 未做 |
 | Telegram Android 观感 UI | 进行中 | 气泡、色板、列表布局已实现；动画、平板适配未做 |
 
 ## 状态

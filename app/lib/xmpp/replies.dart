@@ -157,6 +157,7 @@ Future<SendOutcome> sendReply(
   required Track track,
   String? quoteBody,
   String messageType = 'chat',
+  String? originId,
 }) async {
   final outcome = await xmpp.sendOnTrack(
     to,
@@ -165,6 +166,7 @@ Future<SendOutcome> sendReply(
     replyTo: targetId.isEmpty ? null : targetId,
     quoteBody: quoteBody,
     messageType: messageType,
+    originId: originId,
   );
   return outcome;
 }

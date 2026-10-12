@@ -113,6 +113,7 @@ void main() {
     final rows = await db.watchMessages('bob@example.org').first;
     final byBody = {for (final r in rows) r.body: r};
     expect(byBody['sent']!.delivered, isTrue);
+    expect(byBody['sent']!.sendStatus, MessageSendStatus.sendReceived);
     expect(byBody['received']!.delivered, isFalse);
   });
 

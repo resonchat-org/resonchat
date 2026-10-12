@@ -12,7 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:moxxmpp/moxxmpp.dart' show JID, PresenceShow;
+import 'package:moxxmpp/moxxmpp.dart' show PresenceShow;
 
 import '../../account/account_hub.dart';
 import '../../account/chat_ref.dart';
@@ -31,21 +31,25 @@ import '../../untracker/untracker.dart';
 import '../../xmpp/connection.dart';
 import '../../xmpp/forwarding.dart';
 import '../../xmpp/local_nickname.dart';
+import '../../xmpp/muc.dart';
 import '../../xmpp/reactions.dart';
 import '../contact_avatar.dart';
 import '../../utils/appearance.dart';
+import 'chat_input_bar.dart';
+import 'chat_message_list.dart';
+import 'chat_nicks.dart';
+import 'chat_subscription_banner.dart';
 import 'chat_wallpaper.dart';
+import 'conference_mention.dart';
 import 'quoted_transcript.dart';
 import 'message_actions.dart';
 import '../home/open_chat.dart';
 import '../room/room_profile_page.dart';
 import '../room/room_sheet.dart';
 import '../chats/search.dart';
-import 'message_bubble.dart';
 import 'track_dialogs.dart';
 import 'chat_viewmodel.dart';
 import '../theme.dart';
-import '../chats/unread.dart';
 
 class ChatPage extends ConsumerStatefulWidget {
   const ChatPage({
@@ -82,6 +86,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   final _input = TextEditingController();
   final _scroll = ScrollController();
   final _focus = FocusNode();
+
+  /// Avatar-tap @-mentions (Conversations `highlightInConference`).
+  final _mentions = ConferenceMentionSession();
 
   bool _atBottom = true;
 
@@ -540,7 +547,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       ).showSnackBar(SnackBar(content: Text(context.l10n.uploadFailed(error))));
     } else if (result.failureReason != null) {
       _showNotSent(result.failureReason!);
-    } else if (result.sent) {
+    }
+    if (result.queued || result.sent) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
     }
   }
@@ -573,9 +581,32 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       ).showSnackBar(SnackBar(content: Text(context.l10n.uploadFailed(error))));
     } else if (result.failureReason != null) {
       _showNotSent(result.failureReason!);
-    } else if (result.sent) {
+    }
+    if (result.queued || result.sent) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
     }
+  }
+
+  /// Conversations `highlightInConference`: tap an occupant avatar to address them.
+  void _mentionOccupant(String nick) {
+    if (nick.trim().isEmpty || _selectionMode || _editingId != null) return;
+    final sel = _input.selection;
+    // Avatar taps unfocus the field and invalidate selection — fall back to end.
+    final start = sel.isValid ? sel.extentOffset : _input.text.length;
+    final edit = _mentions.apply(
+      text: _input.text,
+      selectionStart: start,
+      nick: nick,
+      occupantNicks: [
+        for (final o in _ui.room?.occupants ?? const <Occupant>[]) o.nick,
+      ],
+    );
+    _input.value = TextEditingValue(
+      text: edit.text,
+      selection: TextSelection.collapsed(offset: edit.selection),
+    );
+    _vm.onInputChanged(edit.text);
+    _focus.requestFocus();
   }
 
   Future<void> _send() async {
@@ -592,14 +623,15 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final failure = result.failureReason;
     if (failure != null) _showNotSent(failure);
 
-    if (result.sent) {
+    // Composer clears once the row is local (Conversations). A later socket
+    // failure keeps the bubble with STATUS_SEND_FAILED — text is not restored.
+    if (result.queued || result.sent) {
       if (_replyingTo != null) setState(() => _replyingTo = null);
       _input.clear();
       _vm.onMessageSent();
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
     } else if (_input.text.trim().isNotEmpty) {
-      // The text stays in the box. It was never sent, and a user who typed a
-      // message and watched the box empty has no way to know what happened.
+      // Cancelled before queue (track dialog) — keep the draft.
       _showUnsentNotice();
     }
   }
@@ -1158,7 +1190,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       timestamp: m.timestamp,
       senderKey: m.incoming ? m.sender : '__me__',
       senderLabel: m.incoming
-          ? (isGroup ? (_occupantNick(m.sender) ?? m.sender) : peerLabel)
+          ? (isGroup ? (occupantNick(m.sender) ?? m.sender) : peerLabel)
           : _transcriptSelfLabel(),
     );
   }
@@ -1409,7 +1441,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
             body: Column(
               children: [
                 // Rooms are not roster contacts — no subscription banner.
-                if (!ui.isGroup) _SubscriptionBanner(chatJid: widget.chatJid),
+                if (!ui.isGroup)
+                  ChatSubscriptionBanner(chatJid: widget.chatJid),
                 if (ui.advice != null)
                   TrackAdviceBanner(
                     advice: ui.advice!,
@@ -1428,7 +1461,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                     child: messages.when(
                       data: (list) {
                         if (list.isNotEmpty) _ensureInitialScroll();
-                        return _MessageList(
+                        return ChatMessageList(
                           chatKey: widget.chatJid,
                           messages: list,
                           scroll: _scroll,
@@ -1436,6 +1469,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                           onReact: _toggleReaction,
                           onMenu: _showMessageMenu,
                           onToggleSelected: _toggleSelected,
+                          onMentionNick: _mentionOccupant,
                           selectionMode: _selectionMode,
                           selectedIds: _selection,
                           translations: _translations,
@@ -1449,7 +1483,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                           focusMessageKey: _focusMessageKey,
                           bubbleStyle: appearance.bubble,
                           isGroup: ui.isGroup,
-                          highlightNicks: _highlightNicksFor(
+                          room: ui.room,
+                          highlightNicks: highlightNicksFor(
                             mucNick: ui.mucNick,
                             chatKey: widget.chatJid,
                           ),
@@ -1506,7 +1541,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                     }),
                   )
                 else
-                  _InputBar(
+                  ChatInputBar(
                     controller: _input,
                     focusNode: _focus,
                     onChanged: _vm.onInputChanged,
@@ -1568,697 +1603,4 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       ),
     );
   }
-}
-
-/// Message list with day separators and an unread marker.
-class _MessageList extends StatelessWidget {
-  const _MessageList({
-    required this.chatKey,
-    required this.messages,
-    required this.scroll,
-    required this.onRetryDecrypt,
-    required this.onReact,
-    required this.onMenu,
-    required this.onToggleSelected,
-    required this.selectionMode,
-    required this.selectedIds,
-    required this.translations,
-    required this.translatingIds,
-    required this.readAt,
-    required this.unreadCount,
-    required this.unreadDividerKey,
-    required this.focusMessageAnchor,
-    required this.focusMessageKey,
-    required this.bubbleStyle,
-    required this.isGroup,
-    required this.highlightNicks,
-  });
-
-  final String chatKey;
-  final List<Message> messages;
-  final ScrollController scroll;
-  final VoidCallback onRetryDecrypt;
-
-  /// Toggling one emoji on one message. Takes the addressable id, because that
-  /// is what a reaction refers to.
-  final void Function(String targetId, String emoji) onReact;
-
-  /// Long-press on one message. Gets the row so the page can read the stored
-  /// track, which decides both the plaintext notice and whether editing is
-  /// offered.
-  final void Function(Message message, String body) onMenu;
-
-  /// Toggling a message in the selection.
-  final void Function(Message message) onToggleSelected;
-
-  /// Whether the chat is in selection mode, so a tap selects rather than acts.
-  final bool selectionMode;
-
-  /// The stanza ids currently selected, in the order they were picked.
-  final List<String> selectedIds;
-
-  /// In-memory translations for this open chat (stanza id → text).
-  final Map<String, String> translations;
-
-  /// Stanza ids currently waiting on a Translate response.
-  final Set<String> translatingIds;
-
-  /// When the user last read this conversation, which is where the unread
-  /// boundary goes.
-  final DateTime? readAt;
-
-  /// Badge count; used when the read marker alone cannot place a divider.
-  final int unreadCount;
-
-  /// Key the unread divider is built with, so the page can scroll to it.
-  final GlobalKey unreadDividerKey;
-
-  /// Search / deep-link target; when set, that row gets [focusMessageKey].
-  final String? focusMessageAnchor;
-
-  final GlobalKey focusMessageKey;
-
-  /// Corner shape of the bubbles, from this conversation's appearance.
-  final BubbleStyle bubbleStyle;
-
-  /// MODE_MULTI: show occupant nicks above incoming bubbles.
-  final bool isGroup;
-
-  /// Our nick / localpart for bolding @-highlights in body text.
-  final List<String> highlightNicks;
-
-  @override
-  Widget build(BuildContext context) {
-    if (messages.isEmpty) {
-      return Center(child: Text(context.l10n.noMessagesYet));
-    }
-
-    final rows = <Widget>[];
-    DateTime? lastDay;
-    // The first message the user had not read when they last read this chat.
-    // Null when everything here has been read, or when the marker is newer than
-    // everything we hold (a chat read on another device) — in which case no
-    // divider is drawn at all, because a divider with nothing above it is a
-    // line across the top of an empty conversation.
-    final firstUnread = firstUnreadId(
-      messages,
-      readAt,
-      unreadCount: unreadCount,
-    );
-    bool unreadMarked = firstUnread == null;
-
-    for (final m in messages) {
-      final day = DateTime(
-        m.timestamp.year,
-        m.timestamp.month,
-        m.timestamp.day,
-      );
-      if (lastDay == null || day != lastDay) {
-        rows.add(DateSeparator(date: m.timestamp));
-        lastDay = day;
-      }
-      // Drawn before the message, so it separates "read" from "not read" rather
-      // than sitting under the last read one. The comparison is on the row's
-      // own id rather than on a flag, because a MAM import can insert messages
-      // in the middle and a one-shot flag would end up in the wrong place.
-      if (!unreadMarked && matchesUnreadAnchor(m, firstUnread)) {
-        rows.add(UnreadDivider(key: unreadDividerKey));
-        unreadMarked = true;
-      }
-      if (EncModeToken.parse(m.encMode) == EncModeToken.error) {
-        Widget errorRow = ListTile(
-          dense: true,
-          leading: Icon(Icons.lock_outline, size: 18, color: context.tg.danger),
-          title: Text(
-            context.l10n.unableToDecrypt,
-            style: TextStyle(
-              fontStyle: FontStyle.italic,
-              color: context.tg.textSecondary,
-            ),
-          ),
-          trailing: TextButton(
-            onPressed: onRetryDecrypt,
-            child: Text(context.l10n.retry),
-          ),
-        );
-        if (matchesUnreadAnchor(m, focusMessageAnchor)) {
-          errorRow = KeyedSubtree(key: focusMessageKey, child: errorRow);
-        }
-        rows.add(errorRow);
-        continue;
-      }
-      final cacheKey = m.stanzaId.isNotEmpty
-          ? m.stanzaId
-          : 'body:${m.body.hashCode}';
-      Widget bubble = _ReactionBubble(
-        chatKey: chatKey,
-        message: m,
-        selectionMode: selectionMode,
-        selected: selectedIds.contains(m.stanzaId),
-        bubbleStyle: bubbleStyle,
-        isGroup: isGroup,
-        highlightNicks: highlightNicks,
-        translation: translations[cacheKey],
-        translating: translatingIds.contains(cacheKey),
-        onReact: (emoji) => onReact(m.stanzaId, emoji),
-        onMenu: (body) => onMenu(m, body),
-        onToggleSelected: () => onToggleSelected(m),
-      );
-      if (matchesUnreadAnchor(m, focusMessageAnchor)) {
-        bubble = KeyedSubtree(key: focusMessageKey, child: bubble);
-      }
-      rows.add(bubble);
-    }
-
-    return ListView(
-      controller: scroll,
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      children: rows,
-    );
-  }
-}
-
-/// Bottom input bar: attach, text field, send — or hold-to-talk mic when empty
-/// (Telegram `ChatActivityEnterView`, docs/05 §4.2).
-class _InputBar extends StatefulWidget {
-  const _InputBar({
-    required this.controller,
-    required this.focusNode,
-    required this.onChanged,
-    required this.onSend,
-    required this.onAttach,
-    required this.onVoice,
-    required this.attachEnabled,
-  });
-
-  final TextEditingController controller;
-  final FocusNode focusNode;
-  final ValueChanged<String> onChanged;
-  final VoidCallback onSend;
-  final VoidCallback onAttach;
-  final Future<void> Function(VoiceClip clip) onVoice;
-
-  /// False when the server has no XEP-0363 — attach/mic stay muted.
-  final bool attachEnabled;
-
-  @override
-  State<_InputBar> createState() => _InputBarState();
-}
-
-class _InputBarState extends State<_InputBar> {
-  final _recorder = VoiceRecorder();
-  var _recording = false;
-  var _cancelArmed = false;
-  var _starting = false;
-
-  /// Finger still down — used to discard if permission/start outlasts press.
-  var _pointerHeld = false;
-  Offset? _pointerOrigin;
-  Duration _elapsed = Duration.zero;
-  Timer? _tick;
-
-  /// Telegram slide-to-cancel threshold (~dp 80).
-  static const _cancelDx = -64.0;
-
-  @override
-  void dispose() {
-    _tick?.cancel();
-    unawaited(_recorder.dispose());
-    super.dispose();
-  }
-
-  void _startTick() {
-    _tick?.cancel();
-    _tick = Timer.periodic(const Duration(milliseconds: 200), (_) {
-      if (!mounted || !_recording) return;
-      setState(() => _elapsed = _recorder.elapsed);
-    });
-  }
-
-  Future<void> _beginRecord() async {
-    if (_recording || _starting) return;
-    final l10n = context.l10n;
-    if (!widget.attachEnabled) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(l10n.httpUploadUnavailable)));
-      return;
-    }
-    if (!VoiceRecorder.isSupported) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(l10n.voiceNotSupported)));
-      return;
-    }
-    _starting = true;
-    try {
-      final ok = await _recorder.ensurePermission();
-      if (!mounted || !_pointerHeld) return;
-      if (!ok) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(l10n.voicePermissionDenied)));
-        return;
-      }
-      final probe = await VoiceRecorder.probeSystemMicMute();
-      if (!mounted || !_pointerHeld) return;
-      if (probe.missingCli.isNotEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(l10n.linuxCliMissing(probe.missingCli.join(', '))),
-          ),
-        );
-      }
-      if (probe.muted == true) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(l10n.voiceMicMuted)));
-        return;
-      }
-      await _recorder.start();
-      if (!mounted || !_pointerHeld) {
-        await _recorder.stop(send: false);
-        return;
-      }
-      HapticFeedback.lightImpact();
-      setState(() {
-        _recording = true;
-        _cancelArmed = false;
-        _elapsed = Duration.zero;
-      });
-      _startTick();
-    } on MissingLinuxCli catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.linuxCliMissing(e.toolsJoined))),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(l10n.uploadFailed('$e'))));
-      }
-    } finally {
-      _starting = false;
-    }
-  }
-
-  Future<void> _endRecord({required bool send}) async {
-    _pointerHeld = false;
-    if (!_recording && !_recorder.isRecording) {
-      _pointerOrigin = null;
-      return;
-    }
-    _tick?.cancel();
-    final clip = await _recorder.stop(send: send);
-    if (!mounted) return;
-    setState(() {
-      _recording = false;
-      _cancelArmed = false;
-      _pointerOrigin = null;
-      _elapsed = Duration.zero;
-    });
-    if (!send) return;
-    if (clip == null) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(context.l10n.voiceTooShort)));
-      return;
-    }
-    HapticFeedback.selectionClick();
-    await widget.onVoice(clip);
-  }
-
-  void _onMicPointerDown(PointerDownEvent e) {
-    _pointerHeld = true;
-    _pointerOrigin = e.position;
-    unawaited(_beginRecord());
-  }
-
-  void _onMicPointerMove(PointerMoveEvent e) {
-    if (!_recording || _pointerOrigin == null) return;
-    final dx = e.position.dx - _pointerOrigin!.dx;
-    final armed = dx <= _cancelDx;
-    if (armed != _cancelArmed) {
-      setState(() => _cancelArmed = armed);
-      if (armed) HapticFeedback.selectionClick();
-    }
-  }
-
-  void _onMicPointerUp(PointerUpEvent e) {
-    unawaited(_endRecord(send: !_cancelArmed));
-  }
-
-  void _onMicPointerCancel(PointerCancelEvent e) {
-    unawaited(_endRecord(send: false));
-  }
-
-  String _formatElapsed(Duration d) {
-    final total = d.inSeconds;
-    final m = (total ~/ 60).toString().padLeft(2, '0');
-    final s = (total % 60).toString().padLeft(2, '0');
-    return '$m:$s';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final tg = context.tg;
-    final l10n = context.l10n;
-    return ValueListenableBuilder<TextEditingValue>(
-      valueListenable: widget.controller,
-      builder: (context, value, _) {
-        final empty = value.text.trim().isEmpty;
-        return Container(
-          decoration: BoxDecoration(
-            color: tg.pageBackground,
-            border: Border(top: BorderSide(color: tg.separator)),
-          ),
-          padding: const EdgeInsets.fromLTRB(4, 6, 4, 8),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              if (!_recording)
-                IconButton(
-                  icon: const Icon(Icons.attach_file),
-                  color: widget.attachEnabled
-                      ? tg.textPrimary
-                      : tg.textSecondary,
-                  disabledColor: tg.textSecondary,
-                  tooltip: widget.attachEnabled
-                      ? l10n.attachFile
-                      : l10n.httpUploadUnavailable,
-                  onPressed: widget.attachEnabled ? widget.onAttach : null,
-                )
-              else
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 12,
-                  ),
-                  child: Icon(
-                    Icons.mic,
-                    size: 22,
-                    color: _cancelArmed ? tg.danger : tg.accent,
-                  ),
-                ),
-              Expanded(
-                child: _recording
-                    ? Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 10,
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 8,
-                              height: 8,
-                              decoration: BoxDecoration(
-                                color: _cancelArmed
-                                    ? tg.danger
-                                    : const Color(0xFFE53935),
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              _formatElapsed(_elapsed),
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontFeatures: const [
-                                  FontFeature.tabularFigures(),
-                                ],
-                                color: tg.textPrimary,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                _cancelArmed
-                                    ? l10n.releaseToCancel
-                                    : l10n.slideToCancel,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: _cancelArmed
-                                      ? tg.danger
-                                      : tg.textSecondary,
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      )
-                    : ConstrainedBox(
-                        constraints: const BoxConstraints(maxHeight: 120),
-                        child: TextField(
-                          controller: widget.controller,
-                          focusNode: widget.focusNode,
-                          minLines: 1,
-                          maxLines: 5,
-                          textInputAction: TextInputAction.newline,
-                          onChanged: widget.onChanged,
-                          style: TextStyle(
-                            fontSize: TgDimens.messageFontSize,
-                            color: tg.textPrimary,
-                          ),
-                          decoration: InputDecoration(
-                            isDense: true,
-                            filled: true,
-                            fillColor: tg.pageBackground,
-                            hintText: l10n.messageComposerHint,
-                            hintStyle: TextStyle(color: tg.textSecondary),
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 10,
-                            ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(18),
-                              borderSide: BorderSide(color: tg.separator),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(18),
-                              borderSide: BorderSide(color: tg.separator),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(18),
-                              borderSide: BorderSide(color: tg.accent),
-                            ),
-                          ),
-                        ),
-                      ),
-              ),
-              if (empty || _recording)
-                Listener(
-                  behavior: HitTestBehavior.opaque,
-                  onPointerDown: _onMicPointerDown,
-                  onPointerMove: _onMicPointerMove,
-                  onPointerUp: _onMicPointerUp,
-                  onPointerCancel: _onMicPointerCancel,
-                  child: Tooltip(
-                    message: l10n.holdToRecord,
-                    child: Padding(
-                      padding: const EdgeInsets.all(8),
-                      child: Icon(
-                        _cancelArmed ? Icons.delete_outline : Icons.mic,
-                        color: _cancelArmed ? tg.danger : tg.accent,
-                        size: 28,
-                      ),
-                    ),
-                  ),
-                )
-              else
-                IconButton(
-                  icon: const Icon(Icons.send),
-                  color: tg.accent,
-                  onPressed: widget.onSend,
-                ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
-/// Warns when the contact is not a mutual subscription.
-///
-/// Without this, a server that refuses stanzas outside a mutual
-/// subscription looks exactly like silent data loss: messages vanish and
-/// nothing in the interface explains why.
-class _SubscriptionBanner extends ConsumerWidget {
-  const _SubscriptionBanner({required this.chatJid});
-
-  final String chatJid;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final tg = context.tg;
-    final state = ref.watch(contactStateProvider(chatJid)).value;
-    // Nothing to say before the roster has loaded, or when all is well.
-    if (state == null || state.isMutual) return const SizedBox.shrink();
-
-    final l10n = context.l10n;
-    final text = switch (state.subscription) {
-      'none' => l10n.subscriptionBannerNone,
-      'to' =>
-        state.asked
-            ? l10n.subscriptionBannerToAsked
-            : l10n.subscriptionBannerTo,
-      'from' =>
-        state.asked
-            ? l10n.subscriptionBannerFromAsked
-            : l10n.subscriptionBannerFrom,
-      _ => l10n.subscriptionBannerOther(state.subscription),
-    };
-
-    return Material(
-      color: tg.danger.withValues(alpha: 0.12),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
-        child: Row(
-          children: [
-            Icon(Icons.info_outline, size: 18, color: tg.danger),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                text,
-                style: TextStyle(fontSize: 13, color: tg.textPrimary),
-              ),
-            ),
-            if (state.subscription != 'both')
-              TextButton(
-                onPressed: () {
-                  final r = resolveChatKey(chatJid);
-                  r.session.xmpp.requestSubscription(JID.fromString(r.jid));
-                },
-                child: Text(context.l10n.askAgain),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// A bubble plus whatever reactions its message carries.
-///
-/// Split out so the chips can come from their own provider: they change
-/// whenever anyone reacts, which is independent of the message list rebuilding.
-class _ReactionBubble extends ConsumerWidget {
-  const _ReactionBubble({
-    required this.chatKey,
-    required this.message,
-    required this.selectionMode,
-    required this.selected,
-    required this.bubbleStyle,
-    required this.isGroup,
-    required this.highlightNicks,
-    this.translation,
-    this.translating = false,
-    required this.onReact,
-    required this.onMenu,
-    required this.onToggleSelected,
-  });
-
-  final String chatKey;
-  final Message message;
-  final bool selectionMode;
-  final bool selected;
-  final BubbleStyle bubbleStyle;
-  final bool isGroup;
-  final List<String> highlightNicks;
-  final String? translation;
-  final bool translating;
-  final void Function(String emoji) onReact;
-  final void Function(String body) onMenu;
-  final void Function() onToggleSelected;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // Keyed on the stored id, which is the origin-id when the sender published
-    // one. Empty means the message cannot be addressed, so it is drawn without
-    // chips rather than with chips nobody could add to.
-    final targetId = message.stanzaId;
-    final reactions = targetId.isEmpty
-        ? const <ReactionGroup>[]
-        : ref
-                  .watch(
-                    reactionGroupsProvider((
-                      chatKey: chatKey,
-                      targetId: targetId,
-                    )),
-                  )
-                  .value ??
-              const [];
-    final nick = isGroup && message.incoming
-        ? _occupantNick(message.sender)
-        : null;
-    return MessageBubble(
-      text: message.body,
-      time: message.timestamp,
-      side: message.incoming ? BubbleSide.incoming : BubbleSide.outgoing,
-      senderName: nick,
-      senderColor: nick == null ? null : _nickColor(nick),
-      delivered: message.delivered,
-      displayed: message.displayed,
-      failed: message.deliveryError.isNotEmpty,
-      // What the message actually used, from what the sender declared — not
-      // what we would have chosen. Read back from the row rather than
-      // recomputed, so the label survives a change of mind afterwards.
-      track: EncModeToken.parse(message.encMode).track ?? Track.none,
-      reactions: reactions,
-      retracted: message.retracted,
-      edited: message.editedAt != null,
-      mine: !message.incoming,
-      selected: selected,
-      selectionMode: selectionMode,
-      bubbleStyle: bubbleStyle,
-      message: message,
-      chatKey: chatKey,
-      mentionsMe: message.mentionsMe,
-      highlightNicks: isGroup ? highlightNicks : const [],
-      translation: translation,
-      translating: translating,
-      onReact: onReact,
-      // Long-press → context menu (incl. Select). Tap toggles only while
-      // already in multi-select — Select from the menu is what enters it.
-      onLongPress: message.retracted
-          ? null
-          : selectionMode
-          ? (message.stanzaId.isEmpty ? null : onToggleSelected)
-          : () => onMenu(message.body),
-      onTap: message.retracted || !selectionMode || message.stanzaId.isEmpty
-          ? null
-          : onToggleSelected,
-    );
-  }
-}
-
-/// Nick names that count as "us" for bolding highlights in the transcript.
-List<String> _highlightNicksFor({
-  required String mucNick,
-  required String chatKey,
-}) {
-  final names = <String>{};
-  if (mucNick.isNotEmpty) names.add(mucNick);
-  try {
-    final bare = resolveChatKey(chatKey).session.account.bareJid;
-    final at = bare.indexOf('@');
-    if (at > 0) names.add(bare.substring(0, at));
-  } catch (_) {}
-  return names.toList();
-}
-
-/// Occupant nick from a stored sender (`room@server/nick` or bare nick).
-String? _occupantNick(String sender) {
-  if (sender.isEmpty || sender == 'me') return null;
-  final slash = sender.indexOf('/');
-  if (slash >= 0 && slash + 1 < sender.length) {
-    return sender.substring(slash + 1);
-  }
-  return sender;
-}
-
-/// Stable tint for a nick in group transcripts (docs/05).
-Color _nickColor(String nick) {
-  final hue = (nick.hashCode & 0x7fffffff) % 360;
-  return HSLColor.fromAHSL(1, hue.toDouble(), 0.55, 0.42).toColor();
 }

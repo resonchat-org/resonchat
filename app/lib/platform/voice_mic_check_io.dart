@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // Best-effort "will this capture be silent?" before hold-to-talk.
-// Linux: wpctl, else pactl. Android: AudioManager. Others: skip.
+// Linux: wpctl, else pactl. Android / Windows: MethodChannel. Others: skip.
 
 import 'dart:io';
 
@@ -17,8 +17,10 @@ const _audioChannel = MethodChannel('org.resonchat.resonchat/audio');
 /// Soft-mute probe. Never throws.
 Future<MicMuteProbe> probeDefaultMicMute() async {
   if (Platform.isLinux) return _linuxProbe();
-  if (Platform.isAndroid) {
-    final muted = await _androidMicrophoneMute();
+  // Android: AudioManager.isMicrophoneMute.
+  // Windows: WASAPI default capture mute / 0% volume (runner/audio_mute.cpp).
+  if (Platform.isAndroid || Platform.isWindows) {
+    final muted = await _channelMicrophoneMute();
     return MicMuteProbe(muted: muted);
   }
   return const MicMuteProbe();
@@ -123,7 +125,7 @@ bool? parsePactlVolumeSilentStdout(String stdout) {
   return percents.every((p) => p == 0);
 }
 
-Future<bool?> _androidMicrophoneMute() async {
+Future<bool?> _channelMicrophoneMute() async {
   try {
     return await _audioChannel.invokeMethod<bool>('isMicrophoneMute');
   } catch (_) {

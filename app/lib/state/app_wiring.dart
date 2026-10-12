@@ -351,6 +351,18 @@ bool _isOwnArchive(InboundMessage msg, String? ownBare) {
   return msg.from.toBare().toString() == ownBare;
 }
 
+/// Live (or archived) room reflection of something we said.
+///
+/// Groupchat reflections arrive as `room@server/ourNick`. They are not
+/// carbons and not 1:1 archive rows, so [_isOwnArchive] misses them — without
+/// this check they draw on the left as if somebody else wrote them.
+bool _isOwnMucReflection(InboundMessage msg, String? mucNick) {
+  if (msg.type != 'groupchat') return false;
+  final nick = mucNick?.trim() ?? '';
+  if (nick.isEmpty) return false;
+  return msg.from.resource == nick;
+}
+
 Future<void> _loadPrivacyPrefs(AccountSession session) async {
   final db = session.db;
   final xmpp = session.xmpp;
@@ -418,9 +430,9 @@ Future<bool> storeInbound(
   // the conversation and the nick as the sender is what makes `room@server`
   // and `room@server/nick` the same conversation in the chat list, and what
   // puts the right name on the bubble.
-  final own = _isOwnArchive(msg, ownBare);
+  final ownArchive = _isOwnArchive(msg, ownBare);
   // Own archived outbound without a peer address cannot be placed in a chat.
-  if (own && msg.to == null) return false;
+  if (ownArchive && msg.to == null) return false;
   final chatJid = _chatJidFor(msg, ownBare);
   final sender = msg.from.toString();
   final isGroupchat = msg.type == 'groupchat';
@@ -430,13 +442,6 @@ Future<bool> storeInbound(
 
   // A carbon duplicates a message we already hold locally.
   if (msg.isCarbonCopy) return false;
-  final stanzaId = msg.stanzaId ?? '';
-  if (await db.findByStanzaId(chatJid, stanzaId) != null) return false;
-  // A room message is identified by its sender's full JID, not just the room:
-  // two people in the same room can, and frequently do, send stanzas with the
-  // same id. Deduplicating on the bare room would drop the second one.
-  final dedupeKey = sender.isEmpty ? stanzaId : sender;
-  if (await db.findByStanzaId(chatJid, dedupeKey) != null) return false;
 
   // A stanza carrying an apply-to is an instruction about an earlier message,
   // not a message. Storing it would put a duplicate bubble next to the one it
@@ -469,10 +474,28 @@ Future<bool> storeInbound(
 
   final chat = await db.getChat(chatJid);
   final isGroup = chat?.isGroup ?? isGroupchat;
+  final ownMuc = _isOwnMucReflection(msg, chat?.mucNick);
+  final remoteId = msg.originId ?? msg.stanzaId ?? '';
+
+  // Conversations MessageParser for MUC self: markMessage(STATUS_SEND_RECEIVED)
+  // on the local UNSEND row and return — never a second bubble.
+  if (ownMuc && remoteId.isNotEmpty) {
+    if (await db.markDelivered(chatJid, remoteId) > 0) return false;
+  }
+
+  final stanzaId = msg.stanzaId ?? '';
+  if (await db.findByStanzaId(chatJid, stanzaId) != null) return false;
+  // A room message is identified by its sender's full JID, not just the room:
+  // two people in the same room can, and frequently do, send stanzas with the
+  // same id. Deduplicating on the bare room would drop the second one.
+  final dedupeKey = sender.isEmpty ? stanzaId : sender;
+  if (await db.findByStanzaId(chatJid, dedupeKey) != null) return false;
+
+  final fromMe = ownArchive || ownMuc;
   final privateMessage =
       isGroup && msg.type == 'chat' && msg.from.resource.isNotEmpty;
   final mentionsMe =
-      !own &&
+      !fromMe &&
       isGroup &&
       msg.encryptionError == null &&
       (privateMessage ||
@@ -484,7 +507,9 @@ Future<bool> storeInbound(
   await db.insertMessage(
     MessagesCompanion(
       chatJid: Value(chatJid),
-      sender: Value(sender),
+      // Outgoing room reflections use the same `me` sender as 1:1 sends so
+      // chrome merge / mine bubbles stay consistent.
+      sender: Value(fromMe ? 'me' : sender),
       // The origin-id when the sender published one, because that is the id
       // reactions, replies, edits and retrations address. The server's stanza
       // id is a fallback and it changes across an archive round trip, so a
@@ -512,7 +537,17 @@ Future<bool> storeInbound(
             ? EncModeToken.error.wire
             : EncModeToken.of(msg.track ?? Track.none).wire,
       ),
-      incoming: Value(!own),
+      incoming: Value(!fromMe),
+      // Reflection without a prior local row (other device / MAM): already
+      // confirmed by the room.
+      delivered: Value(fromMe && ownMuc),
+      sendStatus: Value(
+        fromMe
+            ? (ownMuc
+                  ? MessageSendStatus.sendReceived
+                  : MessageSendStatus.unsend)
+            : MessageSendStatus.received,
+      ),
       markable: Value(msg.markable),
       mediaUrl: Value(msg.encryptionError != null ? '' : msg.mediaUrl),
       mediaMime: Value(msg.mediaMime),

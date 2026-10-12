@@ -25,6 +25,10 @@ final class AppNotifications {
   static const _channelName = 'Messages';
   static const _channelDescription = 'Incoming chat messages';
 
+  /// Toast activator GUID for unpackaged Windows builds (stable; do not rotate).
+  static const _windowsNotificationGuid =
+      '8f3a2c1e-6b4d-4a9f-b7e2-1c5d8a0f3e6b';
+
   final _log = Logger('AppNotifications');
   final _plugin = FlutterLocalNotificationsPlugin();
 
@@ -49,7 +53,17 @@ final class AppNotifications {
 
     const android = AndroidInitializationSettings('@drawable/ic_stat_message');
     const linux = LinuxInitializationSettings(defaultActionName: 'Open');
-    const settings = InitializationSettings(android: android, linux: linux);
+    // Required on Windows or initialize() throws and we stay !_ready.
+    const windows = WindowsInitializationSettings(
+      appName: 'resonchat',
+      appUserModelId: 'Org.Resonchat.Resonchat',
+      guid: _windowsNotificationGuid,
+    );
+    const settings = InitializationSettings(
+      android: android,
+      linux: linux,
+      windows: windows,
+    );
 
     try {
       await _plugin.initialize(
@@ -147,6 +161,14 @@ final class AppNotifications {
         styleInformation: BigTextStyleInformation(body),
       ),
       linux: LinuxNotificationDetails(suppressSound: !request.decision.sound),
+      windows: WindowsNotificationDetails(
+        audio: request.decision.sound
+            ? null
+            : WindowsNotificationAudio.silent(),
+        duration: request.decision.banner
+            ? WindowsNotificationDuration.long
+            : WindowsNotificationDuration.short,
+      ),
     );
 
     try {

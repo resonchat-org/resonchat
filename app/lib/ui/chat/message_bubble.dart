@@ -118,6 +118,7 @@ class MessageBubble extends StatelessWidget {
     this.delivered = false,
     this.displayed = false,
     this.failed = false,
+    this.sendStatus = MessageSendStatus.received,
     this.track = Track.none,
     this.reactions = const [],
     this.retracted = false,
@@ -138,7 +139,14 @@ class MessageBubble extends StatelessWidget {
     this.onReact,
     this.onLongPress,
     this.onTap,
+    this.leadingAvatar,
+    this.onAvatarTap,
+    this.reserveAvatarGutter = false,
+    this.expectReceipts = true,
   });
+
+  /// Conversations `Message.status` for outgoing ticks.
+  final int sendStatus;
 
   final String text;
 
@@ -222,6 +230,8 @@ class MessageBubble extends StatelessWidget {
   final Color? senderColor;
 
   /// True once a delivery receipt arrived (XEP-0184).
+  ///
+  /// Prefer [sendStatus] for new UI; kept for callers that have not migrated.
   final bool delivered;
 
   /// True once a read marker arrived (XEP-0333 `<displayed/>`).
@@ -231,6 +241,21 @@ class MessageBubble extends StatelessWidget {
 
   final VoidCallback? onLongPress;
   final VoidCallback? onTap;
+
+  /// Occupant avatar to the left of an incoming group bubble (Conversations
+  /// contact picture). Null when the row has no avatar (or chrome is merged).
+  final Widget? leadingAvatar;
+
+  /// Conversations `onContactPictureClicked` → insert a conference mention.
+  final VoidCallback? onAvatarTap;
+
+  /// Keep the avatar column width even when [leadingAvatar] is null (merged
+  /// consecutive messages still line up with the first bubble in the group).
+  final bool reserveAvatarGutter;
+
+  /// 1:1 uses XEP-0184/0333 ticks. Room messages do not — until the MUC
+  /// reflection arrives they stay Conversations `STATUS_UNSEND` (a clock).
+  final bool expectReceipts;
 
   @override
   Widget build(BuildContext context) {
@@ -249,14 +274,18 @@ class MessageBubble extends StatelessWidget {
     );
 
     // Telegram ChatMessageCell checkbox: visible in action mode, left of the
-    // bubble for both sides so the row still reads left-to-right.
+    // bubble for both sides so the row still reads left-to-right. Centered on
+    // the row (not bottom-aligned with the avatar).
     final checkbox = selectionMode
         ? Padding(
             padding: const EdgeInsets.only(right: 8),
-            child: Icon(
-              selected ? Icons.check_circle : Icons.circle_outlined,
-              size: 22,
-              color: selected ? tg.accent : tg.textSecondary,
+            child: Align(
+              alignment: Alignment.center,
+              child: Icon(
+                selected ? Icons.check_circle : Icons.circle_outlined,
+                size: 22,
+                color: selected ? tg.accent : tg.textSecondary,
+              ),
             ),
           )
         : null;
@@ -332,10 +361,12 @@ class MessageBubble extends StatelessWidget {
                 const SizedBox(width: 8),
                 _MetaRow(
                   time: time,
+                  sendStatus: sendStatus,
                   delivered: delivered,
                   displayed: displayed,
                   failed: failed,
                   mine: mine,
+                  expectReceipts: expectReceipts,
                   track: track,
                 ),
               ],
@@ -345,6 +376,136 @@ class MessageBubble extends StatelessWidget {
       ),
     );
 
+    // Conversations bubble_avatar_size is 48dp; keep a bit smaller so the
+    // Telegram-style bubble still dominates the row.
+    const avatarRadius = 18.0;
+    const avatarGutterWidth = avatarRadius * 2 + 6;
+
+    final bodyColumn = Column(
+      crossAxisAlignment: mine
+          ? CrossAxisAlignment.end
+          : CrossAxisAlignment.start,
+      children: [
+        if (senderName != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 2, left: 4, right: 12),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (mentionsMe) ...[
+                  Icon(Icons.alternate_email, size: 14, color: tg.accent),
+                  const SizedBox(width: 4),
+                ],
+                Text(
+                  senderName!,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: senderColor ?? tg.accent,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        if (replyTo.isNotEmpty && !retracted)
+          _ReplyQuote(body: replyBody, author: replyAuthor),
+        Align(
+          alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+          child: bubble,
+        ),
+        if (!retracted &&
+            (translating ||
+                (translation != null && translation!.trim().isNotEmpty)))
+          Padding(
+            padding: EdgeInsets.only(
+              top: 4,
+              left: mine ? 0 : 12,
+              right: mine ? 12 : 0,
+            ),
+            child: translating
+                ? SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: tg.textSecondary,
+                    ),
+                  )
+                : Text(
+                    translation!,
+                    style: TextStyle(
+                      fontSize: TgDimens.messageFontSize - 1,
+                      color: tg.textSecondary,
+                      height: 1.3,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+          ),
+        if (reactions.isNotEmpty && !retracted)
+          Padding(
+            padding: EdgeInsets.only(
+              top: 3,
+              left: mine ? 0 : 10,
+              right: mine ? 10 : 0,
+            ),
+            child: Wrap(
+              spacing: 4,
+              runSpacing: 4,
+              alignment: mine ? WrapAlignment.end : WrapAlignment.start,
+              children: [
+                for (final reaction in reactions)
+                  ReactionChip(
+                    reaction: reaction,
+                    onTap: onReact == null
+                        ? null
+                        : () => onReact!(reaction.emoji),
+                  ),
+              ],
+            ),
+          ),
+      ],
+    );
+
+    // Selection checkbox sits leftmost (before the avatar), matching Telegram
+    // action-mode rows and keeping the avatar glued to the bubble column.
+    // Selection mode: IntrinsicHeight + stretch so the checkbox Align centers
+    // on the bubble; avatars stay bottom-aligned in their gutter.
+    // (Bare stretch fails under ListView's unbounded max height.)
+    final avatarGutter = (reserveAvatarGutter || leadingAvatar != null)
+        ? SizedBox(
+            width: avatarGutterWidth,
+            child: leadingAvatar == null
+                ? null
+                : Align(
+                    alignment: Alignment.bottomCenter,
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: 6, bottom: 2),
+                      child: GestureDetector(
+                        onTap: onAvatarTap,
+                        behavior: HitTestBehavior.opaque,
+                        child: leadingAvatar,
+                      ),
+                    ),
+                  ),
+          )
+        : null;
+    final rowChildren = <Widget>[
+      ?checkbox,
+      ?avatarGutter,
+      Expanded(child: bodyColumn),
+    ];
+    final row = selectionMode
+        ? IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: rowChildren,
+            ),
+          )
+        : Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: rowChildren,
+          );
+
     return Container(
       // The selection tint is on the row, not the bubble: tinting the bubble
       // itself would hide the text it is tinting behind the highlight.
@@ -353,104 +514,11 @@ class MessageBubble extends StatelessWidget {
                 .withValues(alpha: 0.5)
           : null,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
-      child: Column(
-        crossAxisAlignment: mine
-            ? CrossAxisAlignment.end
-            : CrossAxisAlignment.start,
-        children: [
-          if (senderName != null)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 2, left: 12, right: 12),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (mentionsMe) ...[
-                    Icon(Icons.alternate_email, size: 14, color: tg.accent),
-                    const SizedBox(width: 4),
-                  ],
-                  Text(
-                    senderName!,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: senderColor ?? tg.accent,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          if (replyTo.isNotEmpty && !retracted)
-            _ReplyQuote(body: replyBody, author: replyAuthor),
-          GestureDetector(
-            onTap: onTap,
-            onLongPress: onLongPress,
-            behavior: HitTestBehavior.opaque,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                ?checkbox,
-                Expanded(
-                  child: Align(
-                    alignment: mine
-                        ? Alignment.centerRight
-                        : Alignment.centerLeft,
-                    child: bubble,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (!retracted &&
-              (translating ||
-                  (translation != null && translation!.trim().isNotEmpty)))
-            Padding(
-              padding: EdgeInsets.only(
-                top: 4,
-                left: mine ? 0 : 12,
-                right: mine ? 12 : 0,
-              ),
-              child: translating
-                  ? SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: tg.textSecondary,
-                      ),
-                    )
-                  : Text(
-                      translation!,
-                      style: TextStyle(
-                        fontSize: TgDimens.messageFontSize - 1,
-                        color: tg.textSecondary,
-                        height: 1.3,
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-            ),
-          if (reactions.isNotEmpty && !retracted)
-            Padding(
-              padding: EdgeInsets.only(
-                top: 3,
-                left: mine ? 0 : 10,
-                right: mine ? 10 : 0,
-              ),
-              child: Wrap(
-                spacing: 4,
-                runSpacing: 4,
-                alignment: mine ? WrapAlignment.end : WrapAlignment.start,
-                children: [
-                  for (final reaction in reactions)
-                    ReactionChip(
-                      reaction: reaction,
-                      onTap: onReact == null
-                          ? null
-                          : () => onReact!(reaction.emoji),
-                    ),
-                ],
-              ),
-            ),
-        ],
+      child: GestureDetector(
+        onTap: onTap,
+        onLongPress: onLongPress,
+        behavior: HitTestBehavior.opaque,
+        child: row,
       ),
     );
   }
@@ -577,18 +645,24 @@ class ReactionChip extends StatelessWidget {
 class _MetaRow extends StatelessWidget {
   const _MetaRow({
     required this.time,
+    required this.sendStatus,
     required this.delivered,
     required this.displayed,
     required this.failed,
     required this.mine,
+    required this.expectReceipts,
     required this.track,
   });
 
   final DateTime time;
+  final int sendStatus;
   final bool delivered;
   final bool displayed;
   final bool failed;
   final bool mine;
+
+  /// False for MUC: show a clock until reflection, then a single tick.
+  final bool expectReceipts;
   final Track track;
 
   String get _timeText {
@@ -600,20 +674,33 @@ class _MetaRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tg = context.tg;
-    // Sent = one tick; delivered (0184) or read (0333) = two.
-    // Accent colour only for read, so the second tick visibly changes when
-    // the peer opens the chat (Telegram-style; Conversations uses the same
-    // icon for both received and displayed).
+    // Prefer [sendStatus] (Conversations STATUS_*); fall back to legacy flags.
+    final status = sendStatus != MessageSendStatus.received || !mine
+        ? sendStatus
+        : MessageSendStatus.fromLegacy(
+            incoming: !mine,
+            delivered: delivered,
+            displayed: displayed,
+            deliveryError: failed ? 'err' : '',
+          );
+    final isFailed = failed || status == MessageSendStatus.sendFailed;
+    final isDisplayed = status == MessageSendStatus.sendDisplayed || displayed;
+    final isAcked = MessageSendStatus.isDelivered(status) || delivered;
+    final isPending = MessageSendStatus.isPending(status);
+    // 1:1 — pending = clock; on wire (STATUS_SEND) = one tick;
+    //       delivered/read = two. MUC — clock until reflection, then one tick.
     final ticks = !mine
         ? null
-        : failed
+        : isFailed
         ? Icons.error_outline
-        : (delivered || displayed)
-        ? Icons.done_all
-        : Icons.done;
-    final tickColor = failed
+        : isPending
+        ? Icons.schedule
+        : expectReceipts
+        ? (isAcked ? Icons.done_all : Icons.done)
+        : (isAcked ? Icons.done : Icons.schedule);
+    final tickColor = isFailed
         ? tg.danger
-        : displayed
+        : isDisplayed
         ? tg.accent
         : tg.textSecondary;
     return Row(
@@ -623,7 +710,7 @@ class _MetaRow extends StatelessWidget {
           _timeText,
           style: TextStyle(
             fontSize: TgDimens.timeFontSize,
-            color: failed ? tg.danger : tg.textSecondary,
+            color: isFailed ? tg.danger : tg.textSecondary,
           ),
         ),
         if (ticks != null) ...[

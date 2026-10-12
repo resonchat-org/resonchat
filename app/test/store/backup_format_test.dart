@@ -671,6 +671,7 @@ BackupRow _messageRow(
   'incoming': incoming.cell,
   'delivered': true.cell,
   'displayed': false.cell,
+  'send_status': 7.cell,
   'markable': false.cell,
   'is_carbon': false.cell,
   'delivery_error': ''.cell,

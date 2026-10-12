@@ -13,8 +13,10 @@ import 'package:resonchat/crypto/omemo/track.dart';
 
 import 'chat_notify_mode.dart';
 import 'database_connection.dart';
+import 'message_send_status.dart';
 
 export 'chat_notify_mode.dart';
+export 'message_send_status.dart';
 
 part 'database.g.dart';
 
@@ -128,10 +130,21 @@ class Messages extends Table {
   BoolColumn get incoming => boolean()();
 
   /// False until a delivery receipt arrives (XEP-0184).
+  ///
+  /// Kept in sync with [sendStatus] for older call sites; prefer [sendStatus].
   BoolColumn get delivered => boolean().withDefault(const Constant(false))();
 
   /// True once a chat marker `<displayed/>` arrives (XEP-0333) — read.
+  ///
+  /// Kept in sync with [sendStatus] for older call sites; prefer [sendStatus].
   BoolColumn get displayed => boolean().withDefault(const Constant(false))();
+
+  /// Conversations `Message.status` ([MessageSendStatus]).
+  ///
+  /// Outgoing rows start as [MessageSendStatus.waiting] / `.unsend` when the
+  /// user hits send — including when the socket is down — and only move to
+  /// `.sendReceived` once a receipt or MUC reflection confirms them.
+  IntColumn get sendStatus => integer().withDefault(const Constant(0))();
 
   /// True when the sender attached `<markable/>` (XEP-0333).
   ///
@@ -385,7 +398,7 @@ class AppDatabase extends _$AppDatabase {
 
   @override
   // Keep in sync with [kAccountSchemaVersion] in database_connection_io.dart.
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -400,6 +413,19 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 4) {
         await m.createTable(roomInvitations);
+      }
+      if (from < 5) {
+        await m.addColumn(messages, messages.sendStatus);
+        // Backfill from the legacy flags (Conversations STATUS_* mapping).
+        await customStatement('''
+UPDATE messages SET send_status = CASE
+            WHEN incoming = 1 THEN 0
+            WHEN delivery_error != '' THEN 3
+            WHEN displayed = 1 THEN 8
+            WHEN delivered = 1 THEN 7
+            ELSE 1
+          END
+        ''');
       }
     },
   );
@@ -642,8 +668,14 @@ class AppDatabase extends _$AppDatabase {
   Future<bool> markDeliveryFailure(String stanzaId, String reason) async {
     if (stanzaId.isEmpty) return false;
     final changed =
-        await (update(messages)..where((m) => m.stanzaId.equals(stanzaId)))
-            .write(MessagesCompanion(deliveryError: Value(reason)));
+        await (update(
+          messages,
+        )..where((m) => m.stanzaId.equals(stanzaId))).write(
+          MessagesCompanion(
+            deliveryError: Value(reason),
+            sendStatus: const Value(MessageSendStatus.sendFailed),
+          ),
+        );
     return changed > 0;
   }
 
@@ -1401,8 +1433,10 @@ class AppDatabase extends _$AppDatabase {
     );
   }
 
-  /// Marks one of our outgoing messages as delivered (XEP-0184).
-  /// Returns the number of rows updated (0 when the id is unknown).
+  /// Marks one of our outgoing messages as delivered (XEP-0184 / MUC reflection).
+  ///
+  /// Conversations `markMessage(..., STATUS_SEND_RECEIVED)`. Returns the number
+  /// of rows updated (0 when the id is unknown).
   Future<int> markDelivered(String chatJid, String stanzaId) {
     return (update(messages)..where(
           (m) =>
@@ -1410,7 +1444,40 @@ class AppDatabase extends _$AppDatabase {
               m.stanzaId.equals(stanzaId) &
               m.incoming.equals(false),
         ))
-        .write(const MessagesCompanion(delivered: Value(true)));
+        .write(
+          const MessagesCompanion(
+            delivered: Value(true),
+            sendStatus: Value(MessageSendStatus.sendReceived),
+          ),
+        );
+  }
+
+  /// Updates [sendStatus] (and legacy flags) for one outgoing stanza id.
+  Future<int> updateSendStatus(
+    String chatJid,
+    String stanzaId,
+    int status, {
+    String deliveryError = '',
+  }) {
+    final failed = status == MessageSendStatus.sendFailed;
+    final received =
+        status == MessageSendStatus.sendReceived ||
+        status == MessageSendStatus.sendDisplayed;
+    final displayed = status == MessageSendStatus.sendDisplayed;
+    return (update(messages)..where(
+          (m) =>
+              m.chatJid.equals(chatJid) &
+              m.stanzaId.equals(stanzaId) &
+              m.incoming.equals(false),
+        ))
+        .write(
+          MessagesCompanion(
+            sendStatus: Value(status),
+            delivered: Value(received || displayed),
+            displayed: Value(displayed),
+            deliveryError: Value(failed ? deliveryError : ''),
+          ),
+        );
   }
 
   /// Marks an outgoing message (and older delivered ones) as read (XEP-0333).
@@ -1438,6 +1505,7 @@ class AppDatabase extends _$AppDatabase {
           const MessagesCompanion(
             delivered: Value(true),
             displayed: Value(true),
+            sendStatus: Value(MessageSendStatus.sendDisplayed),
           ),
         );
   }

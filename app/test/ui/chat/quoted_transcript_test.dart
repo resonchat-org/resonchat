@@ -37,14 +37,14 @@ void main() {
     );
   });
 
-  test('same sender within 2 minutes merges header', () {
+  test('same sender within Conversations 90s window merges header', () {
     final text = formatQuotedTranscript([
       _item(id: '1', body: 'one', sender: 'alice', time: t0),
       _item(
         id: '2',
         body: 'two',
         sender: 'alice',
-        time: t0.add(const Duration(minutes: 1, seconds: 30)),
+        time: t0.add(const Duration(seconds: 90)),
       ),
     ]);
     expect(
@@ -55,14 +55,14 @@ void main() {
     );
   });
 
-  test('gap over 2 minutes repeats header', () {
+  test('gap over Conversations 90s window repeats header', () {
     final text = formatQuotedTranscript([
       _item(id: '1', body: 'one', sender: 'alice', time: t0),
       _item(
         id: '2',
         body: 'two',
         sender: 'alice',
-        time: t0.add(const Duration(minutes: 3)),
+        time: t0.add(const Duration(seconds: 91)),
       ),
     ]);
     expect(
@@ -70,7 +70,7 @@ void main() {
       '2024-01-01 12:00 - alice:\n'
       '> one\n'
       '\n'
-      '2024-01-01 12:03 - alice:\n'
+      '2024-01-01 12:01 - alice:\n'
       '> two',
     );
   });

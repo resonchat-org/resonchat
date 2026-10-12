@@ -78,15 +78,16 @@
 |---|---|---|
 | Linux | 优先 `wpctl get-volume`；否则 `pactl`。CLI 缺失 → SnackBar 提示并跳过检测，仍可开录 | 录音另需 `pw-record`/`parecord` + `ffmpeg`；缺则 SnackBar，不崩溃 |
 | Android | `AudioManager.isMicrophoneMute`（MethodChannel `org.resonchat.resonchat/audio`） | 软静音，非隐私开关 |
+| Windows | WASAPI 默认捕获端点 `GetMute` + 主音量 0%（同 channel） | `app/windows/runner/audio_mute.cpp` |
 | Web | 不检测（stub → `null`） | 浏览器无可靠系统麦静音 API |
 | iOS / macOS | 不检测（`null`） | 无对等的简单软静音查询 |
-| **Windows** | **尚未适配（`null`）** | **日后做 Windows / 其他桌面构建时必须补上等价检测**（静音与/或 0% 音量，WinRT / WASAPI 等），并写入本表；在适配完成前不得假定「开录即有声」 |
 
 代码入口：
 
 - `app/lib/platform/voice_recorder.dart`
 - `app/lib/platform/voice_mic_check_io.dart` / `voice_mic_check_stub.dart`
 - `app/android/.../MainActivity.kt`（Android channel）
+- `app/windows/runner/audio_mute.cpp`（Windows WASAPI）
 
 ## 4. 关键交互（必须还原）
 
@@ -108,7 +109,7 @@
 | UI-1 | 主题 Token、字体、会话列表 | 已完成 |
 | UI-2 | 聊天页：气泡、输入栏、日期分隔、滚动到底 | 已完成 |
 | UI-3 | 接入真实 XMPP 数据（roster/MAM） | 已完成 |
-| UI-4 | 附件、图片查看器、录音、表情面板 | 部分完成（录音已接；Windows 静音检测待适配） |
+| UI-4 | 附件、图片查看器、录音、表情面板 | 部分完成（录音已接；Linux/Android/Windows 静音检测已接） |
 | UI-5 | 资料页、设置页、加密/指纹页、账号管理 | 已完成骨架 |
 | UI-6 | 动画打磨、暗色主题、横屏/平板适配 | 进行中 |
 

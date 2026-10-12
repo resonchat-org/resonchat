@@ -60,7 +60,7 @@ typedef ChatReplyTarget = ({String id, String body, String author});
 
 /// What [ChatViewModel.sendText] did.
 class ChatSendResult {
-  const ChatSendResult({this.outcome, this.failureReason});
+  const ChatSendResult({this.outcome, this.failureReason, this.queued = false});
 
   /// The send outcome, or null when nothing was attempted / the user
   /// cancelled.
@@ -69,14 +69,28 @@ class ChatSendResult {
   /// Set when the send was attempted and refused (page: "Not sent: …").
   final String? failureReason;
 
+  /// True once the row is in the local DB (Conversations insert-first).
+  ///
+  /// The page clears the composer on [queued], even when the socket write
+  /// later fails — the bubble stays with [MessageSendStatus.sendFailed].
+  final bool queued;
+
   bool get sent => outcome?.sent ?? false;
 }
 
 /// What [ChatViewModel.sendAttachmentBytes] did.
 class ChatAttachResult {
-  const ChatAttachResult({this.sent = false, this.failureReason, this.error});
+  const ChatAttachResult({
+    this.sent = false,
+    this.queued = false,
+    this.failureReason,
+    this.error,
+  });
 
   final bool sent;
+
+  /// True once the attachment row is in the local DB.
+  final bool queued;
 
   /// Set when the message was refused after upload (page: "Not sent: …").
   final String? failureReason;
@@ -702,8 +716,8 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
   }
 
   /// Sends [text] on the conversation's track, asking via [confirm] when it
-  /// cannot be used. The page owns the composer: it clears the input only when
-  /// [ChatSendResult.sent] is true (and must otherwise put the text back).
+  /// cannot be used. The page owns the composer: it clears the input when
+  /// [ChatSendResult.queued] is true (row already in the local DB).
   Future<ChatSendResult> sendText(
     String text, {
     required ChatTrackConfirm confirm,
@@ -748,12 +762,34 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
     final sendTo = mucPm ? JID.fromString('$peerStr/$pmNick') : peer;
     final messageType = mucPm ? 'chat' : (isGroup ? 'groupchat' : 'chat');
     if (mucPm) chosen = Track.none;
+
+    // Conversations: allocate id → insert locally → put on the wire.
+    // STATUS_WAITING until the socket write returns; then STATUS_UNSEND
+    // until 0184 / MUC reflection → STATUS_SEND_RECEIVED.
+    final stanzaId = xmpp.allocateStanzaId();
+    await _db.insertMessage(
+      MessagesCompanion(
+        chatJid: Value(peerStr),
+        sender: const Value('me'),
+        stanzaId: Value(stanzaId),
+        body: Value(text),
+        timestamp: Value(DateTime.now()),
+        encMode: Value(EncModeToken.of(chosen).wire),
+        incoming: const Value(false),
+        sendStatus: const Value(MessageSendStatus.waiting),
+        replyTo: Value(reply?.id ?? ''),
+        replyBody: Value(reply?.body ?? ''),
+        replyAuthor: Value(reply?.author ?? ''),
+      ),
+    );
+
     final outcome = reply == null
         ? await xmpp.sendOnTrack(
             sendTo,
             text,
             track: chosen,
             messageType: messageType,
+            originId: stanzaId,
           )
         : await sendReply(
             xmpp,
@@ -763,38 +799,27 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
             track: chosen,
             quoteBody: reply.body,
             messageType: messageType,
+            originId: stanzaId,
           );
     if (!outcome.sent) {
-      // It was sendable a moment ago and is not now — a bundle went stale, or
-      // the session dropped. Say so rather than showing a bubble that looks
-      // sent.
+      final reason =
+          outcome.blocked?.localizedTitle(l10n) ?? l10n.unknownReason;
+      await _db.updateSendStatus(
+        peerStr,
+        stanzaId,
+        MessageSendStatus.sendFailed,
+        deliveryError: reason,
+      );
       return ChatSendResult(
-        failureReason:
-            outcome.blocked?.localizedTitle(l10n) ?? l10n.unknownReason,
+        queued: true,
+        outcome: outcome,
+        failureReason: reason,
       );
     }
 
-    await _db.insertMessage(
-      MessagesCompanion(
-        chatJid: Value(peerStr),
-        sender: const Value('me'),
-        stanzaId: Value(outcome.stanzaId ?? ''),
-        body: Value(text),
-        timestamp: Value(DateTime.now()),
-        // What went out, as reported by the send — never the track we
-        // hoped for. A bubble labelled PO that travelled as plaintext is
-        // the one lie this app must not tell.
-        encMode: Value(EncModeToken.of(outcome.track).wire),
-        incoming: const Value(false),
-        // The quote is copied onto this row. Looking it up from the target
-        // message would empty the quote out the moment that message is
-        // retracted — and retracting it is one tap away.
-        replyTo: Value(reply?.id ?? ''),
-        replyBody: Value(reply?.body ?? ''),
-        replyAuthor: Value(reply?.author ?? ''),
-      ),
-    );
-    return ChatSendResult(outcome: outcome);
+    // On the wire — awaiting 0184 / MUC reflection (STATUS_UNSEND).
+    await _db.updateSendStatus(peerStr, stanzaId, MessageSendStatus.unsend);
+    return ChatSendResult(queued: true, outcome: outcome);
   }
 
   /// Whether the server offers XEP-0363 upload.
@@ -846,36 +871,49 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
           ? JID.fromString('$peerStr/$pmNick')
           : JID.fromString(peerStr);
       final fileTrack = mucPm ? Track.none : outcomeTrack;
-      final outcome = await xmpp.sendOnTrack(
-        sendTo,
-        uploaded.shareUrl,
-        track: fileTrack,
-        oobUrl: uploaded.shareUrl,
-        messageType: mucPm ? 'chat' : (isGroup ? 'groupchat' : 'chat'),
-      );
-      if (!outcome.sent) {
-        return ChatAttachResult(
-          failureReason:
-              outcome.blocked?.localizedTitle(l10n) ?? l10n.unknownReason,
-        );
-      }
+      final messageType = mucPm ? 'chat' : (isGroup ? 'groupchat' : 'chat');
 
+      // Same insert-first path as text (Conversations).
+      final stanzaId = xmpp.allocateStanzaId();
       await _db.insertMessage(
         MessagesCompanion(
           chatJid: Value(peerStr),
           sender: const Value('me'),
-          stanzaId: Value(outcome.stanzaId ?? ''),
+          stanzaId: Value(stanzaId),
           body: Value(uploaded.shareUrl),
           timestamp: Value(DateTime.now()),
-          encMode: Value(EncModeToken.of(outcome.track).wire),
+          encMode: Value(EncModeToken.of(fileTrack).wire),
           incoming: const Value(false),
+          sendStatus: const Value(MessageSendStatus.waiting),
           mediaUrl: Value(uploaded.shareUrl),
           mediaMime: Value(uploaded.mime),
           mediaName: Value(uploaded.fileName),
           localPath: Value(cached.path),
         ),
       );
-      return const ChatAttachResult(sent: true);
+
+      final outcome = await xmpp.sendOnTrack(
+        sendTo,
+        uploaded.shareUrl,
+        track: fileTrack,
+        oobUrl: uploaded.shareUrl,
+        messageType: messageType,
+        originId: stanzaId,
+      );
+      if (!outcome.sent) {
+        final reason =
+            outcome.blocked?.localizedTitle(l10n) ?? l10n.unknownReason;
+        await _db.updateSendStatus(
+          peerStr,
+          stanzaId,
+          MessageSendStatus.sendFailed,
+          deliveryError: reason,
+        );
+        return ChatAttachResult(queued: true, failureReason: reason);
+      }
+
+      await _db.updateSendStatus(peerStr, stanzaId, MessageSendStatus.unsend);
+      return const ChatAttachResult(sent: true, queued: true);
     } catch (e) {
       return ChatAttachResult(error: '$e');
     } finally {
@@ -1074,6 +1112,8 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
             timestamp: Value(now.add(Duration(milliseconds: i))),
             encMode: Value(EncModeToken.of(track).wire),
             incoming: const Value(false),
+            // Already on the wire from [forwardMessages].
+            sendStatus: const Value(MessageSendStatus.unsend),
           ),
         );
       }

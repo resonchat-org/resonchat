@@ -88,16 +88,20 @@ flutter test                         # test/{crypto,rooms,store,messages,session
 ./tool/build_android.sh              # mipmap + liboqs NDK libs + flutter build apk
 ./tool/build_web.sh                  # Drift WASM → web/ + flutter build web
 ./tool/build_appimage.sh             # Linux AppImage（需 GTK 3 等桌面依赖）
+.\tool\build_windows.ps1             # Windows Inno Setup（需 VS C++ + Inno Setup 6）
 ```
 
 ### 发布（CD）
 
 GitHub 上 **Publish a release**（或 `gh release create vX.Y.Z`）会触发
 `.github/workflows/cd.yml`：打两份 release APK（arm64 / x86_64）+ x86_64
-AppImage，并挂到该 Release 的 Assets。产物名形如
-`resonchat-<tag>-android-arm64.apk` /
-`resonchat-<tag>-android-x86_64.apk` /
-`resonchat-<tag>-x86_64.AppImage`。
+AppImage / .deb / .rpm + Windows setup，并挂到该 Release 的 Assets。产物名形如
+`resonchat-<tag>-arm64.apk` /
+`resonchat-<tag>-x86_64.apk` /
+`resonchat-<tag>-x86_64.AppImage` /
+`resonchat-<tag>-x86_64.deb` /
+`resonchat-<tag>-x86_64.rpm` /
+`resonchat-<tag>-x86_64-setup.exe`。
 
 本地单 ABI：`./tool/build_android.sh --release --abi arm` 或 `--abi x86`。
 
@@ -108,7 +112,8 @@ AppImage，并挂到该 Release 的 Assets。产物名形如
 ### 应用图标
 
 单一源：`assets/icons/`。web / Linux 窗口直接读该目录；AppImage 打包时生成
-hicolor。Android mipmap 在 `./tool/build_android.sh` 里从 `app_icon.png` 生成。
+hicolor；Windows 用 `app_icon.ico`（`Runner.rc` / Inno Setup）。Android mipmap 在
+`./tool/build_android.sh` 里从 `app_icon.png` 生成。
 
 ### Web 存储
 

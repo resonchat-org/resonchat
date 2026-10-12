@@ -21,7 +21,7 @@ Future<QueryExecutor> openPrefsDatabaseConnection() =>
 ///
 /// Used only to refuse *newer* files we cannot migrate. Older versions are
 /// left for Drift [MigrationStrategy.onUpgrade].
-const int kAccountSchemaVersion = 4;
+const int kAccountSchemaVersion = 5;
 
 /// Per-account DB (`resonchat_<accountId>.sqlite3`). [accountId] is required.
 Future<QueryExecutor> openAccountDatabaseConnection(String accountId) {

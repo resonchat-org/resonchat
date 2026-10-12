@@ -100,7 +100,7 @@ jobs:
           echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
           ./tool/build_android.sh --debug
 
-  build-appimage:
+  build-linux:
     name: Build Linux AppImage
     runs-on: ubuntu-latest
     steps:
@@ -144,10 +144,43 @@ jobs:
         working-directory: app
         run: ./tool/build_appimage.sh
 
-      - name: Upload AppImage
-        uses: actions/upload-artifact@v4
+  build-windows:
+    name: Build Windows setup
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
         with:
-          name: resonchat-linux-x86_64-AppImage
-          path: app/build/resonchat-*-x86_64.AppImage
-          if-no-files-found: error
-          retention-days: 14
+          submodules: recursive
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install protoc + Inno Setup
+        shell: pwsh
+        run: choco install protoc innosetup --no-progress -y
+
+      - name: Generate submodule code
+        shell: bash
+        run: |
+          set -euo pipefail
+          dart pub global activate protoc_plugin
+          export PATH="$PATH:$HOME/.pub-cache/bin:$LOCALAPPDATA/Pub/Cache/bin"
+          (cd packages/moxlib && dart pub get)
+          (cd packages/omemo_dart && dart pub get && protoc --dart_out=lib/src/protobuf -Iprotobuf protobuf/schema.proto)
+          (cd packages/moxxmpp/packages/moxxmpp && dart pub get && dart run build_runner build)
+          (cd packages/moxxmpp/packages/moxxmpp_socket_tcp && dart pub get)
+
+      - name: Resolve app dependencies
+        working-directory: app
+        run: flutter pub get
+
+      - name: Generate drift code
+        working-directory: app
+        run: dart run build_runner build
+
+      - name: Build Windows setup
+        working-directory: app
+        shell: pwsh
+        run: .\tool\build_windows.ps1

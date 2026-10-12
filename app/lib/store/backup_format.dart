@@ -299,6 +299,7 @@ const Map<BackupTable, BackupTableSpec> kBackupTables = {
     BackupColumn('incoming', BackupColumnKind.flag),
     BackupColumn('delivered', BackupColumnKind.flag),
     BackupColumn('displayed', BackupColumnKind.flag),
+    BackupColumn('send_status', BackupColumnKind.integer),
     BackupColumn('markable', BackupColumnKind.flag),
     BackupColumn('is_carbon', BackupColumnKind.flag),
     BackupColumn('delivery_error', BackupColumnKind.text),

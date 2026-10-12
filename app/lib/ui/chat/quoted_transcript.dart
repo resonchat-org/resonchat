@@ -3,8 +3,12 @@
 //
 // Quoted transcript for multi-select copy / forward: Gajim-style header
 // (time + sender), `> `-prefixed bodies, consecutive same-sender messages
-// within [mergeWindow] (default 2 minutes) merged under one header when
-// uninterrupted.
+// within [mergeWindow] merged under one header when uninterrupted.
+//
+// Default window matches Conversations `Config.MESSAGE_MERGE_WINDOW` (90s).
+
+/// Conversations `Config.MESSAGE_MERGE_WINDOW` — also used for transcript chrome.
+const Duration kMessageMergeWindow = Duration(milliseconds: 90000);
 
 /// One message ready for [formatQuotedTranscript].
 class QuotedTranscriptItem {
@@ -34,7 +38,7 @@ class QuotedTranscriptItem {
 /// chronological regardless of pick order.
 String formatQuotedTranscript(
   Iterable<QuotedTranscriptItem> items, {
-  Duration mergeWindow = const Duration(minutes: 2),
+  Duration mergeWindow = kMessageMergeWindow,
   String Function(DateTime time)? formatTimestamp,
 }) {
   final formatTime = formatTimestamp ?? _defaultTimestamp;

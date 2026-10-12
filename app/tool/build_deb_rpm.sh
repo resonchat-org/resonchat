@@ -51,13 +51,15 @@ HOST_ARCH="$(uname -m)"
 case "$HOST_ARCH" in
   x86_64|amd64)
     FLUTTER_ARCH=x64
+    # Debian control still needs Architecture: amd64; filenames use x86_64
+    # so Release assets match AppImage/RPM (avoid amd64 vs arm64 look-alikes).
     DEB_ARCH=amd64
-    RPM_ARCH=x86_64
+    PKG_ARCH=x86_64
     ;;
   aarch64|arm64)
     FLUTTER_ARCH=arm64
     DEB_ARCH=arm64
-    RPM_ARCH=aarch64
+    PKG_ARCH=aarch64
     ;;
   *)
     echo "unsupported architecture: $HOST_ARCH" >&2
@@ -147,7 +149,7 @@ fi
 build_deb() {
   local deb_root deb_name shlib_depends depends
   deb_root="${OUT_DIR}/deb-root"
-  deb_name="resonchat_${VERSION}_${DEB_ARCH}.deb"
+  deb_name="resonchat_${VERSION}_${PKG_ARCH}.deb"
   echo "==> building ${deb_name}"
   rm -rf "$deb_root"
   mkdir -p "$deb_root/DEBIAN"
@@ -214,7 +216,7 @@ build_rpm() {
 
   local rpm_top spec rpm_name
   rpm_top="${OUT_DIR}/rpmbuild"
-  rpm_name="resonchat-${VERSION}-1.${RPM_ARCH}.rpm"
+  rpm_name="resonchat-${VERSION}-1.${PKG_ARCH}.rpm"
   echo "==> building ${rpm_name}"
   rm -rf "$rpm_top"
   mkdir -p "$rpm_top"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
@@ -231,7 +233,7 @@ Summary:        XMPP client with dual-track OMEMO
 License:        GPL-3.0-or-later
 URL:            https://github.com/resonchat-org/resonchat
 Source0:        resonchat-${VERSION}.tar.gz
-BuildArch:      ${RPM_ARCH}
+BuildArch:      ${PKG_ARCH}
 # AutoReq → linked system libs (gtk3, libsecret, …). Skip private Flutter
 # libs under /usr/lib/resonchat/lib (bundled; would invent fake Requires).
 AutoReq:        yes
