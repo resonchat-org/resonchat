@@ -60,7 +60,7 @@ void FlutterWindow::RegisterAudioChannel() {
         }
         const auto muted = QueryDefaultCaptureMuted();
         if (!muted.has_value()) {
-          // null → Dart skips the gate (same as Linux when tools are missing).
+          // null -> Dart skips the gate (same as Linux when tools are missing).
           result->Success(flutter::EncodableValue());
           return;
         }

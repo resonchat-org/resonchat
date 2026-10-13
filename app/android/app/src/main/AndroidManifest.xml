@@ -1,9 +1,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
-    <!-- App declares no permissions of its own.
-         POST_NOTIFICATIONS / VIBRATE come from flutter_local_notifications;
-         RECORD_AUDIO from record_android. Both are prompted only on first use
-         in Dart (shade post / hold-to-talk), never at launch.
+    <!-- XMPP / HTTP upload / translation need sockets; must be in main (release)
+         merges debug/profile only for flutter run — not for shipped APKs. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- POST_NOTIFICATIONS / VIBRATE from flutter_local_notifications;
+         RECORD_AUDIO from record_android — prompted on first use in Dart.
 
          open_filex merges in gallery-scan READ_* permissions we do not need
          (we open via FileProvider/VIEW and pick via SAF). tools:node=remove

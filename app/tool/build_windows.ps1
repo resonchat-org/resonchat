@@ -46,6 +46,9 @@ if (-not $SkipBuild) {
   Write-Host "==> flutter build windows --release"
   flutter config --enable-windows-desktop | Out-Null
   flutter build windows --release
+  if ($LASTEXITCODE -ne 0) {
+    throw "flutter build windows failed with exit $LASTEXITCODE"
+  }
 }
 
 if (-not (Test-Path (Join-Path $ReleaseDir "resonchat.exe"))) {

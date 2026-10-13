@@ -2,13 +2,15 @@
 ; SPDX-License-Identifier: GPL-3.0-or-later
 ;
 ; Inno Setup script for the Windows installer (setup.exe).
-; Paths are relative to this file (app/windows/packaging/).
+; {#SourcePath} = this file's directory (app/windows/packaging/).
+; Do not rely on SourceDir for OutputDir / SetupIconFile — Inno resolves those
+; relative to SourceDir once it is set.
 ;
 ; Build (from app/):
 ;   flutter build windows --release
 ;   ISCC.exe windows\packaging\resonchat.iss /DMyAppVersion=0.0.2
 ;
-; Or via tool/build_windows.ps1 -Installer
+; Or via tool/build_windows.ps1
 
 #ifndef MyAppVersion
   #define MyAppVersion "0.0.0"
@@ -18,6 +20,11 @@
 #define MyAppPublisher "resonchat contributors"
 #define MyAppURL "https://github.com/resonchat-org/resonchat"
 #define MyAppExeName "resonchat.exe"
+; Absolute roots from the script location (packaging/ → app/).
+#define AppRoot SourcePath + "\..\.."
+#define ReleaseDir AppRoot + "\build\windows\x64\runner\Release"
+#define InstallerDir AppRoot + "\build\windows\installer"
+#define AppIcon AppRoot + "\assets\icons\app_icon.ico"
 
 [Setup]
 ; Stable uninstall id (same GUID family as Windows toast activator).
@@ -31,11 +38,10 @@ AppSupportURL={#MyAppURL}/issues
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
-; Unpacked Flutter release tree (exe + flutter DLLs + data/).
-SourceDir=..\..\build\windows\x64\runner\Release
-OutputDir=..\..\build\windows\installer
+SourceDir={#ReleaseDir}
+OutputDir={#InstallerDir}
 OutputBaseFilename=resonchat-{#MyAppVersion}-x86_64-setup
-SetupIconFile=..\..\assets\icons\app_icon.ico
+SetupIconFile={#AppIcon}
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
