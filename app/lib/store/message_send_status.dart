@@ -37,15 +37,15 @@ abstract final class MessageSendStatus {
     if (deliveryError.isNotEmpty) return sendFailed;
     if (displayed) return sendDisplayed;
     if (delivered) return sendReceived;
-    // Previously we only inserted after a successful socket write, so existing
-    // undelivered outgoing rows were already "on the wire".
-    return unsend;
+    // Legacy rows were inserted only after a successful socket write.
+    return send;
   }
 
-  /// True while the message is queued or on the wire awaiting ack.
+  /// True while queued locally or still mid-flight (`unsend`).
+  /// [send] is not pending — UI shows no tick until a receipt arrives.
   static bool isPending(int status) => status == waiting || status == unsend;
 
-  /// True after a delivery receipt or MUC reflection.
+  /// Delivery or read confirmed ([sendDisplayed] implies delivered).
   static bool isDelivered(int status) =>
       status == sendReceived || status == sendDisplayed;
 }

@@ -24,38 +24,80 @@ coverage/
 **/l10n/generated/
 app/android/app/src/main/res/mipmap-*/ic_launcher.png
 
-# Android
-android/.gradle/
-android/captures/
-android/local.properties
-android/app/debug/
-android/app/profile/
-android/app/release/
-app/android/.gradle/
-app/android/local.properties
-app/android/app/debug/
-app/android/app/profile/
-app/android/app/release/
-*.jks
-*.keystore
-key.properties
+# Symbolication / obfuscation
 app.*.symbols
 app.*.map.json
 
-# iOS / macOS
-ios/Pods/
-ios/.symlinks/
-ios/Flutter/Flutter.framework
-ios/Flutter/Flutter.podspec
-ios/Flutter/Generated.xcconfig
-ios/Flutter/flutter_export_environment.sh
-macos/Pods/
-macos/Flutter/Generated.xcconfig
-macos/Flutter/ephemeral/
+# Android (Flutter app/android.tmpl/.gitignore + local)
+**/android/.gradle/
+**/android/.kotlin/
+**/android/captures/
+**/android/local.properties
+**/android/gradlew
+**/android/gradlew.bat
+**/android/gradle/wrapper/gradle-wrapper.jar
+**/android/app/debug/
+**/android/app/profile/
+**/android/app/release/
+**/android/**/.cxx/
+**/android/**/GeneratedPluginRegistrant.java
+**/android/**/key.properties
+**/android/**/*.keystore
+**/android/**/*.jks
+*.jks
+*.keystore
+**/key.properties
 
-# Linux / Windows
-linux/flutter/ephemeral/
-windows/flutter/ephemeral/
+# iOS (Flutter app/ios.tmpl/.gitignore)
+**/ios/**/dgph
+**/ios/*.mode1v3
+**/ios/*.mode2v3
+**/ios/*.moved-aside
+**/ios/*.pbxuser
+**/ios/*.perspectivev3
+**/ios/**/*sync/
+**/ios/.sconsign.dblite
+**/ios/.tags*
+**/ios/**/.vagrant/
+**/ios/**/DerivedData/
+**/ios/**/Pods/
+**/ios/**/.symlinks/
+**/ios/profile
+**/ios/xcuserdata/
+**/ios/**/xcuserdata/
+**/ios/**/.generated/
+**/ios/Flutter/App.framework
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Flutter.podspec
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/ephemeral/
+**/ios/Flutter/app.flx
+**/ios/Flutter/app.zip
+**/ios/Flutter/flutter_assets/
+**/ios/Flutter/flutter_export_environment.sh
+**/ios/ServiceDefinitions.json
+**/ios/Runner/GeneratedPluginRegistrant.*
+
+# macOS (Flutter app/macos.tmpl/.gitignore)
+**/macos/**/Flutter/ephemeral/
+**/macos/**/Pods/
+**/macos/**/dgph
+**/macos/**/xcuserdata/
+**/macos/Flutter/Generated.xcconfig
+
+# Linux (Flutter app/linux.tmpl/.gitignore)
+**/linux/flutter/ephemeral/
+
+# Windows (Flutter app/windows.tmpl/.gitignore)
+**/windows/flutter/ephemeral/
+**/windows/*.suo
+**/windows/*.user
+**/windows/*.userosscache
+**/windows/*.sln.docstates
+**/windows/x64/
+**/windows/x86/
+**/windows/*.[Cc]ache
+!**/windows/*.[Cc]ache/
 
 # IDE
 .idea/
@@ -88,7 +130,6 @@ app/web/sqlite3.wasm
 app/web/drift_worker.js
 
 # Native build artifacts
-app/android/app/.cxx/
 third_party/liboqs/build/
 
 # UI previews (generated, see app/tool/previews/)

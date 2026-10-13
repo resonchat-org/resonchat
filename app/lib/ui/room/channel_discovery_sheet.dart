@@ -173,6 +173,7 @@ class _ChannelDiscoverySheetState extends ConsumerState<ChannelDiscoverySheet> {
     await xmpp.refreshRoomMembership(
       channel.address,
       privateNonAnonymous: encryptable,
+      nonAnonymous: isNonAnonymousRoom(features),
     );
     await db.upsertChat(
       channel.address,
@@ -181,6 +182,7 @@ class _ChannelDiscoverySheetState extends ConsumerState<ChannelDiscoverySheet> {
       title: channel.displayName,
       mucPrivateNonAnonymous: encryptable,
     );
+    await xmpp.removeFromRosterIfPresent(channel.address);
     unawaited(
       xmpp.publishConferenceBookmark(
         roomJid: channel.address,

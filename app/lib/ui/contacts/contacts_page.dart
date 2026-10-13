@@ -15,6 +15,7 @@ import '../../state/providers.dart';
 import '../home/open_chat.dart';
 import '../pending/pending_requests_page.dart';
 import '../room/create_group_sheet.dart';
+import '../room/room_sheet.dart';
 import '../theme.dart';
 import 'contacts_match.dart';
 import 'contacts_tiles.dart';
@@ -67,6 +68,19 @@ class _ContactsPageState extends ConsumerState<ContactsPage> {
     if (result.invalidJid) {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(l10n.invalidJid)));
+      return;
+    }
+    // Conversations: a channel address is joined, never rostered as a contact.
+    if (result.isMuc) {
+      _clearQuery();
+      final room = result.mucJid;
+      if (result.chatKey != null) {
+        openChat(context, result.chatKey!);
+        return;
+      }
+      if (room != null) {
+        await showJoinRoomSheet(context, initialRoomJid: room);
+      }
       return;
     }
     if (result.chatKey == null) return;

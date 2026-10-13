@@ -457,6 +457,15 @@ Future<void> _startChatFromUri(
       .read(chatsViewModelProvider.notifier)
       .openChatByJid(bare);
   if (!context.mounted) return;
+  if (result.isMuc) {
+    if (result.chatKey != null) {
+      openChat(context, result.chatKey!);
+      return;
+    }
+    final room = result.mucJid ?? bare;
+    await showJoinRoomSheet(context, initialRoomJid: room);
+    return;
+  }
   if (result.invalidJid || result.chatKey == null) {
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(context.l10n.invalidJid)));

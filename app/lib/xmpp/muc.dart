@@ -54,6 +54,7 @@ class Occupant {
     required this.affiliation,
     required this.role,
     this.realJid,
+    this.show,
   });
 
   /// The room-local nickname. Stable for as long as they are in the room, and
@@ -72,6 +73,11 @@ class Occupant {
   /// Real bare JID when the room is non-anonymous; null otherwise.
   final String? realJid;
 
+  /// MUC presence `<show/>` (Gajim `GroupchatParticipant.show`).
+  ///
+  /// Null when offline / unavailable — not roster presence.
+  final PresenceShow? show;
+
   bool get isModerator => role == 'moderator';
   bool get canSpeak => role == 'moderator' || role == 'participant';
 
@@ -80,6 +86,10 @@ class Occupant {
   /// Affiliation stubs from `muc#admin` use `role=none` until presence arrives.
   bool get isOnline =>
       role == 'moderator' || role == 'participant' || role == 'visitor';
+
+  /// Dot colour for member lists: online show, or grey when offline.
+  PresenceShow? get presenceForDot =>
+      isOnline ? (show ?? PresenceShow.online) : null;
 
   /// Whether this occupant may be addressed by others in the room.
   ///
@@ -98,6 +108,7 @@ class Occupant {
     affiliation: member.affiliation.value,
     role: member.role.value,
     realJid: member.realJid?.toBare().toString(),
+    show: member.show,
   );
 
   @override
@@ -106,10 +117,25 @@ class Occupant {
       other.nick == nick &&
       other.affiliation == affiliation &&
       other.role == role &&
-      other.realJid == realJid;
+      other.realJid == realJid &&
+      other.show == show;
 
   @override
-  int get hashCode => Object.hash(nick, affiliation, role, realJid);
+  int get hashCode => Object.hash(nick, affiliation, role, realJid, show);
+}
+
+/// Disco `muc_nonanonymous` — real JIDs visible to everyone in the room.
+bool isNonAnonymousRoom(Iterable<String> discoFeatures) =>
+    discoFeatures.toSet().contains('muc_nonanonymous');
+
+/// Real JIDs are visible to us: room is non-anonymous, or we are owner/admin
+/// (semi-/fully anonymous rooms still expose JIDs to privileged affiliates).
+bool canSeeRoomMemberJids({
+  required bool nonAnonymous,
+  required String selfAffiliation,
+}) {
+  if (nonAnonymous) return true;
+  return selfAffiliation == 'owner' || selfAffiliation == 'admin';
 }
 
 /// Conversations `MucOptions.isPrivateAndNonAnonymous`:
@@ -268,16 +294,17 @@ List<Occupant> mergeRoomMembers({
   return byKey.values.toList();
 }
 
-/// Member list for the UI — Conversations `getUsers` vs `getOnlineUsers`.
+/// Member list for the UI.
 ///
-/// Private non-anonymous rooms show the full affiliation roster (including
-/// offline). Every other room shows only currently present occupants.
+/// When [includeOfflineAffiliates] is true (non-anonymous room, or we are
+/// owner/admin and can see JIDs), merge the affiliation roster so offline
+/// members appear. Otherwise presence-only (online occupants).
 List<Occupant> roomMembersForDisplay({
-  required bool privateNonAnonymous,
+  required bool includeOfflineAffiliates,
   required List<Occupant> affiliation,
   required List<Occupant> online,
 }) {
-  if (privateNonAnonymous) {
+  if (includeOfflineAffiliates) {
     return mergeRoomMembers(affiliation: affiliation, online: online);
   }
   return List<Occupant>.of(online);
@@ -291,6 +318,7 @@ class GroupChat {
     required this.occupants,
     this.subject,
     this.joined = false,
+    this.canSeeMemberJids = false,
   });
 
   /// The bare room JID, `room@server`.
@@ -299,12 +327,25 @@ class GroupChat {
   /// Our nickname in this room.
   final String nick;
 
-  /// Everyone currently in the room, in the order the server listed them.
+  /// Display roster: online occupants, plus offline affiliates when
+  /// [canSeeMemberJids] is true.
   final List<Occupant> occupants;
 
   final String? subject;
 
   final bool joined;
+
+  /// Real JIDs are visible to us (non-anonymous, or we are owner/admin).
+  ///
+  /// Drives AppBar subtitle: members+online vs online-only.
+  final bool canSeeMemberJids;
+
+  /// Affiliated members (owner/admin/member), including offline stubs.
+  int get affiliatedMemberCount =>
+      occupants.where((o) => o.isMemberOrAbove).length;
+
+  /// Present in the room now.
+  int get onlineOccupantCount => occupants.where((o) => o.isOnline).length;
 
   /// Our occupant address for presence and private PMs.
   ///
@@ -326,6 +367,7 @@ class GroupChat {
     List<Occupant>? occupants,
     String? subject,
     bool? joined,
+    bool? canSeeMemberJids,
   }) {
     return GroupChat(
       roomJid: roomJid,
@@ -333,6 +375,7 @@ class GroupChat {
       occupants: occupants ?? this.occupants,
       subject: subject ?? this.subject,
       joined: joined ?? this.joined,
+      canSeeMemberJids: canSeeMemberJids ?? this.canSeeMemberJids,
     );
   }
 

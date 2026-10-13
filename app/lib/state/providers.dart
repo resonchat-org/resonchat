@@ -384,8 +384,7 @@ final roomStateProvider = FutureProvider.family<GroupChat?, String>((
   final xmpp = r.session.xmpp;
   final state = await xmpp.groupChatState(roomJid);
   if (state == null) return null;
-  // Conversations getUsers vs getOnlineUsers — private non-anon includes
-  // offline affiliation members.
+  // Offline affiliates when JIDs are visible (non-anon or owner/admin).
   final occupants = await xmpp.roomDisplayMembers(roomJid);
   return GroupChat(
     roomJid: roomJid,
@@ -393,6 +392,7 @@ final roomStateProvider = FutureProvider.family<GroupChat?, String>((
     occupants: occupants,
     subject: state.subject,
     joined: state.joined,
+    canSeeMemberJids: xmpp.roomCanSeeMemberJids(roomJid),
   );
 });
 

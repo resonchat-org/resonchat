@@ -2,12 +2,14 @@
 # Copyright (C) 2026 resonchat contributors.
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# Fetch Drift WASM assets into web/ (not committed), then flutter build web.
+# Fetch Drift WASM assets into web/ (not committed), then flutter build web
+# with Dart→Wasm (--wasm). Pass --no-wasm for JS-only.
 #
 # Usage (from app/):
 #   ./tool/build_web.sh
 #   ./tool/build_web.sh --prepare-only          # assets only (e.g. before flutter run -d chrome)
 #   ./tool/build_web.sh --force                 # re-fetch assets even if present
+#   ./tool/build_web.sh --no-wasm               # JS compile only
 #   ./tool/build_web.sh -- --no-tree-shake-icons
 
 set -euo pipefail
@@ -20,6 +22,7 @@ WEB="$APP/web"
 LOCK="$APP/pubspec.lock"
 FORCE=0
 PREPARE_ONLY=0
+USE_WASM=1
 FLUTTER_ARGS=()
 PASSTHROUGH=0
 
@@ -32,8 +35,10 @@ for arg in "$@"; do
     --) PASSTHROUGH=1 ;;
     --force) FORCE=1 ;;
     --prepare-only) PREPARE_ONLY=1 ;;
+    --no-wasm) USE_WASM=0 ;;
+    --wasm) USE_WASM=1 ;;
     -h|--help)
-      sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *)
@@ -129,5 +134,11 @@ if [[ "$PREPARE_ONLY" -eq 1 ]]; then
   exit 0
 fi
 
-echo "==> flutter build web"
-exec flutter build web "${FLUTTER_ARGS[@]}"
+BUILD_ARGS=(build web)
+if [[ "$USE_WASM" -eq 1 ]]; then
+  BUILD_ARGS+=(--wasm)
+  echo "==> flutter build web --wasm"
+else
+  echo "==> flutter build web (JS only)"
+fi
+exec flutter "${BUILD_ARGS[@]}" "${FLUTTER_ARGS[@]}"

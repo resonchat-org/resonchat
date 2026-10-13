@@ -17,16 +17,20 @@ void main() {
   late _MemoryKeystore keystore;
   late OmemoDeviceStore store;
 
-  OmemoDeviceStore buildStore(_MemoryKeystore ks, Map<String, String> b) =>
-      OmemoDeviceStore(
-        secureStorage: ks,
-        loadSecret: () async {
-          final v = b['blob'];
-          return v == null ? null : _b64d(v);
-        },
-        saveSecret: (bytes) async => b['blob'] = _b64e(bytes),
-        deleteSecret: () async => b.remove('blob'),
-      );
+  OmemoDeviceStore buildStore(
+    _MemoryKeystore ks,
+    Map<String, String> b, {
+    String accountId = 'acct-a',
+  }) => OmemoDeviceStore(
+    accountId: accountId,
+    secureStorage: ks,
+    loadSecret: () async {
+      final v = b['blob'];
+      return v == null ? null : _b64d(v);
+    },
+    saveSecret: (bytes) async => b['blob'] = _b64e(bytes),
+    deleteSecret: () async => b.remove('blob'),
+  );
 
   setUp(() {
     blob = {};
@@ -147,6 +151,32 @@ void main() {
     await store.save(device);
     blob['blob'] = _b64e(_b64d(blob['blob']!).sublist(0, 8));
     expect(await store.load(), isNull);
+  });
+
+  test('two accounts use distinct wrapping keys', () async {
+    final blobB = <String, String>{};
+    final storeB = buildStore(keystore, blobB, accountId: 'acct-b');
+
+    final a = await AxolotlDevice.generateNewDevice(
+      'a@example.org',
+      preKeyCount: 1,
+    );
+    final b = await AxolotlDevice.generateNewDevice(
+      'b@example.org',
+      preKeyCount: 1,
+    );
+    await store.save(a);
+    await storeB.save(b);
+
+    final keyA = keystore.values['resonchat.device.sealing-key.acct-a'];
+    final keyB = keystore.values['resonchat.device.sealing-key.acct-b'];
+    expect(keyA, isNotNull);
+    expect(keyB, isNotNull);
+    expect(keyA, isNot(keyB));
+
+    // A's wrapping key must not open B's ciphertext.
+    keystore.values['resonchat.device.sealing-key.acct-b'] = keyA!;
+    expect(await storeB.load(), isNull);
   });
 }
 

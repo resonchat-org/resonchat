@@ -193,9 +193,29 @@ class DualTrackManager {
   }
 
   /// Raw device ids from [jid]'s OMEMO device list, whichever dialect it
-  /// published.
-  Future<Set<int>> fetchOmemoDeviceIds(JID jid) async =>
-      (await resolveOmemoDevices(jid)).devices;
+  /// published — no bundle reachability filter.
+  ///
+  /// Matches Conversations' `IqParser.deviceIds`: the PEP list as advertised,
+  /// including ids whose bundles we cannot fetch right now. Filtering those
+  /// out before a merge-publish would drop live second devices from the list.
+  Future<Set<int>> fetchOmemoDeviceIds(JID jid) async {
+    final pm = pubsubOf();
+    final listed = <int>{};
+    for (final node in [omemoDefactoDevicesNode, ...omemoSpecDevicesNodes]) {
+      final items = await pm.getItems(jid, node);
+      if (!items.isType<List<PubSubItem>>()) continue;
+      for (final item in items.get<List<PubSubItem>>()) {
+        try {
+          final doc = XmlDocument.parse(item.payload.toXml());
+          final parsed = parseOmemoDeviceList(doc.rootElement);
+          if (parsed != null) listed.addAll(parsed);
+        } catch (_) {
+          // Unreadable payload contributes nothing.
+        }
+      }
+    }
+    return listed;
+  }
 
   /// [jid]'s OMEMO devices whose bundle actually fetches, plus whether the
   /// device list itself could be read.
@@ -412,41 +432,10 @@ class DualTrackManager {
       absent[id] = await bundleKnownAbsent(bareJid, id);
     }
 
-    // The case `bundleKnownAbsent` structurally cannot see.
-    //
-    // Its question is "does this bundle exist on the server", and a bundle can
-    // exist for a device whose **private keys exist nowhere**: the keys live
-    // only in this app's sealed store, so wiping the app's data destroys them
-    // while leaving the published bundle exactly where it was. Such a device
-    // passes the absent test, is kept, and every message encrypted to it is
-    // then read by nobody — permanently, silently, with no error anywhere. A
-    // peer does not report a decryption failure for it; it reports a *send*
-    // failure, because a client that finds an unusable device may refuse to
-    // send at all, which is what Conversations reported.
-    //
-    // `publishedDeviceIds` is what makes this decidable rather than a guess. It
-    // is the record of the ids **this installation** created, and it is empty
-    // on a fresh install precisely because the sealed store was destroyed along
-    // with the keys. So when that record holds nothing but our current id, every
-    // other id on the list was made by an installation whose keys we do not
-    // have — not "might have", *do not*. Retracting those loses nothing,
-    // because nobody was ever going to read those messages.
-    //
-    // The condition is deliberately narrow. A second, *live* device of the same
-    // account has its id in this record too, so its ids are never touched here;
-    // this only fires on a fresh install, which is the one situation where the
-    // record is provably incomplete. The rule this project follows everywhere —
-    // never remove a device we cannot prove is dead — is why the case is
-    // expressed as "we can prove we hold no keys for this" rather than as "this
-    // bundle looks stale".
-    final ours = await publishedDeviceIds();
-    final onlyOurs = ours.isEmpty || ours.length <= 1;
-    if (onlyOurs) {
-      for (final id in listed) {
-        if (id == ourDeviceId) continue;
-        absent[id] = true;
-      }
-    }
+    // Conversations never mass-revokes other devices on a fresh install: other
+    // ids on the list may be a live second phone. Only remove an id when its
+    // bundle is positively gone (`bundleKnownAbsent`). Explicit wipe belongs
+    // in a user-driven path (Conversations' `wipeOtherPepDevices`), not here.
 
     // The decision is now made, so say what it was made from.
     //
@@ -535,26 +524,51 @@ class DualTrackManager {
     return null;
   }
 
+  /// Publishes [ids] as our OMEMO device list in both dialects.
+  ///
+  /// Conversations' `publishDeviceIdsAndRefineAccessModel`: the caller decides
+  /// whether [ids] is a merge (`publishOwnDeviceId`) or a wipe
+  /// (`wipeOtherPepDevices` = singleton of our id).
+  Future<bool> publishOmemoDeviceIds(JID bareJid, Set<int> ids) async {
+    final pm = pubsubOf();
+    var listOk = false;
+    for (final node in [omemoDefactoDevicesNode, ...omemoSpecDevicesNodes]) {
+      final listResult = await pm.publish(
+        bareJid,
+        node,
+        XMLNode.fromString(deviceListToDefactoXml(ids).toXmlString()),
+        id: 'current',
+        options: const PubSubPublishOptions(accessModel: 'open'),
+      );
+      if (listResult.isType<bool>() && listResult.get<bool>()) listOk = true;
+      try {
+        await pm.configure(
+          bareJid,
+          node,
+          const PubSubPublishOptions(accessModel: 'open'),
+        );
+      } catch (_) {
+        // Best-effort access-model tighten.
+      }
+    }
+    return listOk;
+  }
+
   /// Publishes our standard-OMEMO bundle in **both** dialects.
   ///
   /// The de-facto form is what real clients read; the spec form is what
   /// moxxmpp's own `publishBundle` writes and what a future client might
   /// adopt. Returns true when at least one form was accepted.
+  ///
+  /// Device-list publish follows Conversations' `publishOwnDeviceId`: read the
+  /// existing PEP list and **add** our id. Never replace the list with a
+  /// singleton — that revokes every other live device of the same account.
   Future<bool> publishOmemoBundle(JID bareJid, AxolotlBundle bundle) async {
     final pm = pubsubOf();
 
-    // Publish *only* the device we can actually service. See prior comments:
-    // re-publishing the server's full list grows phantom device ids.
-    final ids = <int>{bundle.deviceId};
-
-    final listResult = await pm.publish(
-      bareJid,
-      omemoDefactoDevicesNode,
-      XMLNode.fromString(deviceListToDefactoXml(ids).toXmlString()),
-      id: 'current',
-      options: const PubSubPublishOptions(accessModel: 'open'),
-    );
-    final listOk = listResult.isType<bool>() && listResult.get<bool>();
+    final ids = await fetchOmemoDeviceIds(bareJid);
+    ids.add(bundle.deviceId);
+    final listOk = await publishOmemoDeviceIds(bareJid, ids);
 
     final bundleResult = await pm.publish(
       bareJid,
@@ -565,19 +579,14 @@ class DualTrackManager {
     );
     final bundleOk = bundleResult.isType<bool>() && bundleResult.get<bool>();
 
-    for (final node in <String>[
-      omemoDefactoDevicesNode,
-      '$omemoDefactoBundlesNode:${bundle.deviceId}',
-    ]) {
-      try {
-        await pm.configure(
-          bareJid,
-          node,
-          const PubSubPublishOptions(accessModel: 'open'),
-        );
-      } catch (_) {
-        // Best-effort access-model tighten.
-      }
+    try {
+      await pm.configure(
+        bareJid,
+        '$omemoDefactoBundlesNode:${bundle.deviceId}',
+        const PubSubPublishOptions(accessModel: 'open'),
+      );
+    } catch (_) {
+      // Best-effort access-model tighten.
     }
 
     // Spec dialect via moxxmpp (bool true == failure).

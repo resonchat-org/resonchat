@@ -398,35 +398,13 @@ class AppDatabase extends _$AppDatabase {
 
   @override
   // Keep in sync with [kAccountSchemaVersion] in database_connection_io.dart.
-  int get schemaVersion => 5;
+  int get schemaVersion => 1;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (m) async => m.createAll(),
     onUpgrade: (m, from, to) async {
-      if (from < 2) {
-        await m.addColumn(chats, chats.alwaysNotify);
-      }
-      if (from < 3) {
-        await m.addColumn(chats, chats.unreadMentions);
-        await m.addColumn(messages, messages.mentionsMe);
-      }
-      if (from < 4) {
-        await m.createTable(roomInvitations);
-      }
-      if (from < 5) {
-        await m.addColumn(messages, messages.sendStatus);
-        // Backfill from the legacy flags (Conversations STATUS_* mapping).
-        await customStatement('''
-UPDATE messages SET send_status = CASE
-            WHEN incoming = 1 THEN 0
-            WHEN delivery_error != '' THEN 3
-            WHEN displayed = 1 THEN 8
-            WHEN delivered = 1 THEN 7
-            ELSE 1
-          END
-        ''');
-      }
+      // Intentionally empty — rebuild migrations from here when needed.
     },
   );
 
@@ -652,6 +630,14 @@ UPDATE messages SET send_status = CASE
   }
 
   Future<List<RosterEntry>> allRosterEntries() => (select(rosterEntries)).get();
+
+  /// Bare JIDs of MODE_MULTI chats. Contacts must not list these.
+  Future<Set<String>> groupChatJids() async {
+    final rows = await (select(
+      chats,
+    )..where((c) => c.isGroup.equals(true))).get();
+    return {for (final c in rows) c.jid};
+  }
 
   /// Live roster for the Contacts tab (RFC 6121 pushes land in [commitRoster]).
   Stream<List<RosterEntry>> watchRoster() =>
@@ -1435,14 +1421,21 @@ UPDATE messages SET send_status = CASE
 
   /// Marks one of our outgoing messages as delivered (XEP-0184 / MUC reflection).
   ///
-  /// Conversations `markMessage(..., STATUS_SEND_RECEIVED)`. Returns the number
-  /// of rows updated (0 when the id is unknown).
+  /// Conversations `markMessage(..., STATUS_SEND_RECEIVED)`. Never downgrades
+  /// an already-read ([MessageSendStatus.sendDisplayed]) row. Returns rows
+  /// updated (0 when unknown / already displayed / failed).
   Future<int> markDelivered(String chatJid, String stanzaId) {
     return (update(messages)..where(
           (m) =>
               m.chatJid.equals(chatJid) &
               m.stanzaId.equals(stanzaId) &
-              m.incoming.equals(false),
+              m.incoming.equals(false) &
+              m.sendStatus.isIn([
+                MessageSendStatus.waiting,
+                MessageSendStatus.unsend,
+                MessageSendStatus.send,
+                MessageSendStatus.sendReceived,
+              ]),
         ))
         .write(
           const MessagesCompanion(
@@ -1480,10 +1473,12 @@ UPDATE messages SET send_status = CASE
         );
   }
 
-  /// Marks an outgoing message (and older delivered ones) as read (XEP-0333).
+  /// Marks an outgoing message (and older sent ones) as read (XEP-0333).
   ///
-  /// Conversations `DisplayedManager.processDisplayed`: the named message and
-  /// every preceding `STATUS_SEND_RECEIVED` become `STATUS_SEND_DISPLAYED`.
+  /// The named stanza always becomes [MessageSendStatus.sendDisplayed] (read
+  /// implies delivered — even if no 0184 arrived). Older outgoing rows that
+  /// are already on the wire / delivered / read are upgraded too; waiting /
+  /// failed rows are left alone.
   Future<int> markDisplayed(String chatJid, String stanzaId) async {
     if (stanzaId.isEmpty) return 0;
     final target =
@@ -1499,7 +1494,13 @@ UPDATE messages SET send_status = CASE
           (m) =>
               m.chatJid.equals(chatJid) &
               m.incoming.equals(false) &
-              m.timestamp.isSmallerOrEqualValue(target.timestamp),
+              m.timestamp.isSmallerOrEqualValue(target.timestamp) &
+              (m.stanzaId.equals(stanzaId) |
+                  m.sendStatus.isIn([
+                    MessageSendStatus.send,
+                    MessageSendStatus.sendReceived,
+                    MessageSendStatus.sendDisplayed,
+                  ])),
         ))
         .write(
           const MessagesCompanion(
@@ -1528,12 +1529,18 @@ UPDATE messages SET send_status = CASE
         .getSingleOrNull();
   }
 
-  /// Privacy prefs (Conversations `confirm_messages` / `chat_states`).
+  /// Privacy prefs: delivery (XEP-0184), read (XEP-0333), typing (XEP-0085).
+  Future<bool> sendDeliveryReceiptsEnabled() async =>
+      (await metaValue('pref_delivery_receipts')) != '0';
+
   Future<bool> sendReadReceiptsEnabled() async =>
       (await metaValue('pref_read_receipts')) != '0';
 
   Future<bool> sendChatStatesEnabled() async =>
       (await metaValue('pref_chat_states')) != '0';
+
+  Future<void> setSendDeliveryReceipts(bool enabled) =>
+      setMetaValue('pref_delivery_receipts', enabled ? '1' : '0');
 
   Future<void> setSendReadReceipts(bool enabled) =>
       setMetaValue('pref_read_receipts', enabled ? '1' : '0');

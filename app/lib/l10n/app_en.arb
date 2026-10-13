@@ -79,6 +79,8 @@
   "archive": "Archive",
   "archived": "Archived",
   "noArchivedConversations": "No archived conversations",
+  "deliveryReceipts": "Delivery receipts",
+  "deliveryReceiptsSummary": "When enabled, contacts see when their messages have been delivered to this device",
   "readReceipts": "Read receipts",
   "readReceiptsSummary": "When enabled, contacts see when you have read their messages",
   "typingNotifications": "Typing notifications",
@@ -271,7 +273,7 @@
   "tabMe": "Me",
   "addContact": "Add contact",
   "addContactHint": "JID to add",
-  "searchContactsHint": "Search contacts and groups",
+  "searchContactsHint": "Search or add contacts and groups",
   "noContactsMatch": "No matches",
   "searchSectionContacts": "Contacts",
   "searchSectionGroups": "Groups",
@@ -353,6 +355,19 @@
   "@membersInRoom": {
     "placeholders": {
       "count": { "type": "int" }
+    }
+  },
+  "membersOnlineCount": "{online} online",
+  "@membersOnlineCount": {
+    "placeholders": {
+      "online": { "type": "int" }
+    }
+  },
+  "membersAndOnlineCount": "{members} members, {online} online",
+  "@membersAndOnlineCount": {
+    "placeholders": {
+      "members": { "type": "int" },
+      "online": { "type": "int" }
     }
   },
   "editSubject": "Edit group chat subject",
@@ -630,6 +645,17 @@
     }
   },
   "devices": "Devices",
+  "omemoEncryption": "OMEMO encryption",
+  "omemoFingerprint": "OMEMO fingerprint",
+  "regenerateOmemoKey": "Regenerate OMEMO key",
+  "regenerateOmemoKeyDesc": "Create a new identity key for this device. Contacts will see a new fingerprint. Other devices of this account stay announced until you clear them.",
+  "clearOtherOmemoDevices": "Clear devices",
+  "clearOtherOmemoDevicesDesc": "Are you sure you want to clear all other devices from the OMEMO announcement? The next time your devices connect, they will reannounce themselves, but might not receive messages sent meanwhile.",
+  "omemoKeyRegenerated": "OMEMO key regenerated",
+  "omemoKeyRegenerateFailed": "Could not regenerate OMEMO key",
+  "omemoDevicesCleared": "Other devices cleared from the announcement",
+  "omemoDevicesClearFailed": "Could not clear other devices",
+  "omemoConnectRequired": "Connect this account to manage OMEMO keys",
   "thisDeviceId": "This device: {id}",
   "@thisDeviceId": {
     "placeholders": {

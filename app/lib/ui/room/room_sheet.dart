@@ -94,8 +94,11 @@ class _JoinRoomSheetState extends ConsumerState<JoinRoomSheet> {
     final xmpp = ref.read(xmppServiceProvider);
     final features = await xmpp.queryRoomFeatures(roomJid);
     final encryptable = isPrivateAndNonAnonymous(features);
-    // Conversations fetchMembers after join when private+non-anonymous.
-    await xmpp.refreshRoomMembership(roomJid, privateNonAnonymous: encryptable);
+    await xmpp.refreshRoomMembership(
+      roomJid,
+      privateNonAnonymous: encryptable,
+      nonAnonymous: isNonAnonymousRoom(features),
+    );
     await db.upsertChat(
       roomJid,
       isGroup: true,
@@ -103,6 +106,8 @@ class _JoinRoomSheetState extends ConsumerState<JoinRoomSheet> {
       title: roomJid,
       mucPrivateNonAnonymous: encryptable,
     );
+    // Conversations: rooms are MODE_MULTI + bookmarks, never roster contacts.
+    await xmpp.removeFromRosterIfPresent(roomJid);
     unawaited(xmpp.publishConferenceBookmark(roomJid: roomJid, nick: nick));
     if (!mounted) return;
     final accountId = accountHub.primarySession?.account.id;

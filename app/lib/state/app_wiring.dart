@@ -366,6 +366,7 @@ bool _isOwnMucReflection(InboundMessage msg, String? mucNick) {
 Future<void> _loadPrivacyPrefs(AccountSession session) async {
   final db = session.db;
   final xmpp = session.xmpp;
+  xmpp.sendDeliveryReceipts = await db.sendDeliveryReceiptsEnabled();
   xmpp.sendReadReceipts = await db.sendReadReceiptsEnabled();
   xmpp.sendTypingNotifications = await db.sendChatStatesEnabled();
 }
@@ -543,9 +544,7 @@ Future<bool> storeInbound(
       delivered: Value(fromMe && ownMuc),
       sendStatus: Value(
         fromMe
-            ? (ownMuc
-                  ? MessageSendStatus.sendReceived
-                  : MessageSendStatus.unsend)
+            ? (ownMuc ? MessageSendStatus.sendReceived : MessageSendStatus.send)
             : MessageSendStatus.received,
       ),
       markable: Value(msg.markable),

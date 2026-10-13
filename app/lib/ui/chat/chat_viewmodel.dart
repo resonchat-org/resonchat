@@ -367,8 +367,12 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
     final info = await xmpp.queryRoomInformation(jid);
     final features = info?.features ?? const <String>[];
     final encryptable = isPrivateAndNonAnonymous(features);
-    // Conversations fetchMembers when private+non-anonymous.
-    await xmpp.refreshRoomMembership(jid, privateNonAnonymous: encryptable);
+    final nonAnonymous = isNonAnonymousRoom(features);
+    await xmpp.refreshRoomMembership(
+      jid,
+      privateNonAnonymous: encryptable,
+      nonAnonymous: nonAnonymous,
+    );
     final discoName = info?.name.trim();
     final titleUpdate = await _roomTitleFromDisco(jid, discoName);
     await _db.upsertChat(
@@ -763,9 +767,8 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
     final messageType = mucPm ? 'chat' : (isGroup ? 'groupchat' : 'chat');
     if (mucPm) chosen = Track.none;
 
-    // Conversations: allocate id → insert locally → put on the wire.
-    // STATUS_WAITING until the socket write returns; then STATUS_UNSEND
-    // until 0184 / MUC reflection → STATUS_SEND_RECEIVED.
+    // Allocate id → insert locally (WAITING/clock) → put on the wire →
+    // STATUS_SEND (one tick). 0184 / MUC reflection → STATUS_SEND_RECEIVED.
     final stanzaId = xmpp.allocateStanzaId();
     await _db.insertMessage(
       MessagesCompanion(
@@ -817,8 +820,8 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
       );
     }
 
-    // On the wire — awaiting 0184 / MUC reflection (STATUS_UNSEND).
-    await _db.updateSendStatus(peerStr, stanzaId, MessageSendStatus.unsend);
+    // Accepted onto the socket — one tick until 0184 / MUC reflection.
+    await _db.updateSendStatus(peerStr, stanzaId, MessageSendStatus.send);
     return ChatSendResult(queued: true, outcome: outcome);
   }
 
@@ -912,7 +915,7 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
         return ChatAttachResult(queued: true, failureReason: reason);
       }
 
-      await _db.updateSendStatus(peerStr, stanzaId, MessageSendStatus.unsend);
+      await _db.updateSendStatus(peerStr, stanzaId, MessageSendStatus.send);
       return const ChatAttachResult(sent: true, queued: true);
     } catch (e) {
       return ChatAttachResult(error: '$e');
@@ -1113,7 +1116,7 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
             encMode: Value(EncModeToken.of(track).wire),
             incoming: const Value(false),
             // Already on the wire from [forwardMessages].
-            sendStatus: const Value(MessageSendStatus.unsend),
+            sendStatus: const Value(MessageSendStatus.send),
           ),
         );
       }

@@ -7,6 +7,7 @@ import 'package:moxxmpp/moxxmpp.dart' show JID, RosterManager, rosterManager;
 import '../../account/account_hub.dart';
 import '../../account/chat_ref.dart';
 import '../../xmpp/connection.dart';
+import '../../xmpp/muc_detect.dart';
 
 /// Reduces whatever the user typed to a bare JID, or null if it is not one.
 ///
@@ -28,6 +29,8 @@ class OpenChatResult {
     this.chatKey,
     this.invalidJid = false,
     this.contactAdded,
+    this.isMuc = false,
+    this.mucJid,
   });
 
   final String? chatKey;
@@ -35,6 +38,13 @@ class OpenChatResult {
 
   /// Null when offline / no roster attempt; otherwise roster add success.
   final bool? contactAdded;
+
+  /// Address is a MUC / channel — never add as a roster contact (Conversations
+  /// `findOrCreateConversation(..., muc=true)`).
+  final bool isMuc;
+
+  /// Bare room JID when [isMuc]; caller should open the join sheet.
+  final String? mucJid;
 }
 
 /// Chat-list commands (open conversation / add contact).
@@ -43,6 +53,9 @@ class ChatsViewModel extends Notifier<void> {
   void build() {}
 
   /// Upserts the chat, optionally adds roster + subscription, returns navigation key.
+  ///
+  /// MUC / public-channel addresses are never written to the roster — that is
+  /// how Conversations avoids rooms showing up as contacts.
   Future<OpenChatResult> openChatByJid(String raw) async {
     final trimmed = raw.trim();
     if (trimmed.isEmpty) return const OpenChatResult();
@@ -53,12 +66,31 @@ class ChatsViewModel extends Notifier<void> {
     final session = hub.primarySession;
     if (session == null) return const OpenChatResult();
 
+    final existing = await session.db.getChat(jid);
+    if (existing != null && existing.isGroup) {
+      final chatRef = ChatRef(accountId: session.account.id, jid: jid);
+      await session.xmpp.removeFromRosterIfPresent(jid);
+      return OpenChatResult(chatKey: chatRef.key, isMuc: true, mucJid: jid);
+    }
+
+    final xmpp = session.xmpp;
+    final online = xmpp.state == XmppConnectionState.connected;
+    // Conversations EnterJidDialog: conference.* hosts are channel-shaped.
+    // Prefer disco when online; offline, trust the domain hint so we never
+    // write a room address into the roster by mistake.
+    final isMuc = online
+        ? await xmpp.discoSuggestsMuc(jid) || looksLikeChannelJid(jid)
+        : looksLikeChannelJid(jid);
+    if (isMuc) {
+      await xmpp.removeFromRosterIfPresent(jid);
+      return OpenChatResult(isMuc: true, mucJid: jid);
+    }
+
     await session.db.upsertChat(jid);
     final chatRef = ChatRef(accountId: session.account.id, jid: jid);
 
     bool? contactAdded;
-    final xmpp = session.xmpp;
-    if (xmpp.state == XmppConnectionState.connected) {
+    if (online) {
       final roster = xmpp.connection?.getManagerById<RosterManager>(
         rosterManager,
       );

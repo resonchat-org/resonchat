@@ -78,6 +78,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final l10n = context.l10n;
     final settings = ref.watch(settingsViewModelProvider);
     final xmpp = ref.watch(xmppServiceProvider);
+    final deliveryReceipts =
+        settings.deliveryReceipts ?? xmpp.sendDeliveryReceipts;
     final readReceipts = settings.readReceipts ?? xmpp.sendReadReceipts;
     final chatStates = settings.chatStates ?? xmpp.sendTypingNotifications;
     final localeOverride = ref.watch(localeOverrideProvider);
@@ -139,6 +141,13 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 onChanged: (v) => unawaited(_toggleAppLock(v)),
               );
             },
+          ),
+          SwitchListTile(
+            secondary: const Icon(Icons.done),
+            title: Text(l10n.deliveryReceipts),
+            subtitle: Text(l10n.deliveryReceiptsSummary),
+            value: deliveryReceipts,
+            onChanged: (v) => unawaited(vm.setDeliveryReceipts(v)),
           ),
           SwitchListTile(
             secondary: const Icon(Icons.done_all),

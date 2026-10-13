@@ -154,7 +154,7 @@ class AccountHub extends ChangeNotifier {
     await connectAll();
   }
 
-  XmppService _buildXmpp(AppDatabase db) {
+  XmppService _buildXmpp(AppDatabase db, String accountId) {
     late final XmppService xmpp;
     final bTrack = BTrackManager(
       tracks: () => xmpp.tracks!,
@@ -162,6 +162,7 @@ class AccountHub extends ChangeNotifier {
     );
     xmpp = XmppService(
       deviceStore: OmemoDeviceStore(
+        accountId: accountId,
         secureStorage: const FlutterSecureStorage(),
         loadSecret: () async {
           final v = await db.metaValue('omemo_device_blob');
@@ -183,7 +184,7 @@ class AccountHub extends ChangeNotifier {
       return existing;
     }
     final db = await openAppDatabase(accountId: account.id);
-    final xmpp = _buildXmpp(db);
+    final xmpp = _buildXmpp(db, account.id);
     final session = AccountSession(account: account, db: db, xmpp: xmpp);
     session.subs.add(db.watchChats().listen((_) => _chatsTick.add(null)));
     session.subs.add(
@@ -250,7 +251,13 @@ class AccountHub extends ChangeNotifier {
     final label = session.account.jid;
     try {
       final items = await xmpp.requestRoster();
+      final knownRoomJids = await db.groupChatJids();
       for (final item in items) {
+        // Never materialise a MUC as a 1:1 chat row from the roster.
+        if (knownRoomJids.contains(item.jid)) {
+          await xmpp.removeFromRosterIfPresent(item.jid);
+          continue;
+        }
         await db.upsertChat(item.jid, title: item.name ?? item.jid);
       }
       // Roster upsert must not move chats to "now"; realign from messages
@@ -461,8 +468,14 @@ class AccountHub extends ChangeNotifier {
   Future<List<AccountContact>> snapshotRoster() async {
     final rows = <AccountContact>[];
     for (final s in _sessions.values) {
+      // Rooms are bookmarks / MODE_MULTI chats, never contacts. A public
+      // channel that was wrongly rostered (or joined after a contact add)
+      // must not appear here — Conversations keeps conferences off the
+      // contact list entirely.
+      final rooms = await s.db.groupChatJids();
       final list = await s.db.allRosterEntries();
       for (final e in list) {
+        if (rooms.contains(e.jid)) continue;
         rows.add(AccountContact(account: s.account, entry: e));
       }
     }
@@ -476,6 +489,7 @@ class AccountHub extends ChangeNotifier {
   Stream<List<AccountContact>> watchMergedRoster() {
     late final StreamController<List<AccountContact>> controller;
     StreamSubscription<void>? tickSub;
+    StreamSubscription<void>? chatsSub;
     StreamSubscription<void>? sessionSub;
 
     Future<void> emit() async {
@@ -487,10 +501,14 @@ class AccountHub extends ChangeNotifier {
       onListen: () {
         unawaited(emit());
         tickSub = _rosterTick.stream.listen((_) => unawaited(emit()));
+        // isGroup flips (join channel) must hide that JID from Contacts even
+        // before a roster push arrives.
+        chatsSub = _chatsTick.stream.listen((_) => unawaited(emit()));
         sessionSub = _sessionChanges.stream.listen((_) => unawaited(emit()));
       },
       onCancel: () async {
         await tickSub?.cancel();
+        await chatsSub?.cancel();
         await sessionSub?.cancel();
       },
     );
@@ -576,6 +594,7 @@ class AccountHub extends ChangeNotifier {
         isGroup: true,
         mucNick: b.autoJoin ? nick : '',
       );
+      await session.xmpp.removeFromRosterIfPresent(b.jid);
       if (!b.autoJoin &&
           prior != null &&
           prior.isGroup &&

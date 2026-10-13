@@ -3,20 +3,23 @@
 //
 // Edit own nickname (XEP-0172) and avatar (XEP-0084), Conversations
 // EditAccountActivity + PublishProfilePictureActivity.
+// OMEMO fingerprint / regenerate / clear-other-devices match EditAccountActivity.
 
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:moxxmpp/moxxmpp.dart' show PresenceShow;
 
 import '../../account/account_hub.dart';
+import '../../crypto/fingerprint.dart';
 import '../../l10n/l10n.dart';
 import '../../state/providers.dart';
 import '../../store/account_store.dart';
 import '../../xmpp/avatar.dart';
+import '../../xmpp/connection.dart';
 import '../contact_avatar.dart';
 import '../theme.dart';
 
@@ -33,6 +36,8 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
   late final TextEditingController _nick;
   bool _busy = false;
   Uint8List? _preview;
+  String? _fingerprint;
+  int? _deviceId;
 
   StoredAccount? get _account {
     for (final a in accountHub.accounts) {
@@ -45,12 +50,147 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
   void initState() {
     super.initState();
     _nick = TextEditingController(text: _account?.displayName ?? '');
+    unawaited(_loadOmemo());
   }
 
   @override
   void dispose() {
     _nick.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadOmemo() async {
+    final session = accountHub.session(widget.accountId);
+    if (session == null) return;
+    try {
+      final om = session.xmpp.omemo;
+      if (om != null) {
+        final id = await om.getDeviceId();
+        final fp = await (await om.getDevice()).fingerprint;
+        if (!mounted) return;
+        setState(() {
+          _deviceId = id;
+          _fingerprint = fp;
+        });
+        return;
+      }
+      final stored = await session.xmpp.deviceStore?.load();
+      if (stored == null) return;
+      final id = await stored.deviceId;
+      final fp = await stored.fingerprint;
+      if (!mounted) return;
+      setState(() {
+        _deviceId = id;
+        _fingerprint = fp;
+      });
+    } catch (_) {
+      // No device yet.
+    }
+  }
+
+  bool get _omemoConnected {
+    final session = accountHub.session(widget.accountId);
+    return session != null &&
+        session.xmpp.state == XmppConnectionState.connected;
+  }
+
+  Future<void> _copyFingerprint() async {
+    final fp = _fingerprint;
+    if (fp == null) return;
+    await Clipboard.setData(ClipboardData(text: formatFingerprint(fp)));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(context.l10n.fingerprintCopied)));
+  }
+
+  Future<void> _confirmRegenerate() async {
+    final l10n = context.l10n;
+    if (!_omemoConnected) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(l10n.omemoConnectRequired)));
+      return;
+    }
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.regenerateOmemoKey),
+        content: Text(l10n.regenerateOmemoKeyDesc),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(l10n.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(l10n.regenerateOmemoKey),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    await _runOmemoAction(
+      action: (xmpp) => xmpp.regenerateOmemoKeys(),
+      okMessage: l10n.omemoKeyRegenerated,
+      failMessage: l10n.omemoKeyRegenerateFailed,
+    );
+  }
+
+  Future<void> _confirmClearDevices() async {
+    final l10n = context.l10n;
+    if (!_omemoConnected) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(l10n.omemoConnectRequired)));
+      return;
+    }
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.clearOtherOmemoDevices),
+        content: Text(l10n.clearOtherOmemoDevicesDesc),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(l10n.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(l10n.accept),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    await _runOmemoAction(
+      action: (xmpp) => xmpp.wipeOtherOmemoDevices(),
+      okMessage: l10n.omemoDevicesCleared,
+      failMessage: l10n.omemoDevicesClearFailed,
+      successWhen: (r) => r == true,
+    );
+  }
+
+  Future<void> _runOmemoAction({
+    required Future<Object?> Function(XmppService xmpp) action,
+    required String okMessage,
+    required String failMessage,
+    bool Function(Object? result)? successWhen,
+  }) async {
+    final session = accountHub.session(widget.accountId);
+    if (session == null) return;
+    setState(() => _busy = true);
+    try {
+      final result = await action(session.xmpp);
+      final ok = successWhen?.call(result) ?? true;
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(ok ? okMessage : failMessage)));
+      if (ok) await _loadOmemo();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(failMessage)));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Future<void> _pickAvatar() async {
@@ -196,6 +336,64 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
               ),
               const SizedBox(height: 8),
               _PresencePicker(accountId: widget.accountId, enabled: !_busy),
+              const SizedBox(height: 28),
+              Text(
+                l10n.omemoEncryption,
+                style: TextStyle(
+                  color: tg.textSecondary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.smartphone),
+                title: Text(l10n.thisDeviceId('${_deviceId ?? '—'}')),
+                subtitle: Text(l10n.omemoFingerprint),
+              ),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: tg.separator),
+                ),
+                child: SelectableText(
+                  formatFingerprint(_fingerprint ?? '—'),
+                  style: TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 13,
+                    color: tg.textPrimary,
+                    height: 1.6,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: _fingerprint == null || _busy
+                      ? null
+                      : () => unawaited(_copyFingerprint()),
+                  icon: const Icon(Icons.copy, size: 18),
+                  label: Text(l10n.copyFingerprint),
+                ),
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.refresh, color: tg.accent),
+                title: Text(l10n.regenerateOmemoKey),
+                enabled: !_busy,
+                onTap: () => unawaited(_confirmRegenerate()),
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.devices_other, color: tg.accent),
+                title: Text(l10n.clearOtherOmemoDevices),
+                enabled: !_busy,
+                onTap: () => unawaited(_confirmClearDevices()),
+              ),
             ],
           ),
         );

@@ -86,7 +86,7 @@ dart run build_runner build          # 生成 drift 代码（database.g.dart）
 dart analyze lib test                # flutter analyze 在本机会崩，改用 dart analyze
 flutter test                         # test/{crypto,rooms,store,messages,session,ui}/
 ./tool/build_android.sh              # mipmap + liboqs NDK libs + flutter build apk
-./tool/build_web.sh                  # Drift WASM → web/ + flutter build web
+./tool/build_web.sh                  # Drift assets + flutter build web --wasm
 ./tool/build_appimage.sh             # Linux AppImage（需 GTK 3 等桌面依赖）
 .\tool\build_windows.ps1             # Windows Inno Setup（需 VS C++ + Inno Setup 6）
 ```
@@ -95,13 +95,15 @@ flutter test                         # test/{crypto,rooms,store,messages,session
 
 GitHub 上 **Publish a release**（或 `gh release create vX.Y.Z`）会触发
 `.github/workflows/cd.yml`：打两份 release APK（arm64 / x86_64）+ x86_64
-AppImage / .deb / .rpm + Windows setup，并挂到该 Release 的 Assets。产物名形如
+AppImage / .deb / .rpm + Windows setup + Web（`--wasm`）tar.gz，并挂到该
+Release 的 Assets。产物名形如
 `resonchat-<tag>-arm64.apk` /
 `resonchat-<tag>-x86_64.apk` /
 `resonchat-<tag>-x86_64.AppImage` /
 `resonchat-<tag>-x86_64.deb` /
 `resonchat-<tag>-x86_64.rpm` /
-`resonchat-<tag>-x86_64-setup.exe`。
+`resonchat-<tag>-x86_64-setup.exe` /
+`resonchat-<tag>-wasm.tar.gz`。
 
 本地单 ABI：`./tool/build_android.sh --release --abi arm` 或 `--abi x86`。
 

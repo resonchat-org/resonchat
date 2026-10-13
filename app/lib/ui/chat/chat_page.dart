@@ -365,6 +365,16 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     super.dispose();
   }
 
+  /// AppBar subtitle for a room: members+online when JIDs are visible,
+  /// otherwise online count only.
+  static String _roomMembersSubtitle(AppLocalizations l10n, GroupChat room) {
+    final online = room.onlineOccupantCount;
+    if (!room.canSeeMemberJids) {
+      return l10n.membersOnlineCount(online);
+    }
+    return l10n.membersAndOnlineCount(room.affiliatedMemberCount, online);
+  }
+
   /// AppBar subtitle: typing or RFC 6121 presence (1:1 only).
   String _peerStatusSubtitle(
     BuildContext context,
@@ -1340,8 +1350,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                                   ui.isGroup
                                       ? (ui.room == null
                                             ? l10n.joining
-                                            : l10n.membersInRoom(
-                                                ui.room!.occupants.length,
+                                            : _roomMembersSubtitle(
+                                                l10n,
+                                                ui.room!,
                                               ))
                                       : _peerStatusSubtitle(
                                           context,

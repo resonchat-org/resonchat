@@ -636,20 +636,30 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
 
                 _section(
                   tg,
-                  _loadingCaps
+                  _loadingCaps || room == null
                       ? l10n.members
-                      : l10n.membersInRoom(occupants.length),
+                      : (room.canSeeMemberJids
+                            ? l10n.membersAndOnlineCount(
+                                room.affiliatedMemberCount,
+                                room.onlineOccupantCount,
+                              )
+                            : l10n.membersOnlineCount(
+                                room.onlineOccupantCount,
+                              )),
                 ),
                 for (final occupant in occupants)
                   ListTile(
-                    leading: Icon(
-                      occupant.isModerator
-                          ? Icons.shield
-                          : Icons.person_outline,
-                      size: 20,
-                      color: occupant.isModerator
-                          ? tg.accent
-                          : tg.textSecondary,
+                    leading: ContactAvatar(
+                      // Real JID when known (avatar PEP); else room/nick.
+                      jid:
+                          (occupant.realJid != null &&
+                              occupant.realJid!.isNotEmpty)
+                          ? occupant.realJid!
+                          : '$_roomJid/${occupant.nick}',
+                      title: occupant.nick,
+                      radius: 20,
+                      showPresence: true,
+                      presence: occupant.presenceForDot,
                     ),
                     title: Text(
                       occupant.nick,

@@ -330,7 +330,10 @@ class XmppService {
   /// Last chat state we sent per bare JID (Conversations ChatStateManager.outgoing).
   final _outgoingChatState = <String, TypingState>{};
 
-  /// Conversations `confirm_messages` — send XEP-0333 `<displayed/>`.
+  /// Send XEP-0184 `<received/>` when a peer requests delivery confirmation.
+  bool sendDeliveryReceipts = true;
+
+  /// Send XEP-0333 `<displayed/>` (and advertise `<markable/>` on outbound).
   bool sendReadReceipts = true;
 
   /// Conversations `chat_states` — send XEP-0085 typing notifications.
@@ -755,6 +758,39 @@ class XmppService {
     final info = result.get<RoomInformation>();
     _cacheRoomPolicy(bare, info);
     return info;
+  }
+
+  /// True when disco#info says [jid] is a MUC / conference entity.
+  ///
+  /// Conversations never adds those addresses as roster contacts
+  /// (`findOrCreateConversation(..., muc=true)`). Used before `addToRoster`.
+  Future<bool> discoSuggestsMuc(String jid) async {
+    final dm = disco;
+    if (dm == null) return false;
+    final bare = JID.fromString(jid).toBare();
+    try {
+      final result = await dm.discoInfoQuery(bare, shouldCache: false);
+      if (!result.isType<DiscoInfo>()) return false;
+      final info = result.get<DiscoInfo>();
+      for (final identity in info.identities) {
+        if (identity.category == 'conference') return true;
+      }
+      return info.features.contains(mucXmlns);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Drops [jid] from the roster if present (rooms are not contacts).
+  Future<void> removeFromRosterIfPresent(String jid) async {
+    final roster = _connection?.getManagerById<RosterManager>(rosterManager);
+    if (roster == null) return;
+    final bare = JID.fromString(jid).toBare().toString();
+    try {
+      await roster.removeFromRoster(bare);
+    } catch (e) {
+      _log.fine('removeFromRoster $bare: $e');
+    }
   }
 
   /// Conversations `MucOptions.canChangeSubject`:
@@ -1324,13 +1360,12 @@ class XmppService {
     return state.members.values.map(Occupant.from).toList();
   }
 
-  /// Conversations `getUsers` / `getOnlineUsers` for the member list UI.
+  /// Member list for the UI (online + offline affiliates when JIDs are visible).
   Future<List<Occupant>> roomDisplayMembers(String roomJid) async {
     final bare = JID.fromString(roomJid).toBare().toString();
     final online = await roomOccupantList(bare);
-    final private = _privateNonAnonymous[bare] ?? false;
     return roomMembersForDisplay(
-      privateNonAnonymous: private,
+      includeOfflineAffiliates: _includeOfflineAffiliates[bare] ?? false,
       affiliation: _affiliations[bare] ?? const [],
       online: online,
     );
@@ -1347,15 +1382,24 @@ class XmppService {
     return mergeRoomMembers(affiliation: affiliation, online: online);
   }
 
-  /// After join/disco: fetch affiliation roster when private+non-anonymous
-  /// (Conversations `fetchMembers`), otherwise presence-only.
+  /// After join/disco: fetch affiliations when we can see real JIDs
+  /// (non-anonymous, or owner/admin) or when private+non-anonymous (OMEMO).
   Future<void> refreshRoomMembership(
     String roomJid, {
     required bool privateNonAnonymous,
+    required bool nonAnonymous,
   }) async {
     final bare = JID.fromString(roomJid).toBare().toString();
     _privateNonAnonymous[bare] = privateNonAnonymous;
-    if (privateNonAnonymous) {
+    _nonAnonymous[bare] = nonAnonymous;
+    final caps = await roomSelfCapabilities(bare);
+    final includeOffline = canSeeRoomMemberJids(
+      nonAnonymous: nonAnonymous,
+      selfAffiliation: caps.affiliation,
+    );
+    _includeOfflineAffiliates[bare] = includeOffline;
+    // muc#admin needs privilege; also keep Conversations private-group fetch.
+    if (includeOffline || privateNonAnonymous) {
       await fetchRoomAffiliations(bare);
     } else {
       _affiliations.remove(bare);
@@ -1698,6 +1742,8 @@ class XmppService {
     }
     _affiliations.remove(bare);
     _privateNonAnonymous.remove(bare);
+    _nonAnonymous.remove(bare);
+    _includeOfflineAffiliates.remove(bare);
     _participantsCanChangeSubject.remove(bare);
     _allowInvites.remove(bare);
     _allowPmRaw.remove(bare);
@@ -2379,8 +2425,10 @@ class XmppService {
   /// Answers a peer's XEP-0184 `<request/>` with `<received id='…'/>`.
   ///
   /// Matches Conversations `DeliveryReceiptManager.received`: same chat type
-  /// and a `store` hint so the receipt is archived.
+  /// and a `store` hint so the receipt is archived. Gated by
+  /// [sendDeliveryReceipts].
   Future<void> sendDeliveryReceipt(JID to, String id) async {
+    if (!sendDeliveryReceipts) return;
     final mm = _connection?.getManagerById<MessageManager>(messageManager);
     if (mm == null || id.isEmpty) return;
     await mm.sendMessage(
@@ -2433,6 +2481,10 @@ class XmppService {
         bareJid,
         preKeyCount: opkAmount,
       );
+      // Persist immediately (Conversations stores registration id / identity
+      // keys at generation). Waiting for a successful PEP publish would
+      // regenerate a new device on every failed announce.
+      await deviceStore?.save(device);
       _log.info('generated new OMEMO device ${await device.deviceId}');
     }
 
@@ -2479,9 +2531,15 @@ class XmppService {
       _connection!.connectionSettings.jid.toBare().toString(),
     );
 
+    // Local keys must outlive a flaky PEP publish (Conversations keeps the
+    // registration id / identity pair in account DB independently of announce).
+    await deviceStore?.save(device);
+
     // Publish through the dual-track manager so the bundle lands in both
     // the de-facto and the XEP-0384 dialects. Publishing only the spec form
-    // makes us invisible to every client that actually exists.
+    // makes us invisible to every client that actually exists. The device
+    // list is merged (own id added), never replaced — same as Conversations'
+    // `publishOwnDeviceId`.
     final published = tracks == null
         ? await _moxxOmemo!
               .publishBundle(bundle)
@@ -2495,44 +2553,51 @@ class XmppService {
         : await tracks!.publishOmemoBundle(bare, bundle);
     if (!published) {
       _log.warning('OMEMO bundle publish reported failure');
+    } else {
+      await tracks?.notePublishedDevice(id);
     }
-    // Hoisted so it cannot be null-checked away across the await below: a
-    // nullable public field is not promoted, and the null check would be
-    // re-evaluated against a field something else can change.
-    final trackManager = tracks;
-
-    // Persist only after a confirmed publish so we never store keys the
-    // server does not know about.
-    if (published) {
-      await deviceStore?.save(device);
-      // Remember the id before pruning: the prune decides which ids are
-      // candidates by asking "did this installation publish it", and the id we
-      // just published is the one that has to be excluded from that set.
-      await trackManager?.notePublishedDevice(id);
-      // Now that our own id is on the list, drop the ones that are dead.
-      //
-      // Every reinstall adds an entry here and nothing ever removes one. Each
-      // dead entry makes *other people's* capability resolution fail — they
-      // cannot cover a device that never answers — so this is not cosmetic
-      // housekeeping: left alone, a user who reinstalls a few times stops being
-      // able to send to anyone at all, and nothing in the interface explains
-      // why.
-      if (trackManager != null) {
-        final removed = await trackManager.pruneOwnDeadDevices(bare, id);
-        if (removed.isNotEmpty) {
-          _log.info(
-            'removed ${removed.length} dead OMEMO device id(s) from our own '
-            'list: $removed',
-          );
-          // Our device list just changed, and every cached answer about every
-          // contact was derived from it. Dropping them all is cheaper than
-          // working out which ones could have depended on a dead id, and being
-          // wrong here means refusing to send for the rest of the TTL.
-          _capabilities?.invalidateAll();
-        }
-      }
-    }
+    // Do not prune other devices on connect. Conversations only wipes others
+    // via explicit `wipeOtherPepDevices` / `regenerateKeys(wipeOther=true)`.
     return id;
+  }
+
+  /// Conversations `regenerateKeys(wipeOther)`: drop local OMEMO identity,
+  /// create a new device, persist it, then republish.
+  ///
+  /// When [wipeOther] is true, the PEP device list is replaced with only our
+  /// new id (same as regenerate followed by `wipeOtherPepDevices`).
+  Future<int> regenerateOmemoKeys({bool wipeOther = false}) async {
+    _omemo = null;
+    _omemoInit = null;
+    await deviceStore?.clear();
+    final id = await ensureOmemoDevice();
+    if (wipeOther) {
+      await wipeOtherOmemoDevices();
+    }
+    _capabilities?.invalidateAll();
+    return id;
+  }
+
+  /// Conversations `wipeOtherPepDevices`: publish a device list containing
+  /// only this installation's id. Other devices re-announce on next connect
+  /// but may miss messages sent in between.
+  Future<bool> wipeOtherOmemoDevices() async {
+    final manager = await _omemoOrCreate();
+    final id = await manager.getDeviceId();
+    final bare = JID.fromString(
+      _connection!.connectionSettings.jid.toBare().toString(),
+    );
+    final trackManager = tracks;
+    if (trackManager == null) {
+      _log.warning('wipeOtherOmemoDevices: dual-track manager not wired');
+      return false;
+    }
+    final ok = await trackManager.publishOmemoDeviceIds(bare, {id});
+    if (ok) {
+      await trackManager.notePublishedDevice(id);
+      _capabilities?.invalidateAll();
+    }
+    return ok;
   }
 
   /// Publishes our standard-OMEMO bundle in both wire dialects.
@@ -2683,9 +2748,10 @@ class XmppService {
             start: replyFallback?.start,
             end: replyFallback?.end,
           ),
-        if (requestReceipt) const MessageDeliveryReceiptData(true),
+        if (requestReceipt && sendDeliveryReceipts)
+          const MessageDeliveryReceiptData(true),
         // XEP-0333: peers may answer with <displayed/> (Conversations markable).
-        const MarkableData(true),
+        if (sendReadReceipts) const MarkableData(true),
         // XEP-0380: declare the track so the receiver can label the message
         // without decrypting it, and so a client that does not know this
         // namespace shows our name rather than guessing.
@@ -2732,8 +2798,9 @@ class XmppService {
             start: replyFallback?.start,
             end: replyFallback?.end,
           ),
-        if (requestReceipt) const MessageDeliveryReceiptData(true),
-        const MarkableData(true),
+        if (requestReceipt && sendDeliveryReceipts)
+          const MessageDeliveryReceiptData(true),
+        if (sendReadReceipts) const MarkableData(true),
       ]),
       type: 'chat',
     );
@@ -2786,8 +2853,9 @@ class XmppService {
       if (oobUrl != null && oobUrl.isNotEmpty) OOBData(oobUrl, null).toXML(),
       // Receipts / markable are 1:1 (and private MUC) affordances; groupchat
       // reflections do not answer XEP-0184 the same way (Conversations).
-      if (requestReceipt && !isGroup) MessageDeliveryReceiptData(true).toXML(),
-      if (!isGroup) const MarkableData(true).toXML(),
+      if (requestReceipt && sendDeliveryReceipts && !isGroup)
+        MessageDeliveryReceiptData(true).toXML(),
+      if (sendReadReceipts && !isGroup) const MarkableData(true).toXML(),
     ];
     await connection.sendStanza(
       StanzaDetails(
@@ -2884,6 +2952,12 @@ class XmppService {
   /// Whether [roomJid] is Conversations `isPrivateAndNonAnonymous`.
   final _privateNonAnonymous = <String, bool>{};
 
+  /// Disco `muc_nonanonymous`.
+  final _nonAnonymous = <String, bool>{};
+
+  /// Show offline affiliation stubs in the member list (JIDs visible to us).
+  final _includeOfflineAffiliates = <String, bool>{};
+
   /// Conversations `participantsCanChangeSubject` from disco roominfo/config.
   final _participantsCanChangeSubject = <String, bool>{};
 
@@ -2903,19 +2977,41 @@ class XmppService {
       _ => null,
     };
     if (roomJid == null) return;
-    await _emitRoomState(roomJid.toBare().toString());
+    final bare = roomJid.toBare().toString();
+    if (event is OwnDataChangedEvent) {
+      await _reconsiderOfflineAffiliates(bare, event.affiliation.value);
+    }
+    await _emitRoomState(bare);
   }
 
-  /// Emit display roster: full affiliation list when private+non-anon,
-  /// otherwise online-only (Conversations `getUsers` / `getOnlineUsers`).
+  /// Owner/admin promotion can unlock JIDs + affiliation list mid-session.
+  Future<void> _reconsiderOfflineAffiliates(
+    String bare,
+    String selfAffiliation,
+  ) async {
+    final nonAnonymous = _nonAnonymous[bare] ?? false;
+    final includeOffline = canSeeRoomMemberJids(
+      nonAnonymous: nonAnonymous,
+      selfAffiliation: selfAffiliation,
+    );
+    final was = _includeOfflineAffiliates[bare] ?? false;
+    _includeOfflineAffiliates[bare] = includeOffline;
+    if (includeOffline && !was) {
+      await fetchRoomAffiliations(bare);
+    } else if (!includeOffline && was) {
+      _affiliations.remove(bare);
+    }
+  }
+
+  /// Emit display roster: affiliation+online when JIDs are visible to us,
+  /// otherwise online-only.
   Future<void> _emitRoomState(String roomJid) async {
     final bare = JID.fromString(roomJid).toBare().toString();
     final state = await groupChatState(bare);
     if (state == null || _roomOccupants.isClosed) return;
     final online = state.members.values.map(Occupant.from).toList();
-    final private = _privateNonAnonymous[bare] ?? false;
     final occupants = roomMembersForDisplay(
-      privateNonAnonymous: private,
+      includeOfflineAffiliates: _includeOfflineAffiliates[bare] ?? false,
       affiliation: _affiliations[bare] ?? const [],
       online: online,
     );
@@ -2929,8 +3025,15 @@ class XmppService {
         occupants: occupants,
         subject: state.subject,
         joined: state.joined,
+        canSeeMemberJids: _includeOfflineAffiliates[bare] ?? false,
       ),
     );
+  }
+
+  /// Whether the member list for [roomJid] includes offline affiliates.
+  bool roomCanSeeMemberJids(String roomJid) {
+    final bare = JID.fromString(roomJid).toBare().toString();
+    return _includeOfflineAffiliates[bare] ?? false;
   }
 
   void _onEvent(XmppEvent event) {
@@ -3028,7 +3131,8 @@ class XmppService {
       // Live → send immediately; catch-up → postpone until processPostponed.
       final receiptRequested =
           event.get<MessageDeliveryReceiptData>()?.receiptRequested ?? false;
-      if (receiptRequested &&
+      if (sendDeliveryReceipts &&
+          receiptRequested &&
           event.id != null &&
           event.id!.isNotEmpty &&
           !isCarbon &&

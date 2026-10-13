@@ -14,7 +14,7 @@
 | 零服务端改动 / 零新 XEP | 已完成 | 复用 PEP、EME 等既有标准 |
 | 数据库落盘加密 | 已完成 | SQLCipher，口令由 Android Keystore 保护 |
 | 标准协议扩展 | 已完成 | MAM（XEP-0313）历史同步、回执（XEP-0184）、输入状态（XEP-0085）、Carbons（XEP-0280） |
-| 平台支持 | 部分完成 | Android（arm64-v8a / x86_64，liboqs）；Web（Drift WASM + WebSocket）；Linux AppImage（`pqcrypto`）；Windows 安装包；iOS 未做 |
+| 平台支持 | 部分完成 | Android（arm64-v8a / x86_64，liboqs）；Web（Dart→Wasm + Drift WASM + WebSocket）；Linux AppImage（`pqcrypto`）；Windows 安装包；iOS 未做 |
 | Telegram Android 观感 UI | 进行中 | 气泡、色板、列表布局已实现；动画、平板适配未做 |
 
 ## 状态
@@ -124,7 +124,15 @@ Debian / RPM（同一 release bundle；链接库依赖由打包工具自动推�
 ```bash
 cd app
 ./tool/build_deb_rpm.sh          # 或 --skip-build 复用已有 bundle
-# → build/resonchat_*.deb  /  build/resonchat-*.rpm
+# → build/resonchat_*_x86_64.deb  /  build/resonchat-*-x86_64.rpm
+```
+
+Web（Drift `sqlite3.wasm` + Dart→Wasm；产物在 `build/web/`）：
+
+```bash
+cd app
+./tool/build_web.sh
+# Release 包：resonchat-<tag>-wasm.tar.gz（CD 从 build/web 打 tar.gz）
 ```
 
 更完整的工具链版本、分析与测试命令见 [`README.dev.md`](README.dev.md)。

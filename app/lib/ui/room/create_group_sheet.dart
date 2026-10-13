@@ -171,6 +171,7 @@ class _CreatePrivateGroupSheetState
       title: result.title,
       mucPrivateNonAnonymous: result.privateNonAnonymous,
     );
+    await xmpp.removeFromRosterIfPresent(roomJid);
     unawaited(
       xmpp.publishConferenceBookmark(
         roomJid: roomJid,
@@ -343,6 +344,7 @@ class _CreatePublicChannelSheetState
       title: result.title,
       mucPrivateNonAnonymous: result.privateNonAnonymous,
     );
+    await xmpp.removeFromRosterIfPresent(result.roomJid!);
     unawaited(
       xmpp.publishConferenceBookmark(
         roomJid: result.roomJid!,

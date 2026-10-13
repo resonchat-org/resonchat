@@ -55,8 +55,8 @@ void main() {
       expect(targets, ['alice@example.org']);
     });
 
-    test('private non-anon display includes offline affiliation members', () {
-      // Conversations getUsers: affiliation stubs + online presence.
+    test('jid-visible display includes offline affiliation members', () {
+      // Non-anon or privileged (admin): affiliation stubs + online presence.
       const offline = Occupant(
         nick: 'bob',
         affiliation: 'member',
@@ -70,7 +70,7 @@ void main() {
         realJid: 'alice@example.org',
       );
       final display = roomMembersForDisplay(
-        privateNonAnonymous: true,
+        includeOfflineAffiliates: true,
         affiliation: const [offline, online],
         online: const [online],
       );
@@ -85,8 +85,7 @@ void main() {
       expect(targets.toSet(), {'bob@example.org', 'alice@example.org'});
     });
 
-    test('other rooms display only online occupants', () {
-      // Conversations getOnlineUsers — no affiliation fetch.
+    test('without jid visibility display only online occupants', () {
       const offline = Occupant(
         nick: 'bob',
         affiliation: 'member',
@@ -100,11 +99,30 @@ void main() {
         realJid: 'alice@example.org',
       );
       final display = roomMembersForDisplay(
-        privateNonAnonymous: false,
+        includeOfflineAffiliates: false,
         affiliation: const [offline],
         online: const [online],
       );
       expect(display, [online]);
+    });
+
+    test('canSeeRoomMemberJids: non-anon or owner/admin', () {
+      expect(
+        canSeeRoomMemberJids(nonAnonymous: true, selfAffiliation: 'none'),
+        isTrue,
+      );
+      expect(
+        canSeeRoomMemberJids(nonAnonymous: false, selfAffiliation: 'admin'),
+        isTrue,
+      );
+      expect(
+        canSeeRoomMemberJids(nonAnonymous: false, selfAffiliation: 'owner'),
+        isTrue,
+      );
+      expect(
+        canSeeRoomMemberJids(nonAnonymous: false, selfAffiliation: 'member'),
+        isFalse,
+      );
     });
 
     test('online presence overlays affiliation stub for the same real JID', () {

@@ -142,7 +142,6 @@ class MessageBubble extends StatelessWidget {
     this.leadingAvatar,
     this.onAvatarTap,
     this.reserveAvatarGutter = false,
-    this.expectReceipts = true,
   });
 
   /// Conversations `Message.status` for outgoing ticks.
@@ -253,10 +252,6 @@ class MessageBubble extends StatelessWidget {
   /// consecutive messages still line up with the first bubble in the group).
   final bool reserveAvatarGutter;
 
-  /// 1:1 uses XEP-0184/0333 ticks. Room messages do not — until the MUC
-  /// reflection arrives they stay Conversations `STATUS_UNSEND` (a clock).
-  final bool expectReceipts;
-
   @override
   Widget build(BuildContext context) {
     final tg = context.tg;
@@ -366,7 +361,6 @@ class MessageBubble extends StatelessWidget {
                   displayed: displayed,
                   failed: failed,
                   mine: mine,
-                  expectReceipts: expectReceipts,
                   track: track,
                 ),
               ],
@@ -650,7 +644,6 @@ class _MetaRow extends StatelessWidget {
     required this.displayed,
     required this.failed,
     required this.mine,
-    required this.expectReceipts,
     required this.track,
   });
 
@@ -660,9 +653,6 @@ class _MetaRow extends StatelessWidget {
   final bool displayed;
   final bool failed;
   final bool mine;
-
-  /// False for MUC: show a clock until reflection, then a single tick.
-  final bool expectReceipts;
   final Track track;
 
   String get _timeText {
@@ -684,20 +674,23 @@ class _MetaRow extends StatelessWidget {
             deliveryError: failed ? 'err' : '',
           );
     final isFailed = failed || status == MessageSendStatus.sendFailed;
+    // Read outranks delivery: only-read, or both → double tick.
     final isDisplayed = status == MessageSendStatus.sendDisplayed || displayed;
-    final isAcked = MessageSendStatus.isDelivered(status) || delivered;
+    final isDeliveredOnly =
+        !isDisplayed && (status == MessageSendStatus.sendReceived || delivered);
     final isPending = MessageSendStatus.isPending(status);
-    // 1:1 — pending = clock; on wire (STATUS_SEND) = one tick;
-    //       delivered/read = two. MUC — clock until reflection, then one tick.
-    final ticks = !mine
+    // Clock → (sent: none) → delivery: one → read: two.
+    final IconData? ticks = !mine
         ? null
         : isFailed
         ? Icons.error_outline
         : isPending
         ? Icons.schedule
-        : expectReceipts
-        ? (isAcked ? Icons.done_all : Icons.done)
-        : (isAcked ? Icons.done : Icons.schedule);
+        : isDisplayed
+        ? Icons.done_all
+        : isDeliveredOnly
+        ? Icons.done
+        : null;
     final tickColor = isFailed
         ? tg.danger
         : isDisplayed

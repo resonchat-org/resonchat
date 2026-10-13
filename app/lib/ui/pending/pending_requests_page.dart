@@ -260,6 +260,7 @@ class _RoomInviteRowState extends ConsumerState<_RoomInviteRow> {
     await xmpp.refreshRoomMembership(
       inv.roomJid,
       privateNonAnonymous: encryptable,
+      nonAnonymous: isNonAnonymousRoom(features),
     );
     await db.upsertChat(
       inv.roomJid,
@@ -268,6 +269,7 @@ class _RoomInviteRowState extends ConsumerState<_RoomInviteRow> {
       title: inv.roomJid,
       mucPrivateNonAnonymous: encryptable,
     );
+    await xmpp.removeFromRosterIfPresent(inv.roomJid);
     unawaited(xmpp.publishConferenceBookmark(roomJid: inv.roomJid, nick: nick));
     await db.removeRoomInvitation(inv.roomJid);
     if (!mounted) return;

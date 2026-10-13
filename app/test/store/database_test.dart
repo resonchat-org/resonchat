@@ -94,6 +94,8 @@ void main() {
         stanzaId: const Value('out-1'),
         body: const Value('sent'),
         incoming: const Value(false),
+        // On the wire (after socket write); default 0 is STATUS_RECEIVED.
+        sendStatus: const Value(MessageSendStatus.send),
       ),
     );
     await db.insertMessage(

@@ -5,6 +5,10 @@
 //
 // Key material never goes to the database in the clear: it is sealed
 // with AES-GCM under a 256-bit key held in the platform keystore.
+//
+// The wrapping key is **per account** (Conversations stores identity material
+// keyed by account UUID). A single shared wrapping key would let one stolen
+// keystore entry open every account's sealed blob.
 
 import 'dart:convert';
 import 'dart:math';
@@ -17,11 +21,15 @@ import 'package:omemo_dart/omemo_dart_axolotl.dart';
 /// Sealed axolotl device blob, stored as a single JSON column.
 class OmemoDeviceStore {
   OmemoDeviceStore({
+    required this.accountId,
     required this.loadSecret,
     required this.saveSecret,
     required this.deleteSecret,
     FlutterSecureStorage? secureStorage,
   }) : _secure = secureStorage;
+
+  /// Stable account id used to isolate the keystore wrapping key.
+  final String accountId;
 
   final Future<List<int>?> Function() loadSecret;
   final Future<void> Function(List<int> bytes) saveSecret;
@@ -29,24 +37,30 @@ class OmemoDeviceStore {
 
   final FlutterSecureStorage? _secure;
 
-  static const _keystoreKey = 'resonchat.device.sealing-key';
   static const _formatVersion = 2; // axolotl snapshot
 
   late final AesGcm _cipher = AesGcm.with256bits();
 
+  String get _sealingKeyName => 'resonchat.device.sealing-key.$accountId';
+
+  /// Per-account wrapping key; created on first use for this [accountId].
   Future<List<int>> _sealingKey() async {
     final secure = _secure;
     if (secure == null) {
       throw StateError('no secure storage configured');
     }
-    final existing = await secure.read(key: _keystoreKey);
+    final existing = await secure.read(key: _sealingKeyName);
     if (existing != null) return base64Decode(existing);
     final fresh = _randomBytes(32);
-    await secure.write(key: _keystoreKey, value: base64Encode(fresh));
+    await secure.write(key: _sealingKeyName, value: base64Encode(fresh));
     return fresh;
   }
 
   /// Serializes [device] and stores it sealed. Returns the device id.
+  ///
+  /// Always awaited by callers that must survive a restart: generation and
+  /// `commitDevice` both write here before PEP announce, matching Conversations
+  /// which persists the registration id independently of publish success.
   Future<int> save(AxolotlDevice device) async {
     final preKeyIds = device.store.preKeyStore.store.keys.toList();
     final snap = await device.snapshot(preKeyIds);
@@ -61,6 +75,12 @@ class OmemoDeviceStore {
     await saveSecret(sealed.concatenation());
     return await device.deviceId;
   }
+
+  /// Drops the sealed blob so the next load forces a new device.
+  ///
+  /// Used by explicit regenerate (Conversations `axolotlStore.regenerate`),
+  /// not by ordinary reconnect. The per-account wrapping key is left in place.
+  Future<void> clear() => deleteSecret();
 
   /// Rebuilds the device previously written by [save], or null when there
   /// is none, the blob is a legacy classic-OMEMO format, or it cannot be opened.
