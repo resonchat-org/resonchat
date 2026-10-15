@@ -19,6 +19,7 @@ import '../crypto/omemo/dual_track_manager.dart';
 import '../store/account_store.dart';
 import '../store/database.dart';
 import '../store/omemo_device_store.dart';
+import '../store/omemo2_device_store.dart';
 import '../store/roster_state.dart';
 import '../xmpp/b_track_manager.dart';
 import '../xmpp/connection.dart';
@@ -106,6 +107,9 @@ class AccountHub extends ChangeNotifier {
   Iterable<AccountSession> get sessions => _sessions.values;
   bool get hasAccounts => _accounts.isNotEmpty;
 
+  /// At least one account may open a session (not OPTION_DISABLED).
+  bool get hasEnabledAccounts => _accounts.any((a) => a.enabled);
+
   AccountSession? session(String accountId) => _sessions[accountId];
 
   AccountSession? get primarySession {
@@ -126,7 +130,18 @@ class AccountHub extends ChangeNotifier {
   /// this). Call [connectAll] only after [AppNetwork.loadFrom] has applied
   /// those prefs.
   Future<void> openSessions() async {
-    _accounts = await _store.loadAll();
+    final loaded = await _store.loadAll();
+    // A failed keystore read must not erase an in-memory list mid-session.
+    if (loaded.isEmpty &&
+        _store.lastLoadError != null &&
+        _accounts.isNotEmpty) {
+      _log.severe(
+        'account load failed (${_store.lastLoadError}); keeping '
+        '${_accounts.length} in-memory account(s)',
+      );
+    } else {
+      _accounts = loaded;
+    }
     for (final a in _accounts.where((a) => a.enabled)) {
       try {
         await _ensureSession(a);
@@ -156,24 +171,36 @@ class AccountHub extends ChangeNotifier {
 
   XmppService _buildXmpp(AppDatabase db, String accountId) {
     late final XmppService xmpp;
+    final deviceStore = OmemoDeviceStore(
+      accountId: accountId,
+      secureStorage: const FlutterSecureStorage(),
+      loadSecret: () async {
+        final v = await db.metaValue('omemo_device_blob');
+        return v == null ? null : base64Decode(v);
+      },
+      saveSecret: (bytes) =>
+          db.setMetaValue('omemo_device_blob', base64Encode(bytes)),
+      deleteSecret: () => db.deleteMetaValue('omemo_device_blob'),
+    );
+    final omemo2Store = Omemo2DeviceStore(
+      accountId: accountId,
+      secureStorage: const FlutterSecureStorage(),
+      loadSecret: () async {
+        final v = await db.metaValue('omemo2_device_blob');
+        return v == null ? null : base64Decode(v);
+      },
+      saveSecret: (bytes) =>
+          db.setMetaValue('omemo2_device_blob', base64Encode(bytes)),
+      deleteSecret: () => db.deleteMetaValue('omemo2_device_blob'),
+    );
     final bTrack = BTrackManager(
       tracks: () => xmpp.tracks!,
       pubsubOf: () => xmpp.pubsub,
+      accountId: accountId,
+      pqIdentity: deviceStore.pqIdentity,
+      deviceStore: omemo2Store,
     );
-    xmpp = XmppService(
-      deviceStore: OmemoDeviceStore(
-        accountId: accountId,
-        secureStorage: const FlutterSecureStorage(),
-        loadSecret: () async {
-          final v = await db.metaValue('omemo_device_blob');
-          return v == null ? null : base64Decode(v);
-        },
-        saveSecret: (bytes) =>
-            db.setMetaValue('omemo_device_blob', base64Encode(bytes)),
-        deleteSecret: () => db.deleteMetaValue('omemo_device_blob'),
-      ),
-      bTrack: bTrack,
-    );
+    xmpp = XmppService(deviceStore: deviceStore, bTrack: bTrack);
     return xmpp;
   }
 
@@ -380,8 +407,19 @@ class AccountHub extends ChangeNotifier {
     final i = _accounts.indexWhere((a) => a.id == accountId);
     if (i < 0) return;
     final updated = _accounts[i].copyWith(enabled: enabled);
-    await _store.upsert(updated);
-    _accounts = await _store.loadAll();
+    try {
+      await _store.upsert(updated);
+      final loaded = await _store.loadAll();
+      if (loaded.isEmpty && _store.lastLoadError != null) {
+        _accounts = [..._accounts]..[i] = updated;
+      } else {
+        _accounts = loaded;
+      }
+    } catch (e, st) {
+      _log.severe('setEnabled persist failed for $accountId: $e', e, st);
+      // Still apply in memory so the switch and session match the UI.
+      _accounts = [..._accounts]..[i] = updated;
+    }
     if (!enabled) {
       final s = _sessions.remove(accountId);
       await s?.dispose();

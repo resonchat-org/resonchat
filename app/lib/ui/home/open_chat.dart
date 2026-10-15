@@ -18,10 +18,10 @@ void openChat(BuildContext context, String chatKey) {
   if (chatKey.isEmpty) return;
   final nav = Navigator.of(context);
   if (isColumnMode(context)) {
-    ProviderScope.containerOf(context)
-            .read(selectedChatKeyProvider.notifier)
-            .state =
-        chatKey;
+    final container = ProviderScope.containerOf(context);
+    container.read(selectedChatKeyProvider.notifier).state = chatKey;
+    // Side pane is only built on the Chats tab — leave Contacts/Me first.
+    container.read(homeTabIndexProvider.notifier).state = 0;
     if (nav.canPop()) {
       nav.popUntil((route) => route.settings.name == '/chats' || route.isFirst);
     }

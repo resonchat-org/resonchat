@@ -18,7 +18,7 @@ import 'package:resonchat/xmpp/eme.dart';
 void main() {
   group('labels', () {
     test('each track has a distinct two-letter code', () {
-      expect(Track.pq.label, 'PO');
+      expect(Track.pq.label, 'O2');
       expect(Track.standard.label, 'OM');
       expect(Track.none.label, 'NO');
       expect(
@@ -37,8 +37,7 @@ void main() {
       for (final track in Track.values) {
         expect(track.description, isNotEmpty);
       }
-      // The PQ one has to say who can read it, or the label is misleading.
-      expect(Track.pq.description, contains('resonchat'));
+      expect(Track.pq.description, contains('monocles'));
       expect(Track.standard.description, contains('OMEMO'));
     });
   });
@@ -48,9 +47,9 @@ void main() {
       expect(Track.fromEme(null), Track.none);
     });
 
-    test('our post-quantum namespace maps to PO', () {
+    test('our post-quantum namespace maps to OMEMO2', () {
       expect(Track.fromEme(ExplicitEncryptionType.pomemo0), Track.pq);
-      expect(Track.pq.emeNamespace, 'urn:xmpp:pomemo:0');
+      expect(Track.pq.emeNamespace, 'urn:monocles:omemo-pq:1');
     });
 
     test('every OMEMO spelling maps to OM', () {
@@ -88,10 +87,10 @@ void main() {
 
   group('outgoing EME element', () {
     test('carries the namespace of the track it was given', () {
-      final xml = const EmeData(Track.pq, name: 'OMEMO-PQ').toXML().toXml();
+      final xml = const EmeData(Track.pq, name: 'PQ OMEMO2').toXML().toXml();
       expect(xml, contains('urn:xmpp:eme:0'));
-      expect(xml, contains('urn:xmpp:pomemo:0'));
-      expect(xml, contains('OMEMO-PQ'));
+      expect(xml, contains('urn:monocles:omemo-pq:1'));
+      expect(xml, contains('PQ OMEMO2'));
     });
 
     test('standard uses the namespace real clients send', () {

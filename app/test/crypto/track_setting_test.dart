@@ -39,7 +39,7 @@ void main() {
     test('the token is what the user reads under the message', () {
       // A stored value the user could recognise makes a hand-edited or
       // restored database debuggable rather than mysterious.
-      expect(Track.pq.stored, 'PO');
+      expect(Track.pq.stored, 'O2');
       expect(Track.standard.stored, 'OM');
       expect(Track.none.stored, 'NO');
     });

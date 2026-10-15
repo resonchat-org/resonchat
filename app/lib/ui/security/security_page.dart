@@ -16,6 +16,7 @@ import '../../account/resolve.dart';
 import '../../crypto/fingerprint.dart';
 import '../../crypto/omemo/track.dart';
 import '../../crypto/omemo/track_resolver.dart';
+import '../../crypto/own_fingerprints.dart';
 import '../../l10n/l10n.dart';
 import '../../xmpp/capabilities.dart';
 import '../../state/providers.dart';
@@ -43,7 +44,8 @@ class SecurityPage extends ConsumerStatefulWidget {
 }
 
 class _SecurityPageState extends ConsumerState<SecurityPage> {
-  String? _fingerprint;
+  String? _hybridFingerprint;
+  String? _legacyFingerprint;
   int? _deviceId;
 
   @override
@@ -53,21 +55,38 @@ class _SecurityPageState extends ConsumerState<SecurityPage> {
   }
 
   Future<void> _load() async {
-    final om = resolveChatKey(widget.chatJid).session.xmpp.omemo;
-    if (om == null) return;
-    final id = await om.getDeviceId();
-    final fp = await (await om.getDevice()).fingerprint;
+    final session = resolveChatKey(widget.chatJid).session;
+    final store = session.xmpp.deviceStore;
+    final om = session.xmpp.omemo;
+    if (store == null || om == null) return;
+    final device = await om.getDevice();
+    final id = await device.deviceId;
+    final hybridFromTrack = await session.xmpp.bTrack?.hybridFingerprint();
+    List<int>? omemo2Ik;
+    final bDev = session.xmpp.bTrack?.device;
+    if (bDev != null) {
+      omemo2Ik = await bDev.identityPublicSerialized();
+    }
+    final fps = await loadOwnFingerprints(
+      legacyDevice: device,
+      pqStore: store.pqIdentity,
+      omemo2IkSerialized: omemo2Ik,
+    );
     if (!mounted) return;
     setState(() {
       _deviceId = id;
-      _fingerprint = fp;
+      _hybridFingerprint = (hybridFromTrack?.isNotEmpty ?? false)
+          ? hybridFromTrack
+          : (fps.hybrid.isEmpty ? null : fps.hybrid);
+      _legacyFingerprint = fps.legacy;
     });
   }
 
-  Future<void> _copyFingerprint() async {
-    final fp = _fingerprint;
-    if (fp == null) return;
-    await Clipboard.setData(ClipboardData(text: formatFingerprint(fp)));
+  Future<void> _copyFingerprint(String? fp) async {
+    if (fp == null || fp.isEmpty) return;
+    await Clipboard.setData(
+      ClipboardData(text: fp.replaceAll(RegExp(r'\s+'), '').toLowerCase()),
+    );
     if (!mounted) return;
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(context.l10n.fingerprintCopied)));
@@ -135,31 +154,77 @@ class _SecurityPageState extends ConsumerState<SecurityPage> {
               style: TextStyle(fontSize: 13, color: tg.textSecondary),
             ),
           ),
-          Container(
-            margin: const EdgeInsets.symmetric(horizontal: 16),
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: tg.separator),
-            ),
-            child: SelectableText(
-              formatFingerprint(_fingerprint ?? '—'),
-              style: TextStyle(
-                fontFamily: 'monospace',
-                fontSize: 13,
-                color: tg.textPrimary,
-                height: 1.6,
+          if (_hybridFingerprint != null) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                l10n.omemo2Fingerprint,
+                style: TextStyle(fontSize: 12, color: tg.textSecondary),
               ),
             ),
-          ),
-          const SizedBox(height: 12),
-          Center(
-            child: OutlinedButton.icon(
-              onPressed: _fingerprint == null ? null : _copyFingerprint,
-              icon: const Icon(Icons.copy, size: 18),
-              label: Text(l10n.copyFingerprint),
+            const SizedBox(height: 6),
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: tg.separator),
+              ),
+              child: SelectableText(
+                formatFingerprint(_hybridFingerprint!),
+                style: TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 13,
+                  color: tg.textPrimary,
+                  height: 1.6,
+                ),
+              ),
             ),
-          ),
+            const SizedBox(height: 8),
+            Center(
+              child: OutlinedButton.icon(
+                onPressed: () => _copyFingerprint(_hybridFingerprint),
+                icon: const Icon(Icons.copy, size: 18),
+                label: Text(l10n.copyFingerprint),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+          if (_legacyFingerprint != null) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                l10n.omemoLegacyFingerprint,
+                style: TextStyle(fontSize: 12, color: tg.textSecondary),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: tg.separator),
+              ),
+              child: SelectableText(
+                formatFingerprint(_legacyFingerprint!),
+                style: TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 13,
+                  color: tg.textPrimary,
+                  height: 1.6,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Center(
+              child: OutlinedButton.icon(
+                onPressed: () => _copyFingerprint(_legacyFingerprint),
+                icon: const Icon(Icons.copy, size: 18),
+                label: Text(l10n.copyFingerprint),
+              ),
+            ),
+          ],
 
           _section(tg, l10n.verificationStatus),
           const _VerificationSteps(),

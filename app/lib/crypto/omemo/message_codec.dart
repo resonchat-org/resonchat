@@ -1,69 +1,56 @@
 // Copyright (C) 2026 resonchat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// B-track `<encrypted>` message codec (docs/02 §5).
+// monocles OMEMO2 outer `<encrypted>` shape (XmppOmemo2Message).
 //
-// Key-exchange messages carry the PQXDH transcript (`ek`, key ids,
-// one or two KEM ciphertexts); steady-state messages carry only `wrap`.
-// Both wrap the same random 32-byte message key; the payload is one
-// AES-256-GCM box under that key.
+// Inner `<key>` text is opaque base64 of a libsignal
+// `PreKeySignalMessage` / `SignalMessage` (omemo_dart OMEMO2 stack).
+
+import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:xml/xml.dart';
 
 import 'protocol.dart';
 
-/// Per-recipient-device entry inside `<keys>`.
+/// Per-recipient-device entry: SessionCipher ciphertext for the 32-byte MK.
 class PqKeyEntry {
   PqKeyEntry({
     required this.recipientDeviceId,
-    required this.wrap,
+    required this.ciphertext,
     this.kex = false,
-    this.ek,
-    this.spkId,
-    this.pkId,
-    this.pqSpkId,
-    this.pqPkId,
-    this.pqCiphertexts = const [],
   });
 
   final int recipientDeviceId;
 
-  /// The message key, encrypted under this device's session chain key.
-  final String wrap;
+  /// Base64 of serialized PreKeySignalMessage / SignalMessage.
+  final String ciphertext;
 
-  /// True on the first message of a session (carries handshake params).
+  /// True when [ciphertext] is a PreKeySignalMessage (`kex="true"`).
   final bool kex;
 
-  // KEX-only fields (base64 unless noted).
-  final String? ek;
-  final int? spkId;
-  final int? pkId;
-  final int? pqSpkId;
-  final int? pqPkId;
+  /// Alias used by older call sites / tests.
+  String get wrap => ciphertext;
 
-  /// One (ct1) or two (ct1 + ct2) ML-KEM ciphertexts, base64.
-  final List<String> pqCiphertexts;
+  String toWireCiphertext() => ciphertext;
 
-  /// Appends `<key …>…</key>` to an open builder.
+  static PqKeyEntry fromWire({
+    required int rid,
+    required String ciphertext,
+    bool kexAttr = false,
+  }) {
+    return PqKeyEntry(
+      recipientDeviceId: rid,
+      ciphertext: ciphertext.trim(),
+      kex: kexAttr,
+    );
+  }
+
   void buildXml(XmlBuilder builder) {
     builder.element(
       'key',
       attributes: {'rid': '$recipientDeviceId', if (kex) 'kex': 'true'},
-      nest: () {
-        if (kex) {
-          if (ek != null) builder.element('ek', nest: ek);
-          if (spkId != null) builder.element('spkid', nest: '$spkId');
-          if (pkId != null) builder.element('pkid', nest: '$pkId');
-          if (pqSpkId != null) {
-            builder.element('pqspkid', nest: '$pqSpkId');
-          }
-          if (pqPkId != null) builder.element('pqpkid', nest: '$pqPkId');
-          for (final ct in pqCiphertexts) {
-            builder.element('pqct', nest: ct);
-          }
-        }
-        builder.element('wrap', nest: wrap);
-      },
+      nest: toWireCiphertext(),
     );
   }
 
@@ -74,66 +61,88 @@ class PqKeyEntry {
   }
 
   static PqKeyEntry fromXml(XmlElement el) {
-    String? one(String tag) => el.findElements(tag).singleOrNull?.innerText;
-    int? oneInt(String tag) {
-      final v = one(tag);
-      return v == null ? null : int.parse(v);
-    }
-
-    return PqKeyEntry(
-      recipientDeviceId: int.parse(el.getAttribute('rid')!),
-      wrap: el.findElements('wrap').single.innerText,
-      kex: el.getAttribute('kex') == 'true',
-      ek: one('ek'),
-      spkId: oneInt('spkid'),
-      pkId: oneInt('pkid'),
-      pqSpkId: oneInt('pqspkid'),
-      pqPkId: oneInt('pqpkid'),
-      pqCiphertexts: el.findElements('pqct').map((e) => e.innerText).toList(),
+    return fromWire(
+      rid: int.parse(el.getAttribute('rid')!),
+      ciphertext: el.innerText.trim(),
+      kexAttr: el.getAttribute('kex') == 'true',
     );
   }
 }
 
-/// A full B-track encrypted stanza body.
+/// Keys for one bare JID.
+class Omemo2KeysForJid {
+  Omemo2KeysForJid({required this.jid, required this.keys});
+
+  final String jid;
+  final List<PqKeyEntry> keys;
+
+  void buildXml(XmlBuilder builder) {
+    builder.element(
+      'keys',
+      attributes: {'jid': jid},
+      nest: () {
+        for (final k in keys) {
+          k.buildXml(builder);
+        }
+      },
+    );
+  }
+
+  static Omemo2KeysForJid fromXml(XmlElement el) {
+    return Omemo2KeysForJid(
+      jid: el.getAttribute('jid') ?? '',
+      keys: el.findElements('key').map(PqKeyEntry.fromXml).toList(),
+    );
+  }
+}
+
+/// Full OMEMO2 encrypted element.
 class PqEncryptedMessage {
   PqEncryptedMessage({
     required this.senderDeviceId,
-    required this.keys,
-    required this.iv,
     required this.payload,
-  });
+    required this.commit,
+    List<Omemo2KeysForJid>? recipients,
+    List<PqKeyEntry>? keys,
+    this.iv = '',
+  }) : recipients =
+           recipients ??
+           (keys != null
+               ? [Omemo2KeysForJid(jid: '', keys: keys)]
+               : <Omemo2KeysForJid>[]);
 
   final int senderDeviceId;
-  final List<PqKeyEntry> keys;
+  final List<Omemo2KeysForJid> recipients;
 
-  /// 12-byte IV, base64.
+  /// AES-256-GCM ciphertext‖tag, base64.
+  final String payload;
+
+  /// 64-byte key commitment, base64.
+  final String commit;
+
+  /// Legacy field; unused when KMAC derives the IV.
   final String iv;
 
-  /// AES-256-GCM ciphertext + 16-byte tag, base64.
-  final String payload;
+  /// Flat list of all key entries (tests / decrypt lookup).
+  List<PqKeyEntry> get keys => [for (final r in recipients) ...r.keys];
 
   XmlElement toXml() {
     final builder = XmlBuilder();
     builder.element(
       'encrypted',
-      attributes: {'xmlns': pomemoXmlns},
+      attributes: {'xmlns': omemo2Xmlns},
       nest: () {
         builder.element(
           'header',
           attributes: {'sid': '$senderDeviceId'},
           nest: () {
-            builder.element(
-              'keys',
-              nest: () {
-                for (final k in keys) {
-                  k.buildXml(builder);
-                }
-              },
-            );
-            builder.element('iv', nest: iv);
+            for (final r in recipients) {
+              r.buildXml(builder);
+            }
           },
         );
         builder.element('payload', nest: payload);
+        builder.element('commit', nest: commit);
       },
     );
     return builder.buildDocument().rootElement;
@@ -141,16 +150,39 @@ class PqEncryptedMessage {
 
   static PqEncryptedMessage fromXml(XmlElement el) {
     final header = el.findElements('header').single;
-    final keysEl = header.findElements('keys').single;
+    final commitEls = el.findElements('commit');
+    if (commitEls.isEmpty) {
+      throw FormatException('OMEMO2 message missing mandatory <commit>');
+    }
+    final keysGroups = header.findElements('keys').toList();
+    final recipients = keysGroups.isEmpty
+        ? <Omemo2KeysForJid>[]
+        : keysGroups.map(Omemo2KeysForJid.fromXml).toList();
     return PqEncryptedMessage(
       senderDeviceId: int.parse(header.getAttribute('sid')!),
-      keys: keysEl.findElements('key').map(PqKeyEntry.fromXml).toList(),
-      iv: header.findElements('iv').single.innerText,
+      recipients: recipients,
       payload: el.findElements('payload').single.innerText,
+      commit: commitEls.single.innerText,
     );
   }
 }
 
-extension _SingleOrNull on Iterable<XmlElement> {
-  XmlElement? get singleOrNull => isEmpty ? null : single;
+typedef Omemo2EncryptedMessage = PqEncryptedMessage;
+
+/// Context binding for KMAC / GCM AAD (proto-XEP §5.4.2).
+Uint8List omemo2ContextBinding({
+  required String senderBareJid,
+  required String recipientBareJid,
+  required int sourceDeviceId,
+}) {
+  final b = BytesBuilder(copy: false);
+  b.add(utf8.encode('OMEMO2'));
+  b.addByte(0);
+  b.add(utf8.encode(senderBareJid));
+  b.addByte(0);
+  b.add(utf8.encode(recipientBareJid));
+  b.addByte(0);
+  final sid = ByteData(4)..setUint32(0, sourceDeviceId, Endian.big);
+  b.add(sid.buffer.asUint8List());
+  return b.toBytes();
 }

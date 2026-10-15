@@ -44,6 +44,7 @@ import 'conference_mention.dart';
 import 'quoted_transcript.dart';
 import 'message_actions.dart';
 import '../home/open_chat.dart';
+import '../room/occupant_actions.dart';
 import '../room/room_profile_page.dart';
 import '../room/room_sheet.dart';
 import '../chats/search.dart';
@@ -617,6 +618,56 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     );
     _vm.onInputChanged(edit.text);
     _focus.requestFocus();
+  }
+
+  /// Long-press on a group bubble avatar → same member sheet as room profile.
+  ///
+  /// Uses the *live* roster entry (Gajim). A historical message does not keep
+  /// kick/voice available after the sender goes offline; affiliation actions
+  /// still need a real JID on that live entry (or an offline affiliate stub).
+  Future<void> _onOccupantAvatarLongPress(String nick) async {
+    if (nick.trim().isEmpty || _selectionMode) return;
+    final room = _ui.room;
+    if (room == null || nick == room.nick) return;
+    // Prefer live occupant; if they fully left (no offline stub), treat as
+    // offline with unknown affiliation — no fabricated privileges.
+    final occupant =
+        occupantByNick(room, nick) ??
+        Occupant(nick: nick, affiliation: 'none', role: 'none');
+    final xmpp = resolveChatKey(widget.chatJid).session.xmpp;
+    final caps = await xmpp.roomSelfCapabilities(room.roomJid);
+    if (!mounted) return;
+    final nav = await runOccupantActions(
+      context: context,
+      ref: ref,
+      chatKey: widget.chatJid,
+      room: room,
+      occupant: occupant,
+      caps: caps,
+      xmpp: xmpp,
+    );
+    if (!mounted || nav == null) return;
+    final jid = nav.privateChatJid;
+    if (jid != null && jid.isNotEmpty) {
+      final accountId = resolveChatKey(widget.chatJid).session.account.id;
+      openChat(context, ChatRef(accountId: accountId, jid: jid).key);
+      return;
+    }
+    final mucPm = nav.mucPmNick;
+    if (mucPm != null && mucPm.isNotEmpty) {
+      final effect = await _vm.applyMemberResult(
+        roomJid: room.roomJid,
+        leaving: false,
+        destroyed: false,
+        mucPmNick: mucPm,
+      );
+      if (!mounted) return;
+      if (effect.kind == ChatMemberEffectKind.privateMessage) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _focus.requestFocus();
+        });
+      }
+    }
   }
 
   Future<void> _send() async {
@@ -1481,6 +1532,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                           onMenu: _showMessageMenu,
                           onToggleSelected: _toggleSelected,
                           onMentionNick: _mentionOccupant,
+                          onOccupantAvatarLongPress: (nick) =>
+                              unawaited(_onOccupantAvatarLongPress(nick)),
                           selectionMode: _selectionMode,
                           selectedIds: _selection,
                           translations: _translations,

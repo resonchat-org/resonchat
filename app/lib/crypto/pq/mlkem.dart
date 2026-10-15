@@ -1,17 +1,14 @@
 // Copyright (C) 2026 resonchat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// ML-KEM-768 interface. Pure-Dart start (`pqcrypto`); a liboqs FFI
-// implementation can be dropped in later behind this same interface.
+// ML-KEM interfaces. OMEMO2 uses ML-KEM-1024 (monocles); ML-KEM-768 is
+// retained for native-bridge / interop tests only.
 
-/// A freshly generated ML-KEM key pair.
+/// A freshly generated ML-KEM key pair (raw FIPS 203 bytes, no type tag).
 class KemKeyPair {
   const KemKeyPair({required this.publicKey, required this.secretKey});
 
-  /// Encapsulation key (1184 bytes for ML-KEM-768).
   final List<int> publicKey;
-
-  /// Decapsulation key (2400 bytes for ML-KEM-768).
   final List<int> secretKey;
 }
 
@@ -22,15 +19,26 @@ class KemEncapsulation {
     required this.sharedSecret,
   });
 
-  /// Ciphertext to send to the peer (1088 bytes for ML-KEM-768).
   final List<int> ciphertext;
-
-  /// Shared secret established with the peer (32 bytes).
   final List<int> sharedSecret;
 }
 
-/// ML-KEM-768 operations. Implementations must be deterministic in sizes
-/// and agree on shared secrets (ciphertexts may differ).
+/// ML-KEM-1024 (FIPS 203) — monocles OMEMO2 / proto-XEP.
+abstract class MlKem1024 {
+  static const int publicKeyLength = 1568;
+  static const int secretKeyLength = 3168;
+  static const int ciphertextLength = 1568;
+  static const int sharedSecretLength = 32;
+
+  KemKeyPair generateKeyPair();
+
+  KemEncapsulation encapsulate(List<int> publicKey);
+
+  /// Returns the 32-byte shared secret. ML-KEM uses implicit rejection.
+  List<int> decapsulate(List<int> secretKey, List<int> ciphertext);
+}
+
+/// ML-KEM-768 (FIPS 203) — legacy tests / optional native bridge.
 abstract class MlKem768 {
   static const int publicKeyLength = 1184;
   static const int secretKeyLength = 2400;
@@ -41,8 +49,5 @@ abstract class MlKem768 {
 
   KemEncapsulation encapsulate(List<int> publicKey);
 
-  /// Returns the 32-byte shared secret. ML-KEM uses implicit rejection:
-  /// invalid inputs yield a pseudo-random secret instead of throwing,
-  /// so callers must not treat the output as an error signal.
   List<int> decapsulate(List<int> secretKey, List<int> ciphertext);
 }

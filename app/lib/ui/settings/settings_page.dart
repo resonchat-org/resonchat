@@ -77,11 +77,13 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final tg = context.tg;
     final l10n = context.l10n;
     final settings = ref.watch(settingsViewModelProvider);
-    final xmpp = ref.watch(xmppServiceProvider);
+    final xmpp = ref.watch(xmppServiceOrNullProvider);
     final deliveryReceipts =
-        settings.deliveryReceipts ?? xmpp.sendDeliveryReceipts;
-    final readReceipts = settings.readReceipts ?? xmpp.sendReadReceipts;
-    final chatStates = settings.chatStates ?? xmpp.sendTypingNotifications;
+        settings.deliveryReceipts ?? xmpp?.sendDeliveryReceipts ?? true;
+    final readReceipts =
+        settings.readReceipts ?? xmpp?.sendReadReceipts ?? true;
+    final chatStates =
+        settings.chatStates ?? xmpp?.sendTypingNotifications ?? true;
     final localeOverride = ref.watch(localeOverrideProvider);
     final vm = ref.read(settingsViewModelProvider.notifier);
 

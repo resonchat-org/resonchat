@@ -141,6 +141,7 @@ class MessageBubble extends StatelessWidget {
     this.onTap,
     this.leadingAvatar,
     this.onAvatarTap,
+    this.onAvatarLongPress,
     this.reserveAvatarGutter = false,
   });
 
@@ -247,6 +248,10 @@ class MessageBubble extends StatelessWidget {
 
   /// Conversations `onContactPictureClicked` → insert a conference mention.
   final VoidCallback? onAvatarTap;
+
+  /// Occupant menu (same sheet as room profile). Must not fall through to the
+  /// message long-press handler.
+  final VoidCallback? onAvatarLongPress;
 
   /// Keep the avatar column width even when [leadingAvatar] is null (merged
   /// consecutive messages still line up with the first bubble in the group).
@@ -476,6 +481,7 @@ class MessageBubble extends StatelessWidget {
                       padding: const EdgeInsets.only(right: 6, bottom: 2),
                       child: GestureDetector(
                         onTap: onAvatarTap,
+                        onLongPress: onAvatarLongPress,
                         behavior: HitTestBehavior.opaque,
                         child: leadingAvatar,
                       ),

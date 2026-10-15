@@ -5,11 +5,11 @@
 # Build Debian (.deb) and Fedora/RHEL (.rpm) packages from the Flutter Linux
 # release bundle.
 #
-# Usage (from app/):
-#   ./tool/build_deb_rpm.sh              # flutter build linux --release + pack
-#   ./tool/build_deb_rpm.sh --skip-build # pack an existing release bundle
-#   ./tool/build_deb_rpm.sh --deb-only
-#   ./tool/build_deb_rpm.sh --rpm-only
+# Usage (from repo root):
+#   ./scripts/build_deb_rpm.sh              # flutter build linux --release + pack
+#   ./scripts/build_deb_rpm.sh --skip-build # pack an existing release bundle
+#   ./scripts/build_deb_rpm.sh --deb-only
+#   ./scripts/build_deb_rpm.sh --rpm-only
 #
 # Linked .so Depends come from dpkg-shlibdeps / rpm AutoReq.
 # Manual Depends (linux_pkg_deps.sh) are CLI-only: pipewire-bin, wireplumber,
@@ -22,8 +22,8 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-APP="$(cd "$HERE/.." && pwd)"
-REPO="$(cd "$APP/.." && pwd)"
+REPO="$(cd "$HERE/.." && pwd)"
+APP="$(cd "$REPO/app" && pwd)"
 # shellcheck source=linux_pkg_deps.sh
 source "$HERE/linux_pkg_deps.sh"
 cd "$APP"
@@ -139,7 +139,7 @@ done
   echo "XMPP client with dual-track OMEMO (standard + post-quantum)."
   echo "Homepage: https://github.com/resonchat-org/resonchat"
   echo
-  echo "Runtime CLI dependencies (not linked — see tool/linux_runtime_deps.md):"
+  echo "Runtime CLI dependencies (not linked — see scripts/linux_pkg_deps.sh):"
   echo "  pipewire-bin (pw-record), wireplumber (wpctl), ffmpeg, xdg-utils"
 } > "$STAGE/usr/share/doc/resonchat/README"
 if [ -f "$REPO/LICENSE" ]; then

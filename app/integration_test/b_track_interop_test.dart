@@ -21,6 +21,8 @@ import 'package:resonchat/crypto/omemo/dual_track_manager.dart';
 import 'package:resonchat/crypto/omemo/protocol.dart';
 import 'package:resonchat/crypto/omemo/track.dart';
 import 'package:resonchat/crypto/omemo/track_resolver.dart';
+import 'package:resonchat/crypto/pq_identity_store.dart';
+import 'package:resonchat/store/omemo2_device_store.dart';
 import 'package:resonchat/xmpp/b_track_manager.dart';
 import 'package:resonchat/xmpp/capabilities.dart';
 import 'package:resonchat/xmpp/connection.dart';
@@ -36,11 +38,22 @@ void check(String name, bool ok, [String detail = '']) {
 /// A client with its own B-track device, wired the way the app's providers
 /// wire it: the manager holds callbacks, not the service, because neither
 /// exists yet at construction time.
-({XmppService service, BTrackManager bTrack}) _makeClient() {
+({XmppService service, BTrackManager bTrack}) _makeClient({
+  required String accountId,
+}) {
   late XmppService service;
+  List<int>? sealedBlob;
   final bTrack = BTrackManager(
     tracks: () => service.tracks!,
     pubsubOf: () => service.pubsub!,
+    accountId: accountId,
+    pqIdentity: PqIdentityStore(accountId: accountId),
+    deviceStore: Omemo2DeviceStore(
+      accountId: accountId,
+      loadSecret: () async => sealedBlob,
+      saveSecret: (bytes) async => sealedBlob = bytes,
+      deleteSecret: () async => sealedBlob = null,
+    ),
   );
   service = XmppService(bTrack: bTrack);
   return (service: service, bTrack: bTrack);
@@ -100,8 +113,8 @@ void main() {
       }
     });
 
-    final a = _makeClient();
-    final b = _makeClient();
+    final a = _makeClient(accountId: 'interop-a');
+    final b = _makeClient(accountId: 'interop-b');
 
     try {
       final okA = await a.service.connect(

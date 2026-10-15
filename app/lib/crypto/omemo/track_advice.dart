@@ -24,7 +24,7 @@ import 'track_resolver.dart';
 
 /// Why the advice exists.
 enum TrackAdviceKind {
-  /// The post-quantum track became reachable for every device.
+  /// The post-quantum track became reachable (at least one peer device).
   pqNowPossible,
 
   /// A device was lost, so the chosen track can no longer be used.
@@ -77,15 +77,22 @@ class TrackAdvice {
   };
 }
 
-/// True when *every* recipient device has a usable post-quantum bundle.
+/// True when every classic recipient id also appears on the OMEMO2 list.
 ///
-/// An empty device list is deliberately false: "there is nobody to encrypt
-/// to" is not "everything is covered", and the vacuous truth of `every` on an
-/// empty set is how a client ends up claiming protection it does not have.
+/// Optional "full coverage" hint only — not the send gate. Empty classic
+/// list is false (vacuous every() must not claim protection).
 bool everyDeviceIsPq(ChatCapabilities caps) {
-  if (!caps.reliable) return false;
+  if (!caps.pqReliable) return false;
   if (caps.recipientDevices.isEmpty) return false;
   return caps.recipientDevices.every(caps.pqDevices.contains);
+}
+
+/// True when the peer publishes at least one OMEMO2 device id.
+///
+/// Independent of the classic list — [ChatCapabilities.pqDevices] is B-only.
+bool anyPeerDeviceIsPq(ChatCapabilities caps) {
+  if (!caps.pqReliable) return false;
+  return caps.pqDevices.isNotEmpty;
 }
 
 /// Compares two snapshots of the same conversation.
@@ -103,7 +110,7 @@ TrackAdvice? compareCapabilities({
 }) {
   if (!previous.reliable || !current.reliable) return null;
 
-  if (!everyDeviceIsPq(previous) && everyDeviceIsPq(current)) {
+  if (!anyPeerDeviceIsPq(previous) && anyPeerDeviceIsPq(current)) {
     return TrackAdvice(
       chatJid: chatJid,
       kind: TrackAdviceKind.pqNowPossible,

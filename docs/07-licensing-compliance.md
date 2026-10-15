@@ -8,9 +8,9 @@
 | omemo_dart | MIT | ✅ | |
 | Telegram for Android（移植的 UI 代码） | **GPL-2.0-or-later** | ✅ | 「or later」使其可并入 GPLv3 |
 | moxlib | **GPL-3.0** | ✅ | `packages/moxlib/LICENSE` |
-| liboqs | MIT | ✅ | |
 | `cryptography` (Dart) | Apache-2.0 | ✅ | 以包内 LICENSE 为准 |
 | `pqcrypto` (Dart) | MIT | ✅ | 纯 Dart ML-KEM / ML-DSA |
+| `libsignal` (`libsignal_dart`) | AGPL-3.0 | ⚠️ | 与 GPLv3 并入后二进制整体按 AGPL 义务对待 |
 | drift | MIT | ✅ | |
 | SQLCipher（经 sqlite3 hooks） | BSD-style | ✅ | 使用 OpenSSL |
 | flutter_secure_storage | BSD-3-Clause | ✅ | |
@@ -29,7 +29,7 @@
   - 不得移除原有 NOTICE
 - [ ] 分发 APK 时**提供完整对应源码**（含构建脚本）
 - [ ] 不得对接收者施加额外限制（GPLv2 §6 / GPLv3 §10）
-- [ ] 若使用 OpenSSL，注意第三方许可声明文件（含 liboqs THIRD_PARTY_NOTICES）
+- [ ] 若使用 OpenSSL（SQLCipher），注意第三方许可声明文件
 
 ## 3. 商标与品牌风险（重要）
 
@@ -69,7 +69,7 @@
 | 渠道 | 要求 |
 |---|---|
 | 自签名 APK | 提供源码下载链接（GPL 义务）；CD 在 GitHub Release 挂 APK / AppImage |
-| F-Droid | 接受 GPLv3；需全部依赖可复现构建（liboqs 从源码构建） |
+| F-Droid | 接受 GPLv3；需全部依赖可复现构建（含 `libsignal` / Rust 工具链） |
 | Google Play | ⚠️ 需处理「与知名应用混淆」的审核风险，且 GPL 源码须可获取 |
 
 ## 6. 参与贡献（DCO/CLA）

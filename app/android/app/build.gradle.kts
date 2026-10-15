@@ -40,21 +40,8 @@ android {
                 ?: listOf("arm64-v8a", "x86_64")
             abiFilters += abis
         }
-
-        // Native ML-KEM-768 bridge (liboqs), see cpp/CMakeLists.txt.
-        externalNativeBuild {
-            cmake {
-                cppFlags += ""
-            }
-        }
-    }
-
-    // Required to compile libpqbridge.so.
-    externalNativeBuild {
-        cmake {
-            path = file("src/main/cpp/CMakeLists.txt")
-            version = "3.22.1"
-        }
+        // OMEMO2 uses pure-Dart pqcrypto ML-KEM-1024 (+ libsignal native
+        // Kyber for PQXDH/SPQR).
     }
 
     buildTypes {

@@ -14,18 +14,26 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:logging/logging.dart';
 import 'package:moxxmpp/moxxmpp.dart';
 import 'package:moxxmpp_socket_tcp/moxxmpp_socket_tcp.dart';
+import 'package:omemo_dart/omemo_dart_omemo2.dart'
+    hide serializeMlKem1024PublicKey, parseMlKem1024PublicKey;
+import 'package:pqcrypto/pqcrypto.dart';
 import 'package:xml/xml.dart';
+import 'package:resonchat/crypto/libsignal_bootstrap.dart';
 import 'package:resonchat/crypto/omemo/bundle_codec.dart';
 import 'package:resonchat/crypto/omemo/dual_track_manager.dart';
 import 'package:resonchat/crypto/omemo/message_codec.dart';
+import 'package:resonchat/crypto/omemo/omemo2_transcript.dart';
 import 'package:resonchat/crypto/omemo/pq_message_layer.dart';
 import 'package:resonchat/crypto/omemo/pq_session.dart';
 import 'package:resonchat/crypto/omemo/protocol.dart';
-import 'package:resonchat/crypto/pq/liboqs_mlkem.dart';
+import 'package:resonchat/crypto/pq/kem_wire.dart';
+import 'package:resonchat/crypto/pq/mlkem_provider.dart';
+import 'package:resonchat/crypto/pq/mlkem.dart';
 
 /// Number of failed checks; module-level so [finish] can report it from
 /// the `finally` block.
@@ -33,12 +41,21 @@ int failures = 0;
 
 /// One logged-in account with its B-track device.
 class Peer {
-  Peer(this.jid, this.connection, this.pubsub, this.device);
+  Peer(
+    this.jid,
+    this.connection,
+    this.pubsub,
+    this.device,
+    this.pqIk,
+    this.pqSk,
+  );
 
   final JID jid;
   final XmppConnection connection;
   final PubSubManager pubsub;
   final PqDevice device;
+  final Uint8List pqIk;
+  final Uint8List pqSk;
 
   Future<void> close() => connection.disconnect();
 }
@@ -58,11 +75,10 @@ Future<void> main(List<String> args) async {
     }
   });
 
-  final kem = MlKem768Provider.instance.kem;
+  await ensureLibSignal();
+  final kem = MlKem1024Provider.instance.kem;
   // ignore: avoid_print
-  print(
-    'KEM backend: ${MlKem768Provider.instance.isNative ? 'liboqs (native)' : 'pqcrypto (dart)'}',
-  );
+  print('KEM backend: pqcrypto ML-KEM-1024 (libsignal Kyber for sessions)');
 
   void check(String name, bool ok, [String detail = '']) {
     // ignore: avoid_print
@@ -75,17 +91,13 @@ Future<void> main(List<String> args) async {
   Peer? a;
   Peer? b;
   try {
-    a = await connect(args[0], args[1], kem);
-    b = await connect(args[2], args[3], kem);
+    a = await connect(args[0], args[1]);
+    b = await connect(args[2], args[3]);
     check('both accounts connected', true, '${a.jid} / ${b.jid}');
 
     // --- publish B-track bundles -------------------------------------
-    final bundleA = await DualTrackManager.deviceFromBundle(
-      await publish(a, a.device),
-    );
-    final bundleB = await DualTrackManager.deviceFromBundle(
-      await publish(b, b.device),
-    );
+    final bundleA = await DualTrackManager.deviceFromBundle(await publish(a));
+    final bundleB = await DualTrackManager.deviceFromBundle(await publish(b));
     check('bundle A published and readable', bundleA != null);
     check('bundle B published and readable', bundleB != null);
     if (bundleA == null || bundleB == null) return finish();
@@ -129,10 +141,17 @@ Future<void> main(List<String> args) async {
     if (outgoing == null) return finish();
 
     final entry = outgoing.stanza.keys.single;
+    var kemCtLen = 0;
+    if (entry.kex) {
+      final preKey = Omemo2PreKeySignalMessage.fromSerialized(
+        Uint8List.fromList(base64Decode(entry.ciphertext)),
+      );
+      kemCtLen = preKey.kyberCiphertextTagged.length;
+    }
     check(
       'handshake carries a full ML-KEM ciphertext',
-      entry.kex && entry.pqCiphertexts.isNotEmpty,
-      '${entry.pqCiphertexts.length} ciphertext(s)',
+      entry.kex && kemCtLen == 1 + MlKem1024.ciphertextLength,
+      'kex=${entry.kex} kemCt=$kemCtLen',
     );
 
     // Round-trip through the XML that would go on the wire.
@@ -147,6 +166,15 @@ Future<void> main(List<String> args) async {
     );
 
     // A second message must reuse the session, not re-handshake.
+    // libsignal keeps PreKey until the initiator sees a reply.
+    final reply = await layerB.encrypt(plaintext: 'ack', recipients: [bundleA]);
+    check('B produced a reply', reply != null);
+    if (reply == null) return finish();
+    await layerA.decrypt(
+      PqEncryptedMessage.fromXml(reply.stanza.toXml()),
+      senderBareJid: b.device.jid,
+    );
+
     final second = await layerA.encrypt(
       plaintext: 'second',
       recipients: [bundleB],
@@ -176,7 +204,7 @@ void finish() {
 }
 
 /// Connects [jid] and creates its B-track device.
-Future<Peer> connect(String jidStr, String password, kem) async {
+Future<Peer> connect(String jidStr, String password) async {
   final jid = JID.fromString(jidStr);
   final pubsub = PubSubManager();
   final connection = XmppConnection(
@@ -214,33 +242,66 @@ Future<Peer> connect(String jidStr, String password, kem) async {
     jid.toBare().toString(),
     opkCount: 20,
     pqOpkCount: 5,
-    kem: kem,
   );
-  return Peer(jid, connection, pubsub, device);
+  final (pqIk, pqSk) = MlDsa.generateKeyPair(DilithiumParams.mlDsa87);
+  return Peer(jid, connection, pubsub, device, pqIk, pqSk);
 }
 
-/// Publishes [device]'s B-track bundle and reads it back from the server.
-Future<PqBundle> publish(Peer peer, PqDevice device) async {
+/// Publishes [peer]'s B-track bundle and reads it back from the server.
+Future<PqBundle> publish(Peer peer) async {
+  final device = peer.device;
+  final ikRaw = await device.ikDh.pk.getBytes();
+  final spkRaw = await device.spk.pk.getBytes();
   final prekeys = <int, String>{};
   for (final e in device.opks.entries) {
     prekeys[e.key] = _b64(await e.value.pk.getBytes());
   }
-  final pqPrekeys = <int, String>{};
+
+  final kemSpkTagged = serializeMlKem1024PublicKey(device.pqSpk);
+  final kemPrekeys = <int, String>{};
+  final kemSigs = <int, String>{};
+  final opkWire = <KemOpkWire>[];
   for (final e in device.pqOpks.entries) {
-    pqPrekeys[e.key] = _b64(e.value.publicKey);
+    final tagged = serializeMlKem1024PublicKey(e.value.publicRaw);
+    kemPrekeys[e.key] = _b64(tagged);
+    kemSigs[e.key] = _b64(e.value.signature);
+    opkWire.add(KemOpkWire(id: e.key, publicKey: tagged));
   }
+
+  final binding = kemBinding(
+    kemSpkId: device.pqSpkId,
+    kemSpk: kemSpkTagged,
+    oneTimeKeys: opkWire,
+  );
+  final transcript = pqBundleTranscript(
+    ik: Uint8List.fromList([0x05, ...ikRaw]),
+    pqIk: peer.pqIk,
+    signedPreKeyId: device.spkId,
+    spk: Uint8List.fromList([0x05, ...spkRaw]),
+    kemBindingDigest: binding,
+  );
+  final pqSig = MlDsa.sign(
+    peer.pqSk,
+    transcript,
+    DilithiumParams.mlDsa87,
+    ctx: Uint8List.fromList(utf8.encode(omemo2PqIdContext)),
+  );
+
   final bundle = PqBundle(
     deviceId: device.id,
     jid: peer.jid.toBare().toString(),
-    spk: _b64(await device.spk.pk.getBytes()),
+    spk: _b64(spkRaw),
     spkId: device.spkId,
     spkSignature: _b64(device.spkSignature),
-    ikEncoded: _b64(await device.ikDh.pk.getBytes()),
+    ik: _b64(ikRaw),
     prekeys: prekeys,
-    pqSpkId: device.pqSpkId,
-    pqSpk: _b64(device.pqSpk),
-    pqSpkSignature: _b64(device.pqSpkSignature),
-    pqPrekeys: pqPrekeys,
+    kemSpkId: device.pqSpkId,
+    kemSpk: _b64(kemSpkTagged),
+    kemSpkSignature: _b64(device.pqSpkSignature),
+    kemPrekeys: kemPrekeys,
+    kemPrekeySignatures: kemSigs,
+    pqIk: _b64(peer.pqIk),
+    pqSig: _b64(pqSig),
   );
 
   final bare = peer.jid.toBare();

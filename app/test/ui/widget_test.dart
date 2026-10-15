@@ -73,7 +73,7 @@ void main() {
       final labels = {for (final m in EncMode.values) m: encModeLabel(m)};
       expect(labels[EncMode.none], 'Unencrypted');
       expect(labels[EncMode.standardOmemo], 'OMEMO');
-      expect(labels[EncMode.pqOmemo], 'PQ');
+      expect(labels[EncMode.pqOmemo], 'OMEMO2');
       expect(labels.values.toSet().length, 3);
     });
   });

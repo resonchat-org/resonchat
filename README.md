@@ -14,7 +14,7 @@
 | 零服务端改动 / 零新 XEP | 已完成 | 复用 PEP、EME 等既有标准 |
 | 数据库落盘加密 | 已完成 | SQLCipher，口令由 Android Keystore 保护 |
 | 标准协议扩展 | 已完成 | MAM（XEP-0313）历史同步、回执（XEP-0184）、输入状态（XEP-0085）、Carbons（XEP-0280） |
-| 平台支持 | 部分完成 | Android（arm64-v8a / x86_64，liboqs）；Web（Dart→Wasm + Drift WASM + WebSocket）；Linux AppImage（`pqcrypto`）；Windows 安装包；iOS 未做 |
+| 平台支持 | 部分完成 | Android（arm64-v8a / x86_64，`pqcrypto` + `libsignal`）；Web（Dart→Wasm + Drift WASM + WebSocket）；Linux AppImage；Windows 安装包；iOS 未做 |
 | Telegram Android 观感 UI | 进行中 | 气泡、色板、列表布局已实现；动画、平板适配未做 |
 
 ## 状态
@@ -26,19 +26,19 @@
 | M0 工程骨架 | 已完成 | mono-repo 骨架、三个上游 fork 接线、CI、drift 存储、PQXDH 与双轨编解码、Android debug APK 可构建 |
 | M1 通信基线 | 已完成 | SASL SCRAM-SHA-256、资源绑定、roster（RFC 6121 版本控制）、明文收发、MAM 历史同步、Carbons、消息存储 |
 | M2 标准 OMEMO | 已完成 | **与真实 Conversations 2.20.4 互通验收通过**（我们加密的消息被第三方客户端解密并显示） |
-| M3 PQ 内核 | 已完成 | liboqs FFI 设备实测，与纯 Dart 实现逐字节等价；**双账号跨服务器互测通过**（conversations.im 与 jabber.fr）；PQ bundle 已真实发布到服务器 |
+| M3 PQ 内核 | 已完成 | ML-KEM 走纯 Dart `pqcrypto`；PQXDH/SPQR 走 `libsignal`；**双账号跨服务器互测通过**（conversations.im 与 jabber.fr）；PQ bundle 已真实发布到服务器 |
 | M4 协商与发送策略 | 已完成 | 能力服务 + 用户 Track / `TrackResolver`（docs/10）；PEP 变更失效缓存 |
 | M5 存储与保护 | 已完成 | OMEMO 设备密钥经 Keystore 封存落库；数据库 SQLCipher 加密；聊天历史备份格式已有。**密钥备份/恢复与「不保存明文」选项未做** |
 | M6 UI | 进行中 | 按 [docs/05](docs/05-ui-telegram.md) |
 | M7 发布 | 未开始 | — |
 
-当前验证结果：`dart analyze lib test tool integration_test` 无告警；`flutter test` 123 项通过；`./tool/build_android.sh` 成功。
+当前验证结果：`dart analyze lib test tool integration_test` 无告警；`flutter test` 123 项通过；`./scripts/build_android.sh` 成功。
 
 **已知限制与未完成项**（完整清单见 [`README.dev.md`](README.dev.md)）：
 
 - 反向互通（Conversations 到本客户端）尚未验证 —— 验收环境对非双向订阅拒绝投递，需两台真实设备补齐
 - 设备密钥仅存本机 Keystore，**换机即全部会话失效**（无备份与恢复）
-- 仅编译 Android 两个 ABI，liboqs 未支持 iOS
+- iOS 未做；Android 仅打 arm64-v8a / x86_64
 - 消息一律落库（虽已加密），无「不保存明文」选项
 - 加密协议**未经第三方安全审计**
 
@@ -102,37 +102,33 @@ dart run build_runner build   # 生成 drift：database.g.dart 等
 flutter run                   # 连接设备或模拟器
 ```
 
-调试 APK：
+调试 APK（仓库根目录）：
 
 ```bash
-cd app
-./tool/build_android.sh
+./scripts/build_android.sh
 ```
 
 Linux AppImage（x86_64 / aarch64，需本机已装 Flutter Linux 桌面依赖：clang、cmake、ninja、GTK 3、libsecret 等）：
 
 ```bash
-cd app
-./tool/build_appimage.sh
-# → build/resonchat-<version>-x86_64.AppImage
-chmod +x build/resonchat-*-x86_64.AppImage
-./build/resonchat-*-x86_64.AppImage
+./scripts/build_appimage.sh
+# → app/build/resonchat-<version>-x86_64.AppImage
+chmod +x app/build/resonchat-*-x86_64.AppImage
+./app/build/resonchat-*-x86_64.AppImage
 ```
 
-Debian / RPM（同一 release bundle；链接库依赖由打包工具自动推断，CLI 依赖见 `app/tool/linux_runtime_deps.md`）：
+Debian / RPM（同一 release bundle；链接库依赖由打包工具自动推断，CLI 依赖见 `scripts/linux_pkg_deps.sh`）：
 
 ```bash
-cd app
-./tool/build_deb_rpm.sh          # 或 --skip-build 复用已有 bundle
-# → build/resonchat_*_x86_64.deb  /  build/resonchat-*-x86_64.rpm
+./scripts/build_deb_rpm.sh          # 或 --skip-build 复用已有 bundle
+# → app/build/resonchat_*_x86_64.deb  /  app/build/resonchat-*-x86_64.rpm
 ```
 
-Web（Drift `sqlite3.wasm` + Dart→Wasm；产物在 `build/web/`）：
+Web（Drift `sqlite3.wasm` + Dart→Wasm；产物在 `app/build/web/`）：
 
 ```bash
-cd app
-./tool/build_web.sh
-# Release 包：resonchat-<tag>-wasm.tar.gz（CD 从 build/web 打 tar.gz）
+./scripts/build_web.sh
+# Release 包：resonchat-<tag>-wasm.tar.gz（CD 从 app/build/web 打 tar.gz）
 ```
 
 更完整的工具链版本、分析与测试命令见 [`README.dev.md`](README.dev.md)。
@@ -150,7 +146,7 @@ cd app
 | [总览与关键决策](docs/01-overview.md) | 目标、约束、ADR、架构 |
 | [协议规范](docs/02-protocol-pqomemo.md) | 双轨 OMEMO、PQXDH、消息格式 |
 | [XMPP 集成](docs/03-xmpp-integration.md) | PEP 节点、收发流程 |
-| [密码学实现](docs/04-crypto-android.md) | liboqs/NDK、密钥存储 |
+| [密码学实现](docs/04-crypto-android.md) | pqcrypto / libsignal、密钥存储 |
 | [UI 规范](docs/05-ui-telegram.md) | Telegram 观感与移植 |
 | [里程碑](docs/06-android-milestones.md) | M0–M7 |
 | [合规](docs/07-licensing-compliance.md) | 许可证与商标 |
@@ -184,9 +180,9 @@ cd app
 
 | 依赖 | 许可证 |
 |---|---|
-| liboqs | MIT |
 | `cryptography`（Dart） | Apache-2.0 |
 | `pqcrypto`（Dart） | MIT |
+| `libsignal`（path → `libsignal_dart`） | AGPL-3.0 |
 | drift | MIT |
 | SQLCipher / sqlcipher_flutter_libs | BSD-style（含 OpenSSL） |
 | flutter_secure_storage | BSD-3-Clause |

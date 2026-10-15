@@ -95,36 +95,31 @@ void main() {
       );
     });
 
-    test('never reports PQ while any device lacks an OMEMO bundle', () {
+    test('never reports PQ while any device is on neither track', () {
       for (final all in <Set<int>>[
         {1, 2, 3},
         {1},
         {1, 2},
       ]) {
-        for (final pq in <Set<int>>[
-          {},
-          {1},
-          {1, 2},
-        ]) {
-          final omemo = (all.toList()..removeLast()).toSet();
-          final mode = decideEncMode(
-            allDevices: all,
-            pqCapable: pq.intersection(all),
-            omemoCapable: omemo,
-          );
-          expect(
-            mode == EncMode.pqOmemo,
-            false,
-            reason: 'all=$all pq=$pq omemo=$omemo must not select PQ',
-          );
-        }
+        // Last device omitted from both capability sets → unreachable.
+        final omemo = (all.toList()..removeLast()).toSet();
+        final mode = decideEncMode(
+          allDevices: all,
+          pqCapable: omemo, // still missing the last id
+          omemoCapable: omemo,
+        );
+        expect(
+          mode,
+          EncMode.none,
+          reason: 'all=$all omemo=$omemo must block, not pick a track',
+        );
       }
     });
   });
 
   group('label', () {
     test('encModeLabel is stable and human readable', () {
-      expect(encModeLabel(EncMode.pqOmemo), 'PQ');
+      expect(encModeLabel(EncMode.pqOmemo), 'OMEMO2');
       expect(encModeLabel(EncMode.standardOmemo), 'OMEMO');
       expect(encModeLabel(EncMode.none), 'Unencrypted');
     });

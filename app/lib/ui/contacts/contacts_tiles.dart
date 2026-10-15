@@ -12,6 +12,7 @@ import '../../state/providers.dart';
 import '../contact_avatar.dart';
 import '../home/open_chat.dart';
 import '../theme.dart';
+import 'contacts_viewmodel.dart';
 import 'groups_bookmarks_page.dart';
 
 /// Idle (no search): Groups entry + full roster.
@@ -158,7 +159,13 @@ class ContactRosterTile extends ConsumerWidget {
                 fontSize: TgDimens.timeFontSize,
               ),
             ),
-      onTap: () => openChat(context, entry.ref.key),
+      onTap: () async {
+        final key = await ref
+            .read(contactsViewModelProvider.notifier)
+            .openContact(entry);
+        if (!context.mounted || key == null) return;
+        openChat(context, key);
+      },
     );
   }
 }

@@ -21,6 +21,28 @@ class ContactsViewModel extends Notifier<void> {
     return ref.read(chatsViewModelProvider.notifier).openChatByJid(raw);
   }
 
+  /// Ensures a 1:1 chat row exists for [row], then returns its [ChatRef] key.
+  ///
+  /// Search/idle roster tiles used to call [openChat] alone; contacts added
+  /// after bootstrap often have no chats row yet, so the conversation never
+  /// appeared. Empty chats are fine — [upsertChat] seeds activity at epoch.
+  Future<String?> openContact(AccountContact row) async {
+    final session = accountHub.session(row.account.id);
+    if (session == null) return null;
+    final jid = row.entry.jid;
+    final name = row.entry.name.trim();
+    await session.db.upsertChat(
+      jid,
+      title: name.isNotEmpty ? name : null,
+      isGroup: false,
+    );
+    final existing = await session.db.getChat(jid);
+    if (existing != null && existing.archived) {
+      await session.db.setChatFlag(jid, archived: false);
+    }
+    return row.ref.key;
+  }
+
   /// Ensures a local group chat row exists, then returns its [ChatRef] key.
   Future<String?> openBookmark(AccountBookmark row) async {
     final b = row.bookmark;

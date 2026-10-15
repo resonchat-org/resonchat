@@ -30,6 +30,8 @@ ChatCapabilities caps({
     pqDevices: pq ?? const {},
     checkedAt: DateTime(2026),
     reliable: reliable,
+    classicReliable: reliable,
+    pqReliable: reliable,
   );
 }
 
@@ -53,16 +55,17 @@ void main() {
   });
 
   group('upgrade direction', () {
-    final before = caps(devices: {1, 2}, pq: {1, 2});
-    final after = caps(devices: {1, 2}, pq: {1, 2});
+    final none = caps(devices: {1, 2}, pq: const {});
+    final one = caps(devices: {1, 2}, pq: {1});
+    final all = caps(devices: {1, 2}, pq: {1, 2});
 
     test('PQ becoming possible is worth a quiet hint', () {
-      final mixed = caps(devices: {1, 2}, pq: {1});
+      // One peer PQ device is enough — that is when the track first opens.
       final advice = compareCapabilities(
         chatJid: 'peer@example.org',
         chosen: Track.standard,
-        previous: mixed,
-        current: after,
+        previous: none,
+        current: one,
       );
       expect(advice, isNotNull);
       expect(advice!.kind, TrackAdviceKind.pqNowPossible);
@@ -74,8 +77,8 @@ void main() {
         compareCapabilities(
           chatJid: 'peer@example.org',
           chosen: Track.standard,
-          previous: before,
-          current: after,
+          previous: one,
+          current: all,
         ),
         isNull,
       );
@@ -87,8 +90,8 @@ void main() {
         compareCapabilities(
           chatJid: 'peer@example.org',
           chosen: Track.standard,
-          previous: after,
-          current: before,
+          previous: all,
+          current: none,
         ),
         isNull,
       );
@@ -128,15 +131,29 @@ void main() {
     );
 
     test('a downgrade does not offer plaintext as the remedy', () {
+      // Losing *every* PQ device blocks the chosen track; one remaining
+      // PQ handset still counts as reachable.
       final advice = compareCapabilities(
         chatJid: 'peer@example.org',
         chosen: Track.pq,
         previous: caps(devices: {1, 2}, pq: {1, 2}),
-        current: caps(devices: {1, 2}, pq: {1}),
+        current: caps(devices: {1, 2}, pq: const {}),
       );
       expect(advice, isNotNull);
       expect(advice!.suggestion, isNot(Track.none));
       expect(advice.suggestion, Track.standard);
+    });
+
+    test('losing a spare PQ device while one remains is not a block', () {
+      expect(
+        compareCapabilities(
+          chatJid: 'peer@example.org',
+          chosen: Track.pq,
+          previous: caps(devices: {1, 2}, pq: {1, 2}),
+          current: caps(devices: {1, 2}, pq: {1}),
+        ),
+        isNull,
+      );
     });
 
     test('a track that was already unusable is not reported as new', () {

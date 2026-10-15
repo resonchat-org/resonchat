@@ -22,13 +22,20 @@ class _Boom implements Exception {
 /// methods are reached, and satisfying the superclass constructor would mean
 /// building an [OmemoManager], which needs a live connection for no benefit.
 class _FakeTracks implements DualTrackManager {
-  _FakeTracks({required this.devices, required this.readable, this.onResolve});
+  _FakeTracks({
+    required this.devices,
+    required this.readable,
+    this.pqDevices = const <int>{},
+    this.pqReadable = true,
+    this.onResolve,
+  });
 
   final Set<int> devices;
   final bool readable;
+  final Set<int> pqDevices;
+  final bool pqReadable;
 
-  /// Counted here rather than in the `tracks` closure, which `_resolve` calls
-  /// once per lookup (OMEMO and PQ) rather than once per resolution.
+  /// Counted on classic resolve only (one resolution = one classic lookup).
   final void Function()? onResolve;
 
   @override
@@ -40,7 +47,12 @@ class _FakeTracks implements DualTrackManager {
   }
 
   @override
-  Future<Set<int>> getPqCapableDevices(JID jid) async => const <int>{};
+  Future<({Set<int> devices, bool listReadable})> fetchPqDeviceIds(
+    JID jid,
+  ) async => (devices: pqDevices, listReadable: pqReadable);
+
+  @override
+  Future<Set<int>> getPqCapableDevices(JID jid) async => pqDevices;
 
   @override
   dynamic noSuchMethod(Invocation invocation) =>
@@ -112,6 +124,7 @@ void main() {
       tracks: () => _FakeTracks(
         devices: const {},
         readable: false,
+        pqReadable: false,
         onResolve: () => resolves++,
       ),
       ourDeviceId: () async => 100,
@@ -121,6 +134,28 @@ void main() {
     expect((await service.forChat(jid)).reliable, isFalse);
     expect((await service.forChat(jid)).reliable, isFalse);
     expect(resolves, 2, reason: 'unreadable answers must be looked up again');
+  });
+
+  test('PQ-only peer is reliable without a classic list', () async {
+    var resolves = 0;
+    final service = CapabilityService(
+      tracks: () => _FakeTracks(
+        devices: const {},
+        readable: false,
+        pqDevices: const {7},
+        pqReadable: true,
+        onResolve: () => resolves++,
+      ),
+      ourDeviceId: () async => 100,
+    );
+    final jid = JID.fromString('bob@example.org');
+    final caps = await service.forChat(jid);
+    expect(caps.reliable, isTrue);
+    expect(caps.pqDevices, {7});
+    expect(caps.peerDevices, isEmpty);
+    expect(resolves, 1);
+    await service.forChat(jid);
+    expect(resolves, 1, reason: 'PQ-only answer must be cacheable');
   });
 
   test('a readable snapshot is reused until it expires', () async {

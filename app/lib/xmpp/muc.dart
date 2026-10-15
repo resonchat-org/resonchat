@@ -124,6 +124,54 @@ class Occupant {
   int get hashCode => Object.hash(nick, affiliation, role, realJid, show);
 }
 
+/// Gajim `AffiliationRoleSortOrder` / roster section keys.
+const mucRosterGroupOrder = <String, int>{
+  'owner': 0,
+  'admin': 1,
+  'moderator': 2,
+  'participant': 3,
+  'visitor': 4,
+};
+
+/// Gajim `get_group_from_contact`: owner/admin by affiliation; everyone else
+/// by role (`role=none` offline stubs group with participants).
+String mucRosterGroupKey(Occupant occupant) {
+  if (occupant.affiliation == 'owner' || occupant.affiliation == 'admin') {
+    return occupant.affiliation;
+  }
+  if (occupant.role == 'none') return 'participant';
+  return occupant.role;
+}
+
+/// Live roster entry for [nick], or null if they are not listed (left without
+/// an offline affiliation stub).
+Occupant? occupantByNick(GroupChat room, String nick) {
+  for (final o in room.occupants) {
+    if (o.nick == nick) return o;
+  }
+  return null;
+}
+
+/// Occupants bucketed like Gajim's groupchat roster (section order preserved).
+Map<String, List<Occupant>> groupOccupantsForRoster(
+  Iterable<Occupant> occupants,
+) {
+  final buckets = <String, List<Occupant>>{
+    for (final key in mucRosterGroupOrder.keys) key: <Occupant>[],
+  };
+  for (final o in occupants) {
+    final key = mucRosterGroupKey(o);
+    (buckets[key] ??= <Occupant>[]).add(o);
+  }
+  for (final list in buckets.values) {
+    list.sort((a, b) => a.nick.toLowerCase().compareTo(b.nick.toLowerCase()));
+  }
+  return {
+    for (final key in mucRosterGroupOrder.keys)
+      if (buckets[key]!.isNotEmpty) key: buckets[key]!,
+  };
+}
+
 /// Disco `muc_nonanonymous` — real JIDs visible to everyone in the room.
 bool isNonAnonymousRoom(Iterable<String> discoFeatures) =>
     discoFeatures.toSet().contains('muc_nonanonymous');
@@ -164,15 +212,57 @@ int affiliationRank(String affiliation) {
   }
 }
 
-/// Conversations kick gate: owner, or admin who outranks the target.
-bool canKickOccupant({
+/// XEP-0045 role ordering (Gajim / nbxmpp `Role`).
+int roleRank(String role) {
+  switch (role) {
+    case 'moderator':
+      return 3;
+    case 'participant':
+      return 2;
+    case 'visitor':
+      return 1;
+    case 'none':
+      return 0;
+    default:
+      return 0;
+  }
+}
+
+/// Gajim `is_role_change_allowed`: self must be moderator and not outranked
+/// by affiliation (kick / grant-revoke voice).
+bool canChangeOccupantRole({
+  required String selfRole,
   required String selfAffiliation,
   required Occupant target,
 }) {
-  if (selfAffiliation == 'owner') return true;
-  return affiliationRank(selfAffiliation) >= affiliationRank('admin') &&
-      affiliationRank(selfAffiliation) > affiliationRank(target.affiliation);
+  if (roleRank(selfRole) < roleRank('moderator')) return false;
+  return affiliationRank(selfAffiliation) >=
+      affiliationRank(target.affiliation);
 }
+
+/// Gajim `is_affiliation_change_allowed` for a desired target affiliation.
+bool canChangeOccupantAffiliation({
+  required String selfAffiliation,
+  required Occupant target,
+  required String toAffiliation,
+}) {
+  if (target.affiliation == toAffiliation) return false;
+  if (selfAffiliation == 'owner') return true;
+  if (selfAffiliation != 'admin') return false;
+  if (toAffiliation == 'owner' || toAffiliation == 'admin') return false;
+  return affiliationRank(selfAffiliation) > affiliationRank(target.affiliation);
+}
+
+/// Kick (role → none): same gate as other role changes (Gajim moderation).
+bool canKickOccupant({
+  required String selfRole,
+  required String selfAffiliation,
+  required Occupant target,
+}) => canChangeOccupantRole(
+  selfRole: selfRole,
+  selfAffiliation: selfAffiliation,
+  target: target,
+);
 
 /// Conversations `MucOptions.canInvite`.
 bool canInviteToRoom({
@@ -228,8 +318,24 @@ class RoomSelfCapabilities {
   /// XEP-0045 configuration form (`muc#owner`) — owners only.
   bool get canConfigureRoom => joined && affiliation == 'owner';
 
-  bool canKick(Occupant target) =>
-      canKickOccupant(selfAffiliation: affiliation, target: target);
+  bool canKick(Occupant target) => canKickOccupant(
+    selfRole: role,
+    selfAffiliation: affiliation,
+    target: target,
+  );
+
+  bool canChangeRole(Occupant target) => canChangeOccupantRole(
+    selfRole: role,
+    selfAffiliation: affiliation,
+    target: target,
+  );
+
+  bool canChangeAffiliation(Occupant target, String toAffiliation) =>
+      canChangeOccupantAffiliation(
+        selfAffiliation: affiliation,
+        target: target,
+        toAffiliation: toAffiliation,
+      );
 }
 
 /// Bare real JIDs to encrypt a groupchat OMEMO message to
@@ -410,7 +516,7 @@ class GroupChat {
 /// Private non-anonymous rooms enumerate affiliation members (including
 /// offline). Standard OMEMO is available when any member device is reachable;
 /// PQ is decided separately in [XmppService.sendGroupchatOnTrack] because it
-/// needs every member to be fully PQ-capable (same bar as 1:1).
+/// needs every member to be fully PQ-capable (stricter than 1:1).
 TrackResolution resolveRoomTrack({
   required Set<int> occupantOmemoDevices,
   required bool devicesReadable,
@@ -432,9 +538,10 @@ TrackResolution resolveRoomTrack({
     );
   }
   if (requested == Track.pq) {
-    // Device snapshot alone cannot prove every member is PQ-capable; the
-    // send path loads each member's bundles. Treat as sendable here so the
-    // UI can offer the track; sendGroupchatOnTrack may still refuse.
+    // Device snapshot alone cannot prove members are PQ-capable; the send
+    // path loads each member's bundles (group still requires every member
+    // device — stricter than 1:1's "one peer device" rule). Treat as
+    // sendable here so the UI can offer the track; send may still refuse.
     return const TrackResolution(track: Track.pq, blocked: null);
   }
   return const TrackResolution(track: Track.standard, blocked: null);

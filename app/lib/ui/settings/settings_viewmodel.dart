@@ -40,9 +40,10 @@ class SettingsUiState {
 class SettingsViewModel extends Notifier<SettingsUiState> {
   @override
   SettingsUiState build() {
-    final xmpp = ref.read(xmppServiceProvider);
+    final xmpp = ref.read(xmppServiceOrNullProvider);
     Future.microtask(() async {
-      final db = ref.read(databaseProvider);
+      final db = ref.read(databaseOrNullProvider);
+      if (db == null) return;
       final prefs = ref.read(prefsDatabaseProvider);
       final delivery = await db.sendDeliveryReceiptsEnabled();
       final receipts = await db.sendReadReceiptsEnabled();
@@ -56,9 +57,9 @@ class SettingsViewModel extends Notifier<SettingsUiState> {
       );
     });
     return SettingsUiState(
-      deliveryReceipts: xmpp.sendDeliveryReceipts,
-      readReceipts: xmpp.sendReadReceipts,
-      chatStates: xmpp.sendTypingNotifications,
+      deliveryReceipts: xmpp?.sendDeliveryReceipts,
+      readReceipts: xmpp?.sendReadReceipts,
+      chatStates: xmpp?.sendTypingNotifications,
     );
   }
 

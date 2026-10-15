@@ -30,13 +30,16 @@ class HomeShell extends ConsumerStatefulWidget {
 }
 
 class _HomeShellState extends ConsumerState<HomeShell> {
-  int _tab = 0;
+  void _selectTab(int i) {
+    ref.read(homeTabIndexProvider.notifier).state = i;
+  }
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final wide = isColumnMode(context);
     final selected = ref.watch(selectedChatKeyProvider);
+    final tab = ref.watch(homeTabIndexProvider);
     final media = MediaQuery.of(context);
     final landscape = media.orientation == Orientation.landscape;
 
@@ -61,8 +64,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         body: Row(
           children: [
             NavigationRail(
-              selectedIndex: _tab,
-              onDestinationSelected: (i) => setState(() => _tab = i),
+              selectedIndex: tab,
+              onDestinationSelected: _selectTab,
               labelType: NavigationRailLabelType.all,
               backgroundColor: tg.pageBackground,
               // Match portrait MainTabsLayout: accent selected, textPrimary idle.
@@ -101,7 +104,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             ),
             VerticalDivider(width: 1, thickness: 1, color: tg.separator),
             Expanded(
-              child: IndexedStack(index: _tab, children: pages),
+              child: IndexedStack(index: tab, children: pages),
             ),
           ],
         ),
@@ -125,33 +128,35 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           Positioned.fill(
             child: MediaQuery(
               data: paddedMedia,
-              child: IndexedStack(index: _tab, children: pages),
+              child: IndexedStack(index: tab, children: pages),
             ),
           ),
           Positioned(
-            left: kMainTabsMargin,
-            right: kMainTabsMargin,
+            left: 0,
+            right: 0,
             bottom: bottomGap,
-            child: MainTabsLayout(
-              selectedIndex: _tab,
-              onSelected: (i) => setState(() => _tab = i),
-              tabs: [
-                GlassTab(
-                  icon: Icons.chat_bubble_outline,
-                  selectedIcon: Icons.chat_bubble,
-                  label: l10n.tabChats,
-                ),
-                GlassTab(
-                  icon: Icons.people_outline,
-                  selectedIcon: Icons.people,
-                  label: l10n.tabContacts,
-                ),
-                GlassTab(
-                  icon: Icons.person_outline,
-                  selectedIcon: Icons.person,
-                  label: l10n.tabMe,
-                ),
-              ],
+            child: Center(
+              child: MainTabsLayout(
+                selectedIndex: tab,
+                onSelected: _selectTab,
+                tabs: [
+                  GlassTab(
+                    icon: Icons.chat_bubble_outline,
+                    selectedIcon: Icons.chat_bubble,
+                    label: l10n.tabChats,
+                  ),
+                  GlassTab(
+                    icon: Icons.people_outline,
+                    selectedIcon: Icons.people,
+                    label: l10n.tabContacts,
+                  ),
+                  GlassTab(
+                    icon: Icons.person_outline,
+                    selectedIcon: Icons.person,
+                    label: l10n.tabMe,
+                  ),
+                ],
+              ),
             ),
           ),
         ],

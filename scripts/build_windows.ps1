@@ -3,9 +3,9 @@
 #
 # Build the Windows x86_64 Inno Setup installer from the Flutter release tree.
 #
-# Usage (from app/ or repo root, on Windows):
-#   .\tool\build_windows.ps1              # flutter build + setup.exe
-#   .\tool\build_windows.ps1 -SkipBuild   # pack an existing Release tree
+# Usage (from repo root, on Windows):
+#   .\scripts\build_windows.ps1              # flutter build + setup.exe
+#   .\scripts\build_windows.ps1 -SkipBuild   # pack an existing Release tree
 #
 # Requires: Visual Studio C++ desktop toolchain, Inno Setup 6 (ISCC.exe).
 #
@@ -21,7 +21,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 $Here = Split-Path -Parent $MyInvocation.MyCommand.Path
-$App = (Resolve-Path (Join-Path $Here "..")).Path
+$App = (Resolve-Path (Join-Path $Here "..\app")).Path
 Set-Location $App
 
 function Get-AppVersion {

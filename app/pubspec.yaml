@@ -1,7 +1,7 @@
 name: resonchat
 description: Flutter XMPP client with dual-track OMEMO (standard + post-quantum).
 publish_to: none
-version: 0.0.2
+version: 0.0.3
 
 environment:
   sdk: ^3.13.4
@@ -22,16 +22,18 @@ dependencies:
   omemo_dart:
     path: ../packages/omemo_dart
 
-  # Used directly to decide whether a published device can be written to at
-  # all: the signature over its signed prekey is checked before the device is
-  # counted as reachable (lib/crypto/omemo/defacto.dart).
-  libsignal_protocol_dart: ^0.8.2
+  # Native libsignal (PQXDH + SPQR) via Flutter Rust Bridge. AGPL-3.0 —
+  # combined with this GPLv3 app the effective terms are AGPL for the binary.
+  # Path fork: packages/libsignal_dart patched for ML-KEM-1024 (0x0A).
+  # Classic A-track Curve/X3DH lives in omemo_dart → transitive
+  # libsignal_protocol_dart only (no direct / test dep in this app).
+  libsignal:
+    path: ../packages/libsignal_dart
 
   cryptography: ^2.9.0
   pqcrypto: ^0.4.2
   xml: ^6.5.0
   hex: ^0.2.0
-  ffi: ^2.1.0
   path: ^1.9.0
 
   riverpod: ^2.6.1

@@ -2,92 +2,68 @@
 
 本文档定义本客户端使用的两套端到端加密轨道。
 
-- **A 轨：Conversations 互通 OMEMO**（XEP-0384 **0.3.0** / axolotl，命名空间 `eu.siacs.conversations.axolotl`；AES-128-GCM + libsignal）——与 Conversations 等主流客户端互通。实现见 `packages/omemo_dart/lib/omemo_dart_axolotl.dart`；PEP 方言见 `app/lib/crypto/omemo/defacto.dart`。
-- **B 轨：PQ-OMEMO / pomemo**（命名空间 `urn:xmpp:pomemo:0`）——本项目私有，后量子混合。底层经典 Double Ratchet 对齐 XEP-0384 **0.9.1**（`omemo_dart.dart`：AES-256-CBC+HMAC / OMEMO protobuf）。
+- **A 轨：Conversations / legacy OMEMO**（XEP-0384 **0.3.0** / axolotl，`eu.siacs.conversations.axolotl`；AES-128-GCM + libsignal）——与 Conversations、monocles legacy 互通。
+- **B 轨：monocles PQ-OMEMO2**（`urn:monocles:omemo-pq:1`）——与 monocles 后量子栈对齐（ML-KEM-1024、ML-DSA-87 `pq-ik`/`pq-sig`、KMAC 载荷/commit）。规范见 `references/monocles_chat/docs/proto-xep-omemo-pqxdh.md`。
 
-两轨差异在**握手算法**、**消息命名空间**与 **A 轨身份密钥线格式**（A：Curve25519/libsignal；B：复用经典 Ed25519+X25519 材料 + ML-KEM）。
+两轨**密钥分栈**：OMEMO2 经典 IK ≠ A/legacy IK（与 monocles 一致）。UI Hybrid 指纹 = SHA3-512(`monocles:omemo2:ik:v2` ‖ OMEMO2 IK.serialize ‖ ML-DSA-87)；Legacy = A 轨 Conversations 指纹。
 
 ---
 
 ## 1. 命名空间与 PEP 节点
 
-| 用途 | A 轨（Conversations / 0.3.0，主） | A 轨（XEP-0384 v2，辅） | B 轨（PQ） |
-|---|---|---|---|
-| 加密消息元素 | `eu.siacs.conversations.axolotl` | （同左方言优先） | `urn:xmpp:pomemo:0` |
-| 设备列表节点 | `eu.siacs.conversations.axolotl.devicelist` | `urn:xmpp:omemo:2:devices` | `urn:xmpp:pomemo:0:devices` |
-| Bundle 节点 | `eu.siacs.conversations.axolotl.bundles:<id>` | `urn:xmpp:omemo:2:bundles` | `urn:xmpp:pomemo:0:bundles` |
-| EME 声明 | `namespace='eu.siacs.conversations.axolotl'` | `urn:xmpp:omemo:1` / `:2` | `namespace='urn:xmpp:pomemo:0'` |
+| 用途 | A 轨（Conversations / 0.3.0） | B 轨（PQ-OMEMO2 / monocles） |
+|---|---|---|
+| 加密消息元素 | `eu.siacs.conversations.axolotl` | `urn:monocles:omemo-pq:1` |
+| 设备列表节点 | `eu.siacs.conversations.axolotl.devicelist` | `urn:monocles:omemo-pq:1:devices` |
+| Bundle 节点 | `eu.siacs.conversations.axolotl.bundles:<id>` | `urn:monocles:omemo-pq:1:bundles` |
+| EME 声明 | `eu.siacs.conversations.axolotl` | `urn:monocles:omemo-pq:1` |
 
-> B 轨使用独立节点，避免污染 A 轨的设备列表（否则标准客户端会尝试给我们的 PQ bundle 发消息并失败）。
+> B 轨使用独立节点，避免污染 A 轨设备列表。刻意**不是** `urn:xmpp:omemo:2`。
 
 ## 2. 密钥体系
 
 ### 2.1 标识
 
-| 密钥 | A 轨 | B 轨 | 用途 |
+| 密钥 | A 轨（legacy） | B 轨（OMEMO2） | 用途 |
 |---|---|---|---|
-| IK | Curve25519（libsignal，指纹为 66 hex） | IK_dh X25519 + IK_sig Ed25519 | 身份 |
-| 指纹 | `hex(serialize(IK))`（含 `0x05`） | SHA-256(IK_dh) 分组 hex | UI 核对 |
-
-A/B 轨身份密钥**不强制同一私钥**（A 为 axolotl 设备，B 为 PQ 设备）；跨客户端核对指纹时以 A 轨 Conversations 指纹为准。
+| IK | Curve25519（libsignal） | **独立** Curve25519 + Ed25519 | 身份（分栈） |
+| PQ IK | — | **ML-DSA-87**（上线 `pq-ik`） | hybrid 指纹 / bundle 签名 |
+| 指纹 | `hex(serialize(IK))` 去 `05` | SHA3-512 hybrid（IK + pq_ik） | UI 核对 |
 
 ### 2.2 A 轨（OMEMO 0.3.0 / Conversations）
 
 - IK：Curve25519（libsignal，线格式 33 字节含 `0x05`）
 - SPK / OPK：X25519，经 XEdDSA 风格签名（libsignal）
-- 握手 / 棘轮：libsignal SessionBuilder / SessionCipher（`PreKeySignalMessage` / `SignalMessage`）
-- 载荷：AES-128-GCM，auth-tag 拼入 per-device key（Conversations `PUT_AUTH_TAG_INTO_KEY`）
+- 握手 / 棘轮：libsignal SessionBuilder / SessionCipher
+- 载荷：AES-128-GCM
 
-### 2.3 B 轨（PQ-OMEMO）
+### 2.3 B 轨（PQ-OMEMO2 / monocles）
 
 | 密钥 | 算法 | 说明 |
 |---|---|---|
-| PQSPK | **ML-KEM-768** | 签名预密钥，由混合签名保护 |
-| PQOPK | **ML-KEM-768** | 一次性预密钥，批量上传，用后即弃 |
-| 签名 | **混合**：Ed25519 ‖ ML-DSA-65 | 同时覆盖经典与后量子可信性 |
+| kem-spk / kem-pk | **ML-KEM-1024**（wire tag `0x0A`） | 非身份；拒 Round-3 `0x08` |
+| pq-ik / pq-sig | **ML-DSA-87** | 签 transcript（context `monocles:omemo2:pqid:v1`） |
+| 载荷 | AES-256-GCM + **KMAC256** | labels `payload:v3` / `key-commitment:v3` |
 
-- PQSPK/PQOPK 的公钥各 **1184 字节**，密文 **1088 字节**。
-- Bundle 中同时携带 A 轨与 B 轨密钥（见 §4），因此单个设备只需一个 bundle 节点。
+- ML-KEM-1024 公钥 **1568** 字节，密文 **1568** 字节；wire 公钥为 `0x0A ‖ pk`。
+- Bundle 元素：`spk`/`spks`/`ik`/`prekeys`/`kem-spk`/`kem-spks`/`kem-prekeys`/`pq-ik`/`pq-sig`。
 
-## 3. B 轨握手：PQXDH
+## 3. B 轨握手：PQXDH（libsignal 参数，proto-XEP §5.3）
 
-对 Alice → Bob 的会话初始化（沿用 Signal PQXDH 结构）：
+握手与 `<key>` 密文由 `omemo_dart` 的 `Omemo2Manager`（`package:libsignal` FFI）实现，对齐 libsignal ≥0.94：
 
 ```
-输入：
-  IK_A, IK_B        双方 X25519 身份密钥
-  EK_A              Alice 一次性 X25519 临时密钥
-  SPK_B             Bob 的 X25519 签名预密钥
-  OPK_B             Bob 的 X25519 一次性预密钥（可选）
-  PQSPK_B           Bob 的 ML-KEM-768 签名预密钥
-  PQOPK_B           Bob 的 ML-KEM-768 一次性预密钥（可选）
+secrets = 0xFF×32 ‖ DH1 ‖ DH2 ‖ DH3 ‖ [DH4 ‖] SS
+HKDF-SHA-256-Extract(salt=0×32, ikm=secrets)
+HKDF-Expand(info="WhisperText_X25519_SHA-256_CRYSTALS-KYBER-1024", L=96)
+→ root(32) ‖ chain(32) ‖ pqr(32)
 
-DH1 = DH(IK_A,  SPK_B)
-DH2 = DH(EK_A,  IK_B)
-DH3 = DH(EK_A,  SPK_B)
-DH4 = DH(EK_A,  OPK_B)          # 若 OPK_B 存在
-
-# 后量子部分（对同一目标做两次封装以提升安全裕度，可选其一）
-(ct1, ss1) = ML-KEM.Encaps(PQSPK_B)
-(ct2, ss2) = ML-KEM.Encaps(PQOPK_B)   # 若 PQOPK_B 存在
-
-F  = 32 字节 0xFF 前缀（域分隔，与 Signal 一致）
-
-SK = HKDF-SHA512(
-        ikm  = F ‖ DH1 ‖ DH2 ‖ DH3 ‖ DH4 ‖ ss1 ‖ ss2,
-        salt = 全零(32) ,
-        info = "urn:xmpp:pomemo:0:pqxdh"
-     )  -> 64 字节
-
-(root_key, chain_key) = SK[0..32], SK[32..64]
+DH1=DH(IK_A,SPK_B)  DH2=DH(EK_A,IK_B)  DH3=DH(EK_A,SPK_B)
+DH4=DH(EK_A,OPK_B) 若有 EC OPK
+SS = ML-KEM-1024.Encaps(选中的 kem-pk 或 kem-spk)   # 仅一次 KEM
 ```
 
-**线路上需要传输**（放在首条消息的 per-device key 中）：
-`EK_A` 公钥、`SPK_B`/`OPK_B` 的 id、`PQSPK_B`/`PQOPK_B` 的 id、`ct1`（与可选 `ct2`）。
-
-**Bob 侧**用相同公式重算 `SK`，用对应的私钥解封装。若 id 指向的一次性预密钥已被消耗，则退回使用 PQSPK/SPK。
-
-> **安全论证**：`root_key` 含 `ss1/ss2`，量子攻击者若要还原会话密钥，必须破解 ML-KEM；经典攻击者则需破解 X25519。二者任一安全，则握手安全。后续棘轮从前一 root 派生，故 PQ 安全性贯穿整个会话。
+`<key>` 内容为 **不透明** base64：`PreKeySignalMessage` / `SignalMessage`（version 4，含 `kyber_pre_key_id` / `kyber_ciphertext`，以及 SPQR 的 `pq_ratchet` field 5）。KEM 密文在 protobuf field 8。本地需使用 `packages/libsignal_dart` 的 ML-KEM-1024（`0x0A`）补丁构建。
 
 ## 4. Bundle 内容（B 轨）
 

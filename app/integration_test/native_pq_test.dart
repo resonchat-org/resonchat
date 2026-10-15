@@ -1,29 +1,21 @@
 // Copyright (C) 2026 resonchat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// Prints which ML-KEM-768 backend is active and exercises it.
-//
-// Run on a device to confirm the native liboqs bridge actually loaded
-// (rather than silently falling back to pure Dart):
+// Exercises the in-app ML-KEM backend (pure-Dart pqcrypto) on device.
 //
 //   flutter test integration_test/native_pq_test.dart -d <device>
 
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:resonchat/crypto/pq/liboqs_mlkem.dart';
 import 'package:resonchat/crypto/pq/mlkem.dart';
+import 'package:resonchat/crypto/pq/mlkem_provider.dart';
 
 void main() {
-  test('native or Dart backend is available and functional', () {
-    final provider = MlKem768Provider.instance;
-    final kem = provider.kem;
+  test('pqcrypto ML-KEM-768 backend is available and functional', () {
+    final kem = MlKem768Provider.instance.kem;
     // ignore: avoid_print
-    print(
-      'backend: ${provider.isNative ? 'liboqs (native)' : 'pqcrypto (Dart)'}',
-    );
-    // ignore: avoid_print
-    print('loadError: ${liboqsLoadError ?? 'none'}');
+    print('backend: pqcrypto (Dart)');
     // ignore: avoid_print
     print('platform: ${Platform.operatingSystem}/${Platform.version}');
 

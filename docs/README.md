@@ -13,7 +13,7 @@ Flutter XMPP 客户端：**不修改服务端、不引入新 XEP**，在标准 O
 | [01-overview.md](01-overview.md) | 目标、硬约束、关键决策（ADR）、架构与仓库结构、不变量 |
 | [02-protocol-pqomemo.md](02-protocol-pqomemo.md) | 双轨 OMEMO：PQXDH、棘轮、消息与 bundle 格式 |
 | [03-xmpp-integration.md](03-xmpp-integration.md) | PEP、能力协商、收发流程、EME |
-| [04-crypto-android.md](04-crypto-android.md) | liboqs / pqcrypto、密钥存储、依赖 |
+| [04-crypto-android.md](04-crypto-android.md) | pqcrypto / libsignal、密钥存储、依赖 |
 | [05-ui-telegram.md](05-ui-telegram.md) | Telegram 观感规范、组件映射、分期 |
 | [06-android-milestones.md](06-android-milestones.md) | M0–M7 里程碑与验收（状态镜像根 README） |
 | [07-licensing-compliance.md](07-licensing-compliance.md) | 许可证矩阵、GPL 合规、商标与发布 |

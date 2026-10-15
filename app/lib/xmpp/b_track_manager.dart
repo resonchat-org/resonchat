@@ -11,8 +11,13 @@
 import 'dart:convert';
 import 'dart:math';
 
+import 'package:libsignal/libsignal.dart';
 import 'package:logging/logging.dart';
 import 'package:moxxmpp/moxxmpp.dart';
+import 'package:omemo_dart/omemo_dart_omemo2.dart'
+    hide serializeMlKem1024PublicKey;
+
+import 'dart:typed_data';
 
 import '../crypto/omemo/bundle_codec.dart';
 import '../crypto/omemo/dual_track_manager.dart';
@@ -20,7 +25,11 @@ import '../crypto/omemo/message_codec.dart';
 import '../crypto/omemo/pq_message_layer.dart';
 import '../crypto/omemo/pq_session.dart';
 import '../crypto/omemo/protocol.dart';
-import '../crypto/pq/liboqs_mlkem.dart';
+import '../crypto/fingerprint.dart';
+import '../crypto/pq/kem_wire.dart';
+import '../crypto/pq/mlkem_provider.dart';
+import '../crypto/pq_identity_store.dart';
+import '../store/omemo2_device_store.dart';
 
 /// The local B-track device plus its session and message layer.
 class BTrackSession {
@@ -36,11 +45,23 @@ class BTrackSession {
 }
 
 class BTrackManager {
-  BTrackManager({required this.tracks, required this.pubsubOf});
+  BTrackManager({
+    required this.tracks,
+    required this.pubsubOf,
+    required this.accountId,
+    required this.pqIdentity,
+    required this.deviceStore,
+  });
 
   final Logger _log = Logger('BTrackManager');
   final DualTrackManager Function() tracks;
   final PubSubManager? Function() pubsubOf;
+  final String accountId;
+
+  /// Shared with [OmemoDeviceStore.pqIdentity] so UI and publish use one ML-DSA key.
+  final PqIdentityStore pqIdentity;
+
+  final Omemo2DeviceStore deviceStore;
 
   BTrackSession? _session;
 
@@ -52,10 +73,15 @@ class BTrackManager {
   /// Creates (or restores) the local B-track device and publishes it.
   ///
   /// Called after connect; safe to call again to refresh the bundle.
+  ///
+  /// [classicDeviceId] — when provided, reused as the OMEMO2 registration id
+  /// (monocles `getOwnDeviceId()` on both stacks). Keys remain independent.
   Future<bool> initialise(
     String bareJid, {
     int opkCount = 20,
     int pqCount = 5,
+    int? classicDeviceId,
+    bool forceNew = false,
   }) async {
     final pm = pubsubOf();
     if (pm == null) {
@@ -63,26 +89,40 @@ class BTrackManager {
       return false;
     }
 
-    final device = await PqDevice.generate(
-      bareJid,
-      opkCount: opkCount,
-      pqOpkCount: pqCount,
-      kem: MlKem768Provider.instance.kem,
-    );
-    final sessions = PqSessionManager(kem: MlKem768Provider.instance.kem);
+    Omemo2Device? device;
+    if (!forceNew) {
+      device = await deviceStore.load();
+      if (device != null && device.jid != bareJid) {
+        _log.warning('OMEMO2 device jid mismatch; regenerating');
+        device = null;
+      }
+    }
+    if (device == null) {
+      device = await PqDevice.generate(
+        bareJid,
+        opkCount: opkCount,
+        pqOpkCount: pqCount,
+        deviceId: classicDeviceId,
+      );
+      await deviceStore.save(device);
+    }
+    await device.ensureStores();
+    // Ensure ML-DSA-87 identity exists before first publish.
+    await pqIdentity.publicKey();
+    final sessions = PqSessionManager(kem: MlKem1024Provider.instance.kem);
     // Identity keys come from the sender's published bundle.
     final layer = PqMessageLayer(
       ownDevice: device,
       sessions: sessions,
       senderIkOf: (senderBare, deviceId) async {
-        final d = await tracks().deviceById(
+        final ik = await tracks().deviceById(
           JID.fromString(senderBare),
           deviceId,
         );
-        if (d == null) {
+        if (ik == null) {
           throw StateError('no PQ bundle for $senderBare/$deviceId');
         }
-        return d;
+        return ik;
       },
     );
     _session = BTrackSession(device: device, sessions: sessions, layer: layer);
@@ -94,6 +134,48 @@ class BTrackManager {
       await replenishPrekeys(target: pqCount);
     }
     return published;
+  }
+
+  /// Drop local OMEMO2 identity and mint a new one (monocles OMEMO2 regenerate).
+  Future<bool> regenerate({
+    required String bareJid,
+    int? classicDeviceId,
+    bool wipeOther = false,
+  }) async {
+    _session = null;
+    await deviceStore.clear();
+    await pqIdentity.clear();
+    final ok = await initialise(
+      bareJid,
+      classicDeviceId: classicDeviceId,
+      forceNew: true,
+    );
+    if (ok && wipeOther) {
+      await wipeOtherDevices();
+    }
+    return ok;
+  }
+
+  /// Publish a PQ device list containing only this installation's id.
+  Future<bool> wipeOtherDevices() async {
+    final session = _session;
+    final pm = pubsubOf();
+    if (session == null || pm == null) return false;
+    final bare = JID.fromString(session.device.jid);
+    final listResult = await pm.publish(
+      bare,
+      omemo2DevicesXmlns,
+      XMLNode.xmlns(
+        tag: 'devices',
+        xmlns: omemo2Xmlns,
+        children: [
+          XMLNode(tag: 'device', attributes: {'id': '${session.device.id}'}),
+        ],
+      ),
+      id: 'current',
+      options: const PubSubPublishOptions(accessModel: 'open'),
+    );
+    return listResult.isType<bool>() && listResult.get<bool>();
   }
 
   /// Publishes our B-track device list entry and bundle to PEP.
@@ -108,7 +190,7 @@ class BTrackManager {
     // Merge our id into the existing device list rather than replacing it,
     // so other devices of ours survive.
     final ids = <int>{};
-    final existing = await pm.getItems(bare, pomemoDevicesXmlns);
+    final existing = await pm.getItems(bare, omemo2DevicesXmlns);
     if (existing.isType<List<PubSubItem>>()) {
       for (final item in existing.get<List<PubSubItem>>()) {
         for (final dev in item.payload.children.where(
@@ -121,12 +203,14 @@ class BTrackManager {
     }
     ids.add(session.device.id);
 
+    // Payload xmlns is [omemo2Xmlns], PEP node is [omemo2DevicesXmlns] —
+    // monocles publishes/parses the same split (IqGenerator.publishOmemo2DeviceIds).
     final listResult = await pm.publish(
       bare,
-      pomemoDevicesXmlns,
+      omemo2DevicesXmlns,
       XMLNode.xmlns(
         tag: 'devices',
-        xmlns: pomemoDevicesXmlns,
+        xmlns: omemo2Xmlns,
         children: [
           for (final id in ids)
             XMLNode(tag: 'device', attributes: {'id': '$id'}),
@@ -141,7 +225,7 @@ class BTrackManager {
 
     final bundleResult = await pm.publish(
       bare,
-      pomemoBundlesXmlns,
+      omemo2BundlesXmlns,
       XMLNode.fromString(bundle.toXml().toXmlString()),
       id: '${session.device.id}',
       options: const PubSubPublishOptions(accessModel: 'open', maxItems: 'max'),
@@ -217,16 +301,24 @@ class BTrackManager {
     if (session == null) return 0;
 
     var added = 0;
-    final kem = MlKem768Provider.instance.kem;
+    await omemo2EnsureLibSignal();
     final existing = session.device.pqOpks.keys.toSet();
     while (existing.length < target) {
       final id = _freshId(existing);
       existing.add(id);
-      session.device.pqOpks[id] = kem.generateKeyPair();
+      final pair = KyberKeyPair.generate();
+      final pubTagged = pair.getPublicKey().serialize();
+      final skTagged = pair.getSecretKey().serialize();
+      session.device.pqOpks[id] = Omemo2KyberPreKey(
+        publicRaw: pubTagged.sublist(1),
+        secretRaw: skTagged.sublist(1),
+        signature: await session.device.sign(pubTagged),
+      );
       added++;
     }
     if (added == 0) return 0;
 
+    await deviceStore.save(session.device);
     _log.info('replenished $added ML-KEM one-time prekey(s)');
     await publish();
     return added;
@@ -241,35 +333,81 @@ class BTrackManager {
     return id;
   }
 
-  /// Whether [peerJid] is fully PQ-capable, i.e. every one of its devices
-  /// serves a PQ bundle.
+  /// Whether [peerJid] has at least one device that serves a PQ bundle.
   Future<bool> isPeerPqCapable(String peerJid) async {
     final bare = JID.fromString(peerJid).toBare();
     final devices = await tracks().loadPqDevices(bare);
     return devices.isNotEmpty;
   }
 
-  Future<PqBundle> _toBundle(PqDevice device) async {
+  Future<Omemo2Bundle> _toBundle(PqDevice device) async {
+    await device.ensureStores();
+    // Wire `<ik>` / `<spk>` are raw 32-byte keys (monocles getPublicKeyBytes);
+    // signatures and the hybrid fingerprint use the 0x05-prefixed form.
+    final ikSerialized = await device.identityPublicSerialized();
+    final ikRaw = ikSerialized.sublist(1);
+    final spkRaw = await device.spk.pk.getBytes();
     final prekeys = <int, String>{};
     for (final e in device.opks.entries) {
       prekeys[e.key] = base64Encode(await e.value.pk.getBytes());
     }
-    final pqPrekeys = <int, String>{};
+
+    final kemSpkTagged = serializeMlKem1024PublicKey(device.pqSpk);
+    final kemSpkSig = device.pqSpkSignature;
+
+    final kemPrekeys = <int, String>{};
+    final kemSigs = <int, String>{};
+    final oneTime = <KemOneTimeKey>[];
     for (final e in device.pqOpks.entries) {
-      pqPrekeys[e.key] = base64Encode(e.value.publicKey);
+      final tagged = serializeMlKem1024PublicKey(e.value.publicRaw);
+      kemPrekeys[e.key] = base64Encode(tagged);
+      kemSigs[e.key] = base64Encode(e.value.signature);
+      oneTime.add(KemOneTimeKey(id: e.key, publicKey: tagged));
     }
-    return PqBundle(
+
+    // Same Rust helpers monocles / process_prekey_bundle use for verify.
+    final binding = pqKemBinding(
+      kemSignedPreKeyId: device.pqSpkId,
+      kemSignedPreKeyPublic: kemSpkTagged,
+      oneTime: oneTime,
+    );
+    final pqIk = await pqIdentity.publicKey();
+    final spkSerialized = Uint8List.fromList([0x05, ...spkRaw]);
+    final transcript = pqBundleTranscript(
+      identityKey: ikSerialized,
+      pqIdentityKey: pqIk,
+      signedPreKeyId: device.spkId,
+      signedPreKeyPublic: spkSerialized,
+      kemBinding: binding,
+    );
+    final pqSig = await pqIdentity.sign(transcript);
+
+    return Omemo2Bundle(
       deviceId: device.id,
       jid: device.jid,
-      spk: base64Encode(await device.spk.pk.getBytes()),
+      spk: base64Encode(spkRaw),
       spkId: device.spkId,
       spkSignature: base64Encode(device.spkSignature),
-      ikEncoded: base64Encode(await device.ikDh.pk.getBytes()),
+      ik: base64Encode(ikRaw),
       prekeys: prekeys,
-      pqSpkId: device.pqSpkId,
-      pqSpk: base64Encode(device.pqSpk),
-      pqSpkSignature: base64Encode(device.pqSpkSignature),
-      pqPrekeys: pqPrekeys,
+      kemSpkId: device.pqSpkId,
+      kemSpk: base64Encode(kemSpkTagged),
+      kemSpkSignature: base64Encode(kemSpkSig),
+      kemPrekeys: kemPrekeys,
+      kemPrekeySignatures: kemSigs,
+      pqIk: base64Encode(pqIk),
+      pqSig: base64Encode(pqSig),
     );
+  }
+
+  /// Hybrid fingerprint for this account's OMEMO2 identity
+  /// (monocles `getOwnHybridFingerprint`).
+  Future<String?> hybridFingerprint() async {
+    final device = _session?.device;
+    if (device == null) return null;
+    await device.ensureStores();
+    final ik = await device.identityPublicSerialized();
+    final pqIk = await pqIdentity.publicKey();
+    return hybridOmemo2Fingerprint(ik, pqIk);
   }
 }

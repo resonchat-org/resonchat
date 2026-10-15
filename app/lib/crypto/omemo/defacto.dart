@@ -8,7 +8,6 @@
 
 import 'dart:convert';
 
-import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart';
 import 'package:omemo_dart/omemo_dart_axolotl.dart';
 import 'package:xml/xml.dart';
 
@@ -214,22 +213,7 @@ bool omemoBundleLooksSane(AxolotlBundle b) {
 /// the session builder refuses the device and the send is cancelled as a
 /// whole. Conversations skips such devices and delivers to the rest; so do we
 /// (see `DualTrackManager.getOmemoBundle`).
-bool omemoBundleUsable(AxolotlBundle b) {
-  try {
-    final bundle = b.toPreKeyBundle();
-    final spk = bundle.getSignedPreKey();
-    if (spk == null) return false;
-    return Curve.verifySignature(
-      bundle.getIdentityKey().publicKey,
-      spk.serialize(),
-      bundle.getSignedPreKeySignature(),
-    );
-  } catch (_) {
-    // A bundle whose key material cannot even be decoded is a bundle we
-    // cannot open a session with.
-    return false;
-  }
-}
+bool omemoBundleUsable(AxolotlBundle b) => b.isUsable;
 
 /// Legacy aliases kept for call sites that still use the old names.
 String stripKeyTypeByte(String b64) {

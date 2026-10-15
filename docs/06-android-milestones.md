@@ -13,7 +13,7 @@
 - [x] 建立 mono-repo 结构（见 01 文档 §6）
 - [x] fork `moxxmpp`、`omemo_dart`、`moxlib` 至 `packages/`（git 子模块）
 - [x] 添加 GPLv3 LICENSE、各文件来源标注规范
-- [x] GitHub Actions：analyze + test + `./tool/build_android.sh`；CD 挂 arm64 / x86_64 APK + AppImage
+- [x] GitHub Actions：analyze + test + `./scripts/build_android.sh`；CD 挂 arm64 / x86_64 APK + AppImage
 
 **验收**
 - Android debug APK 可构建；CI 全绿
@@ -51,14 +51,13 @@
 ## M3 — PQ 内核 ✅
 
 **任务**
-- [x] liboqs NDK 交叉编译（`arm64-v8a`、`x86_64`）
-- [x] Dart FFI 封装：ML-KEM-768 keygen/encaps/decaps
-- [x] 纯 Dart 回退（`pqcrypto`）与共享秘密互操作测试
+- [x] 纯 Dart ML-KEM（`pqcrypto`：1024 发版 / 768 诊断）
+- [x] PQXDH / SessionCipher / SPQR 经 `libsignal`（native）
 - [x] PQXDH + B 轨设备列表/bundle 发布
 - [x] 双账号跨服务器真实互测（`tool/pq_interop.dart`）
 
 **验收**
-- FFI 与纯 Dart 共享秘密一致；设备端 `backend: liboqs (native)`
+- 设备端 `pqcrypto` round-trip（`native_pq_test`）
 - 两本客户端建立 B 轨会话并加解密；PQ bundle 已发布到服务器
 
 ## M4 — 双轨能力与发送策略 ✅

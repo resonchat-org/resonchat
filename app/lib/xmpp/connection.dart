@@ -1195,22 +1195,74 @@ class XmppService {
     }
   }
 
-  /// Conversations kick: affiliation outcast (when real JID known) + role none.
+  /// Gajim kick: set role to `none` (does not ban).
   Future<bool> kickOccupant(String roomJid, Occupant occupant) async {
     final bare = JID.fromString(roomJid).toBare().toString();
     final caps = await roomSelfCapabilities(bare);
-    if (!canKickOccupant(selfAffiliation: caps.affiliation, target: occupant)) {
+    if (!canKickOccupant(
+      selfRole: caps.role,
+      selfAffiliation: caps.affiliation,
+      target: occupant,
+    )) {
       return false;
     }
-    var ok = true;
+    if (occupant.nick.isEmpty) return false;
+    return setRoomRole(bare, occupant.nick, 'none');
+  }
+
+  /// Gajim ban: set affiliation to `outcast` (needs a real bare JID).
+  Future<bool> banOccupant(String roomJid, Occupant occupant) async {
+    final bare = JID.fromString(roomJid).toBare().toString();
+    final caps = await roomSelfCapabilities(bare);
     final real = occupant.realJid;
-    if (real != null && real.isNotEmpty) {
-      ok = await setRoomAffiliation(bare, real, 'outcast') && ok;
+    if (real == null || real.isEmpty) return false;
+    if (!canChangeOccupantAffiliation(
+      selfAffiliation: caps.affiliation,
+      target: occupant,
+      toAffiliation: 'outcast',
+    )) {
+      return false;
     }
-    if (occupant.nick.isNotEmpty) {
-      ok = await setRoomRole(bare, occupant.nick, 'none') && ok;
+    return setRoomAffiliation(bare, real, 'outcast');
+  }
+
+  /// Grant (`participant`) or revoke (`visitor`) voice — Gajim mod menu.
+  Future<bool> setOccupantVoice(
+    String roomJid,
+    Occupant occupant, {
+    required bool grant,
+  }) async {
+    final bare = JID.fromString(roomJid).toBare().toString();
+    final caps = await roomSelfCapabilities(bare);
+    if (!canChangeOccupantRole(
+      selfRole: caps.role,
+      selfAffiliation: caps.affiliation,
+      target: occupant,
+    )) {
+      return false;
     }
-    return ok;
+    if (occupant.nick.isEmpty || !occupant.isOnline) return false;
+    return setRoomRole(bare, occupant.nick, grant ? 'participant' : 'visitor');
+  }
+
+  /// Change affiliation (Make Owner / Admin / Member / Revoke Member).
+  Future<bool> setOccupantAffiliation(
+    String roomJid,
+    Occupant occupant,
+    String affiliation,
+  ) async {
+    final bare = JID.fromString(roomJid).toBare().toString();
+    final caps = await roomSelfCapabilities(bare);
+    final real = occupant.realJid;
+    if (real == null || real.isEmpty) return false;
+    if (!canChangeOccupantAffiliation(
+      selfAffiliation: caps.affiliation,
+      target: occupant,
+      toAffiliation: affiliation,
+    )) {
+      return false;
+    }
+    return setRoomAffiliation(bare, real, affiliation);
   }
 
   /// Conversations `MultiUserChatManager.invite` (mediated invite).
@@ -1593,16 +1645,14 @@ class XmppService {
     return SendOutcome(stanzaId: stanzaId, track: Track.standard);
   }
 
-  /// Like 1:1 PQ: every OMEMO device of every member must be PQ-capable.
+  /// Group PQ: each member needs a non-empty OMEMO2 device list (B-track
+  /// only — not ∩ with classic devices).
   Future<TrackBlocked?> _roomPqBlockReason(List<String> memberJids) async {
     if (!bTrackReady) return TrackBlocked.pqUnavailable;
     for (final jid in memberJids) {
       final caps = await capabilitiesFor(JID.fromString(jid));
-      if (caps == null || !caps.reliable) return TrackBlocked.unknownPeers;
-      final allPq =
-          caps.recipientDevices.isNotEmpty &&
-          caps.recipientDevices.every(caps.pqDevices.contains);
-      if (!allPq) return TrackBlocked.pqUnavailable;
+      if (caps == null || !caps.pqReliable) return TrackBlocked.unknownPeers;
+      if (caps.pqDevices.isEmpty) return TrackBlocked.pqUnavailable;
     }
     return null;
   }
@@ -2236,8 +2286,10 @@ class XmppService {
     omemoDefactoDevicesNode,
     '$omemoDefactoDevicesNode+notify',
     for (final node in omemoSpecDevicesNodes) ...<String>[node, '$node+notify'],
-    pomemoDevicesXmlns,
-    pomemoBundlesXmlns,
+    // OMEMO2 / monocles — bare node + +notify (PEP_OMEMO2_DEVICE_LIST_NOTIFY).
+    omemo2DevicesXmlns,
+    '$omemo2DevicesXmlns+notify',
+    omemo2BundlesXmlns,
   ];
 
   /// Subscribes to our own OMEMO device list so the server pushes device
@@ -2539,7 +2591,8 @@ class XmppService {
     // the de-facto and the XEP-0384 dialects. Publishing only the spec form
     // makes us invisible to every client that actually exists. The device
     // list is merged (own id added), never replaced — same as Conversations'
-    // `publishOwnDeviceId`.
+    // `publishOwnDeviceId`. Clearing other devices is an explicit user action
+    // (`wipeOtherOmemoDevices`), never automatic on identity mint.
     final published = tracks == null
         ? await _moxxOmemo!
               .publishBundle(bundle)
@@ -2556,16 +2609,13 @@ class XmppService {
     } else {
       await tracks?.notePublishedDevice(id);
     }
-    // Do not prune other devices on connect. Conversations only wipes others
-    // via explicit `wipeOtherPepDevices` / `regenerateKeys(wipeOther=true)`.
     return id;
   }
 
-  /// Conversations `regenerateKeys(wipeOther)`: drop local OMEMO identity,
-  /// create a new device, persist it, then republish.
+  /// Conversations `regenerateKeys` for the **legacy / A-track** stack only.
   ///
-  /// When [wipeOther] is true, the PEP device list is replaced with only our
-  /// new id (same as regenerate followed by `wipeOtherPepDevices`).
+  /// When [wipeOther] is true, the classic PEP device list is replaced with
+  /// only our new id. OMEMO2 / PQ keys are untouched (use [regenerateOmemo2Keys]).
   Future<int> regenerateOmemoKeys({bool wipeOther = false}) async {
     _omemo = null;
     _omemoInit = null;
@@ -2578,9 +2628,22 @@ class XmppService {
     return id;
   }
 
-  /// Conversations `wipeOtherPepDevices`: publish a device list containing
-  /// only this installation's id. Other devices re-announce on next connect
-  /// but may miss messages sent in between.
+  /// Regenerate the **OMEMO2 / PQ** identity (classical IK + ML-DSA-87).
+  Future<bool> regenerateOmemo2Keys({bool wipeOther = false}) async {
+    final track = bTrack;
+    final bare = _connection?.connectionSettings.jid.toBare().toString();
+    if (track == null || bare == null) return false;
+    final classicId = omemo == null ? null : await omemo!.getDeviceId();
+    final ok = await track.regenerate(
+      bareJid: bare,
+      classicDeviceId: classicId,
+      wipeOther: wipeOther,
+    );
+    if (ok) _capabilities?.invalidateAll();
+    return ok;
+  }
+
+  /// Wipe other devices from the **classic OMEMO** PEP announcement only.
   Future<bool> wipeOtherOmemoDevices() async {
     final manager = await _omemoOrCreate();
     final id = await manager.getDeviceId();
@@ -2597,6 +2660,16 @@ class XmppService {
       await trackManager.notePublishedDevice(id);
       _capabilities?.invalidateAll();
     }
+    return ok;
+  }
+
+  /// Wipe other devices from the **OMEMO2 / PQ** PEP announcement only
+  /// (monocles stack-separate clear).
+  Future<bool> wipeOtherOmemo2Devices() async {
+    final track = bTrack;
+    if (track == null) return false;
+    final ok = await track.wipeOtherDevices();
+    if (ok) _capabilities?.invalidateAll();
     return ok;
   }
 
@@ -2639,7 +2712,9 @@ class XmppService {
     if (track == null) return false;
     final bare = _connection?.connectionSettings.jid.toBare().toString();
     if (bare == null) return false;
-    return track.initialise(bare);
+    // Same registration id on both stacks (monocles); keys stay separate.
+    final classicId = omemo == null ? null : await omemo!.getDeviceId();
+    return track.initialise(bare, classicDeviceId: classicId);
   }
 
   /// Whether our PQ bundle is published and ready to use.
@@ -2707,12 +2782,13 @@ class XmppService {
 
   /// Serialises the B track's ciphertext
 
-  /// Encrypts and sends [body] on the PQ track when [to] is fully PQ-capable,
-  /// otherwise returns null so the caller can fall back to the A track.
+  /// Encrypts and sends [body] on the PQ track when [to] has at least one
+  /// PQ-capable device; otherwise returns null so the caller can fall back.
   ///
-  /// Never sends an encrypted message that a recipient cannot open: if the
-  /// peer has no PQ devices, or encryption fails for every device, we
-  /// return null instead of emitting unreadable ciphertext (invariant 1).
+  /// Keys go only to PQ devices. Non-PQ handsets of the same account simply
+  /// do not receive a copy. If the peer has no PQ devices, or encryption
+  /// fails for every PQ device, we return null instead of emitting
+  /// unreadable ciphertext (invariant 1).
   Future<String?> sendPqMessage(
     JID to,
     String body, {

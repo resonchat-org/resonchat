@@ -12,6 +12,8 @@
 // So: a test that only checks "we produced a ciphertext" is worth nothing.
 // These check what actually reaches the stanza.
 
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:moxxmpp/moxxmpp.dart';
 import 'package:resonchat/crypto/omemo/message_codec.dart';
@@ -23,9 +25,14 @@ import 'package:resonchat/xmpp/pq_stanza.dart';
 PqEncryptedMessage _payload({int senderDeviceId = 1}) {
   return PqEncryptedMessage(
     senderDeviceId: senderDeviceId,
-    keys: const [],
-    iv: 'aXYtaGVyZQ==',
+    recipients: [
+      Omemo2KeysForJid(
+        jid: 'bob@example.org',
+        keys: [PqKeyEntry(recipientDeviceId: 2, ciphertext: 'd3JhcA==')],
+      ),
+    ],
     payload: 'Y2lwaGVydGV4dA==',
+    commit: base64Encode(List<int>.filled(64, 1)),
   );
 }
 

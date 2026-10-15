@@ -84,11 +84,11 @@ String translateRoomConfigLabel(AppLocalizations l10n, String? label) {
     case 'Anyone':
       return l10n.roomConfAnyone;
     case 'moderator':
-      return l10n.roomConfModerator;
+      return l10n.roomModerator;
     case 'participant':
-      return l10n.roomConfParticipant;
+      return l10n.roomParticipant;
     case 'visitor':
-      return l10n.roomConfVisitor;
+      return l10n.roomVisitor;
     case 'none':
       return l10n.roomConfNone;
     case 'Always allow private messages to moderators':
@@ -98,11 +98,11 @@ String translateRoomConfigLabel(AppLocalizations l10n, String? label) {
     case 'Everyone':
       return l10n.roomConfEveryone;
     case 'Participants':
-      return l10n.roomConfParticipants;
+      return l10n.roomParticipants;
     case 'Moderators':
-      return l10n.roomConfModerators;
+      return l10n.roomModerators;
     case 'Members':
-      return l10n.roomConfMembers;
+      return l10n.roomMembers;
     case 'No one':
       return l10n.roomConfNoOne;
     default:

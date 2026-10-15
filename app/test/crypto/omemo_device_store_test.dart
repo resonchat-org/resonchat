@@ -168,14 +168,15 @@ void main() {
     await store.save(a);
     await storeB.save(b);
 
-    final keyA = keystore.values['resonchat.device.sealing-key.acct-a'];
-    final keyB = keystore.values['resonchat.device.sealing-key.acct-b'];
+    // Names include format version (see OmemoDeviceStore._sealingKeyName).
+    final keyA = keystore.values['resonchat.device.sealing-key.v1.acct-a'];
+    final keyB = keystore.values['resonchat.device.sealing-key.v1.acct-b'];
     expect(keyA, isNotNull);
     expect(keyB, isNotNull);
     expect(keyA, isNot(keyB));
 
     // A's wrapping key must not open B's ciphertext.
-    keystore.values['resonchat.device.sealing-key.acct-b'] = keyA!;
+    keystore.values['resonchat.device.sealing-key.v1.acct-b'] = keyA!;
     expect(await storeB.load(), isNull);
   });
 }

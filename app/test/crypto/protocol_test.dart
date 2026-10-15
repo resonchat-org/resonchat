@@ -3,16 +3,43 @@
 //
 // Track-selection state machine (docs/02 §6) and codec round-trips.
 
+import 'dart:convert';
+
 import 'package:test/test.dart';
 import 'package:xml/xml.dart';
 import 'package:resonchat/crypto/omemo/bundle_codec.dart';
 import 'package:resonchat/crypto/omemo/message_codec.dart';
 import 'package:resonchat/crypto/omemo/negotiation.dart';
 import 'package:resonchat/crypto/omemo/protocol.dart';
+import 'package:resonchat/crypto/pq/kem_wire.dart';
 import 'package:resonchat/crypto/pq/mlkem.dart';
 
-/// Parses a fragment and returns its first element.
 XmlElement _rootOf(String fragment) => XmlDocument.parse(fragment).rootElement;
+
+Omemo2Bundle _fullBundle() {
+  final tagged = serializeMlKem1024PublicKey(
+    List<int>.filled(MlKem1024.publicKeyLength, 7),
+  );
+  return Omemo2Bundle(
+    deviceId: 4242,
+    jid: 'me@example.org',
+    spk: base64Encode(List<int>.filled(32, 1)),
+    spkId: 7,
+    spkSignature: base64Encode(List<int>.filled(64, 2)),
+    ik: base64Encode(List<int>.filled(32, 3)),
+    prekeys: {
+      10: base64Encode(List<int>.filled(32, 4)),
+      11: base64Encode(List<int>.filled(32, 5)),
+    },
+    kemSpkId: 1,
+    kemSpk: base64Encode(tagged),
+    kemSpkSignature: base64Encode(List<int>.filled(64, 6)),
+    kemPrekeys: {20: base64Encode(tagged)},
+    kemPrekeySignatures: {20: base64Encode(List<int>.filled(64, 8))},
+    pqIk: base64Encode(List<int>.filled(2592, 9)),
+    pqSig: base64Encode(List<int>.filled(4627, 10)),
+  );
+}
 
 void main() {
   group('decideEncMode', () {
@@ -53,7 +80,6 @@ void main() {
     });
 
     test('capability sets must not include devices outside the chat', () {
-      // A stale cache listing extra PQ devices must not upgrade the track.
       expect(
         decideEncMode(allDevices: {1}, pqCapable: {1, 9}, omemoCapable: {1}),
         EncMode.pqOmemo,
@@ -64,136 +90,134 @@ void main() {
       );
     });
 
-    test('untrusted devices force the safer fallback, never the B track', () {
+    test('a device on neither track blocks encryption', () {
       expect(
         decideEncMode(allDevices: {1, 2}, pqCapable: {1}, omemoCapable: {1}),
         EncMode.none,
       );
     });
+
+    test('PQ-only devices (no classic bundle) still pick the B track', () {
+      // monocles can keep a live OMEMO2 bundle for an id whose axolotl
+      // bundle no longer verifies — that device is reachable on B alone.
+      expect(
+        decideEncMode(allDevices: {5}, pqCapable: {5}, omemoCapable: {}),
+        EncMode.pqOmemo,
+      );
+      expect(
+        decideEncMode(allDevices: {1, 5}, pqCapable: {1, 5}, omemoCapable: {1}),
+        EncMode.pqOmemo,
+      );
+    });
   });
 
   group('bundle codec', () {
-    test('round-trips a full PQ bundle', () {
-      final bundle = PqBundle(
-        deviceId: 4242,
-        jid: 'me@example.org',
-        spk: 'c3Br',
-        spkId: 7,
-        spkSignature: 'c2ln',
-        ikEncoded: 'aWs=',
-        prekeys: {10: 'cGswMQ==', 11: 'cGswMg=='},
-        pqSpkId: 1,
-        pqSpk: 'cHFzcGs=',
-        pqSpkSignature: 'cHFzc2ln',
-        pqPrekeys: {20: 'cHFwcGs='},
-      );
+    test('round-trips a full OMEMO2 bundle', () {
+      final bundle = _fullBundle();
       final xml = bundle.toXml().toXmlString();
-      expect(xml, contains('urn:xmpp:pomemo:0'));
+      expect(xml, contains(omemo2Xmlns));
 
-      final parsed = PqBundle.fromXml(_rootOf(xml));
-      expect(parsed.deviceId, 4242);
-      expect(parsed.spk, 'c3Br');
+      final parsed = Omemo2Bundle.fromXml(_rootOf(xml));
       expect(parsed.spkId, 7);
-      expect(parsed.spkSignature, 'c2ln');
-      expect(parsed.ikEncoded, 'aWs=');
-      expect(parsed.prekeys, bundle.prekeys);
-      expect(parsed.pqSpkId, 1);
-      expect(parsed.pqSpk, 'cHFzcGs=');
-      expect(parsed.pqSpkSignature, 'cHFzc2ln');
-      expect(parsed.pqPrekeys, bundle.pqPrekeys);
-      expect(parsed.hasPqKeys, isTrue);
+      expect(parsed.kemSpkId, 1);
+      expect(parsed.hasPqIdentity, isTrue);
+      expect(parsed.kemPrekeys.length, 1);
     });
 
-    test('bundle without PQ keys reports hasPqKeys false', () {
-      final bundle = PqBundle(
+    test('bundle without pq-sig is not hasPqIdentity', () {
+      final bundle = Omemo2Bundle(
         deviceId: 7,
         jid: 'me@example.org',
-        spk: 'a',
+        spk: base64Encode(List<int>.filled(32, 0)),
         spkId: 1,
-        spkSignature: 'b',
-        ikEncoded: 'aWs=',
+        spkSignature: base64Encode(List<int>.filled(64, 0)),
+        ik: base64Encode(List<int>.filled(32, 0)),
         prekeys: const {},
-        pqSpkId: -1,
-        pqSpk: '',
-        pqSpkSignature: '',
-        pqPrekeys: const {},
+        kemSpkId: 1,
+        kemSpk: base64Encode(
+          serializeMlKem1024PublicKey(
+            List<int>.filled(MlKem1024.publicKeyLength, 0),
+          ),
+        ),
+        kemSpkSignature: base64Encode(List<int>.filled(64, 0)),
+        kemPrekeys: const {},
+        kemPrekeySignatures: const {},
+        pqIk: '',
+        pqSig: '',
       );
-      final parsed = PqBundle.fromXml(_rootOf(bundle.toXml().toXmlString()));
-      expect(parsed.hasPqKeys, isFalse);
+      expect(bundle.hasPqIdentity, isFalse);
     });
   });
 
   group('message codec', () {
-    test('round-trips a KEX message with two KEM ciphertexts', () {
+    test('round-trips a KEX message with commit', () {
       final msg = PqEncryptedMessage(
         senderDeviceId: 123,
-        keys: [
-          PqKeyEntry(
-            recipientDeviceId: 456,
-            wrap: 'd3JhcA==',
-            kex: true,
-            ek: 'ZWs=',
-            spkId: 1,
-            pkId: 10,
-            pqSpkId: 2,
-            pqPkId: 20,
-            pqCiphertexts: const ['Y3Qx', 'Y3Qy'],
+        recipients: [
+          Omemo2KeysForJid(
+            jid: 'bob@example.org',
+            keys: [
+              PqKeyEntry(
+                recipientDeviceId: 456,
+                ciphertext: 'U2lnbmFsUHJlS2V5',
+                kex: true,
+              ),
+              PqKeyEntry(
+                recipientDeviceId: 789,
+                ciphertext: 'U2lnbmFsV2hpc3Blcg==',
+              ),
+            ],
           ),
-          PqKeyEntry(recipientDeviceId: 789, wrap: 'd3JhcDI='),
         ],
-        iv: 'aXY=',
         payload: 'cGF5bG9hZA==',
+        commit: base64Encode(List<int>.filled(64, 1)),
       );
       final parsed = PqEncryptedMessage.fromXml(
         _rootOf(msg.toXml().toXmlString()),
       );
 
       expect(parsed.senderDeviceId, 123);
-      expect(parsed.iv, 'aXY=');
       expect(parsed.payload, 'cGF5bG9hZA==');
+      expect(parsed.commit, isNotEmpty);
       expect(parsed.keys.length, 2);
 
       final kex = parsed.keys.first;
       expect(kex.recipientDeviceId, 456);
       expect(kex.kex, isTrue);
-      expect(kex.ek, 'ZWs=');
-      expect(kex.spkId, 1);
-      expect(kex.pkId, 10);
-      expect(kex.pqSpkId, 2);
-      expect(kex.pqPkId, 20);
-      expect(kex.pqCiphertexts, ['Y3Qx', 'Y3Qy']);
-
-      final steady = parsed.keys.last;
-      expect(steady.recipientDeviceId, 789);
-      expect(steady.kex, isFalse);
-      expect(steady.pqCiphertexts, isEmpty);
+      expect(kex.ciphertext, 'U2lnbmFsUHJlS2V5');
     });
 
-    test('uses the pomemo namespace, never the standard one', () {
+    test('uses the monocles OMEMO2 namespace, never urn:xmpp:omemo:2', () {
       final msg = PqEncryptedMessage(
         senderDeviceId: 1,
-        keys: [PqKeyEntry(recipientDeviceId: 2, wrap: 'dw==')],
-        iv: 'aXY=',
+        recipients: [
+          Omemo2KeysForJid(
+            jid: 'a@b',
+            keys: [PqKeyEntry(recipientDeviceId: 2, ciphertext: 'dw==')],
+          ),
+        ],
         payload: 'cA==',
+        commit: base64Encode(List<int>.filled(64, 0)),
       );
       final xml = msg.toXml().toXmlString();
-      expect(xml, contains(pomemoXmlns));
+      expect(xml, contains(omemo2Xmlns));
       expect(xml, isNot(contains('urn:xmpp:omemo:2')));
+      expect(xml, contains('<commit'));
     });
   });
 
   group('protocol constants', () {
-    test('namespaces are distinct from the standard track', () {
-      expect(pomemoXmlns, isNot(contains('urn:xmpp:omemo:2')));
-      expect(pomemoDevicesXmlns, '$pomemoXmlns:devices');
-      expect(pomemoBundlesXmlns, '$pomemoXmlns:bundles');
+    test('namespaces are monocles OMEMO2', () {
+      expect(omemo2Xmlns, 'urn:monocles:omemo-pq:1');
+      expect(omemo2DevicesXmlns, '$omemo2Xmlns:devices');
+      expect(omemo2BundlesXmlns, '$omemo2Xmlns:bundles');
     });
 
-    test('ML-KEM-768 sizes are the FIPS 203 values', () {
-      expect(MlKem768.publicKeyLength, 1184);
-      expect(MlKem768.secretKeyLength, 2400);
-      expect(MlKem768.ciphertextLength, 1088);
-      expect(MlKem768.sharedSecretLength, 32);
+    test('ML-KEM-1024 sizes are the FIPS 203 values', () {
+      expect(MlKem1024.publicKeyLength, 1568);
+      expect(MlKem1024.secretKeyLength, 3168);
+      expect(MlKem1024.ciphertextLength, 1568);
+      expect(MlKem1024.sharedSecretLength, 32);
     });
   });
 }

@@ -5,11 +5,11 @@
 # login page only honours them in debug mode), installs it on the running
 # emulator, and reports what the app managed to do.
 #
-# Usage:
-#   tool/smoke_test.sh <jid> <password> [host]
+# Usage (from repo root):
+#   ./scripts/smoke_test.sh <jid> <password> [host]
 #
 # Example:
-#   tool/smoke_test.sh you@example.org 'secret'   # host optional
+#   ./scripts/smoke_test.sh you@example.org 'secret'   # host optional
 
 set -euo pipefail
 
@@ -20,13 +20,14 @@ HOST="${3:-}"
 export ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
 export PATH="$HOME/development/flutter/bin:$ANDROID_HOME/platform-tools:$PATH"
 
-cd "$(dirname "$0")/.."
+HERE="$(cd "$(dirname "$0")" && pwd)"
+APP="$(cd "$HERE/../app" && pwd)"
 
 echo "==> building debug APK with smoke credentials"
-./tool/build_android.sh --debug -- \
+"$HERE/build_android.sh" --debug -- \
   --dart-define="RESONCHAT_SMOKE=${JID}:${PASS}" 2>&1 | tail -2
 
-APK=build/app/outputs/flutter-apk/app-debug.apk
+APK="$APP/build/app/outputs/flutter-apk/app-debug.apk"
 
 echo "==> waiting for a device"
 adb wait-for-device

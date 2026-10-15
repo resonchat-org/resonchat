@@ -6,14 +6,18 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:cryptography/cryptography.dart';
 import 'package:logging/logging.dart';
 import 'package:moxxmpp/moxxmpp.dart';
-import 'package:omemo_dart/omemo_dart.dart' hide OmemoManager;
+import 'package:omemo_dart/omemo_dart.dart';
+import 'package:omemo_dart/omemo_dart_omemo2.dart'
+    show Omemo2Device, Omemo2KyberPreKey;
 import 'package:omemo_dart/omemo_dart_axolotl.dart' show AxolotlBundle;
 import 'package:xml/xml.dart';
 
+import '../pq/kem_wire.dart';
 import '../pq/mlkem.dart';
 import 'bounded.dart';
 import 'bundle_codec.dart';
@@ -71,7 +75,7 @@ const Duration kDeviceListDeadline = Duration(seconds: 30);
 ///
 /// The A track is fully delegated to moxxmpp's [OmemoManager] (kept
 /// byte-compatible with Conversations/Moxxy/Dino); the B track uses
-/// parallel PEP nodes ([pomemoDevicesXmlns]/[pomemoBundlesXmlns]) so
+/// parallel PEP nodes ([omemo2DevicesXmlns]/[omemo2BundlesXmlns]) so
 /// standard clients never see keys they cannot use.
 class DualTrackManager {
   DualTrackManager({required this.aTrack, required this.pubsubOf});
@@ -82,8 +86,8 @@ class DualTrackManager {
   /// X25519 identity public key of one B-track device, taken from its
   /// bundle. Returns null when the device publishes no usable bundle.
   ///
-  /// This is what binds a session to both identities (invariant 4: the
-  /// same key the A track fingerprints).
+  /// OMEMO2 classical IK is independent of the A-track / legacy IK
+  /// (monocles stack separation).
   Future<List<int>?> deviceById(JID jid, int deviceId) async {
     final bundle = await getPqBundle(jid, deviceId);
     if (bundle == null) return null;
@@ -95,12 +99,12 @@ class DualTrackManager {
   /// Loads every B-track device of [jid] as a [PqDevice], ready to
   /// encrypt to.
   ///
-  /// Returns an empty list when the peer publishes no PQ bundle, which is
-  /// how the negotiation learns they are not PQ-capable.
+  /// Capability ("are they on OMEMO2?") uses [fetchPqDeviceIds] alone —
+  /// monocles does the same. Bundle fetch belongs only here, at encrypt time.
   Future<List<PqDevice>> loadPqDevices(JID jid) async {
-    final devices = await getPqCapableDevices(jid);
+    final listed = await fetchPqDeviceIds(jid);
     final out = <PqDevice>[];
-    for (final id in devices) {
+    for (final id in listed.devices) {
       final bundle = await getPqBundle(jid, id);
       if (bundle == null) continue;
       final device = await deviceFromBundle(bundle);
@@ -116,40 +120,59 @@ class DualTrackManager {
   /// encrypt *to* it, never to decrypt.
   static Future<PqDevice?> deviceFromBundle(PqBundle bundle) async {
     try {
+      if (!bundle.hasPqIdentity) return null;
       final spk = base64Decode(bundle.spk);
       final signature = base64Decode(bundle.spkSignature);
-      final ik = base64Decode(bundle.ikEncoded);
-      final pqSpk = base64Decode(bundle.pqSpk);
+      final ik = bundle.ikBytes;
       if (spk.length != 32 || ik.length != 32 || signature.length != 64) {
         return null;
       }
-      if (pqSpk.length != MlKem768.publicKeyLength) return null;
+
+      // kem-spk is libsignal-tagged (0x0A ‖ pk).
+      late final List<int> pqSpk;
+      try {
+        pqSpk = parseMlKem1024PublicKey(base64Decode(bundle.kemSpk));
+      } catch (_) {
+        return null;
+      }
 
       final opks = <int, OmemoKeyPair>{};
       for (final e in bundle.prekeys.entries) {
         final bytes = base64Decode(e.value);
         if (bytes.length != 32) continue;
-        // Public-only key pair: enough for DH from our side.
         opks[e.key] = OmemoKeyPair.fromBytes(
           bytes,
-          // A zero private key never gets used; we only ever read `.pk`.
           List<int>.filled(32, 0),
           KeyPairType.x25519,
         );
       }
-      final pqOpks = <int, KemKeyPair>{};
-      for (final e in bundle.pqPrekeys.entries) {
-        final bytes = base64Decode(e.value);
-        if (bytes.length != MlKem768.publicKeyLength) continue;
-        pqOpks[e.key] = KemKeyPair(
-          publicKey: bytes,
-          secretKey: List<int>.filled(MlKem768.secretKeyLength, 0),
-        );
+      final pqOpks = <int, Omemo2KyberPreKey>{};
+      for (final e in bundle.kemPrekeys.entries) {
+        try {
+          final raw = parseMlKem1024PublicKey(base64Decode(e.value));
+          final sigB64 = bundle.kemPrekeySignatures[e.key];
+          if (sigB64 == null) continue;
+          pqOpks[e.key] = Omemo2KyberPreKey(
+            publicRaw: Uint8List.fromList(raw),
+            secretRaw: Uint8List(MlKem1024.secretKeyLength),
+            signature: Uint8List.fromList(base64Decode(sigB64)),
+          );
+        } catch (_) {
+          continue;
+        }
       }
 
-      return PqDevice(
+      // Remote devices only need the X25519 public IK for DH; Ed25519
+      // private is never published.
+      final ikEdStub = OmemoKeyPair.fromBytes(
+        List<int>.filled(32, 0),
+        List<int>.filled(32, 0),
+        KeyPairType.ed25519,
+      );
+      return Omemo2Device(
         jid: bundle.jid,
         id: bundle.deviceId,
+        ikEd: ikEdStub,
         ikDh: OmemoKeyPair.fromBytes(
           ik,
           List<int>.filled(32, 0),
@@ -161,16 +184,19 @@ class DualTrackManager {
           KeyPairType.x25519,
         ),
         spkId: bundle.spkId,
-        spkSignature: signature,
-        pqSpk: pqSpk,
-        pqSpkSecret: const [],
-        pqSpkId: bundle.pqSpkId,
-        pqSpkSignature: base64Decode(bundle.pqSpkSignature),
+        spkSignature: Uint8List.fromList(signature),
+        pqSpk: Uint8List.fromList(pqSpk),
+        pqSpkSecret: Uint8List(0),
+        pqSpkId: bundle.kemSpkId,
+        pqSpkSignature: Uint8List.fromList(
+          base64Decode(bundle.kemSpkSignature),
+        ),
         opks: opks,
         pqOpks: pqOpks,
+        peerPqIdentityKey: Uint8List.fromList(base64Decode(bundle.pqIk)),
+        peerPqSignature: Uint8List.fromList(base64Decode(bundle.pqSig)),
       );
     } catch (_) {
-      // A malformed bundle means "not usable", not a crash.
       return null;
     }
   }
@@ -601,37 +627,40 @@ class DualTrackManager {
     return listOk && bundleOk || specOk;
   }
 
-  /// PQ-capable device ids of [jid]: present in the B-track device list
-  /// *and* serving a retrievable bundle with PQ keys.
-  Future<Set<int>> getPqCapableDevices(JID jid) async {
+  /// OMEMO2 device ids published on the B-track PEP node — list only.
+  ///
+  /// Matches monocles `omemo2DeviceIds`: a non-empty list means the contact
+  /// is on OMEMO2. Bundle reachability is checked later at encrypt time
+  /// ([loadPqDevices]), never folded into this answer and never intersected
+  /// with the classic axolotl device list.
+  Future<({Set<int> devices, bool listReadable})> fetchPqDeviceIds(
+    JID jid,
+  ) async {
     final pm = pubsubOf();
-    final items = await pm.getItems(jid, pomemoDevicesXmlns);
-    if (!items.isType<List<PubSubItem>>()) return {};
-    final result = <int>{};
+    final items = await pm.getItems(jid, omemo2DevicesXmlns);
+    if (!items.isType<List<PubSubItem>>()) {
+      return (devices: <int>{}, listReadable: false);
+    }
     final ids = <int>{};
     for (final item in items.get<List<PubSubItem>>()) {
       for (final dev in item.payload.children.where((c) => c.tag == 'device')) {
         final id = int.tryParse('${dev.attributes['id']}');
-        if (id == null) continue;
-        ids.add(id);
+        if (id != null) ids.add(id);
       }
     }
-    // Concurrent for the same reason as the standard track's list, and it sits
-    // on the same capability path: `_resolve` calls this right after
-    // `resolveOmemoDevices`, so a serial loop here made the total cost of one
-    // capability lookup *twice* what the concurrency work had just reduced it to.
-    await forEachBounded(ids, kBundleFetchConcurrency, (id) async {
-      final bundle = await getPqBundle(jid, id);
-      if (bundle != null && bundle.hasPqKeys) result.add(id);
-    });
-    return result;
+    return (devices: ids, listReadable: true);
   }
 
+  /// @Deprecated Prefer [fetchPqDeviceIds] — kept as the raw id set for
+  /// callers that already treat "listed on OMEMO2" as capability.
+  Future<Set<int>> getPqCapableDevices(JID jid) async =>
+      (await fetchPqDeviceIds(jid)).devices;
+
   /// Fetches one device's B-track bundle, or null when absent/broken.
-  /// Malformed payloads never throw: they just mean "not PQ-capable".
+  /// Malformed payloads never throw: they just mean "not encryptable yet".
   Future<PqBundle?> getPqBundle(JID jid, int deviceId) async {
     final pm = pubsubOf();
-    final res = await pm.getItem(jid, pomemoBundlesXmlns, '$deviceId');
+    final res = await pm.getItem(jid, omemo2BundlesXmlns, '$deviceId');
     if (!res.isType<PubSubItem>()) return null;
     try {
       final doc = XmlDocument.parse(res.get<PubSubItem>().payload.toXml());
@@ -639,7 +668,8 @@ class DualTrackManager {
         doc.rootElement,
         jidOfBundle: jid.toBare().toString(),
       );
-    } catch (_) {
+    } catch (e, st) {
+      _log.warning('PQ bundle parse failed for $jid:$deviceId: $e\n$st');
       return null;
     }
   }
@@ -654,7 +684,7 @@ class DualTrackManager {
   Future<bool> publishPqBundle(JID bareJid, PqBundle bundle) async {
     final pm = pubsubOf();
 
-    final existing = await pm.getItems(bareJid, pomemoDevicesXmlns);
+    final existing = await pm.getItems(bareJid, omemo2DevicesXmlns);
     final ids = <int>{};
     if (existing.isType<List<PubSubItem>>()) {
       for (final item in existing.get<List<PubSubItem>>()) {
@@ -667,16 +697,18 @@ class DualTrackManager {
       }
     }
     ids.add(bundle.deviceId);
+    // Payload xmlns = [omemo2Xmlns]; PEP node = [omemo2DevicesXmlns].
+    // Matching monocles: `<devices xmlns='urn:monocles:omemo-pq:1'>`.
     final listNode = XMLNode.xmlns(
       tag: 'devices',
-      xmlns: pomemoDevicesXmlns,
+      xmlns: omemo2Xmlns,
       children: [
         for (final id in ids) XMLNode(tag: 'device', attributes: {'id': '$id'}),
       ],
     );
     final listResult = await pm.publish(
       bareJid,
-      pomemoDevicesXmlns,
+      omemo2DevicesXmlns,
       listNode,
       id: 'current',
       options: const PubSubPublishOptions(accessModel: 'open'),
@@ -688,7 +720,7 @@ class DualTrackManager {
     final bundleNode = XMLNode.fromString(bundle.toXml().toXmlString());
     final bundleResult = await pm.publish(
       bareJid,
-      pomemoBundlesXmlns,
+      omemo2BundlesXmlns,
       bundleNode,
       id: '${bundle.deviceId}',
       options: const PubSubPublishOptions(accessModel: 'open', maxItems: 'max'),
@@ -713,11 +745,14 @@ class DualTrackManager {
     await forEachBounded(byOwner.entries, kBundleFetchConcurrency, (
       entry,
     ) async {
-      pqCapable.addAll(await getPqCapableDevices(JID.fromString(entry.key)));
+      final listed = await fetchPqDeviceIds(JID.fromString(entry.key));
+      pqCapable.addAll(listed.devices);
     });
+    // No ∩ with [allDevices]: B-track ids are independent of the classic set
+    // (monocles keeps separate maps). decideEncMode ignores extras.
     return decideEncMode(
       allDevices: allDevices,
-      pqCapable: pqCapable.intersection(allDevices),
+      pqCapable: pqCapable,
       omemoCapable: omemoCapable,
     );
   }

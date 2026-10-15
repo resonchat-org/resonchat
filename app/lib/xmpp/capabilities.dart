@@ -3,9 +3,10 @@
 //
 // Per-conversation capability resolution (docs/02 §6, docs/03 §6).
 //
-// Decides which track a chat can use *before* anything is sent, and
-// caches the answer briefly so we do not hit the network per message.
-// PEP notifications invalidate the cache.
+// Classic OMEMO (A) and OMEMO2/PQ (B) are independent stacks — same model as
+// monocles `deviceIds` vs `omemo2DeviceIds`. Separate PEP nodes, separate
+// lists, no intersection. A contact can be PQ-capable with an empty classic
+// list and vice versa.
 
 import 'dart:async';
 
@@ -26,36 +27,38 @@ class ChatCapabilities {
     required this.pqDevices,
     required this.checkedAt,
     required this.reliable,
+    this.classicReliable = true,
+    this.pqReliable = true,
   });
 
-  /// The track to send with.
+  /// Legacy auto-track verdict (A/B mix). UI track choice uses [resolveTrack].
   final EncMode mode;
 
-  /// Every device the message must be readable by, including our own
-  /// other devices (Carbons fan-out).
+  /// Classic A-track recipients (peer classic devices + our classic id).
   final Set<int> recipientDevices;
 
-  /// Devices the peer itself publishes that we can actually encrypt to.
-  ///
-  /// Kept apart from [recipientDevices], which also carries our own other
-  /// devices. Folding the two together made "they have no reachable device"
-  /// unreachable *as a verdict*: our own id alone kept the set non-empty, so a
-  /// peer whose every bundle had gone stale — 33 of 57 on the account this was
-  /// found with — looked perfectly reachable, the send was allowed, and the
-  /// rejection arrived later as a cancelled stanza nobody reported.
+  /// Peer's classic OMEMO devices only (never mixed with OMEMO2 ids).
   final Set<int> peerDevices;
 
-  /// Devices supporting standard OMEMO.
+  /// Devices supporting standard OMEMO (classic list + our id).
   final Set<int> omemoDevices;
 
-  /// Devices with a usable PQ bundle.
+  /// Peer's OMEMO2 / PQ device ids from the B-track PEP list alone.
+  ///
+  /// Independent of [peerDevices] / [omemoDevices]. Non-empty means monocles
+  /// (or us) published on `urn:monocles:omemo-pq:1:devices`.
   final Set<int> pqDevices;
 
   final DateTime checkedAt;
 
-  /// False when the answer rests on incomplete data (e.g. a bundle fetch
-  /// failed), which means [mode] must not be trusted for sending.
+  /// True when at least one track's device list was readable.
   final bool reliable;
+
+  /// Classic axolotl list answered (possibly empty).
+  final bool classicReliable;
+
+  /// OMEMO2 device list answered (possibly empty).
+  final bool pqReliable;
 }
 
 /// Resolves and caches which track each conversation uses.
@@ -72,15 +75,10 @@ class CapabilityService {
   /// Resolves the dual-track managers for the live connection.
   final DualTrackManager Function() tracks;
 
-  /// Our own OMEMO device id, or null before the device exists.
+  /// Our own classic OMEMO device id, or null before the device exists.
   final Future<int?> Function() ourDeviceId;
 
-  /// Our own B-track device ids, empty when the PQ device is not published.
-  ///
-  /// Our own devices have to appear in the capability sets too: the
-  /// decision requires *every* recipient device to be covered, and a
-  /// carbon copy we cannot decrypt is exactly the bug the invariant exists
-  /// to prevent.
+  /// Our own B-track device ids once published (independent of classic id).
   final Future<Set<int>> Function() ourPqDevices;
 
   static Future<Set<int>> _noPqDevices() async => const <int>{};
@@ -122,69 +120,54 @@ class CapabilityService {
   Future<ChatCapabilities> _resolve(JID jid) async {
     final bare = jid.toBare();
 
-    // A track's device list must include our own id, otherwise Carbons
-    // copies of our messages would be undecryptable.
     final ourId = await ourDeviceId();
-
-    // Read the device list ourselves rather than through moxxmpp: its
-    // fetchDeviceList only knows the XEP-0384 spec node, which no real
-    // client publishes to, so it silently reported an empty list for
-    // everyone. See lib/crypto/omemo/defacto.dart.
-    final resolved = await tracks().resolveOmemoDevices(bare);
-
-    // The peer's own usable devices, before ours are folded in. Two different
-    // questions: [peerDevices] answers "is there anybody out there to encrypt
-    // to", [recipientDevices] answers "who has to be able to read this".
-    final peerDevices = <int>{...resolved.devices};
-    final devices = <int>{...peerDevices};
-    final ours = <int>{};
-    if (ourId != null) ours.add(ourId);
-    devices.addAll(ours);
-
-    final pqDevices = await tracks().getPqCapableDevices(bare);
     final ourPq = await ourPqDevices();
 
-    // We hold our own OMEMO keys by definition, so our device ids count as
-    // OMEMO-capable without a round-trip.
-    final omemo = <int>{...resolved.devices, ...ours};
+    // Two independent PEP reads — never gate one on the other.
+    final classic = await tracks().resolveOmemoDevices(bare);
+    final pqList = await tracks().fetchPqDeviceIds(bare);
 
-    // Only devices we can actually deliver to count as PQ-capable; a
-    // stale capability cache must not upgrade a mixed chat. Our own PQ
-    // device only qualifies once its bundle is actually published.
-    final pq = <int>{...pqDevices.intersection(devices), ...ourPq}
-      ..retainWhere(devices.contains);
+    final peerClassic = <int>{...classic.devices};
+    final peerPq = <int>{...pqList.devices};
 
+    final ours = <int>{};
+    if (ourId != null) ours.add(ourId);
+
+    final omemo = <int>{...peerClassic, ...ours};
+    // A-track recipients only. B-track ids stay in [pqDevices].
+    final recipientDevices = <int>{...peerClassic, ...ours};
+
+    // Auto-mode still needs a combined view for carbons / mixed chats, but
+    // [pqDevices] itself stays peer-B-only for UI and resolveTrack.
+    final modeDevices = <int>{...recipientDevices, ...peerPq, ...ourPq};
+    final modePq = <int>{...peerPq, ...ourPq};
     final mode = decideEncMode(
-      allDevices: devices,
-      pqCapable: pq,
+      allDevices: modeDevices,
+      pqCapable: modePq,
       omemoCapable: omemo,
     );
 
+    final classicReliable = classic.listReadable;
+    final pqReliable = pqList.listReadable;
+    final reliable = classicReliable || pqReliable;
+
     final caps = ChatCapabilities(
       mode: mode,
-      recipientDevices: devices,
-      peerDevices: peerDevices,
+      recipientDevices: recipientDevices,
+      peerDevices: peerClassic,
       omemoDevices: omemo,
-      pqDevices: pq,
+      pqDevices: peerPq,
       checkedAt: DateTime.now(),
-      // An empty device list is a real answer ("this contact has no
-      // devices"); an unreadable one is not. Conflating them would send
-      // unencrypted mail believing the peer was merely device-less.
-      reliable: resolved.listReadable,
+      reliable: reliable,
+      classicReliable: classicReliable,
+      pqReliable: pqReliable,
     );
-    // Warning, not fine: an unreadable device list is the one failure a user
-    // experiences as "this app cannot send at all", with no error and no
-    // visible cause. The cost is one line per capability refresh, which is
-    // bounded by the TTL and happens a handful of times a session.
     _log.warning(
       'caps($bare): ${caps.mode.name} '
-      'peerDevices=${caps.peerDevices.length} '
-      'devices=${caps.recipientDevices} '
-      'pq=${caps.pqDevices} reliable=${caps.reliable}',
+      'classic=${caps.peerDevices} '
+      'pq=${caps.pqDevices} '
+      'classicOk=$classicReliable pqOk=$pqReliable',
     );
-    // Not cached when unreliable: an unreadable snapshot is about the network,
-    // not the contact, and a cached one would block sending for the whole TTL.
-    // See [forChat].
     if (caps.reliable) {
       _cache[bare.toString()] = caps;
     }

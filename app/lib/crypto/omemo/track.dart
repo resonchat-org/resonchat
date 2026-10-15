@@ -28,8 +28,8 @@ enum Track {
   /// XEP-0384 standard OMEMO. Interoperable with other clients.
   standard(label: 'OM', icon: Icons.shield_outlined),
 
-  /// resonchat's post-quantum track (PQ-OMEMO).
-  pq(label: 'PO', icon: Icons.shield);
+  /// monocles PQ-OMEMO2 track (`urn:monocles:omemo-pq:1`).
+  pq(label: 'O2', icon: Icons.shield);
 
   const Track({required this.label, required this.icon});
 
@@ -54,9 +54,7 @@ enum Track {
           'this.',
     Track.standard =>
       'Standard OMEMO — readable by other XMPP apps such as Conversations.',
-    Track.pq =>
-      'Post-quantum — strongest, but only resonchat apps can read '
-          'it.',
+    Track.pq => 'PQ OMEMO2 — post-quantum, interoperable with monocles.',
   };
 
   /// Localized description for UI.
@@ -118,7 +116,7 @@ enum Track {
   /// downgrading a stored choice to "no encryption" would send messages in
   /// the clear because of a typo.
   static Track? fromStored(String value) => switch (value.toLowerCase()) {
-    'po' || 'pq' || 'pqomemo' => Track.pq,
+    'o2' || 'po' || 'pq' || 'pqomemo' || 'omemo2' => Track.pq,
     'om' || 'standard' || 'standardomemo' => Track.standard,
     'no' || 'none' => Track.none,
     _ => null,
@@ -166,7 +164,7 @@ enum EncModeToken {
   /// left to protect by being uncertain about it. The same uncertainty on the
   /// send path is not acceptable, which is why [fromStored] returns null.
   static EncModeToken parse(String? value) => switch (value?.toLowerCase()) {
-    'po' || 'pq' || 'pqomemo' => EncModeToken.pq,
+    'o2' || 'po' || 'pq' || 'pqomemo' || 'omemo2' => EncModeToken.pq,
     'om' || 'standard' || 'standardomemo' => EncModeToken.standard,
     'no' || 'none' => EncModeToken.none,
     'error' => EncModeToken.error,

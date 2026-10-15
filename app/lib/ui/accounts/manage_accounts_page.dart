@@ -70,7 +70,16 @@ class ManageAccountsPage extends ConsumerWidget {
                       isThreeLine: true,
                       trailing: Switch(
                         value: a.enabled,
-                        onChanged: (v) => hub.setEnabled(a.id, v),
+                        onChanged: (v) async {
+                          await hub.setEnabled(a.id, v);
+                          if (!context.mounted) return;
+                          // Cold-start lander is `/accounts` when every account
+                          // was disabled — enter the chat shell after re-enable.
+                          if (v && hub.hasEnabledAccounts) {
+                            Navigator.of(context)
+                                .pushReplacementNamed('/chats');
+                          }
+                        },
                       ),
                     );
                   },

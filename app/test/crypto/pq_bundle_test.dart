@@ -1,165 +1,84 @@
 // Copyright (C) 2026 resonchat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// The B-track publish path: a local PqDevice must survive being written to
-// a bundle, published, and read back as something we can encrypt to.
+// OMEMO2 bundle + deviceFromBundle (monocles wire).
 
 import 'dart:convert';
 
-import 'package:flutter_test/flutter_test.dart';
-import 'package:xml/xml.dart';
+import 'package:test/test.dart';
 import 'package:resonchat/crypto/omemo/bundle_codec.dart';
 import 'package:resonchat/crypto/omemo/dual_track_manager.dart';
-import 'package:resonchat/crypto/omemo/pq_session.dart';
+import 'package:resonchat/crypto/omemo/protocol.dart';
+import 'package:resonchat/crypto/pq/kem_wire.dart';
 import 'package:resonchat/crypto/pq/mlkem.dart';
 import 'package:resonchat/crypto/pq/pqcrypto_mlkem.dart';
 
-/// Serialises [device] the way the publisher does.
-Future<PqBundle> toBundle(PqDevice device) async {
-  final prekeys = <int, String>{};
-  for (final e in device.opks.entries) {
-    prekeys[e.key] = base64Encode(await e.value.pk.getBytes());
-  }
-  final pqPrekeys = <int, String>{};
-  for (final e in device.pqOpks.entries) {
-    pqPrekeys[e.key] = base64Encode(e.value.publicKey);
-  }
-  return PqBundle(
-    deviceId: device.id,
-    jid: device.jid,
-    spk: base64Encode(await device.spk.pk.getBytes()),
-    spkId: device.spkId,
-    spkSignature: base64Encode(device.spkSignature),
-    ikEncoded: base64Encode(await device.ikDh.pk.getBytes()),
-    prekeys: prekeys,
-    pqSpkId: device.pqSpkId,
-    pqSpk: base64Encode(device.pqSpk),
-    pqSpkSignature: base64Encode(device.pqSpkSignature),
-    pqPrekeys: pqPrekeys,
+Omemo2Bundle sampleBundle({required List<int> kemPk}) {
+  final tagged = serializeMlKem1024PublicKey(kemPk);
+  return Omemo2Bundle(
+    deviceId: 7,
+    jid: 'bob@example.org',
+    spk: base64Encode(List<int>.filled(32, 1)),
+    spkId: 3,
+    spkSignature: base64Encode(List<int>.filled(64, 2)),
+    ik: base64Encode(List<int>.filled(32, 3)),
+    prekeys: {11: base64Encode(List<int>.filled(32, 4))},
+    kemSpkId: 5,
+    kemSpk: base64Encode(tagged),
+    kemSpkSignature: base64Encode(List<int>.filled(64, 6)),
+    kemPrekeys: {13: base64Encode(tagged)},
+    kemPrekeySignatures: {13: base64Encode(List<int>.filled(64, 8))},
+    pqIk: base64Encode(List<int>.filled(2592, 9)),
+    pqSig: base64Encode(List<int>.filled(4627, 10)),
   );
 }
 
 void main() {
-  final kem = PqcryptoMlKem768();
+  final kem = PqcryptoMlKem1024();
 
-  Future<PqDevice> device(String jid) =>
-      PqDevice.generate(jid, opkCount: 3, pqOpkCount: 2, kem: kem);
-
-  test('a bundle survives XML round-trip with every field intact', () async {
-    final alice = await device('alice@example.org');
-    final bundle = await toBundle(alice);
-
-    final parsed = PqBundle.fromXml(bundle.toXml(), jidOfBundle: alice.jid);
-
-    expect(parsed.deviceId, alice.id);
-    expect(parsed.jid, alice.jid);
-    expect(parsed.spkId, alice.spkId);
-    expect(base64Decode(parsed.spk), await alice.spk.pk.getBytes());
-    expect(base64Decode(parsed.ikEncoded), await alice.ikDh.pk.getBytes());
-    expect(parsed.prekeys.keys.toSet(), alice.opks.keys.toSet());
-    expect(parsed.pqPrekeys.keys.toSet(), alice.pqOpks.keys.toSet());
-    expect(base64Decode(parsed.pqSpk), alice.pqSpk);
-    expect(parsed.hasPqKeys, isTrue);
+  test('XML uses monocles OMEMO2 namespace and element names', () {
+    final kp = kem.generateKeyPair();
+    final b = sampleBundle(kemPk: kp.publicKey);
+    final xml = b.toXml().toXmlString();
+    expect(xml, contains(omemo2Xmlns));
+    expect(xml, contains('<kem-spk'));
+    expect(xml, contains('<pq-ik'));
+    expect(xml, isNot(contains('urn:xmpp:pomemo:0')));
   });
 
-  test('a bundle read back yields a device we can encrypt to', () async {
-    final alice = await device('alice@example.org');
-    final published = PqBundle.fromXml(
-      (await toBundle(alice)).toXml(),
-      jidOfBundle: alice.jid,
-    );
-
-    final restored = await DualTrackManager.deviceFromBundle(published);
-    expect(restored, isNotNull);
-    expect(restored!.id, alice.id);
-    expect(restored.jid, alice.jid);
-    expect(restored.spkId, alice.spkId);
-    expect(await restored.spk.pk.getBytes(), await alice.spk.pk.getBytes());
-    expect(await restored.ikDh.pk.getBytes(), await alice.ikDh.pk.getBytes());
-    expect(restored.pqSpk.length, MlKem768.publicKeyLength);
-    expect(restored.opks.length, alice.opks.length);
-    expect(restored.pqOpks.length, alice.pqOpks.length);
-
-    // A real handshake against the restored public material must work:
-    // this is exactly what happens when we encrypt to a peer.
-    final bob = await device('bob@example.org');
-    final kex = await PqSessionManager(kem: kem)
-        .initiate(own: bob, peer: restored);
-    expect(kex.pqCiphertexts.length, 2);
-    expect(kex.pqCiphertexts.first.length, MlKem768.ciphertextLength);
+  test('deviceFromBundle rebuilds a usable public PqDevice', () async {
+    final kp = kem.generateKeyPair();
+    final b = sampleBundle(kemPk: kp.publicKey);
+    final device = await DualTrackManager.deviceFromBundle(b);
+    expect(device, isNotNull);
+    expect(device!.id, 7);
+    expect(device.pqSpk.length, MlKem1024.publicKeyLength);
+    expect(device.pqOpks.length, 1);
   });
 
-  test('private key material never appears in the bundle', () async {
-    final alice = await device('alice@example.org');
-    final xml = (await toBundle(alice)).toXml().toXmlString();
-
-    expect(
-      xml,
-      isNot(contains(base64Encode(await alice.ikDh.sk.getBytes()))),
-      reason: 'identity private key leaked into the bundle',
+  test('deviceFromBundle rejects Round-3 Kyber tag', () async {
+    final bad = sampleBundle(
+      kemPk: List<int>.filled(MlKem1024.publicKeyLength, 1),
     );
-    expect(
-      xml,
-      isNot(contains(base64Encode(alice.pqSpkSecret))),
-      reason: 'ML-KEM private key leaked into the bundle',
+    final mutated = Omemo2Bundle(
+      deviceId: bad.deviceId,
+      jid: bad.jid,
+      spk: bad.spk,
+      spkId: bad.spkId,
+      spkSignature: bad.spkSignature,
+      ik: bad.ik,
+      prekeys: bad.prekeys,
+      kemSpkId: bad.kemSpkId,
+      kemSpk: base64Encode([
+        kyber1024Round3Tag,
+        ...List<int>.filled(MlKem1024.publicKeyLength, 0),
+      ]),
+      kemSpkSignature: bad.kemSpkSignature,
+      kemPrekeys: bad.kemPrekeys,
+      kemPrekeySignatures: bad.kemPrekeySignatures,
+      pqIk: bad.pqIk,
+      pqSig: bad.pqSig,
     );
-    for (final opk in alice.opks.values) {
-      expect(
-        xml,
-        isNot(contains(base64Encode(await opk.sk.getBytes()))),
-        reason: 'one-time prekey private half leaked',
-      );
-    }
+    expect(await DualTrackManager.deviceFromBundle(mutated), isNull);
   });
-
-  test('a bundle missing its PQ section reports hasPqKeys false', () {
-    final stripped = PqBundle.fromXml(
-      XmlDocument.parse(
-        '<bundle xmlns="urn:xmpp:pomemo:0" device="1">'
-        '<spk id="3">AAAA</spk><spsk>AAAA</spsk><ik>AAAA</ik>'
-        '</bundle>',
-      ).rootElement,
-      jidOfBundle: 'x@y',
-    );
-    expect(stripped.hasPqKeys, isFalse);
-    expect(stripped.spkId, 3);
-  });
-
-  test('deviceFromBundle refuses malformed key material', () async {
-    final bad = PqBundle(
-      deviceId: 1,
-      jid: 'x@y',
-      spk: base64Encode(List<int>.filled(31, 1)), // wrong length
-      spkId: 1,
-      spkSignature: base64Encode(List<int>.filled(64, 2)),
-      ikEncoded: base64Encode(List<int>.filled(32, 3)),
-      prekeys: const {},
-      pqSpkId: 1,
-      pqSpk: base64Encode(List<int>.filled(1184, 4)),
-      pqSpkSignature: base64Encode(List<int>.filled(64, 5)),
-      pqPrekeys: const {},
-    );
-    expect(await DualTrackManager.deviceFromBundle(bad), isNull);
-  });
-
-  test(
-    'a restored device cannot be used to decrypt (no private half)',
-    () async {
-      final alice = await device('alice@example.org');
-      final restored = await DualTrackManager.deviceFromBundle(
-        PqBundle.fromXml(
-          (await toBundle(alice)).toXml(),
-          jidOfBundle: alice.jid,
-        ),
-      );
-      expect(restored, isNotNull);
-      // Private material is intentionally zero-filled: it must not match the
-      // real device, so nobody can be fooled into treating it as a local key.
-      expect(
-        await restored!.ikDh.sk.getBytes(),
-        isNot(await alice.ikDh.sk.getBytes()),
-      );
-      expect(restored.pqSpkSecret, isEmpty);
-    },
-  );
 }

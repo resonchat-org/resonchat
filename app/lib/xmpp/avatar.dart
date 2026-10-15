@@ -212,11 +212,13 @@ Future<bool> publishOwnAvatar(
   return meta.isType<bool>();
 }
 
-/// MUC / legacy avatar via vCard-temp PHOTO (Conversations room avatars).
+/// vCard-temp PHOTO for a contact or MUC occupant (XEP-0153 / Gajim).
 ///
-/// Returns null when there is no PHOTO or the payload cannot be decoded.
+/// Pass a bare JID for a contact or the room itself. Pass a full
+/// `room@server/nick` for an occupant — Gajim keys participant avatars that
+/// way; baring would fetch the room photo instead.
 Future<AvatarData?> fetchVCardAvatar(VCardManager manager, JID jid) async {
-  final result = await manager.requestVCard(jid.toBare());
+  final result = await manager.requestVCard(jid);
   if (!result.isType<VCard>()) return null;
   final binval = result.get<VCard>().photo?.binval;
   if (binval == null || binval.isEmpty) return null;

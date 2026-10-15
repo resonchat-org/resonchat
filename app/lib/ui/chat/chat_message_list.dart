@@ -32,6 +32,7 @@ class ChatMessageList extends StatelessWidget {
     required this.onMenu,
     required this.onToggleSelected,
     required this.onMentionNick,
+    required this.onOccupantAvatarLongPress,
     required this.selectionMode,
     required this.selectedIds,
     required this.translations,
@@ -66,6 +67,9 @@ class ChatMessageList extends StatelessWidget {
 
   /// Conversations contact-picture tap → insert `nick:` / `, nick` in composer.
   final void Function(String nick) onMentionNick;
+
+  /// Long-press occupant avatar → member action sheet (not message menu).
+  final void Function(String nick) onOccupantAvatarLongPress;
 
   /// Whether the chat is in selection mode, so a tap selects rather than acts.
   final bool selectionMode;
@@ -199,6 +203,7 @@ class ChatMessageList extends StatelessWidget {
         onMenu: (body) => onMenu(m, body),
         onToggleSelected: () => onToggleSelected(m),
         onMentionNick: onMentionNick,
+        onOccupantAvatarLongPress: onOccupantAvatarLongPress,
       );
       if (matchesUnreadAnchor(m, focusMessageAnchor)) {
         bubble = KeyedSubtree(key: focusMessageKey, child: bubble);
@@ -236,6 +241,7 @@ class _ChatReactionBubble extends ConsumerWidget {
     required this.onMenu,
     required this.onToggleSelected,
     required this.onMentionNick,
+    required this.onOccupantAvatarLongPress,
   });
 
   final String chatKey;
@@ -256,6 +262,7 @@ class _ChatReactionBubble extends ConsumerWidget {
   final void Function(String body) onMenu;
   final void Function() onToggleSelected;
   final void Function(String nick) onMentionNick;
+  final void Function(String nick) onOccupantAvatarLongPress;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -282,13 +289,13 @@ class _ChatReactionBubble extends ConsumerWidget {
     final realJid = chromeNick == null
         ? null
         : occupantRealJid(room, chromeNick);
-    // Never pass room@server/nick into ContactAvatar: toBare() is the room and
-    // every occupant would show the room's photo.
+    // Prefer real bare JID (PEP); else room/nick for occupant vCard (Gajim).
     final avatar = chromeNick == null
         ? null
         : _BubbleOccupantAvatar(
             nick: chromeNick,
             realJid: realJid,
+            roomJid: room?.roomJid,
             colorKey: message.sender,
           );
     return MessageBubble(
@@ -326,6 +333,9 @@ class _ChatReactionBubble extends ConsumerWidget {
       onAvatarTap: chromeNick == null || selectionMode
           ? null
           : () => onMentionNick(chromeNick),
+      onAvatarLongPress: chromeNick == null || selectionMode
+          ? null
+          : () => onOccupantAvatarLongPress(chromeNick),
       onReact: onReact,
       // Long-press → context menu (incl. Select). Tap toggles only while
       // already in multi-select — Select from the menu is what enters it.
@@ -341,29 +351,34 @@ class _ChatReactionBubble extends ConsumerWidget {
   }
 }
 
-/// Avatar beside a group bubble: real-JID photo when known, else initials only.
+/// Avatar beside a group bubble.
 ///
-/// Initials-only path must not call [ContactAvatar] with a MUC full JID — that
-/// resolves to the room bare address and would paint the room's avatar on every
-/// occupant.
+/// Real bare JID → PEP; otherwise `room/nick` → occupant vCard (Gajim
+/// GroupchatParticipant). [contactAvatarProvider] must not bare occupant JIDs.
 class _BubbleOccupantAvatar extends StatelessWidget {
   const _BubbleOccupantAvatar({
     required this.nick,
     required this.colorKey,
     this.realJid,
+    this.roomJid,
   });
 
   final String nick;
   final String colorKey;
   final String? realJid;
+  final String? roomJid;
 
   static const double radius = 18;
 
   @override
   Widget build(BuildContext context) {
-    final jid = realJid?.trim();
-    if (jid != null && jid.isNotEmpty) {
-      return ContactAvatar(jid: jid, title: nick, radius: radius);
+    final real = realJid?.trim();
+    if (real != null && real.isNotEmpty) {
+      return ContactAvatar(jid: real, title: nick, radius: radius);
+    }
+    final room = roomJid?.trim();
+    if (room != null && room.isNotEmpty) {
+      return ContactAvatar(jid: '$room/$nick', title: nick, radius: radius);
     }
     final tg = context.tg;
     final colour = tintFor(colorKey, tg.accent);

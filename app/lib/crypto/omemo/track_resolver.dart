@@ -45,7 +45,7 @@ enum TrackBlocked {
   /// Some recipient device has no usable standard OMEMO bundle.
   standardUnavailable,
 
-  /// Some recipient device has no usable PQ bundle.
+  /// The peer publishes no device with a usable PQ bundle.
   pqUnavailable,
 }
 
@@ -74,8 +74,8 @@ extension TrackBlockedMessage on TrackBlocked {
       'At least one of their devices has no standard OMEMO bundle, so an '
           'encrypted message would be unreadable on that device.',
     TrackBlocked.pqUnavailable =>
-      'At least one of their devices is not an resonchat device, and it '
-          'cannot read post-quantum messages.',
+      'None of their devices publish a post-quantum bundle, so a '
+          'PQ message would be unreadable on every device they have.',
   };
 
   /// The line that must not be softened.
@@ -180,47 +180,46 @@ TrackResolution resolveTrack({
     );
   }
 
-  // One verdict, not one per track: if the peer publishes no device we can
-  // encrypt to, changing track cannot help. Reported as a track-specific
-  // failure it would send the user to the track picker for a problem the
-  // track picker cannot fix, and whichever track they then picked would fail
-  // the same way — later, and less visibly.
-  //
-  // [ChatCapabilities.peerDevices], not [recipientDevices]: the latter also
-  // holds our own other devices. Those have to be able to read the message,
-  // but they are not who it is for, and counting them as "the peer is
-  // reachable" is how a peer with nothing usable left looked fine.
-  if (caps.peerDevices.isEmpty) {
-    return TrackResolution(
-      track: requested,
-      blocked: TrackBlocked.unreachableDevices,
-    );
-  }
-
-  final allReachable = caps.recipientDevices.every(caps.omemoDevices.contains);
-  final allPq =
-      caps.recipientDevices.isNotEmpty &&
-      caps.recipientDevices.every(caps.pqDevices.contains);
+  // A and B are independent (monocles deviceIds vs omemo2DeviceIds). Do not
+  // let an empty classic list block PQ, or an empty PQ list block standard.
   switch (requested) {
     case Track.none:
       return const TrackResolution(track: Track.none, blocked: null);
 
     case Track.standard:
+      if (!caps.classicReliable) {
+        return TrackResolution(
+          track: requested,
+          blocked: TrackBlocked.unknownPeers,
+        );
+      }
+      if (caps.peerDevices.isEmpty) {
+        return const TrackResolution(
+          track: Track.standard,
+          blocked: TrackBlocked.unreachableDevices,
+        );
+      }
+      final allReachable = caps.recipientDevices.every(
+        caps.omemoDevices.contains,
+      );
       if (allReachable) {
         return const TrackResolution(track: Track.standard, blocked: null);
       }
-      // They publish devices and at least one of them is one we cannot write
-      // to. (No reachable device at all was already answered above.)
       return const TrackResolution(
         track: Track.standard,
         blocked: TrackBlocked.standardUnavailable,
       );
 
     case Track.pq:
-      // An empty device list cannot be "fully PQ-capable" even though
-      // `every` is vacuously true — there is nobody to encrypt to, so the
-      // track has nothing to carry.
-      if (allPq) {
+      if (!caps.pqReliable) {
+        return const TrackResolution(
+          track: Track.pq,
+          blocked: TrackBlocked.unknownPeers,
+        );
+      }
+      // Non-empty OMEMO2 device list is enough — same as monocles
+      // upgradeConversationToOmemo2IfPossible. Bundles are fetched at send.
+      if (caps.pqDevices.isNotEmpty) {
         return const TrackResolution(track: Track.pq, blocked: null);
       }
       return const TrackResolution(

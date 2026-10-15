@@ -8,6 +8,7 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:logging/logging.dart';
 
 /// One local XMPP account.
 class StoredAccount {
@@ -92,6 +93,7 @@ class AccountStore {
     : _storage = storage ?? const FlutterSecureStorage();
 
   final FlutterSecureStorage _storage;
+  final _log = Logger('AccountStore');
   static const _listKey = 'resonchat.accounts.v1';
 
   // Legacy single-account keys (migrated on first [loadAll]).
@@ -99,19 +101,36 @@ class AccountStore {
   static const _passwordKey = 'resonchat.account.password';
   static const _hostKey = 'resonchat.account.host';
 
+  /// Last [loadAll] failure. Callers must not [saveAll] an empty list over a
+  /// failed read — that permanently wipes credentials (clear-cache cannot
+  /// recover FlutterSecureStorage).
+  Object? lastLoadError;
+
   Future<List<StoredAccount>> loadAll() async {
+    lastLoadError = null;
     try {
       final raw = await _storage.read(key: _listKey);
       if (raw != null && raw.isNotEmpty) {
         final list = jsonDecode(raw) as List<dynamic>;
-        return [
-          for (final e in list)
-            StoredAccount.fromJson(Map<String, dynamic>.from(e as Map)),
-        ];
+        // Skip corrupt entries rather than discarding the whole list.
+        final out = <StoredAccount>[];
+        for (final e in list) {
+          try {
+            out.add(
+              StoredAccount.fromJson(Map<String, dynamic>.from(e as Map)),
+            );
+          } catch (err, st) {
+            _log.warning('skipping corrupt account entry: $err', err, st);
+          }
+        }
+        return out;
       }
       return await _migrateLegacy();
-    } catch (_) {
-      // Must be growable: [upsert] mutates the returned list.
+    } catch (e, st) {
+      lastLoadError = e;
+      _log.severe('loadAll failed — not treating as empty', e, st);
+      // Must be growable for callers that mutate; empty + [lastLoadError] means
+      // "unknown", not "user has no accounts".
       return <StoredAccount>[];
     }
   }
@@ -146,6 +165,12 @@ class AccountStore {
 
   Future<void> upsert(StoredAccount account) async {
     final all = await loadAll();
+    if (lastLoadError != null && all.isEmpty) {
+      // Refuse to overwrite keystore with a single row after a failed read.
+      throw StateError(
+        'AccountStore.upsert: loadAll failed ($lastLoadError); not saving',
+      );
+    }
     final i = all.indexWhere((a) => a.id == account.id);
     if (i < 0) {
       // Same bare JID → replace credentials (re-login).
@@ -163,6 +188,11 @@ class AccountStore {
 
   Future<void> remove(String id) async {
     final all = await loadAll();
+    if (lastLoadError != null && all.isEmpty) {
+      throw StateError(
+        'AccountStore.remove: loadAll failed ($lastLoadError); not saving',
+      );
+    }
     all.removeWhere((a) => a.id == id);
     await saveAll(all);
   }

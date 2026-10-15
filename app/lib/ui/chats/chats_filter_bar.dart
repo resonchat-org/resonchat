@@ -106,8 +106,9 @@ class ChatsAccountDrawer extends StatelessWidget {
   Widget build(BuildContext context) {
     final tg = context.tg;
     final l10n = context.l10n;
-    final enabled = accounts.where((a) => a.enabled).toList(growable: false);
-
+    // Show disabled accounts too — filtering them out made the drawer look
+    // empty after the only account was turned off (and clear-cache cannot
+    // re-enable Secure Storage rows).
     return Material(
       color: tg.pageBackground,
       elevation: 8,
@@ -135,13 +136,17 @@ class ChatsAccountDrawer extends StatelessWidget {
                 selected: selectedAccountId == null,
                 onTap: () => onSelected(null),
               ),
-              for (final a in enabled)
+              for (final a in accounts)
                 _AccountTile(
                   title: a.label,
-                  subtitle: a.bareJid,
-                  accent: accountAccent(a.bareJid),
+                  subtitle: a.enabled
+                      ? a.bareJid
+                      : '${a.bareJid}\n${l10n.accountDisabled}',
+                  accent: a.enabled
+                      ? accountAccent(a.bareJid)
+                      : tg.textSecondary,
                   selected: selectedAccountId == a.id,
-                  onTap: () => onSelected(a.id),
+                  onTap: a.enabled ? () => onSelected(a.id) : null,
                 ),
             ],
           ),
@@ -396,19 +401,20 @@ class _AccountTile extends StatelessWidget {
     required this.subtitle,
     required this.accent,
     required this.selected,
-    required this.onTap,
+    this.onTap,
   });
 
   final String title;
   final String? subtitle;
   final Color accent;
   final bool selected;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final tg = context.tg;
     return ListTile(
+      enabled: onTap != null,
       leading: CircleAvatar(
         radius: 16,
         backgroundColor: accent.withValues(alpha: 0.2),

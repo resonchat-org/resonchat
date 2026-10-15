@@ -17,9 +17,14 @@ import 'package:resonchat/xmpp/pq_stanza.dart';
 
 PqEncryptedMessage _payload() => PqEncryptedMessage(
   senderDeviceId: 1,
-  keys: const [],
-  iv: 'aXYtaGVyZQ==',
+  recipients: [
+    Omemo2KeysForJid(
+      jid: 'bob@example.org',
+      keys: [PqKeyEntry(recipientDeviceId: 2, ciphertext: 'd3JhcA==')],
+    ),
+  ],
   payload: 'Y2lwaGVydGV4dA==',
+  commit: 'Y29tbWl0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
 );
 
 Stanza _pqMessage({String? id = 'm1'}) => Stanza.message(

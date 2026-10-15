@@ -45,6 +45,12 @@ final prefsDatabaseProvider = Provider<PrefsDatabase>((ref) => appPrefs);
 /// Phone layout ignores this and uses stacked `/chat` routes instead.
 final selectedChatKeyProvider = StateProvider<String?>((ref) => null);
 
+/// Home shell tab: 0 = Chats, 1 = Contacts, 2 = Me.
+///
+/// Shared so [openChat] can switch back to Chats when opening from Contacts
+/// in column mode (the side pane only lives on the Chats tab).
+final homeTabIndexProvider = StateProvider<int>((ref) => 0);
+
 /// Conversation currently open on screen (phone route or column pane).
 ///
 /// Used by notify policy so a message in the open chat does not buzz.
@@ -53,20 +59,45 @@ final openChatKeyProvider = StateProvider<String?>((ref) => null);
 /// Whether the app is in the foreground ([AppLifecycleState.resumed]).
 final appForegroundProvider = StateProvider<bool>((ref) => true);
 
+/// Primary account DB when a session is open; null if every account is
+/// disabled / not yet opened. Prefer this over [databaseProvider] in UI that
+/// must survive an empty session set.
+final databaseOrNullProvider = Provider<AppDatabase?>((ref) {
+  ref.watch(accountHubProvider);
+  return accountHub.primaryDbOrNull;
+});
+
 /// Primary account DB (per-account chat data). Chat-scoped code must use
 /// [dbForChatKey] / session lookup instead.
+///
+/// Throws when no session is open — use [databaseOrNullProvider] for shells
+/// that stay mounted after the last account is disabled.
 final databaseProvider = Provider<AppDatabase>((ref) {
-  ref.watch(accountHubProvider);
-  final db = accountHub.primaryDbOrNull;
+  final db = ref.watch(databaseOrNullProvider);
   if (db == null) {
     throw StateError('databaseProvider: no account session');
   }
   return db;
 });
 
+/// Dual-track manager already wired on the session ([AccountHub._wireTracks]).
+/// Never construct a second instance here — that would drop [deviceMemory].
+final Provider<DualTrackManager?> dualTrackManagerProvider =
+    Provider<DualTrackManager?>((ref) {
+      ref.watch(accountHubProvider);
+      return accountHub.primarySession?.tracks ??
+          accountHub.primaryXmppOrNull?.tracks;
+    });
+
 final capabilityServiceProvider = Provider<CapabilityService>((ref) {
   final service = CapabilityService(
-    tracks: () => ref.read(dualTrackManagerProvider)!,
+    tracks: () {
+      final t = ref.read(dualTrackManagerProvider);
+      if (t == null) {
+        throw StateError('dual-track manager not wired');
+      }
+      return t;
+    },
     ourDeviceId: () async => ref.read(xmppServiceProvider).omemo?.getDeviceId(),
     ourPqDevices: () async {
       final b = ref.read(xmppServiceProvider).bTrack;
@@ -77,36 +108,31 @@ final capabilityServiceProvider = Provider<CapabilityService>((ref) {
   return service;
 });
 
-/// Dual-track managers for the primary session.
-final Provider<DualTrackManager?> dualTrackManagerProvider =
-    Provider<DualTrackManager?>((ref) {
-      final xmpp = ref.watch(xmppServiceProvider);
-      final moxxOmemo = xmpp.moxxOmemo;
-      final pubsub = xmpp.pubsub;
-      if (moxxOmemo == null || pubsub == null) return null;
-      final tracks = DualTrackManager(
-        aTrack: moxxOmemo,
-        pubsubOf: () => pubsub,
-      );
-      xmpp.tracks = tracks;
-      return tracks;
-    });
+/// Primary [XmppService] when a session is open.
+final Provider<XmppService?> xmppServiceOrNullProvider = Provider<XmppService?>(
+  (ref) {
+    ref.watch(accountHubProvider);
+    return accountHub.primaryXmppOrNull;
+  },
+);
 
 /// Primary account's [XmppService] (settings, “open chat” when one account).
+///
+/// Throws when no session is open — use [xmppServiceOrNullProvider] for UI that
+/// must not crash after every account is disabled.
 final Provider<XmppService> xmppServiceProvider = Provider<XmppService>((ref) {
-  ref.watch(accountHubProvider);
-  final xmpp = accountHub.primaryXmppOrNull;
+  final xmpp = ref.watch(xmppServiceOrNullProvider);
   if (xmpp == null) {
     throw StateError('xmppServiceProvider: no account session');
   }
   return xmpp;
 });
 
-final Provider<BTrackManager> bTrackManagerProvider = Provider<BTrackManager>(
-  (ref) => BTrackManager(
-    tracks: () => ref.read(dualTrackManagerProvider)!,
-    pubsubOf: () => ref.read(xmppServiceProvider).pubsub,
-  ),
+final Provider<BTrackManager?> bTrackManagerProvider = Provider<BTrackManager?>(
+  (ref) {
+    ref.watch(accountHubProvider);
+    return accountHub.primarySession?.xmpp.bTrack;
+  },
 );
 
 final connectionStateProvider = StateProvider<XmppConnectionState>(
@@ -118,8 +144,10 @@ final connectionStateProvider = StateProvider<XmppConnectionState>(
 /// Re-checked when the connection state changes; false while disconnected.
 final httpUploadAvailableProvider = FutureProvider<bool>((ref) async {
   ref.watch(connectionStateProvider);
-  final xmpp = ref.watch(xmppServiceProvider);
-  if (xmpp.state != XmppConnectionState.connected) return false;
+  final xmpp = ref.watch(xmppServiceOrNullProvider);
+  if (xmpp == null || xmpp.state != XmppConnectionState.connected) {
+    return false;
+  }
   return xmpp.httpFiles.isAvailable();
 });
 
@@ -220,7 +248,8 @@ final chatCapabilitiesProvider =
       ref.watch(connectionStateProvider);
       final r = resolveChatKey(chatKey);
       final xmpp = r.session.xmpp;
-      if (xmpp.omemo == null) return null;
+      // B-track capability must not wait on the classic OMEMO manager.
+      if (xmpp.omemo == null && !(xmpp.bTrackReady)) return null;
       final caps = await xmpp.capabilitiesFor(JID.fromString(r.jid));
       if (caps == null || !caps.reliable) return null;
       return caps;
@@ -318,13 +347,22 @@ final contactAvatarProvider = FutureProvider.family<Uint8List?, String>((
   jid,
 ) async {
   ref.watch(avatarRevisionProvider);
-  final xmpp = ref.watch(xmppServiceProvider);
+  // No live session (all accounts disabled): keep seeded cache / initials.
+  final xmpp = ref.watch(xmppServiceOrNullProvider);
+  final db = ref.watch(databaseOrNullProvider);
+  final seeded = _avatarBlobCache[jid];
+  if (xmpp == null) {
+    return (seeded != null && seeded.isNotEmpty) ? seeded : null;
+  }
   final manager = xmpp.avatarManager;
-  final db = ref.watch(databaseProvider);
-  final bare = JID.fromString(jid).toBare();
+  final parsed = JID.fromString(jid);
+  final bare = parsed.toBare();
+  // Gajim GroupchatParticipant: full room/nick is the occupant address;
+  // never bare it for vCard or we paint the room photo on every member.
+  final isOccupantAddress = parsed.resource.isNotEmpty;
 
-  // XEP-0084 (own / contact PEP avatars).
-  if (manager != null) {
+  // XEP-0084 (own / contact PEP) — bare JIDs only; occupants use vCard.
+  if (!isOccupantAddress && manager != null && db != null) {
     final id = await latestAvatarId(manager, bare);
     if (id != null) {
       // Same item id as last time means the bytes are the same, and the fetch
@@ -343,17 +381,21 @@ final contactAvatarProvider = FutureProvider.family<Uint8List?, String>((
 
   // Local publish this session (own avatar or MUC vCard) — keep showing it
   // even when PEP metadata is empty (rooms never publish XEP-0084).
-  final seeded = _avatarBlobCache[jid];
   if (seeded != null && seeded.isNotEmpty) return seeded;
 
-  // MUC room avatars: vCard-temp PHOTO (Conversations publishMucAvatar).
+  // Room (bare) or occupant (full) vCard-temp PHOTO.
   final vcard = xmpp.vcard;
   if (vcard == null) return null;
-  final fromVcard = await fetchVCardAvatar(vcard, bare);
+  final fromVcard = await fetchVCardAvatar(
+    vcard,
+    isOccupantAddress ? parsed : bare,
+  );
   if (fromVcard == null) return null;
   _avatarBlobCache[jid] = fromVcard.bytes;
-  final hash = await fromVcard.hash;
-  await noteAvatarChanged(db, jid, hash);
+  if (db != null) {
+    final hash = await fromVcard.hash;
+    await noteAvatarChanged(db, jid, hash);
+  }
   return fromVcard.bytes;
 });
 
@@ -488,14 +530,20 @@ final chatLastReadProvider = FutureProvider.family<DateTime?, String>((
 final chatRowRevisionProvider = StateProvider<int>((ref) => 0);
 
 /// Pending contact requests, newest first.
-final subscriptionRequestsProvider = StreamProvider<List<SubscriptionRequest>>(
-  (ref) => ref.watch(databaseProvider).watchSubscriptionRequests(),
-);
+final subscriptionRequestsProvider = StreamProvider<List<SubscriptionRequest>>((
+  ref,
+) {
+  final db = ref.watch(databaseOrNullProvider);
+  if (db == null) return Stream.value(const []);
+  return db.watchSubscriptionRequests();
+});
 
 /// Pending MUC invitations, newest first.
-final roomInvitationsProvider = StreamProvider<List<RoomInvitation>>(
-  (ref) => ref.watch(databaseProvider).watchRoomInvitations(),
-);
+final roomInvitationsProvider = StreamProvider<List<RoomInvitation>>((ref) {
+  final db = ref.watch(databaseOrNullProvider);
+  if (db == null) return Stream.value(const []);
+  return db.watchRoomInvitations();
+});
 
 /// The unsent text in [chatKey], or null.
 final draftProvider = FutureProvider.family<String?, String>((ref, chatKey) {
@@ -541,7 +589,9 @@ Future<void> togglePinned(
 final blockedJidsProvider = FutureProvider<Set<String>>((ref) async {
   // Invalidated by every block and unblock, so the tiles redraw.
   ref.watch(blockRevisionProvider);
-  return ref.watch(databaseProvider).blockedJids();
+  final db = ref.watch(databaseOrNullProvider);
+  if (db == null) return const {};
+  return db.blockedJids();
 });
 
 /// Bumped whenever the block list changes.
@@ -595,10 +645,9 @@ final reactionGroupsProvider =
 /// Bumped whenever a reaction is stored, to invalidate every chip strip.
 final reactionRevisionProvider = StateProvider<int>((ref) => 0);
 
-/// Our own bare JID, or null before login.
+/// Our own bare JID, or null before login / with no session.
 final myBareJidProvider = FutureProvider<String?>((ref) async {
-  final xmpp = ref.watch(xmppServiceProvider);
-  return xmpp.myJid;
+  return ref.watch(xmppServiceOrNullProvider)?.myJid;
 });
 
 /// The override set for [chatJid], or null when there is none.

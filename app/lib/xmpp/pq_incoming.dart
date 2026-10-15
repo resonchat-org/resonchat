@@ -40,7 +40,7 @@ class PqDecryptFailure {
 /// Manager id, so the handler can be found again for diagnostics.
 const pqIncomingManagerId = 'resonchat-pq-incoming';
 
-/// Decrypts inbound `<encrypted xmlns='urn:xmpp:pomemo:0'/>` elements.
+/// Decrypts inbound `<encrypted xmlns='urn:monocles:omemo-pq:1'/>` elements.
 class PqIncomingManager extends XmppManagerBase {
   PqIncomingManager(this._decrypt, this._onFailure)
     : super(pqIncomingManagerId);
@@ -56,7 +56,7 @@ class PqIncomingManager extends XmppManagerBase {
     StanzaHandler(
       stanzaTag: 'message',
       tagName: 'encrypted',
-      tagXmlns: pomemoXmlns,
+      tagXmlns: omemo2Xmlns,
       // Ahead of the A-track handler, though the two never collide:
       // both use the tag <encrypted />, separated by namespace.
       priority: 200,
@@ -101,7 +101,7 @@ class PqIncomingManager extends XmppManagerBase {
         .where(
           (c) =>
               c.tag != 'body' &&
-              !(c.tag == 'encrypted' && c.xmlns == pomemoXmlns),
+              !(c.tag == 'encrypted' && c.xmlns == omemo2Xmlns),
         )
         .toList();
     state.stanza = state.stanza.copyWith(

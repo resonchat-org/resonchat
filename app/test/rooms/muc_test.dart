@@ -163,6 +163,144 @@ void main() {
     });
   });
 
+  group('Gajim moderation gates', () {
+    test('role change requires moderator and affiliation rank', () {
+      const visitor = Occupant(nick: 'v', affiliation: 'none', role: 'visitor');
+      expect(
+        canChangeOccupantRole(
+          selfRole: 'participant',
+          selfAffiliation: 'owner',
+          target: visitor,
+        ),
+        isFalse,
+      );
+      expect(
+        canChangeOccupantRole(
+          selfRole: 'moderator',
+          selfAffiliation: 'member',
+          target: visitor,
+        ),
+        isTrue,
+      );
+      expect(
+        canChangeOccupantRole(
+          selfRole: 'moderator',
+          selfAffiliation: 'member',
+          target: const Occupant(
+            nick: 'a',
+            affiliation: 'admin',
+            role: 'moderator',
+          ),
+        ),
+        isFalse,
+      );
+    });
+
+    test('affiliation change: admin cannot promote to admin/owner', () {
+      const member = Occupant(
+        nick: 'm',
+        affiliation: 'member',
+        role: 'participant',
+      );
+      expect(
+        canChangeOccupantAffiliation(
+          selfAffiliation: 'admin',
+          target: member,
+          toAffiliation: 'owner',
+        ),
+        isFalse,
+      );
+      expect(
+        canChangeOccupantAffiliation(
+          selfAffiliation: 'admin',
+          target: member,
+          toAffiliation: 'none',
+        ),
+        isTrue,
+      );
+      expect(
+        canChangeOccupantAffiliation(
+          selfAffiliation: 'owner',
+          target: member,
+          toAffiliation: 'admin',
+        ),
+        isTrue,
+      );
+      expect(
+        canChangeOccupantAffiliation(
+          selfAffiliation: 'owner',
+          target: member,
+          toAffiliation: 'member',
+        ),
+        isFalse,
+      );
+    });
+  });
+
+  group('Gajim roster groups', () {
+    test('owner/admin by affiliation; others by role', () {
+      expect(
+        mucRosterGroupKey(
+          const Occupant(nick: 'o', affiliation: 'owner', role: 'moderator'),
+        ),
+        'owner',
+      );
+      expect(
+        mucRosterGroupKey(
+          const Occupant(nick: 'a', affiliation: 'admin', role: 'moderator'),
+        ),
+        'admin',
+      );
+      expect(
+        mucRosterGroupKey(
+          const Occupant(nick: 'm', affiliation: 'member', role: 'moderator'),
+        ),
+        'moderator',
+      );
+      expect(
+        mucRosterGroupKey(
+          const Occupant(nick: 'p', affiliation: 'member', role: 'participant'),
+        ),
+        'participant',
+      );
+      expect(
+        mucRosterGroupKey(
+          const Occupant(nick: 'v', affiliation: 'none', role: 'visitor'),
+        ),
+        'visitor',
+      );
+      // Offline affiliation stubs (role=none) sit with participants.
+      expect(
+        mucRosterGroupKey(
+          const Occupant(nick: 'offline', affiliation: 'member', role: 'none'),
+        ),
+        'participant',
+      );
+    });
+
+    test('groupOccupantsForRoster preserves Gajim section order', () {
+      final grouped = groupOccupantsForRoster(const [
+        Occupant(nick: 'visit', affiliation: 'none', role: 'visitor'),
+        Occupant(nick: 'own', affiliation: 'owner', role: 'moderator'),
+        Occupant(nick: 'part', affiliation: 'member', role: 'participant'),
+        Occupant(nick: 'adm', affiliation: 'admin', role: 'moderator'),
+        Occupant(nick: 'mod', affiliation: 'member', role: 'moderator'),
+      ]);
+      expect(grouped.keys.toList(), [
+        'owner',
+        'admin',
+        'moderator',
+        'participant',
+        'visitor',
+      ]);
+      expect(grouped['owner']!.single.nick, 'own');
+      expect(grouped['admin']!.single.nick, 'adm');
+      expect(grouped['moderator']!.single.nick, 'mod');
+      expect(grouped['participant']!.single.nick, 'part');
+      expect(grouped['visitor']!.single.nick, 'visit');
+    });
+  });
+
   group('addresses', () {
     test(
       'presence and PMs use room@server/nick; groupchat uses the bare room',

@@ -27,19 +27,25 @@ ChatCapabilities caps({
   Set<int>? omemo,
   Set<int>? pq,
   bool reliable = true,
+  bool? classicReliable,
+  bool? pqReliable,
 }) {
+  final classicOk = classicReliable ?? reliable;
+  final pqOk = pqReliable ?? reliable;
   return ChatCapabilities(
     // `mode` is the legacy negotiation verdict and plays no part in
     // resolution: what is sent is decided by the user's choice, not by it.
     mode: EncMode.standardOmemo,
     recipientDevices: devices,
     // The tests are written from the peer's side: `devices` is what they
-    // publish.
+    // publish on the classic list.
     peerDevices: peer ?? devices,
     omemoDevices: omemo ?? devices,
     pqDevices: pq ?? const {},
     checkedAt: DateTime(2026),
-    reliable: reliable,
+    reliable: classicOk || pqOk,
+    classicReliable: classicOk,
+    pqReliable: pqOk,
   );
 }
 
@@ -63,6 +69,30 @@ void main() {
       expect(r.track, Track.pq);
     });
 
+    test('pq, one of several peer devices is enough', () {
+      final r = resolveTrack(
+        requested: Track.pq,
+        capabilities: caps(devices: {1, 2}, pq: {1}),
+      );
+      expect(r.canSend, isTrue);
+      expect(r.track, Track.pq);
+    });
+
+    test('pq works with an empty classic list (tracks are independent)', () {
+      final r = resolveTrack(
+        requested: Track.pq,
+        capabilities: caps(
+          devices: const {},
+          peer: const {},
+          pq: {42},
+          classicReliable: true,
+          pqReliable: true,
+        ),
+      );
+      expect(r.canSend, isTrue);
+      expect(r.track, Track.pq);
+    });
+
     test('plaintext is always sendable', () {
       // The one case where "send it anyway" is right: the user was shown what
       // NO means and chose it.
@@ -79,10 +109,10 @@ void main() {
   });
 
   group('a choice that cannot be honoured', () {
-    test('pq with a non-PQ device blocks, and does not fall back', () {
+    test('pq with no PQ peer device blocks, and does not fall back', () {
       final r = resolveTrack(
         requested: Track.pq,
-        capabilities: caps(devices: {1, 2}, pq: {1}),
+        capabilities: caps(devices: {1, 2}, pq: const {}),
       );
       expect(r.canSend, isFalse);
       expect(r.blocked, TrackBlocked.pqUnavailable);
@@ -152,8 +182,8 @@ void main() {
     });
 
     test('pq with an empty device list blocks', () {
-      // `every` on an empty set is vacuously true, so a naive check would call
-      // this "fully PQ-capable" and claim a message to nobody is encrypted.
+      // peerDevices empty is unreachableDevices (handled above); an empty
+      // recipient set with no peer still must not look PQ-sendable.
       final r = resolveTrack(
         requested: Track.pq,
         capabilities: caps(devices: const {}),
@@ -206,8 +236,10 @@ void main() {
         reliable: true,
       );
       final r = resolveTrack(requested: Track.pq, capabilities: verdictSaysPq);
-      expect(r.canSend, isFalse);
-      expect(r.blocked, TrackBlocked.pqUnavailable);
+      // Mixed peer still sendable on PQ (one PQ device among {1,2}); mode
+      // must not override that.
+      expect(r.canSend, isTrue);
+      expect(r.track, Track.pq);
     });
   });
 

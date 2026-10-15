@@ -12,8 +12,8 @@ import '../theme.dart';
 /// Capsule height (horizontal icon+label tabs).
 const double kMainTabsHeight = 38;
 
-/// Outer gap from the left / right screen edges.
-const double kMainTabsMargin = 16;
+/// Fixed width per tab — keeps the pill dense instead of edge-to-edge empty.
+const double kMainTabWidth = 96;
 
 /// Outer gap above the system inset.
 const double kMainTabsMarginBottom = 12;
@@ -62,9 +62,8 @@ class MainTabsLayout extends StatelessWidget {
     final thumb = tg.accent.withValues(alpha: 0.12);
     const radius = kMainTabsHeight / 2;
     final index = selectedIndex.clamp(0, n - 1);
+    final width = n * kMainTabWidth;
 
-    // Material default shadow colours; elevation slightly above the usual 2
-    // so the capsule reads against the chat list.
     return Material(
       color: track,
       elevation: 4,
@@ -72,42 +71,40 @@ class MainTabsLayout extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: SizedBox(
         height: kMainTabsHeight,
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final tabW = constraints.maxWidth / n;
-            return Stack(
+        width: width,
+        child: Stack(
+          children: [
+            AnimatedPositioned(
+              duration: _slide,
+              curve: Curves.easeOutCubic,
+              left: index * kMainTabWidth + _pad,
+              top: _pad,
+              bottom: _pad,
+              width: kMainTabWidth - 2 * _pad,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: thumb,
+                  borderRadius: BorderRadius.circular(radius - _pad),
+                ),
+              ),
+            ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                AnimatedPositioned(
-                  duration: _slide,
-                  curve: Curves.easeOutCubic,
-                  left: index * tabW + _pad,
-                  top: _pad,
-                  bottom: _pad,
-                  width: (tabW - 2 * _pad).clamp(0.0, tabW),
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: thumb,
-                      borderRadius: BorderRadius.circular(radius - _pad),
+                for (var i = 0; i < n; i++)
+                  SizedBox(
+                    width: kMainTabWidth,
+                    child: _TabHit(
+                      tab: tabs[i],
+                      selected: index == i,
+                      selectedColor: tg.accent,
+                      unselectedColor: tg.textPrimary,
+                      onTap: () => onSelected(i),
                     ),
                   ),
-                ),
-                Row(
-                  children: [
-                    for (var i = 0; i < n; i++)
-                      Expanded(
-                        child: _TabHit(
-                          tab: tabs[i],
-                          selected: index == i,
-                          selectedColor: tg.accent,
-                          unselectedColor: tg.textPrimary,
-                          onTap: () => onSelected(i),
-                        ),
-                      ),
-                  ],
-                ),
               ],
-            );
-          },
+            ),
+          ],
         ),
       ),
     );

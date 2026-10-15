@@ -27,6 +27,7 @@ import '../../xmpp/muc.dart';
 import '../chats/notify_mode_sheet.dart';
 import '../contact_avatar.dart';
 import '../theme.dart';
+import 'occupant_actions.dart';
 import 'room_config_page.dart';
 
 /// What [RoomProfilePage] produced for the chat page.
@@ -64,8 +65,6 @@ class RoomProfileResult {
   /// Occupant nick for in-room private message (Conversations nextCounterpart).
   final String? mucPmNick;
 }
-
-enum _MemberAction { openJid, mucPm, kick }
 
 class RoomProfilePage extends ConsumerStatefulWidget {
   const RoomProfilePage({super.key, required this.chatJid});
@@ -358,102 +357,26 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
   }
 
   Future<void> _onOccupantTap(GroupChat room, Occupant occupant) async {
-    if (occupant.nick == room.nick) return;
     final caps = _caps;
     if (caps == null) return;
-    final l10n = context.l10n;
-    final tg = context.tg;
-
-    final realJid = occupant.realJid;
-    final nonAnon =
-        caps.privateNonAnonymous && realJid != null && realJid.isNotEmpty;
-    final canOpenJid = nonAnon;
-    final canMucPm =
-        !nonAnon &&
-        caps.allowPm &&
-        occupant.isOnline &&
-        occupant.nick.isNotEmpty;
-    final canKick = caps.canKick(occupant);
-
-    if (!canOpenJid && !canMucPm && !canKick) return;
-
-    final action = await showModalBottomSheet<_MemberAction>(
+    final nav = await runOccupantActions(
       context: context,
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              title: Text(occupant.nick),
-              subtitle: realJid != null && realJid.isNotEmpty
-                  ? Text(realJid, style: TextStyle(color: tg.textSecondary))
-                  : null,
-            ),
-            if (canOpenJid)
-              ListTile(
-                leading: const Icon(Icons.chat_bubble_outline),
-                title: Text(l10n.sendMessage),
-                onTap: () => Navigator.pop(sheetContext, _MemberAction.openJid),
-              ),
-            if (canMucPm)
-              ListTile(
-                leading: const Icon(Icons.lock_outline),
-                title: Text(l10n.privateMessageInRoom),
-                onTap: () => Navigator.pop(sheetContext, _MemberAction.mucPm),
-              ),
-            if (canKick)
-              ListTile(
-                leading: Icon(Icons.person_remove_outlined, color: tg.danger),
-                title: Text(
-                  l10n.kickFromRoom,
-                  style: TextStyle(color: tg.danger),
-                ),
-                onTap: () => Navigator.pop(sheetContext, _MemberAction.kick),
-              ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
+      ref: ref,
+      chatKey: widget.chatJid,
+      room: room,
+      occupant: occupant,
+      caps: caps,
+      xmpp: _xmpp,
     );
-    if (!mounted || action == null) return;
-
-    switch (action) {
-      case _MemberAction.openJid:
-        _popResult(RoomProfileResult.openJidChat(realJid!));
-        return;
-      case _MemberAction.mucPm:
-        _popResult(RoomProfileResult.mucPm(occupant.nick));
-        return;
-      case _MemberAction.kick:
-        await WidgetsBinding.instance.endOfFrame;
-        if (!mounted) return;
-        final confirm = await showDialog<bool>(
-          context: context,
-          builder: (dialogContext) => AlertDialog(
-            title: Text(l10n.kickFromRoom),
-            content: Text(l10n.kickFromRoomConfirm(occupant.nick)),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext, false),
-                child: Text(l10n.cancel),
-              ),
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext, true),
-                child: Text(
-                  l10n.kickFromRoom,
-                  style: TextStyle(color: tg.danger),
-                ),
-              ),
-            ],
-          ),
-        );
-        if (confirm != true || !mounted) return;
-        final ok = await _xmpp.kickOccupant(_roomJid, occupant);
-        if (!mounted) return;
-        if (ok) ref.invalidate(roomStateProvider(widget.chatJid));
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(ok ? l10n.kickSucceeded : l10n.kickFailed)),
-        );
+    if (!mounted || nav == null) return;
+    final jid = nav.privateChatJid;
+    if (jid != null && jid.isNotEmpty) {
+      _popResult(RoomProfileResult.openJidChat(jid));
+      return;
+    }
+    final mucPm = nav.mucPmNick;
+    if (mucPm != null && mucPm.isNotEmpty) {
+      _popResult(RoomProfileResult.mucPm(mucPm));
     }
   }
 
@@ -480,11 +403,7 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
     final hasSubject = subject != null && subject.isNotEmpty;
     final canChangeSubject = caps?.canChangeSubject ?? false;
 
-    final occupants = [...?room?.occupants]
-      ..sort((a, b) {
-        if (a.isModerator != b.isModerator) return a.isModerator ? -1 : 1;
-        return a.nick.toLowerCase().compareTo(b.nick.toLowerCase());
-      });
+    final rosterGroups = groupOccupantsForRoster(room?.occupants ?? const []);
 
     return Scaffold(
       appBar: AppBar(title: Text(title)),
@@ -647,48 +566,34 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
                                 room.onlineOccupantCount,
                               )),
                 ),
-                for (final occupant in occupants)
-                  ListTile(
-                    leading: ContactAvatar(
-                      // Real JID when known (avatar PEP); else room/nick.
-                      jid:
-                          (occupant.realJid != null &&
-                              occupant.realJid!.isNotEmpty)
-                          ? occupant.realJid!
-                          : '$_roomJid/${occupant.nick}',
-                      title: occupant.nick,
-                      radius: 20,
-                      showPresence: true,
-                      presence: occupant.presenceForDot,
-                    ),
-                    title: Text(
-                      occupant.nick,
+                for (final entry in rosterGroups.entries) ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                    child: Text(
+                      _mucGroupLabel(l10n, entry.key),
                       style: TextStyle(
-                        fontWeight: occupant.nick == room?.nick
-                            ? FontWeight.w700
-                            : FontWeight.w400,
+                        color: tg.textSecondary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                    subtitle: occupant.isModerator
-                        ? Text(l10n.moderator)
-                        : (occupant.realJid != null &&
-                                  occupant.realJid!.isNotEmpty
-                              ? Text(
-                                  occupant.realJid!,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                )
-                              : null),
-                    trailing: occupant.nick == room?.nick
-                        ? Text(
-                            l10n.you,
-                            style: TextStyle(color: tg.textSecondary),
-                          )
-                        : null,
-                    onTap: occupant.nick == room?.nick || room == null
-                        ? null
-                        : () => unawaited(_onOccupantTap(room, occupant)),
                   ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                    child: Wrap(
+                      alignment: WrapAlignment.start,
+                      children: [
+                        for (final occupant in entry.value)
+                          _occupantCell(
+                            tg: tg,
+                            l10n: l10n,
+                            room: room,
+                            occupant: occupant,
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
 
                 _section(tg, l10n.actions),
                 if (caps?.canInvite ?? false)
@@ -745,6 +650,83 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
           color: tg.textSecondary,
           fontSize: 13,
           fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  /// Gajim roster section titles (`get_uf_affiliation` / `get_uf_role` plural).
+  static String _mucGroupLabel(AppLocalizations l10n, String key) {
+    switch (key) {
+      case 'owner':
+        return l10n.roomOwners;
+      case 'admin':
+        return l10n.roomAdmins;
+      case 'moderator':
+        return l10n.roomModerators;
+      case 'participant':
+        return l10n.roomParticipants;
+      case 'visitor':
+        return l10n.roomVisitors;
+      default:
+        return key;
+    }
+  }
+
+  /// Avatar + nick cell (matrix roster). Tap opens the same member sheet as
+  /// the old list row.
+  Widget _occupantCell({
+    required TgColors tg,
+    required AppLocalizations l10n,
+    required GroupChat? room,
+    required Occupant occupant,
+  }) {
+    final isSelf = occupant.nick == room?.nick;
+    final avatarJid = (occupant.realJid != null && occupant.realJid!.isNotEmpty)
+        ? occupant.realJid!
+        : '$_roomJid/${occupant.nick}';
+    return SizedBox(
+      width: 76,
+      child: InkWell(
+        onTap: isSelf || room == null
+            ? null
+            : () => unawaited(_onOccupantTap(room, occupant)),
+        onLongPress: isSelf || room == null
+            ? null
+            : () => unawaited(_onOccupantTap(room, occupant)),
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ContactAvatar(
+                // Real bare JID → PEP; else room/nick → occupant vCard
+                // (Gajim GroupchatParticipant — never bare the room).
+                jid: avatarJid,
+                title: occupant.nick,
+                radius: 28,
+                showPresence: true,
+                presence: occupant.presenceForDot,
+              ),
+              const SizedBox(height: 6),
+              Text(
+                occupant.nick,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: isSelf ? FontWeight.w700 : FontWeight.w400,
+                ),
+              ),
+              if (isSelf)
+                Text(
+                  l10n.you,
+                  style: TextStyle(fontSize: 11, color: tg.textSecondary),
+                ),
+            ],
+          ),
         ),
       ),
     );

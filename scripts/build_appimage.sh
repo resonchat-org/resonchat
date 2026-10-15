@@ -4,9 +4,9 @@
 #
 # Build a Linux x86_64 AppImage from the Flutter release bundle.
 #
-# Usage (from repo root or app/):
-#   ./tool/build_appimage.sh              # flutter build linux --release + pack
-#   ./tool/build_appimage.sh --skip-build # pack an existing release bundle
+# Usage (from repo root):
+#   ./scripts/build_appimage.sh              # flutter build linux --release + pack
+#   ./scripts/build_appimage.sh --skip-build # pack an existing release bundle
 #
 # Requires: Flutter Linux desktop toolchain (clang, cmake, ninja, GTK 3, …).
 # Downloads appimagetool into build/appimage-tools/ on first run.
@@ -16,8 +16,8 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-APP="$(cd "$HERE/.." && pwd)"
-REPO="$(cd "$APP/.." && pwd)"
+REPO="$(cd "$HERE/.." && pwd)"
+APP="$(cd "$REPO/app" && pwd)"
 cd "$APP"
 
 SKIP_BUILD=0

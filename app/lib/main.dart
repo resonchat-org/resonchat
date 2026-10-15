@@ -12,6 +12,7 @@ import 'package:logging/logging.dart';
 
 import 'account/account_hub.dart';
 import 'account/chat_ref.dart';
+import 'crypto/libsignal_bootstrap.dart';
 import 'l10n/l10n.dart';
 import 'net/app_network.dart';
 import 'platform/app_notifications.dart';
@@ -53,9 +54,18 @@ void main() {
 
 /// What a successful [bootApp] hands to the UI.
 class StartupResult {
-  const StartupResult({required this.hasAccounts, this.launchChatKey});
+  const StartupResult({
+    required this.hasAccounts,
+    required this.hasEnabledAccounts,
+    this.launchChatKey,
+  });
 
   final bool hasAccounts;
+
+  /// False when every stored account is disabled — open manage-accounts,
+  /// not the chat shell (no primary session).
+  final bool hasEnabledAccounts;
+
   final String? launchChatKey;
 }
 
@@ -72,6 +82,9 @@ class StartupResult {
 /// (path provider, keystore, notifications) and so cannot be run under
 /// `flutter test`. Tests drive the gate with their own function instead.
 Future<StartupResult> bootApp() async {
+  // Native libsignal (PQXDH + SPQR) before any B-track crypto.
+  await ensureLibSignal();
+
   // Shared prefs DB first (SOCKS / locale), before any account session.
   final prefs = await openAppPrefs();
   await AppLock.instance.load(prefs);
@@ -103,6 +116,7 @@ Future<StartupResult> bootApp() async {
 
   return StartupResult(
     hasAccounts: hub.hasAccounts,
+    hasEnabledAccounts: hub.hasEnabledAccounts,
     launchChatKey: launchChatKey,
   );
 }
@@ -181,6 +195,7 @@ class _StartupGateState extends State<StartupGate> {
       return ProviderScope(
         child: App(
           hasAccounts: booted.hasAccounts,
+          hasEnabledAccounts: booted.hasEnabledAccounts,
           initialChatKey: booted.launchChatKey,
         ),
       );
@@ -292,9 +307,15 @@ void _openChatFromNotification(String chatKey) {
 }
 
 class App extends ConsumerStatefulWidget {
-  const App({super.key, required this.hasAccounts, this.initialChatKey});
+  const App({
+    super.key,
+    required this.hasAccounts,
+    required this.hasEnabledAccounts,
+    this.initialChatKey,
+  });
 
   final bool hasAccounts;
+  final bool hasEnabledAccounts;
 
   /// Chat opened because the process was launched from a shade tap.
   final String? initialChatKey;
@@ -308,7 +329,9 @@ class _AppState extends ConsumerState<App> {
   void initState() {
     super.initState();
     final key = widget.initialChatKey;
-    if (key != null && widget.hasAccounts && !AppLock.instance.needsDisguise) {
+    if (key != null &&
+        widget.hasEnabledAccounts &&
+        !AppLock.instance.needsDisguise) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _openChatFromNotification(key);
       });
@@ -376,7 +399,9 @@ class _AppState extends ConsumerState<App> {
               ),
             );
           },
-          initialRoute: widget.hasAccounts ? '/chats' : '/login',
+          initialRoute: !widget.hasAccounts
+              ? '/login'
+              : (widget.hasEnabledAccounts ? '/chats' : '/accounts'),
           onGenerateRoute: (settings) {
             switch (settings.name) {
               case '/login':

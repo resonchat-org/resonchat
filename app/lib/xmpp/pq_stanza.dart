@@ -56,7 +56,7 @@ List<XMLNode> pqSendingCallback(TypedMap<StanzaHandlerExtension> extensions) {
 PqEncryptedMessage? extractPqPayload(Stanza stanza) {
   for (final child in stanza.children) {
     if (child.tag != 'encrypted') continue;
-    if (child.xmlns != pomemoXmlns) continue;
+    if (child.xmlns != omemo2Xmlns) continue;
     try {
       return PqEncryptedMessage.fromXml(
         XmlDocument.parse(child.toXml()).rootElement,

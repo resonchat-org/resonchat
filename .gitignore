@@ -125,15 +125,12 @@ Thumbs.db
 *.sqlite
 *.db
 
-# Drift web assets (fetched by app/tool/build_web.sh)
+# Drift web assets (fetched by app/tool/prepare_web_assets.sh)
 app/web/sqlite3.wasm
 app/web/drift_worker.js
-
-# Native build artifacts
-third_party/liboqs/build/
+app/web/pkg/
 
 # UI previews (generated, see app/tool/previews/)
 app/build/ui-previews/
-app/third_party/liboqs/
 reference/
 others/

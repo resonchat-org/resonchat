@@ -15,6 +15,7 @@ import 'package:moxxmpp/moxxmpp.dart' show PresenceShow;
 
 import '../../account/account_hub.dart';
 import '../../crypto/fingerprint.dart';
+import '../../crypto/own_fingerprints.dart';
 import '../../l10n/l10n.dart';
 import '../../state/providers.dart';
 import '../../store/account_store.dart';
@@ -36,7 +37,8 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
   late final TextEditingController _nick;
   bool _busy = false;
   Uint8List? _preview;
-  String? _fingerprint;
+  String? _hybridFingerprint;
+  String? _legacyFingerprint;
   int? _deviceId;
 
   StoredAccount? get _account {
@@ -62,26 +64,31 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
   Future<void> _loadOmemo() async {
     final session = accountHub.session(widget.accountId);
     if (session == null) return;
+    final store = session.xmpp.deviceStore;
+    if (store == null) return;
     try {
       final om = session.xmpp.omemo;
-      if (om != null) {
-        final id = await om.getDeviceId();
-        final fp = await (await om.getDevice()).fingerprint;
-        if (!mounted) return;
-        setState(() {
-          _deviceId = id;
-          _fingerprint = fp;
-        });
-        return;
+      final device = om != null ? await om.getDevice() : await store.load();
+      if (device == null) return;
+      final id = await device.deviceId;
+      final hybridFromTrack = await session.xmpp.bTrack?.hybridFingerprint();
+      List<int>? omemo2Ik;
+      final bDev = session.xmpp.bTrack?.device;
+      if (bDev != null) {
+        omemo2Ik = await bDev.identityPublicSerialized();
       }
-      final stored = await session.xmpp.deviceStore?.load();
-      if (stored == null) return;
-      final id = await stored.deviceId;
-      final fp = await stored.fingerprint;
+      final fps = await loadOwnFingerprints(
+        legacyDevice: device,
+        pqStore: store.pqIdentity,
+        omemo2IkSerialized: omemo2Ik,
+      );
       if (!mounted) return;
       setState(() {
         _deviceId = id;
-        _fingerprint = fp;
+        _hybridFingerprint = (hybridFromTrack?.isNotEmpty ?? false)
+            ? hybridFromTrack
+            : (fps.hybrid.isEmpty ? null : fps.hybrid);
+        _legacyFingerprint = fps.legacy;
       });
     } catch (_) {
       // No device yet.
@@ -94,27 +101,33 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
         session.xmpp.state == XmppConnectionState.connected;
   }
 
-  Future<void> _copyFingerprint() async {
-    final fp = _fingerprint;
-    if (fp == null) return;
-    await Clipboard.setData(ClipboardData(text: formatFingerprint(fp)));
+  Future<void> _copyFingerprint(String? fp) async {
+    if (fp == null || fp.isEmpty) return;
+    // monocles copies the raw hex (no spaces); peers often paste that.
+    await Clipboard.setData(
+      ClipboardData(text: fp.replaceAll(RegExp(r'\s+'), '').toLowerCase()),
+    );
     if (!mounted) return;
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(context.l10n.fingerprintCopied)));
   }
 
-  Future<void> _confirmRegenerate() async {
+  Future<void> _confirmRegenerate({required bool pq}) async {
     final l10n = context.l10n;
     if (!_omemoConnected) {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(l10n.omemoConnectRequired)));
       return;
     }
+    final title = pq ? l10n.regenerateOmemo2Key : l10n.regenerateOmemoKey;
+    final desc = pq
+        ? l10n.regenerateOmemo2KeyDesc
+        : l10n.regenerateOmemoKeyDesc;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(l10n.regenerateOmemoKey),
-        content: Text(l10n.regenerateOmemoKeyDesc),
+        title: Text(title),
+        content: Text(desc),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -122,31 +135,41 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text(l10n.regenerateOmemoKey),
+            child: Text(title),
           ),
         ],
       ),
     );
     if (ok != true || !mounted) return;
     await _runOmemoAction(
-      action: (xmpp) => xmpp.regenerateOmemoKeys(),
-      okMessage: l10n.omemoKeyRegenerated,
-      failMessage: l10n.omemoKeyRegenerateFailed,
+      action: (xmpp) =>
+          pq ? xmpp.regenerateOmemo2Keys() : xmpp.regenerateOmemoKeys(),
+      okMessage: pq ? l10n.omemo2KeyRegenerated : l10n.omemoKeyRegenerated,
+      failMessage: pq
+          ? l10n.omemo2KeyRegenerateFailed
+          : l10n.omemoKeyRegenerateFailed,
+      successWhen: pq ? (r) => r == true : null,
     );
   }
 
-  Future<void> _confirmClearDevices() async {
+  Future<void> _confirmClearDevices({required bool pq}) async {
     final l10n = context.l10n;
     if (!_omemoConnected) {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(l10n.omemoConnectRequired)));
       return;
     }
+    final title = pq
+        ? l10n.clearOtherOmemo2Devices
+        : l10n.clearOtherOmemoDevices;
+    final desc = pq
+        ? l10n.clearOtherOmemo2DevicesDesc
+        : l10n.clearOtherOmemoDevicesDesc;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(l10n.clearOtherOmemoDevices),
-        content: Text(l10n.clearOtherOmemoDevicesDesc),
+        title: Text(title),
+        content: Text(desc),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -161,9 +184,12 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
     );
     if (ok != true || !mounted) return;
     await _runOmemoAction(
-      action: (xmpp) => xmpp.wipeOtherOmemoDevices(),
-      okMessage: l10n.omemoDevicesCleared,
-      failMessage: l10n.omemoDevicesClearFailed,
+      action: (xmpp) =>
+          pq ? xmpp.wipeOtherOmemo2Devices() : xmpp.wipeOtherOmemoDevices(),
+      okMessage: pq ? l10n.omemo2DevicesCleared : l10n.omemoDevicesCleared,
+      failMessage: pq
+          ? l10n.omemo2DevicesClearFailed
+          : l10n.omemoDevicesClearFailed,
       successWhen: (r) => r == true,
     );
   }
@@ -350,49 +376,103 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(Icons.smartphone),
                 title: Text(l10n.thisDeviceId('${_deviceId ?? '—'}')),
-                subtitle: Text(l10n.omemoFingerprint),
               ),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: tg.separator),
+              // monocles EditAccount: both stacks shown side-by-side, never merged.
+              if (_hybridFingerprint != null) ...[
+                Text(
+                  l10n.omemo2Fingerprint,
+                  style: TextStyle(fontSize: 12, color: tg.textSecondary),
                 ),
-                child: SelectableText(
-                  formatFingerprint(_fingerprint ?? '—'),
-                  style: TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 13,
-                    color: tg.textPrimary,
-                    height: 1.6,
+                const SizedBox(height: 6),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: tg.separator),
+                  ),
+                  child: SelectableText(
+                    formatFingerprint(_hybridFingerprint!),
+                    style: TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: 13,
+                      color: tg.textPrimary,
+                      height: 1.6,
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  onPressed: _fingerprint == null || _busy
-                      ? null
-                      : () => unawaited(_copyFingerprint()),
-                  icon: const Icon(Icons.copy, size: 18),
-                  label: Text(l10n.copyFingerprint),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: _busy
+                        ? null
+                        : () => unawaited(_copyFingerprint(_hybridFingerprint)),
+                    icon: const Icon(Icons.copy, size: 18),
+                    label: Text(l10n.copyFingerprint),
+                  ),
                 ),
-              ),
+              ],
+              if (_legacyFingerprint != null) ...[
+                Text(
+                  l10n.omemoLegacyFingerprint,
+                  style: TextStyle(fontSize: 12, color: tg.textSecondary),
+                ),
+                const SizedBox(height: 6),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: tg.separator),
+                  ),
+                  child: SelectableText(
+                    formatFingerprint(_legacyFingerprint!),
+                    style: TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: 13,
+                      color: tg.textPrimary,
+                      height: 1.6,
+                    ),
+                  ),
+                ),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: _busy
+                        ? null
+                        : () => unawaited(_copyFingerprint(_legacyFingerprint)),
+                    icon: const Icon(Icons.copy, size: 18),
+                    label: Text(l10n.copyFingerprint),
+                  ),
+                ),
+              ],
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: Icon(Icons.refresh, color: tg.accent),
                 title: Text(l10n.regenerateOmemoKey),
                 enabled: !_busy,
-                onTap: () => unawaited(_confirmRegenerate()),
+                onTap: () => unawaited(_confirmRegenerate(pq: false)),
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.refresh, color: tg.accent),
+                title: Text(l10n.regenerateOmemo2Key),
+                enabled: !_busy,
+                onTap: () => unawaited(_confirmRegenerate(pq: true)),
               ),
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: Icon(Icons.devices_other, color: tg.accent),
                 title: Text(l10n.clearOtherOmemoDevices),
                 enabled: !_busy,
-                onTap: () => unawaited(_confirmClearDevices()),
+                onTap: () => unawaited(_confirmClearDevices(pq: false)),
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.devices_other, color: tg.accent),
+                title: Text(l10n.clearOtherOmemo2Devices),
+                enabled: !_busy,
+                onTap: () => unawaited(_confirmClearDevices(pq: true)),
               ),
             ],
           ),

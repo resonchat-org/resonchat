@@ -50,11 +50,11 @@
 - **理由**：三者均为纯 Dart、跨平台；moxxmpp / omemo_dart 为 MIT，moxlib 为 GPL-3.0，与 GPLv3 兼容。上游不在 pub.dev，fork 删除 `publish_to`，由 `dependency_overrides` 指向本地路径。
 - **要点**：
   - moxxmpp 上游：`codeberg.org/moxxy/moxxmpp`（MIT）。
-  - omemo_dart 上游：`github.com/PapaTutuWawa/omemo_dart`（MIT）；A 轨完整走 axolotl（`omemo_dart_axolotl`）。
+  - omemo_dart 上游：`github.com/PapaTutuWawa/omemo_dart`（MIT）；A 轨走 axolotl（`omemo_dart_axolotl`）；B 轨 PQXDH/SessionCipher 走 `omemo_dart_omemo2`。
   - moxlib 上游：`codeberg.org/moxxy/moxlib`（GPL-3.0）。
   - MAM（XEP-0313）已从上游 `feat/mam` 并入 moxxmpp fork。
   - `moxxmpp_socket_tcp` 的 SDK 约束提升到 Dart 3。
-  - OMEMO 密码学由 `omemo_dart` 提供，moxxmpp 做 stanza 编解码/传输；PQ 代码在 app 侧 `lib/crypto/omemo/` 与 `lib/crypto/pq/`。
+  - OMEMO 密码学由 `omemo_dart` 提供，moxxmpp 做 stanza 编解码/传输；app 侧保留 PEP/XML、KMAC 载荷、ML-DSA、以及 ML-KEM 平台后端（`lib/crypto/pq/`）。
 - **后果**：需跟进上游变更；A 轨保持与上游最小差异，便于合并。
 
 ### ADR-005：UI 移植 Telegram Android（Kotlin → Dart），整体 GPLv3
@@ -62,10 +62,10 @@
 - **理由**：TG Android 是 GPLv2-or-later，可合法并入 GPLv3 工程。
 - **后果**：需逐文件标注来源与修改；商标问题需人工审查。
 
-### ADR-006：ML-KEM 双后端（liboqs FFI + 纯 Dart `pqcrypto`）
-- **决定**：通过 `MlKem768Provider` 选择实现——Android 原生加载 `libpqbridge.so`（链接预构建 `liboqs.a`）时走 liboqs；否则走 `pqcrypto`（Web、测试、无原生库的桌面）。接口为 `MlKem768`。
-- **理由**：Android 上 liboqs 性能与体积可控（`OQS_MINIMAL_BUILD`，仅 arm64-v8a + x86_64）；纯 Dart 路径保证 Web/CI/无 NDK 环境可测通协议。两条后端共享秘密一致性有互操作测试。
-- **后果**：APK 构建依赖 `tool/build_liboqs.sh`；需处理 Android 15 的 16KB page 对齐；liboqs 的 THIRD_PARTY_NOTICES 随 APK 分发。
+### ADR-006：ML-KEM 用纯 Dart `pqcrypto`
+- **决定**：OMEMO2 密钥材料走 `pqcrypto` ML-KEM-1024；会话层 PQXDH 走 `libsignal`（native）。
+- **理由**：monocles 对齐的是 ML-KEM-1024；纯 Dart 路径与 Web/桌面一致，日常 `flutter build apk` 无额外 NDK/CMake 步骤。
+- **后果**：构建路径统一；体积与许可面更小。
 - **待定**：Q1（ML-DSA-65 是否默认携带）仍按「先不携带」推进。
 
 ## 5. 架构总览
@@ -87,7 +87,7 @@
 │                  └─────────┼──────────────────┼──────────┘   │
 │                            ▼                  ▼              │
 │                  ┌──────────────────────────────────────┐    │
-│                  │  crypto/  +  pq/（liboqs FFI / pqcrypto）│  │
+│                  │  crypto/  +  pq/（pqcrypto ML-KEM）     │  │
 │                  └──────────────────┬───────────────────┘    │
 │                                     ▼                        │
 │                  ┌──────────────────────────────────────┐    │
@@ -105,23 +105,23 @@
 resonchat/
 ├─ docs/                        # 本设计文档集
 ├─ app/                         # Flutter 应用
-│  ├─ android/                  # NDK、CMake（libpqbridge）、构建配置
+│  ├─ android/                  # Android 构建配置
 │  ├─ web/                      # Web 入口；Drift WASM 由 build_web 拉取
-│  ├─ tool/                     # build_android / build_web / build_liboqs 等
+│  ├─ tool/                     # 互操作探针、prepare_web_assets 等
 │  └─ lib/
 │     ├─ main.dart
 │     ├─ account/               # 多账号枢纽（AccountHub）
 │     ├─ xmpp/                  # 连接、收发、MAM prefs、MUC 等
 │     ├─ omemo/                 # 双轨常量、编解码、能力、TrackResolver
-│     ├─ crypto/                # PQXDH / Ratchet / KDF / 指纹
-│     ├─ pq/                    # MlKem768Provider、liboqs FFI、pqcrypto
+│     ├─ crypto/                # 指纹、KMAC 载荷、双轨编排
+│     ├─ pq/                    # MlKem1024Provider、pqcrypto
 │     ├─ store/                 # drift、备份格式、平台条件导入的 DB 连接
 │     ├─ state/                 # Riverpod providers
 │     ├─ net/ / platform/ / l10n/
 │     └─ ui/                    # 登录、会话、聊天、设置、账号管理等
 └─ packages/                    # git 子模块（path 依赖）
    ├─ moxxmpp/                  # monorepo：moxxmpp + moxxmpp_socket_tcp（MIT）
-   ├─ omemo_dart/               # MIT；含 axolotl 路径
+   ├─ omemo_dart/               # MIT；axolotl + omemo2（PQXDH/SessionCipher）
    └─ moxlib/                   # GPL-3.0
 ```
 
@@ -130,5 +130,5 @@ resonchat/
 1. 轨道由用户选择。程序判断可行性、如实告知后果，**不阻止、不静默替换**。消息上显示的轨道永远反映实际使用的轨道（见 [10-track-selection.md](10-track-selection.md)）。
 2. PQ 会话的 root key **必须**包含 ML-KEM 的共享秘密。
 3. 任何加密负载都必须是服务端可存储的合法 XML（无自定义 stanza 类型）。
-4. 指纹展示**必须**覆盖 A 轨 X25519/axolotl 身份密钥（与 Conversations 一致），以便用户跨客户端核对。
+4. 指纹展示：Legacy 覆盖 A 轨 Conversations 身份密钥；Hybrid（默认）覆盖 OMEMO2 经典 IK + 已发布 ML-DSA-87（与 monocles 一致）。两套 IK **分栈不共享**。
 5. 私钥**永不**离开设备明文存储；Android 上由 Keystore 封存对称密钥保护落库材料，Web 走平台存储模型。
