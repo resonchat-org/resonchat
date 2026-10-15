@@ -142,7 +142,17 @@ class AccountHub extends ChangeNotifier {
     } else {
       _accounts = loaded;
     }
+    final openedBare = <String>{};
     for (final a in _accounts.where((a) => a.enabled)) {
+      // One live session per XMPP address — never open a second SQLite
+      // identity if the keystore somehow listed the same bare JID twice.
+      if (!openedBare.add(a.bareJid)) {
+        _log.severe(
+          'skipping duplicate enabled account ${a.bareJid} (id=${a.id}); '
+          'fix via AccountStore.upsert / addAndConnect',
+        );
+        continue;
+      }
       try {
         await _ensureSession(a);
       } catch (e, st) {
@@ -221,6 +231,14 @@ class AccountHub extends ChangeNotifier {
     session.subs.add(
       session.xmpp.bookmarksChanges.listen((_) {
         unawaited(_applyBookmarksToDb(session));
+      }),
+    );
+    // TCP drop / auto-reconnect flips xmpp.state without going through
+    // connect/disconnect — keep the hub (and UI) in sync.
+    session.subs.add(
+      session.xmpp.stateChanges.listen((_) {
+        notifyListeners();
+        _sessionChanges.add(null);
       }),
     );
     // Cold-start: Contacts reads the on-disk snapshot before PEP fetch.
@@ -365,11 +383,24 @@ class AccountHub extends ChangeNotifier {
   }) async {
     lastConnectFailure = null;
     final bare = (jid.contains('/') ? jid.split('/').first : jid).toLowerCase();
+    // Prefer keystore as source of truth so a second "add" of the same JID
+    // reuses the existing local id (and its DB), never mints a parallel one.
     StoredAccount? existing;
     for (final a in _accounts) {
       if (a.bareJid == bare) {
         existing = a;
         break;
+      }
+    }
+    if (existing == null) {
+      final stored = await _store.loadAll();
+      if (_store.lastLoadError == null) {
+        for (final a in stored) {
+          if (a.bareJid == bare) {
+            existing = a;
+            break;
+          }
+        }
       }
     }
     final account = StoredAccount(
@@ -378,7 +409,33 @@ class AccountHub extends ChangeNotifier {
       password: password,
       host: (host == null || host.trim().isEmpty) ? null : host.trim(),
       displayName: existing?.displayName ?? '',
+      enabled: existing?.enabled ?? true,
     );
+    // If we already have a live session under another id for this bare JID,
+    // refuse to open a second one — update that session instead.
+    for (final s in _sessions.values) {
+      if (s.account.bareJid == bare && s.account.id != account.id) {
+        _log.warning(
+          'addAndConnect: session already open for $bare as ${s.account.id}; '
+          'reusing that identity',
+        );
+        final reused = account.copyWith(id: s.account.id);
+        s.account = reused;
+        final okReuse = await _connectAndBootstrap(reused.id);
+        if (okReuse) {
+          await _store.upsert(reused);
+          _accounts = await _store.loadAll();
+          notifyListeners();
+          _sessionChanges.add(null);
+          _chatsTick.add(null);
+        } else {
+          lastConnectFailure = s.xmpp.lastFailure;
+          notifyListeners();
+          _sessionChanges.add(null);
+        }
+        return okReuse;
+      }
+    }
     final session = await _ensureSession(account);
     final ok = await _connectAndBootstrap(session.account.id);
     if (!ok) {
@@ -460,14 +517,42 @@ class AccountHub extends ChangeNotifier {
     _chatsTick.add(null);
   }
 
+  /// Sessions that may contribute to the unified inbox (enabled accounts only).
+  ///
+  /// Copied before any `await` so a concurrent [setEnabled] cannot leave a
+  /// disposed session in the iteration, and disabled accounts never leak rows.
+  List<AccountSession> _enabledSessionsSnapshot() {
+    final enabledIds = {
+      for (final a in _accounts)
+        if (a.enabled) a.id,
+    };
+    return [
+      for (final s in _sessions.values)
+        if (enabledIds.contains(s.account.id)) s,
+    ];
+  }
+
+  StoredAccount _accountForSession(AccountSession s) {
+    for (final a in _accounts) {
+      if (a.id == s.account.id) return a;
+    }
+    return s.account;
+  }
+
   Future<List<AccountChat>> snapshotChats({bool archivedOnly = false}) async {
+    final sessions = _enabledSessionsSnapshot();
     final rows = <AccountChat>[];
-    for (final s in _sessions.values) {
+    final seen = <String>{};
+    for (final s in sessions) {
+      final account = _accountForSession(s);
+      if (!account.enabled) continue;
       final list = archivedOnly
           ? await s.db.watchArchivedChats().first
           : await s.db.watchChats().first;
       for (final c in list) {
-        rows.add(AccountChat(account: s.account, chat: c));
+        final key = ChatRef(accountId: account.id, jid: c.jid).key;
+        if (!seen.add(key)) continue;
+        rows.add(AccountChat(account: account, chat: c));
       }
     }
     rows.sort((a, b) {
@@ -483,10 +568,15 @@ class AccountHub extends ChangeNotifier {
     late final StreamController<List<AccountChat>> controller;
     StreamSubscription<void>? tickSub;
     StreamSubscription<void>? sessionSub;
+    // Drop superseded async snapshots: disable/enable races used to push an
+    // older list (still containing the disabled account) after a newer one.
+    var emitGen = 0;
 
     Future<void> emit() async {
+      final token = ++emitGen;
       final rows = await snapshotChats(archivedOnly: archivedOnly);
-      if (!controller.isClosed) controller.add(rows);
+      if (token != emitGen || controller.isClosed) return;
+      controller.add(rows);
     }
 
     controller = StreamController<List<AccountChat>>(
@@ -496,6 +586,7 @@ class AccountHub extends ChangeNotifier {
         sessionSub = _sessionChanges.stream.listen((_) => unawaited(emit()));
       },
       onCancel: () async {
+        emitGen++;
         await tickSub?.cancel();
         await sessionSub?.cancel();
       },
@@ -504,8 +595,12 @@ class AccountHub extends ChangeNotifier {
   }
 
   Future<List<AccountContact>> snapshotRoster() async {
+    final sessions = _enabledSessionsSnapshot();
     final rows = <AccountContact>[];
-    for (final s in _sessions.values) {
+    final seen = <String>{};
+    for (final s in sessions) {
+      final account = _accountForSession(s);
+      if (!account.enabled) continue;
       // Rooms are bookmarks / MODE_MULTI chats, never contacts. A public
       // channel that was wrongly rostered (or joined after a contact add)
       // must not appear here — Conversations keeps conferences off the
@@ -514,7 +609,9 @@ class AccountHub extends ChangeNotifier {
       final list = await s.db.allRosterEntries();
       for (final e in list) {
         if (rooms.contains(e.jid)) continue;
-        rows.add(AccountContact(account: s.account, entry: e));
+        final key = ChatRef(accountId: account.id, jid: e.jid).key;
+        if (!seen.add(key)) continue;
+        rows.add(AccountContact(account: account, entry: e));
       }
     }
     rows.sort(
@@ -529,10 +626,13 @@ class AccountHub extends ChangeNotifier {
     StreamSubscription<void>? tickSub;
     StreamSubscription<void>? chatsSub;
     StreamSubscription<void>? sessionSub;
+    var emitGen = 0;
 
     Future<void> emit() async {
+      final token = ++emitGen;
       final rows = await snapshotRoster();
-      if (!controller.isClosed) controller.add(rows);
+      if (token != emitGen || controller.isClosed) return;
+      controller.add(rows);
     }
 
     controller = StreamController<List<AccountContact>>(
@@ -545,6 +645,7 @@ class AccountHub extends ChangeNotifier {
         sessionSub = _sessionChanges.stream.listen((_) => unawaited(emit()));
       },
       onCancel: () async {
+        emitGen++;
         await tickSub?.cancel();
         await chatsSub?.cancel();
         await sessionSub?.cancel();
@@ -554,8 +655,12 @@ class AccountHub extends ChangeNotifier {
   }
 
   Future<List<AccountBookmark>> snapshotBookmarks() async {
+    final sessions = _enabledSessionsSnapshot();
     final rows = <AccountBookmark>[];
-    for (final s in _sessions.values) {
+    final seen = <String>{};
+    for (final s in sessions) {
+      final account = _accountForSession(s);
+      if (!account.enabled) continue;
       // Prefer the live PEP cache when it has been seeded / fetched; otherwise
       // fall back to the on-disk snapshot so Contacts shows a non-zero count
       // before bootstrap finishes.
@@ -564,7 +669,9 @@ class AccountHub extends ChangeNotifier {
         list = await s.db.loadConferenceBookmarks();
       }
       for (final b in list) {
-        rows.add(AccountBookmark(account: s.account, bookmark: b));
+        final key = ChatRef(accountId: account.id, jid: b.jid).key;
+        if (!seen.add(key)) continue;
+        rows.add(AccountBookmark(account: account, bookmark: b));
       }
     }
     rows.sort(
@@ -579,10 +686,13 @@ class AccountHub extends ChangeNotifier {
     late final StreamController<List<AccountBookmark>> controller;
     StreamSubscription<void>? tickSub;
     StreamSubscription<void>? sessionSub;
+    var emitGen = 0;
 
     Future<void> emit() async {
+      final token = ++emitGen;
       final rows = await snapshotBookmarks();
-      if (!controller.isClosed) controller.add(rows);
+      if (token != emitGen || controller.isClosed) return;
+      controller.add(rows);
     }
 
     controller = StreamController<List<AccountBookmark>>(
@@ -592,6 +702,7 @@ class AccountHub extends ChangeNotifier {
         sessionSub = _sessionChanges.stream.listen((_) => unawaited(emit()));
       },
       onCancel: () async {
+        emitGen++;
         await tickSub?.cancel();
         await sessionSub?.cancel();
       },

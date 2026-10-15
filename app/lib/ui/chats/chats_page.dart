@@ -106,6 +106,18 @@ class _ChatsPageState extends ConsumerState<ChatsPage>
         : null;
 
     final hub = ref.watch(accountHubProvider);
+    // If the filtered account was disabled, drop the filter so we do not
+    // show an empty list while other enabled accounts still have chats —
+    // and so we never keep pinning the UI to a session that no longer exists.
+    final filterId = _accountId;
+    if (filterId != null &&
+        !hub.accounts.any((a) => a.id == filterId && a.enabled)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _accountId == filterId) {
+          setState(() => _accountId = null);
+        }
+      });
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -263,6 +275,7 @@ class _ChatsPageState extends ConsumerState<ChatsPage>
                                       final entry = filtered[i];
                                       final key = entry.ref.key;
                                       return ChatRow(
+                                        key: ValueKey(key),
                                         entry: entry,
                                         selected: widget.activeChatKey == key,
                                         onOpen: () => openChat(context, key),

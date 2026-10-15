@@ -58,7 +58,7 @@ class ChatsFilterBar extends StatelessWidget {
       ),
       child: Row(
         children: [
-          _CircleMenuButton(
+          AccountFilterCircleButton(
             size: _height,
             color: track,
             iconColor: idleFg,
@@ -157,27 +157,29 @@ class ChatsAccountDrawer extends StatelessWidget {
 }
 
 /// Round hit target + ink (not the bounding square’s corners).
-class _CircleMenuButton extends StatelessWidget {
-  const _CircleMenuButton({
+class AccountFilterCircleButton extends StatelessWidget {
+  const AccountFilterCircleButton({
+    super.key,
     required this.size,
     required this.color,
     required this.iconColor,
-    required this.tooltip,
     required this.onPressed,
+    this.tooltip,
   });
 
   final double size;
   final Color color;
   final Color iconColor;
-  final String tooltip;
   final VoidCallback onPressed;
+  final String? tooltip;
 
   @override
   Widget build(BuildContext context) {
     // ClipOval so hover/splash hit-tests follow the circle, not the square
     // bounding box (Material clip alone still lets corners receive pointer).
+    final tip = tooltip ?? context.l10n.filterAccounts;
     return Tooltip(
-      message: tooltip,
+      message: tip,
       child: ClipOval(
         child: Material(
           color: color,

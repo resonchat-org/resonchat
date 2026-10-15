@@ -118,6 +118,7 @@ void main() {
       expect(xml, contains(omemo2Xmlns));
 
       final parsed = Omemo2Bundle.fromXml(_rootOf(xml));
+      expect(parsed.deviceId, _fullBundle().deviceId);
       expect(parsed.spkId, 7);
       expect(parsed.kemSpkId, 1);
       expect(parsed.hasPqIdentity, isTrue);

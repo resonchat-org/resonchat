@@ -664,9 +664,12 @@ class DualTrackManager {
     if (!res.isType<PubSubItem>()) return null;
     try {
       final doc = XmlDocument.parse(res.get<PubSubItem>().payload.toXml());
+      // PEP item id is the device id — the payload historically omitted it,
+      // which made every fetched peer look like device 0 and decrypt fail.
       return PqBundle.fromXml(
         doc.rootElement,
         jidOfBundle: jid.toBare().toString(),
+        deviceId: deviceId,
       );
     } catch (e, st) {
       _log.warning('PQ bundle parse failed for $jid:$deviceId: $e\n$st');

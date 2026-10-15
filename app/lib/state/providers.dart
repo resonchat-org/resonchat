@@ -161,20 +161,22 @@ final messagesProvider = StreamProvider.family<List<Message>, String>((
 });
 
 /// Unified multi-account chat list.
+///
+/// Do **not** `watch(accountHubProvider)` here: every hub [notifyListeners]
+/// would recreate this stream, racing stale snapshots (disabled-account rows
+/// reappearing) against the live `_sessionChanges` / `_chatsTick` ticks that
+/// [AccountHub.watchMergedChats] already listens to.
 final chatsProvider = StreamProvider<List<AccountChat>>((ref) {
-  ref.watch(accountHubProvider);
   return accountHub.watchMergedChats();
 });
 
 /// Unified multi-account roster (Contacts tab).
 final rosterProvider = StreamProvider<List<AccountContact>>((ref) {
-  ref.watch(accountHubProvider);
   return accountHub.watchMergedRoster();
 });
 
 /// Unified multi-account MUC bookmarks (Groups page).
 final bookmarksProvider = StreamProvider<List<AccountBookmark>>((ref) {
-  ref.watch(accountHubProvider);
   return accountHub.watchMergedBookmarks();
 });
 
@@ -463,7 +465,6 @@ final contactPresenceProvider = StreamProvider.family<ContactPresence?, String>(
 
 /// Archived conversations across accounts.
 final archivedChatsProvider = StreamProvider<List<AccountChat>>((ref) {
-  ref.watch(accountHubProvider);
   return accountHub.watchMergedChats(archivedOnly: true);
 });
 

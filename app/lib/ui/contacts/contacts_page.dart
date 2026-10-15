@@ -12,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../account/account_hub.dart';
 import '../../l10n/l10n.dart';
 import '../../state/providers.dart';
+import '../account_filter_overlay.dart';
 import '../home/open_chat.dart';
 import '../pending/pending_requests_page.dart';
 import '../room/create_group_sheet.dart';
@@ -28,7 +29,8 @@ class ContactsPage extends ConsumerStatefulWidget {
   ConsumerState<ContactsPage> createState() => _ContactsPageState();
 }
 
-class _ContactsPageState extends ConsumerState<ContactsPage> {
+class _ContactsPageState extends ConsumerState<ContactsPage>
+    with SingleTickerProviderStateMixin {
   static const _previewLimit = 3;
 
   final _query = TextEditingController();
@@ -36,11 +38,35 @@ class _ContactsPageState extends ConsumerState<ContactsPage> {
   bool _contactsExpanded = false;
   bool _groupsExpanded = false;
 
+  /// Display-only: null = every account (same as ChatsPage).
+  String? _accountId;
+
+  late final AnimationController _accountPanel;
+  late final Animation<Offset> _accountSlide;
+
+  @override
+  void initState() {
+    super.initState();
+    _accountPanel = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 280),
+    );
+    _accountSlide = Tween<Offset>(begin: const Offset(-1, 0), end: Offset.zero)
+        .animate(
+          CurvedAnimation(parent: _accountPanel, curve: Curves.easeOutCubic),
+        );
+  }
+
   @override
   void dispose() {
+    _accountPanel.dispose();
     _query.dispose();
     super.dispose();
   }
+
+  void _openAccountPanel() => unawaited(_accountPanel.forward());
+
+  void _closeAccountPanel() => unawaited(_accountPanel.reverse());
 
   void _onQueryChanged(String value) {
     setState(() {
@@ -106,18 +132,44 @@ class _ContactsPageState extends ConsumerState<ContactsPage> {
     openChat(context, key);
   }
 
+  List<AccountContact> _filterContacts(List<AccountContact> list) {
+    final id = _accountId;
+    if (id == null) return list;
+    return list.where((c) => c.account.id == id).toList();
+  }
+
+  List<AccountBookmark> _filterBookmarks(List<AccountBookmark> list) {
+    final id = _accountId;
+    if (id == null) return list;
+    return list.where((b) => b.account.id == id).toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final tg = context.tg;
+    final hub = ref.watch(accountHubProvider);
+    final filterId = _accountId;
+    if (filterId != null &&
+        !hub.accounts.any((a) => a.id == filterId && a.enabled)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _accountId == filterId) {
+          setState(() => _accountId = null);
+        }
+      });
+    }
+
     final roster = ref.watch(rosterProvider);
     final bookmarks = ref.watch(bookmarksProvider);
-    final bookmarkList = bookmarks.asData?.value ?? const <AccountBookmark>[];
+    final bookmarkList = _filterBookmarks(
+      bookmarks.asData?.value ?? const <AccountBookmark>[],
+    );
     final bookmarkCount = bookmarkList.length;
     final searching = _needle.trim().isNotEmpty;
 
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: false,
         title: Text(l10n.tabContacts),
         actions: [
           IconButton(
@@ -141,90 +193,111 @@ class _ContactsPageState extends ConsumerState<ContactsPage> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(
-              TgDimens.chatsHorizontalPadding,
-              8,
-              TgDimens.chatsHorizontalPadding,
-              8,
-            ),
-            child: TextField(
-              controller: _query,
-              onChanged: _onQueryChanged,
-              textInputAction: TextInputAction.search,
-              onSubmitted: (_) {
-                final jid = completeJidCandidate(_needle);
-                if (jid != null) unawaited(_addContact(jid));
-              },
-              style: TextStyle(fontSize: TgDimens.chatSubtitleFontSize),
-              decoration: InputDecoration(
-                isDense: true,
-                hintText: l10n.searchContactsHint,
-                hintStyle: TextStyle(color: tg.textSecondary),
-                prefixIcon: Icon(
-                  Icons.search,
-                  size: 18,
-                  color: tg.textSecondary,
-                ),
-                suffixIcon: searching
-                    ? IconButton(
-                        icon: Icon(
-                          Icons.clear,
+      body: AccountFilterOverlay(
+        controller: _accountPanel,
+        slide: _accountSlide,
+        accounts: hub.accounts,
+        selectedAccountId: _accountId,
+        onDismiss: _closeAccountPanel,
+        onSelected: (id) {
+          setState(() => _accountId = id);
+          _closeAccountPanel();
+        },
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                TgDimens.chatsHorizontalPadding,
+                8,
+                TgDimens.chatsHorizontalPadding,
+                8,
+              ),
+              child: Row(
+                children: [
+                  AccountFilterMenuButton(onPressed: _openAccountPanel),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: _query,
+                      onChanged: _onQueryChanged,
+                      textInputAction: TextInputAction.search,
+                      onSubmitted: (_) {
+                        final jid = completeJidCandidate(_needle);
+                        if (jid != null) unawaited(_addContact(jid));
+                      },
+                      style: TextStyle(fontSize: TgDimens.chatSubtitleFontSize),
+                      decoration: InputDecoration(
+                        isDense: true,
+                        hintText: l10n.searchContactsHint,
+                        hintStyle: TextStyle(color: tg.textSecondary),
+                        prefixIcon: Icon(
+                          Icons.search,
+                          size: 18,
                           color: tg.textSecondary,
-                          size: 20,
                         ),
-                        tooltip: l10n.cancel,
-                        onPressed: _clearQuery,
-                      )
-                    : null,
-                filled: true,
-                fillColor: tg.separator.withValues(alpha: 0.35),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(18),
-                  borderSide: BorderSide.none,
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(18),
-                  borderSide: BorderSide.none,
-                ),
+                        suffixIcon: searching
+                            ? IconButton(
+                                icon: Icon(
+                                  Icons.clear,
+                                  color: tg.textSecondary,
+                                  size: 20,
+                                ),
+                                tooltip: l10n.cancel,
+                                onPressed: _clearQuery,
+                              )
+                            : null,
+                        filled: true,
+                        fillColor: tg.separator.withValues(alpha: 0.35),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(18),
+                          borderSide: BorderSide.none,
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(18),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-          ),
-          Expanded(
-            child: roster.when(
-              data: (list) {
-                if (!searching) {
-                  return IdleContactsList(
-                    contacts: list,
-                    bookmarkCount: bookmarkCount,
+            Expanded(
+              child: roster.when(
+                data: (list) {
+                  final contacts = _filterContacts(list);
+                  if (!searching) {
+                    return IdleContactsList(
+                      contacts: contacts,
+                      bookmarkCount: bookmarkCount,
+                      filterAccountId: _accountId,
+                    );
+                  }
+                  return _SearchResults(
+                    contacts: contacts,
+                    bookmarks: bookmarkList,
+                    needle: _needle,
+                    contactsExpanded: _contactsExpanded,
+                    groupsExpanded: _groupsExpanded,
+                    previewLimit: _previewLimit,
+                    onToggleContacts: () =>
+                        setState(() => _contactsExpanded = !_contactsExpanded),
+                    onToggleGroups: () =>
+                        setState(() => _groupsExpanded = !_groupsExpanded),
+                    onAddJid: (jid) => unawaited(_addContact(jid)),
+                    onOpenBookmark: (row) => unawaited(_openBookmark(row)),
                   );
-                }
-                return _SearchResults(
-                  contacts: list,
-                  bookmarks: bookmarkList,
-                  needle: _needle,
-                  contactsExpanded: _contactsExpanded,
-                  groupsExpanded: _groupsExpanded,
-                  previewLimit: _previewLimit,
-                  onToggleContacts: () =>
-                      setState(() => _contactsExpanded = !_contactsExpanded),
-                  onToggleGroups: () =>
-                      setState(() => _groupsExpanded = !_groupsExpanded),
-                  onAddJid: (jid) => unawaited(_addContact(jid)),
-                  onOpenBookmark: (row) => unawaited(_openBookmark(row)),
-                );
-              },
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(child: Text('$e')),
+                },
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (e, _) => Center(child: Text('$e')),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -70,7 +70,12 @@ class Omemo2Bundle {
     final builder = XmlBuilder();
     builder.element(
       'bundle',
-      attributes: {'xmlns': omemo2Xmlns},
+      attributes: {
+        'xmlns': omemo2Xmlns,
+        // PEP item id is authoritative, but set the attribute too so a fetch
+        // that only sees the payload still recovers the device id.
+        if (deviceId != 0) 'device': '$deviceId',
+      },
       nest: () {
         builder.element('spk', attributes: {'id': '$spkId'}, nest: spk);
         builder.element('spks', nest: spkSignature);
@@ -119,7 +124,17 @@ class Omemo2Bundle {
     return builder.buildDocument().rootElement;
   }
 
-  static Omemo2Bundle fromXml(XmlElement el, {String? jidOfBundle}) {
+  /// Parses a published `<bundle/>`.
+  ///
+  /// [deviceId] is the PEP item id used to fetch the bundle — that is the
+  /// authoritative device id (monocles / Conversations). The optional
+  /// `device` XML attribute is only a fallback when the caller did not pass
+  /// the item id.
+  static Omemo2Bundle fromXml(
+    XmlElement el, {
+    String? jidOfBundle,
+    int? deviceId,
+  }) {
     String one(String tag) => el.findElements(tag).single.innerText;
 
     Map<int, String> keyMap(String parent, String child) {
@@ -150,10 +165,17 @@ class Omemo2Bundle {
       throw FormatException('unsupported pq-ik type: $pqType');
     }
 
-    // device id may be the PEP item id; attribute optional on monocles wire.
     final deviceAttr = el.getAttribute('device');
+    final fromAttr = deviceAttr == null ? null : int.tryParse(deviceAttr);
+    final resolvedId = deviceId ?? fromAttr ?? 0;
+    if (resolvedId == 0) {
+      throw FormatException(
+        'OMEMO2 bundle missing device id (pass PEP item id into fromXml)',
+      );
+    }
+
     return Omemo2Bundle(
-      deviceId: deviceAttr == null ? 0 : int.parse(deviceAttr),
+      deviceId: resolvedId,
       jid: jidOfBundle ?? '',
       spk: spkEl.innerText,
       spkId: int.parse(spkEl.getAttribute('id')!),

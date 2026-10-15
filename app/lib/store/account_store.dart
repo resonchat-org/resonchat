@@ -113,6 +113,8 @@ class AccountStore {
       if (raw != null && raw.isNotEmpty) {
         final list = jsonDecode(raw) as List<dynamic>;
         // Skip corrupt entries rather than discarding the whole list.
+        // Uniqueness by bare JID is enforced on write ([saveAll] / [upsert]),
+        // not by silently deleting rows on read.
         final out = <StoredAccount>[];
         for (final e in list) {
           try {
@@ -156,13 +158,21 @@ class AccountStore {
     return [account];
   }
 
+  /// Persists [accounts]. At most one row per bare JID and per id — the store
+  /// invariant. Callers that "add" must go through [upsert] / [addAndConnect]
+  /// so a second login to the same JID updates credentials instead of forking
+  /// a second SQLite identity.
   Future<void> saveAll(List<StoredAccount> accounts) async {
     await _storage.write(
       key: _listKey,
-      value: jsonEncode([for (final a in accounts) a.toJson()]),
+      value: jsonEncode([
+        for (final a in _enforceUniqueAccounts(accounts)) a.toJson(),
+      ]),
     );
   }
 
+  /// Insert or update one account. Same bare JID always collapses onto the
+  /// existing row's [StoredAccount.id] (never a second local identity).
   Future<void> upsert(StoredAccount account) async {
     final all = await loadAll();
     if (lastLoadError != null && all.isEmpty) {
@@ -171,19 +181,49 @@ class AccountStore {
         'AccountStore.upsert: loadAll failed ($lastLoadError); not saving',
       );
     }
-    final i = all.indexWhere((a) => a.id == account.id);
-    if (i < 0) {
-      // Same bare JID → replace credentials (re-login).
-      final j = all.indexWhere((a) => a.bareJid == account.bareJid);
-      if (j >= 0) {
-        all[j] = account.copyWith(id: all[j].id);
+
+    final byId = all.indexWhere((a) => a.id == account.id);
+    final byJid = all.indexWhere((a) => a.bareJid == account.bareJid);
+
+    if (byId >= 0 && byJid >= 0 && byId != byJid) {
+      // Same credentials claimed under two rows — keep [account.id], drop the
+      // other bare-JID owner so we never fork a second SQLite file.
+      all.removeAt(byJid);
+      final idx = all.indexWhere((a) => a.id == account.id);
+      if (idx >= 0) {
+        all[idx] = account;
       } else {
         all.add(account);
       }
+    } else if (byId >= 0) {
+      all[byId] = account;
+    } else if (byJid >= 0) {
+      // Re-login / "add" of an address we already have: reuse that id.
+      all[byJid] = account.copyWith(id: all[byJid].id);
     } else {
-      all[i] = account;
+      all.add(account);
     }
     await saveAll(all);
+  }
+
+  /// Write-side gate: at most one row per id and per bare JID (first wins).
+  List<StoredAccount> _enforceUniqueAccounts(List<StoredAccount> accounts) {
+    final byId = <String, StoredAccount>{};
+    final bareOwner = <String, String>{}; // bareJid → id
+    for (final a in accounts) {
+      final bare = a.bareJid;
+      final existingId = bareOwner[bare];
+      if (existingId != null && existingId != a.id) {
+        _log.warning(
+          'refusing second local identity for $bare '
+          '(keeping id=$existingId, ignored id=${a.id})',
+        );
+        continue;
+      }
+      byId[a.id] = a;
+      bareOwner[bare] = a.id;
+    }
+    return byId.values.toList(growable: false);
   }
 
   Future<void> remove(String id) async {

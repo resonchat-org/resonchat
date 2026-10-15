@@ -34,9 +34,12 @@ import 'pq_incoming.dart';
 import 'pq_stanza.dart';
 import 'presence_store.dart';
 import 'reactions.dart';
+import 'reconnect_policy.dart';
 import 'replies.dart';
 import 'room_invite.dart';
 import 'xmpp_socket.dart';
+
+export 'reconnect_policy.dart' show MonoclesBackoffReconnectionPolicy;
 
 export 'presence_store.dart' show ContactPresence, PresenceStore;
 export 'room_invite.dart' show RoomInvite;
@@ -1683,6 +1686,8 @@ class XmppService {
     final mm = _connection?.getManagerById<MessageManager>(messageManager);
     if (mm == null) throw StateError('not connected');
     final id = originId ?? _nextStanzaId();
+    // monocles generateOmemo2Chat: OMEMO2 ciphertext only — never hand the
+    // fallback body to classic axolotl (MessageManager defaults shouldEncrypt).
     await mm.sendMessage(
       roomBare,
       TypedMap<StanzaHandlerExtension>.fromList([
@@ -1700,6 +1705,7 @@ class XmppService {
         PqEncryptedData(encrypted),
       ]),
       type: 'groupchat',
+      shouldEncrypt: false,
     );
     return id;
   }
@@ -1877,6 +1883,15 @@ class XmppService {
   CapabilityService? _capabilities;
 
   XmppConnectionState get state => _state;
+  Stream<XmppConnectionState> get stateChanges => _stateChanges.stream;
+  final _stateChanges = StreamController<XmppConnectionState>.broadcast();
+
+  void _setState(XmppConnectionState next) {
+    if (_state == next) return;
+    _state = next;
+    if (!_stateChanges.isClosed) _stateChanges.add(next);
+  }
+
   Stream<InboundMessage> get inbound => _inbound.stream;
 
   /// Receipts for messages we sent (XEP-0184).
@@ -2072,7 +2087,7 @@ class XmppService {
     bool reconnect = true,
   }) async {
     await disconnect();
-    _state = XmppConnectionState.connecting;
+    _setState(XmppConnectionState.connecting);
     _rosterState = rosterState;
 
     _moxxOmemo = OmemoManager(
@@ -2086,9 +2101,15 @@ class XmppService {
       // Also ignore non-message stanzas: letting the hook run for every
       // outgoing IQ made capability resolution cascade unbounded and starve
       // login.
+      // monocles: ENCRYPTION_AXOLOTL vs ENCRYPTION_AXOLOTL_OMEMO2 are
+      // mutually exclusive send paths. A stanza that already carries
+      // `<encrypted xmlns='urn:monocles:omemo-pq:1'/>` must not be wrapped
+      // again by classic OMEMO — that re-encrypts the fallback body and the
+      // peer only ever reads "Use a supported client…".
       (toJid, stanza) async =>
           stanza.tag == 'message' &&
           stanza.firstTag('body') != null &&
+          stanza.firstTag('encrypted', xmlns: omemo2Xmlns) == null &&
           await _shouldEncrypt(toJid),
     );
     // Default to the capability-driven decision so encryption turns on by
@@ -2112,9 +2133,14 @@ class XmppService {
         (host != null && (host.startsWith('wss:') || host.startsWith('ws:')))
         ? host
         : null;
+    // monocles XmppConnection.getTimeToNextAttempt: exponential backoff on
+    // stream/TCP loss. TestingReconnectionPolicy is a no-op stub — using it
+    // left the app permanently offline after the first socket error.
     final connection =
         XmppConnection(
-            reconnect ? TestingReconnectionPolicy() : NeverReconnectPolicy(),
+            reconnect
+                ? MonoclesBackoffReconnectionPolicy()
+                : NeverReconnectPolicy(),
             // TODO(M7): replace with a connectivity_plus-backed manager plus
             // XEP-0357 push so Doze-mode delivery works without a permanent
             // radio lock (Briar's always-on lesson, docs/09).
@@ -2145,6 +2171,9 @@ class XmppService {
     messageManager.registerMessageSendingCallback(pqSendingCallback);
     await connection.registerManagers([
       PresenceManager(),
+      // Whitespace keepalives (monocles Config.PING_MAX_INTERVAL ≈ 5 min).
+      // Without Stream Management this is what notices a half-open TCP.
+      PingManager(const Duration(minutes: 5)),
       RosterManager(
         rosterState ??
             (_rosterState = TestingRosterStateManager(null, const [])),
@@ -2251,17 +2280,31 @@ class XmppService {
       _log.severe('connect failed: $lastFailure ($error)');
     }
     _connection = ok ? connection : null;
-    _state = ok
-        ? XmppConnectionState.connected
-        : XmppConnectionState.disconnected;
+    _setState(
+      ok ? XmppConnectionState.connected : XmppConnectionState.disconnected,
+    );
     if (ok) {
-      _carbonsEnabled = await _carbons!.enableCarbons();
-      _mamAvailable = await _isMamAvailable();
-      _log.info('carbons: $_carbonsEnabled, mam: $_mamAvailable');
-      await _subscribeOwnPep();
+      await _afterStreamReady(resumed: false);
     }
     _log.info('connect($jid): $ok');
     return ok;
+  }
+
+  /// Carbons + PEP after a fresh login or an automatic reconnect.
+  ///
+  /// moxxmpp reconnects inside the socket without calling [connect] again, so
+  /// [StreamNegotiationsDoneEvent] is the only place that re-runs this on a
+  /// TCP drop (monocles re-joins MUCs / flushes queue on the same signal).
+  Future<void> _afterStreamReady({required bool resumed}) async {
+    if (_carbons != null) {
+      _carbonsEnabled = await _carbons!.enableCarbons();
+    }
+    _mamAvailable = await _isMamAvailable();
+    await _subscribeOwnPep();
+    _log.info(
+      'stream ready (resumed=$resumed) carbons=$_carbonsEnabled '
+      'mam=$_mamAvailable',
+    );
   }
 
   /// PEP nodes worth a subscription: both OMEMO dialects plus the PQ track.
@@ -2811,6 +2854,10 @@ class XmppService {
     if (mm == null) throw StateError('not connected');
     final id = originId ?? _nextStanzaId();
 
+    // monocles generateOmemo2Chat: mutually exclusive with classic axolotl.
+    // Without shouldEncrypt:false the OmemoManager re-wraps the fallback body
+    // and the peer decrypts to "Use a supported client…" instead of the PQ
+    // payload.
     await mm.sendMessage(
       to,
       TypedMap<StanzaHandlerExtension>.fromList([
@@ -2835,6 +2882,7 @@ class XmppService {
         PqEncryptedData(encrypted),
       ]),
       type: 'chat',
+      shouldEncrypt: false,
     );
     return id;
   }
@@ -3011,7 +3059,7 @@ class XmppService {
     _connection = null;
     presence.clear();
     if (!_presenceChanges.isClosed) _presenceChanges.add(null);
-    _state = XmppConnectionState.disconnected;
+    _setState(XmppConnectionState.disconnected);
   }
 
   /// Republishes a room's state after any presence event for it.
@@ -3113,6 +3161,24 @@ class XmppService {
   }
 
   void _onEvent(XmppEvent event) {
+    if (event is ConnectionStateChangedEvent) {
+      // moxxmpp's XmppConnectionState is shadowed by ours; use .name.
+      final next = switch (event.state.name) {
+        'connected' => XmppConnectionState.connected,
+        'connecting' => XmppConnectionState.connecting,
+        _ => XmppConnectionState.disconnected,
+      };
+      _setState(next);
+      return;
+    }
+    if (event is StreamNegotiationsDoneEvent) {
+      // Automatic reconnect path: [connect] is not re-entered, so carbons /
+      // PEP must be re-armed here (monocles manageAccountConnectionStates).
+      if (_connection != null) {
+        unawaited(_afterStreamReady(resumed: event.resumed));
+      }
+      return;
+    }
     if (event is MessageEvent) {
       final error = event.encryptionError;
       // Our own message coming back as an error: it was refused, not

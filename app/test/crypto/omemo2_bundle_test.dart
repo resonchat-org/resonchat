@@ -43,11 +43,38 @@ void main() {
     expect(xml, isNot(contains('pqspk')));
 
     final back = Omemo2Bundle.fromXml(bundle.toXml(), jidOfBundle: bundle.jid);
+    expect(back.deviceId, 42);
     expect(back.spkId, 3);
     expect(back.kemSpkId, 5);
     expect(back.hasPqIdentity, isTrue);
     expect(back.ikSerialized.first, 0x05);
     expect(isMlKem1024PublicKey(base64Decode(back.kemSpk)), isTrue);
+  });
+
+  test('PEP item id overrides missing device attribute', () {
+    // Historical publishes omitted device= on the payload; the PEP item id
+    // is still the real device id. Without that override every peer looked
+    // like device 0 and decrypt filtered keys away.
+    final xml = _sample().toXml().toXmlString().replaceFirst(
+      ' device="42"',
+      '',
+    );
+    final parsed = Omemo2Bundle.fromXml(
+      XmlDocument.parse(xml).rootElement,
+      deviceId: 99,
+    );
+    expect(parsed.deviceId, 99);
+  });
+
+  test('refuses bundle with no device id at all', () {
+    final xml = _sample().toXml().toXmlString().replaceFirst(
+      ' device="42"',
+      '',
+    );
+    expect(
+      () => Omemo2Bundle.fromXml(XmlDocument.parse(xml).rootElement),
+      throwsA(isA<FormatException>()),
+    );
   });
 
   test('refuses wrong pq-ik type', () {

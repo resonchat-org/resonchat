@@ -132,4 +132,28 @@ void main() {
       expect(extractPqPayload(stanza), isNull);
     });
   });
+
+  group('classic OMEMO must not wrap PQ', () {
+    // monocles: ENCRYPTION_AXOLOTL vs ENCRYPTION_AXOLOTL_OMEMO2 are separate
+    // branches. If axolotl wraps a PQ stanza it encrypts the fallback body
+    // and the peer only ever decrypts to "Use a supported client…".
+    test('a PQ stanza already carries monocles encrypted', () {
+      final nodes = pqSendingCallback(
+        TypedMap<StanzaHandlerExtension>.fromList([
+          MessageBodyData(encryptedBodyFallback),
+          const EmeData(Track.pq, name: 'OMEMO-PQ'),
+          PqEncryptedData(_payload()),
+        ]),
+      );
+      final stanza = Stanza.message(
+        children: [MessageBodyData(encryptedBodyFallback).toXML(), ...nodes],
+      );
+      expect(
+        stanza.firstTag('encrypted', xmlns: omemo2Xmlns),
+        isNotNull,
+        reason: 'send hook skips classic encrypt when this is present',
+      );
+      expect(stanza.firstTag('body')?.innerText(), encryptedBodyFallback);
+    });
+  });
 }

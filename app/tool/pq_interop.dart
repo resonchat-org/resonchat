@@ -342,6 +342,7 @@ Future<PqBundle> publish(Peer peer) async {
   return PqBundle.fromXml(
     XmlDocument.parse(item.get<PubSubItem>().payload.toXml()).rootElement,
     jidOfBundle: bare.toString(),
+    deviceId: device.id,
   );
 }
 
