@@ -43,7 +43,7 @@ class BlockedInboundManager extends XmppManagerBase {
       stanzaTag: 'message',
       // Ahead of the OMEMO handler, which is the whole point: this has to
       // run before anything decrypts.
-      priority: 300,
+      priority: blockedInboundPriority,
       callback: _onMessage,
     ),
   ];

@@ -39,6 +39,7 @@ import 'chat_input_bar.dart';
 import 'chat_message_list.dart';
 import 'chat_nicks.dart';
 import 'chat_subscription_banner.dart';
+import 'chat_topic_banner.dart';
 import 'chat_wallpaper.dart';
 import 'conference_mention.dart';
 import 'quoted_transcript.dart';
@@ -1493,11 +1494,6 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                         tooltip: l10n.pinnedMessages,
                         onPressed: _showPinned,
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.history),
-                        tooltip: l10n.loadHistoryMam,
-                        onPressed: _loadHistory,
-                      ),
                     ],
             ),
             body: Column(
@@ -1512,52 +1508,68 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                     onDismiss: _vm.dismissAdvice,
                   ),
                 Expanded(
-                  child: ChatWallpaper(
-                    chatJid: _peerJid,
-                    appearance: appearance,
-                    base: tg.pageBackground,
-                    // Theme accent tints the pattern (per-chat colour was
-                    // removed; the app theme colour already covers that).
-                    accent: tg.accent,
-                    imageEpoch: backgroundEpoch,
-                    child: messages.when(
-                      data: (list) {
-                        if (list.isNotEmpty) _ensureInitialScroll();
-                        return ChatMessageList(
-                          chatKey: widget.chatJid,
-                          messages: list,
-                          scroll: _scroll,
-                          onRetryDecrypt: () => _loadHistory(),
-                          onReact: _toggleReaction,
-                          onMenu: _showMessageMenu,
-                          onToggleSelected: _toggleSelected,
-                          onMentionNick: _mentionOccupant,
-                          onOccupantAvatarLongPress: (nick) =>
-                              unawaited(_onOccupantAvatarLongPress(nick)),
-                          selectionMode: _selectionMode,
-                          selectedIds: _selection,
-                          translations: _translations,
-                          translatingIds: _translating,
-                          readAt: ref
-                              .watch(chatLastReadProvider(widget.chatJid))
-                              .value,
-                          unreadCount: _unreadCountHere ?? 0,
-                          unreadDividerKey: _unreadDividerKey,
-                          focusMessageAnchor: _activeFocusAnchor,
-                          focusMessageKey: _focusMessageKey,
-                          bubbleStyle: appearance.bubble,
-                          isGroup: ui.isGroup,
-                          room: ui.room,
-                          highlightNicks: highlightNicksFor(
-                            mucNick: ui.mucNick,
-                            chatKey: widget.chatJid,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      ChatWallpaper(
+                        chatJid: _peerJid,
+                        appearance: appearance,
+                        base: tg.pageBackground,
+                        // Theme accent tints the pattern (per-chat colour was
+                        // removed; the app theme colour already covers that).
+                        accent: tg.accent,
+                        imageEpoch: backgroundEpoch,
+                        child: messages.when(
+                          data: (list) {
+                            if (list.isNotEmpty) _ensureInitialScroll();
+                            return ChatMessageList(
+                              chatKey: widget.chatJid,
+                              messages: list,
+                              scroll: _scroll,
+                              onRetryDecrypt: () => _loadHistory(),
+                              onReact: _toggleReaction,
+                              onMenu: _showMessageMenu,
+                              onToggleSelected: _toggleSelected,
+                              onMentionNick: _mentionOccupant,
+                              onOccupantAvatarLongPress: (nick) =>
+                                  unawaited(_onOccupantAvatarLongPress(nick)),
+                              selectionMode: _selectionMode,
+                              selectedIds: _selection,
+                              translations: _translations,
+                              translatingIds: _translating,
+                              readAt: ref
+                                  .watch(chatLastReadProvider(widget.chatJid))
+                                  .value,
+                              unreadCount: _unreadCountHere ?? 0,
+                              unreadDividerKey: _unreadDividerKey,
+                              focusMessageAnchor: _activeFocusAnchor,
+                              focusMessageKey: _focusMessageKey,
+                              bubbleStyle: appearance.bubble,
+                              isGroup: ui.isGroup,
+                              room: ui.room,
+                              highlightNicks: highlightNicksFor(
+                                mucNick: ui.mucNick,
+                                chatKey: widget.chatJid,
+                              ),
+                            );
+                          },
+                          loading: () =>
+                              const Center(child: CircularProgressIndicator()),
+                          error: (e, _) => Center(child: Text('$e')),
+                        ),
+                      ),
+                      if (ui.isGroup &&
+                          (ui.room?.subject?.trim().isNotEmpty ?? false))
+                        Positioned(
+                          top: 6,
+                          left: 10,
+                          right: 10,
+                          child: ChatTopicBanner(
+                            chatJid: widget.chatJid,
+                            subject: ui.room!.subject!.trim(),
                           ),
-                        );
-                      },
-                      loading: () =>
-                          const Center(child: CircularProgressIndicator()),
-                      error: (e, _) => Center(child: Text('$e')),
-                    ),
+                        ),
+                    ],
                   ),
                 ),
                 // Editing replaces the input bar rather than sitting above it: two

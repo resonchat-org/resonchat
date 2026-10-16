@@ -14,7 +14,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:moxxmpp/moxxmpp.dart' show PresenceShow;
 
 import '../../account/account_hub.dart';
-import '../../crypto/fingerprint.dart';
+import '../../crypto/omemo/fingerprint_trust.dart';
 import '../../crypto/own_fingerprints.dart';
 import '../../l10n/l10n.dart';
 import '../../state/providers.dart';
@@ -22,6 +22,7 @@ import '../../store/account_store.dart';
 import '../../xmpp/avatar.dart';
 import '../../xmpp/connection.dart';
 import '../contact_avatar.dart';
+import '../fingerprint_box.dart';
 import '../theme.dart';
 
 class AccountProfilePage extends ConsumerStatefulWidget {
@@ -40,6 +41,7 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
   String? _hybridFingerprint;
   String? _legacyFingerprint;
   int? _deviceId;
+  List<PeerFingerprintRow> _otherDevices = const [];
 
   StoredAccount? get _account {
     for (final a in accountHub.accounts) {
@@ -82,6 +84,12 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
         pqStore: store.pqIdentity,
         omemo2IkSerialized: omemo2Ik,
       );
+      List<PeerFingerprintRow> others = const [];
+      try {
+        others = await session.xmpp.ownOtherDeviceFingerprintRows();
+      } catch (_) {
+        // Device list / bundles may be unavailable offline.
+      }
       if (!mounted) return;
       setState(() {
         _deviceId = id;
@@ -89,6 +97,7 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
             ? hybridFromTrack
             : (fps.hybrid.isEmpty ? null : fps.hybrid);
         _legacyFingerprint = fps.legacy;
+        _otherDevices = others;
       });
     } catch (_) {
       // No device yet.
@@ -384,68 +393,71 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
                   style: TextStyle(fontSize: 12, color: tg.textSecondary),
                 ),
                 const SizedBox(height: 6),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: tg.separator),
-                  ),
-                  child: SelectableText(
-                    formatFingerprint(_hybridFingerprint!),
-                    style: TextStyle(
-                      fontFamily: 'monospace',
-                      fontSize: 13,
-                      color: tg.textPrimary,
-                      height: 1.6,
-                    ),
-                  ),
-                ),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    onPressed: _busy
-                        ? null
-                        : () => unawaited(_copyFingerprint(_hybridFingerprint)),
-                    icon: const Icon(Icons.copy, size: 18),
-                    label: Text(l10n.copyFingerprint),
-                  ),
+                FingerprintBox(
+                  fingerprint: _hybridFingerprint!,
+                  margin: EdgeInsets.zero,
+                  enabled: !_busy,
+                  onCopy: () => unawaited(_copyFingerprint(_hybridFingerprint)),
                 ),
               ],
               if (_legacyFingerprint != null) ...[
+                const SizedBox(height: 12),
                 Text(
                   l10n.omemoLegacyFingerprint,
                   style: TextStyle(fontSize: 12, color: tg.textSecondary),
                 ),
                 const SizedBox(height: 6),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: tg.separator),
-                  ),
-                  child: SelectableText(
-                    formatFingerprint(_legacyFingerprint!),
-                    style: TextStyle(
-                      fontFamily: 'monospace',
-                      fontSize: 13,
-                      color: tg.textPrimary,
-                      height: 1.6,
-                    ),
-                  ),
-                ),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    onPressed: _busy
-                        ? null
-                        : () => unawaited(_copyFingerprint(_legacyFingerprint)),
-                    icon: const Icon(Icons.copy, size: 18),
-                    label: Text(l10n.copyFingerprint),
-                  ),
+                FingerprintBox(
+                  fingerprint: _legacyFingerprint!,
+                  margin: EdgeInsets.zero,
+                  enabled: !_busy,
+                  onCopy: () => unawaited(_copyFingerprint(_legacyFingerprint)),
                 ),
               ],
+              const SizedBox(height: 20),
+              Text(
+                l10n.otherOwnDevices,
+                style: TextStyle(
+                  color: tg.textSecondary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                l10n.otherOwnDevicesIntro,
+                style: TextStyle(fontSize: 12, color: tg.textSecondary),
+              ),
+              const SizedBox(height: 8),
+              if (_otherDevices.isEmpty)
+                Text(
+                  l10n.noOtherOwnDevices,
+                  style: TextStyle(fontSize: 13, color: tg.textSecondary),
+                )
+              else
+                ..._otherDevices.expand((row) {
+                  final label = l10n.ownOtherDeviceLabel(
+                    row.deviceId,
+                    row.omemo2
+                        ? l10n.omemo2FingerprintShort
+                        : l10n.omemoLegacyFingerprintShort,
+                  );
+                  return [
+                    Text(
+                      row.active ? label : l10n.omemoFingerprintInactive(label),
+                      style: TextStyle(fontSize: 12, color: tg.textSecondary),
+                    ),
+                    const SizedBox(height: 6),
+                    FingerprintBox(
+                      fingerprint: row.fingerprint,
+                      margin: EdgeInsets.zero,
+                      enabled: !_busy,
+                      onCopy: () =>
+                          unawaited(_copyFingerprint(row.fingerprint)),
+                    ),
+                    const SizedBox(height: 12),
+                  ];
+                }),
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: Icon(Icons.refresh, color: tg.accent),

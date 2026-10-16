@@ -1,12 +1,9 @@
 // Copyright (C) 2026 resonchat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// Encryption info page: which track protects this chat, every device that
-// can read it, and the fingerprints users compare in person.
-//
-// Interaction follows the lessons drawn from Briar (docs/09 §1.1): show the
-// fingerprint rather than hiding it, and make the verification explicitly
-// mutual — a single-sided "I checked" is what produces false confidence.
+// Encryption info page: fingerprints users compare in person, and per-device
+// trust toggles (monocles TrustKeysActivity). Distrusted devices are skipped
+// on the next encrypt (classic + OMEMO2).
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -14,25 +11,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../account/resolve.dart';
 import '../../crypto/fingerprint.dart';
-import '../../crypto/omemo/track.dart';
-import '../../crypto/omemo/track_resolver.dart';
+import '../../crypto/omemo/fingerprint_trust.dart';
 import '../../crypto/own_fingerprints.dart';
 import '../../l10n/l10n.dart';
-import '../../xmpp/capabilities.dart';
 import '../../state/providers.dart';
+import '../fingerprint_box.dart';
 import '../theme.dart';
-
-/// How far this chat's verification has got.
-enum VerifyStage {
-  /// Nobody has compared fingerprints.
-  none,
-
-  /// We showed our fingerprint; waiting for the other side to confirm.
-  sent,
-
-  /// Both sides confirmed in person.
-  bothConfirmed,
-}
 
 class SecurityPage extends ConsumerStatefulWidget {
   const SecurityPage({super.key, required this.chatJid});
@@ -47,6 +31,12 @@ class _SecurityPageState extends ConsumerState<SecurityPage> {
   String? _hybridFingerprint;
   String? _legacyFingerprint;
   int? _deviceId;
+  List<PeerFingerprintRow>? _peerRows;
+  bool _peerLoading = true;
+  String? _peerError;
+  bool _isGroup = false;
+
+  String get _peerBare => resolveChatKey(widget.chatJid).jid;
 
   @override
   void initState() {
@@ -58,7 +48,10 @@ class _SecurityPageState extends ConsumerState<SecurityPage> {
     final session = resolveChatKey(widget.chatJid).session;
     final store = session.xmpp.deviceStore;
     final om = session.xmpp.omemo;
-    if (store == null || om == null) return;
+    if (store == null || om == null) {
+      if (mounted) setState(() => _peerLoading = false);
+      return;
+    }
     final device = await om.getDevice();
     final id = await device.deviceId;
     final hybridFromTrack = await session.xmpp.bTrack?.hybridFingerprint();
@@ -72,13 +65,39 @@ class _SecurityPageState extends ConsumerState<SecurityPage> {
       pqStore: store.pqIdentity,
       omemo2IkSerialized: omemo2Ik,
     );
+    final chat = await session.db.getChat(_peerBare);
+    final isGroup = chat?.isGroup ?? false;
+    List<PeerFingerprintRow> peers = const [];
+    Object? peerErr;
+    try {
+      if (isGroup) {
+        final room = await ref.read(roomStateProvider(widget.chatJid).future);
+        final ownBare = session.xmpp.myJid?.toLowerCase();
+        final members = <String>{
+          for (final o in room?.occupants ?? const [])
+            if (o.realJid != null &&
+                o.realJid!.isNotEmpty &&
+                o.realJid!.toLowerCase() != ownBare)
+              o.realJid!,
+        };
+        peers = await session.xmpp.groupFingerprintRows(members);
+      } else {
+        peers = await session.xmpp.peerFingerprintRows(_peerBare);
+      }
+    } catch (e) {
+      peerErr = e;
+    }
     if (!mounted) return;
     setState(() {
       _deviceId = id;
+      _isGroup = isGroup;
       _hybridFingerprint = (hybridFromTrack?.isNotEmpty ?? false)
           ? hybridFromTrack
           : (fps.hybrid.isEmpty ? null : fps.hybrid);
       _legacyFingerprint = fps.legacy;
+      _peerRows = peers;
+      _peerError = peerErr?.toString();
+      _peerLoading = false;
     });
   }
 
@@ -92,59 +111,49 @@ class _SecurityPageState extends ConsumerState<SecurityPage> {
         .showSnackBar(SnackBar(content: Text(context.l10n.fingerprintCopied)));
   }
 
+  Future<void> _setPeerTrust(PeerFingerprintRow row, bool trusted) async {
+    final xmpp = resolveChatKey(widget.chatJid).session.xmpp;
+    await xmpp.setPeerFingerprintTrust(
+      bareJid: row.peerJid,
+      fingerprint: row.fingerprint,
+      trusted: trusted,
+    );
+    if (!mounted) return;
+    setState(() {
+      _peerRows = [
+        for (final r in _peerRows ?? const <PeerFingerprintRow>[])
+          if (r.fingerprint == row.fingerprint &&
+              r.omemo2 == row.omemo2 &&
+              r.peerJid == row.peerJid)
+            PeerFingerprintRow(
+              peerJid: r.peerJid,
+              deviceId: r.deviceId,
+              fingerprint: r.fingerprint,
+              omemo2: r.omemo2,
+              trusted: trusted,
+              active: r.active,
+            )
+          else
+            r,
+      ];
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final tg = context.tg;
     final l10n = context.l10n;
-    final track =
-        ref.watch(chatTrackProvider(widget.chatJid)).value ?? Track.standard;
-    final caps = ref.watch(chatCapabilitiesProvider(widget.chatJid)).value;
 
     return Scaffold(
       appBar: AppBar(title: Text(l10n.encryption)),
       body: ListView(
         children: [
-          _section(tg, l10n.thisChat),
-          ListTile(
-            leading: Icon(
-              track.icon,
-              color: track == Track.none ? tg.textSecondary : tg.accent,
-            ),
-            title: Text(l10n.youChoseTrack(track.localizedDescription(l10n))),
-            subtitle: Text(_describe(track, caps, l10n)),
-          ),
-
           _section(tg, l10n.devices),
           ListTile(
             leading: const Icon(Icons.smartphone),
             title: Text(l10n.thisDeviceId('${_deviceId ?? '—'}')),
             subtitle: Text(l10n.deviceCountedForCarbons),
           ),
-          if (caps != null)
-            ListTile(
-              leading: const Icon(Icons.devices_other),
-              title: Text(
-                l10n.recipientDevicesCount(caps.recipientDevices.length),
-              ),
-              subtitle: Text(
-                caps.recipientDevices.isEmpty
-                    ? l10n.nonePublishedYet
-                    : caps.recipientDevices.join(', '),
-              ),
-            ),
-          if (caps != null)
-            ListTile(
-              leading: Icon(
-                caps.pqDevices.isNotEmpty ? Icons.bolt : Icons.bolt_outlined,
-                color: caps.pqDevices.isNotEmpty ? tg.accent : tg.textSecondary,
-              ),
-              title: Text(l10n.postQuantumDeviceCount(caps.pqDevices.length)),
-              subtitle: Text(
-                caps.pqDevices.isEmpty
-                    ? l10n.noPqBundlePublished
-                    : l10n.pqUpgradeAutomatic,
-              ),
-            ),
 
           _section(tg, l10n.verifyIdentity),
           Padding(
@@ -163,30 +172,9 @@ class _SecurityPageState extends ConsumerState<SecurityPage> {
               ),
             ),
             const SizedBox(height: 6),
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 16),
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: tg.separator),
-              ),
-              child: SelectableText(
-                formatFingerprint(_hybridFingerprint!),
-                style: TextStyle(
-                  fontFamily: 'monospace',
-                  fontSize: 13,
-                  color: tg.textPrimary,
-                  height: 1.6,
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Center(
-              child: OutlinedButton.icon(
-                onPressed: () => _copyFingerprint(_hybridFingerprint),
-                icon: const Icon(Icons.copy, size: 18),
-                label: Text(l10n.copyFingerprint),
-              ),
+            FingerprintBox(
+              fingerprint: _hybridFingerprint!,
+              onCopy: () => _copyFingerprint(_hybridFingerprint),
             ),
             const SizedBox(height: 12),
           ],
@@ -199,35 +187,50 @@ class _SecurityPageState extends ConsumerState<SecurityPage> {
               ),
             ),
             const SizedBox(height: 6),
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 16),
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: tg.separator),
-              ),
-              child: SelectableText(
-                formatFingerprint(_legacyFingerprint!),
-                style: TextStyle(
-                  fontFamily: 'monospace',
-                  fontSize: 13,
-                  color: tg.textPrimary,
-                  height: 1.6,
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Center(
-              child: OutlinedButton.icon(
-                onPressed: () => _copyFingerprint(_legacyFingerprint),
-                icon: const Icon(Icons.copy, size: 18),
-                label: Text(l10n.copyFingerprint),
-              ),
+            FingerprintBox(
+              fingerprint: _legacyFingerprint!,
+              onCopy: () => _copyFingerprint(_legacyFingerprint),
             ),
           ],
 
-          _section(tg, l10n.verificationStatus),
-          const _VerificationSteps(),
+          _section(tg, l10n.theirFingerprints),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Text(
+              l10n.theirFingerprintsIntro,
+              style: TextStyle(fontSize: 13, color: tg.textSecondary),
+            ),
+          ),
+          if (_peerLoading)
+            const Padding(
+              padding: EdgeInsets.all(24),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_peerError != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text(
+                l10n.couldNotLoadPeerFingerprints,
+                style: TextStyle(color: tg.danger),
+              ),
+            )
+          else if ((_peerRows ?? const []).isEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text(
+                l10n.noPeerFingerprintsYet,
+                style: TextStyle(fontSize: 13, color: tg.textSecondary),
+              ),
+            )
+          else
+            for (final row in _peerRows!)
+              _PeerFingerprintTile(
+                row: row,
+                showPeerJid: _isGroup,
+                onCopy: () => _copyFingerprint(row.fingerprint),
+                onTrustChanged: (v) => _setPeerTrust(row, v),
+              ),
+
           const SizedBox(height: 24),
         ],
       ),
@@ -245,95 +248,88 @@ class _SecurityPageState extends ConsumerState<SecurityPage> {
       ),
     ),
   );
-
-  /// The chosen track, and separately whether it can currently be used.
-  static String _describe(
-    Track track,
-    ChatCapabilities? caps,
-    AppLocalizations l10n,
-  ) {
-    final resolution = resolveTrack(requested: track, capabilities: caps);
-    if (!resolution.canSend) {
-      return l10n.trackUsableBlocked(
-        resolution.blocked!.localizedConsequence(l10n),
-        track.localizedDescription(l10n),
-      );
-    }
-    return switch (track) {
-      Track.pq => l10n.trackUsablePq,
-      Track.standard => l10n.trackUsableStandard,
-      Track.none => l10n.trackUsableNone,
-    };
-  }
 }
 
-/// Explicit, two-sided checklist. Briar's post-mortem showed that a
-/// one-sided confirmation is what creates false confidence, so both boxes
-/// must be ticked (docs/09 §1.1).
-class _VerificationSteps extends StatefulWidget {
-  const _VerificationSteps();
+class _PeerFingerprintTile extends StatelessWidget {
+  const _PeerFingerprintTile({
+    required this.row,
+    required this.onCopy,
+    required this.onTrustChanged,
+    this.showPeerJid = false,
+  });
 
-  @override
-  State<_VerificationSteps> createState() => _VerificationStepsState();
-}
-
-class _VerificationStepsState extends State<_VerificationSteps> {
-  bool _weShowed = false;
-  bool _theyConfirmed = false;
+  final PeerFingerprintRow row;
+  final VoidCallback onCopy;
+  final ValueChanged<bool> onTrustChanged;
+  final bool showPeerJid;
 
   @override
   Widget build(BuildContext context) {
     final tg = context.tg;
     final l10n = context.l10n;
-    final done = _weShowed && _theyConfirmed;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        CheckboxListTile(
-          value: _weShowed,
-          onChanged: (v) => setState(() => _weShowed = v ?? false),
-          controlAffinity: ListTileControlAffinity.leading,
-          title: Text(l10n.verifyIShowedFingerprint),
-          subtitle: Text(
-            l10n.verifyTheyMustSeeSame,
-            style: TextStyle(fontSize: 12, color: tg.textSecondary),
-          ),
-        ),
-        CheckboxListTile(
-          value: _theyConfirmed,
-          onChanged: _weShowed
-              ? (v) => setState(() => _theyConfirmed = v ?? false)
-              : null,
-          controlAffinity: ListTileControlAffinity.leading,
-          title: Text(l10n.verifyTheyConfirmed),
-          subtitle: Text(
-            _weShowed
-                ? l10n.verifyReadGroupsAloud
-                : l10n.verifyTickPreviousFirst,
-            style: TextStyle(fontSize: 12, color: tg.textSecondary),
-          ),
-        ),
-        if (done)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-            child: Row(
-              children: [
-                Icon(Icons.verified_user, size: 18, color: tg.unreadBadge),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    l10n.verifiedInPerson,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: tg.unreadBadge,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
+    final stackLabel = row.omemo2
+        ? l10n.omemo2FingerprintShort
+        : l10n.omemoLegacyFingerprintShort;
+    final title = row.active
+        ? l10n.trustDeviceFingerprint(row.deviceId, stackLabel)
+        : l10n.omemoFingerprintInactive(
+            l10n.trustDeviceFingerprint(row.deviceId, stackLabel),
+          );
+    final muted = !row.active;
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      elevation: 0,
+      color: tg.pageBackground,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(color: tg.separator),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 4, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: row.trusted,
+              onChanged: onTrustChanged,
+              title: Text(
+                title,
+                style: TextStyle(
+                  color: muted ? tg.textSecondary : tg.textPrimary,
                 ),
-              ],
+              ),
+              subtitle: Text(
+                [
+                  if (showPeerJid) row.peerJid,
+                  if (!row.active) l10n.fingerprintInactiveSummary,
+                  row.trusted
+                      ? l10n.fingerprintTrustedSummary
+                      : l10n.fingerprintDistrustedSummary,
+                ].join('\n'),
+                style: TextStyle(fontSize: 12, color: tg.textSecondary),
+              ),
             ),
-          ),
-      ],
+            SelectableText(
+              formatFingerprint(row.fingerprint),
+              style: TextStyle(
+                fontFamily: 'monospace',
+                fontSize: 12,
+                color: muted ? tg.textSecondary : tg.textPrimary,
+                height: 1.5,
+              ),
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: onCopy,
+                icon: const Icon(Icons.copy, size: 16),
+                label: Text(l10n.copyFingerprint),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

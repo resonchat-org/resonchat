@@ -59,7 +59,7 @@ class PqIncomingManager extends XmppManagerBase {
       tagXmlns: omemo2Xmlns,
       // Ahead of the A-track handler, though the two never collide:
       // both use the tag <encrypted />, separated by namespace.
-      priority: 200,
+      priority: pqDecryptPriority,
       callback: _onIncoming,
     ),
   ];

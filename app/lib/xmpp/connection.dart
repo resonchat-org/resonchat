@@ -6,6 +6,7 @@
 // omemo_dart; this class owns lifecycle and event fan-out.
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:logging/logging.dart';
@@ -13,8 +14,10 @@ import 'package:moxlib/moxlib.dart';
 import 'package:moxxmpp/moxxmpp.dart';
 import 'package:omemo_dart/omemo_dart_axolotl.dart' as axolotl;
 
+import '../crypto/fingerprint.dart';
 import '../crypto/omemo/defacto.dart';
 import '../crypto/omemo/dual_track_manager.dart';
+import '../crypto/omemo/fingerprint_trust.dart';
 import '../crypto/omemo/track.dart';
 import '../crypto/omemo/track_resolver.dart';
 import '../crypto/omemo/protocol.dart';
@@ -272,8 +275,12 @@ class SendOutcome {
 }
 
 class XmppService {
-  XmppService({ShouldEncrypt? shouldEncrypt, this.deviceStore, this.bTrack})
-    : _shouldEncrypt = shouldEncrypt ?? ((_) async => false);
+  XmppService({
+    ShouldEncrypt? shouldEncrypt,
+    this.deviceStore,
+    this.bTrack,
+    this.fingerprintTrust,
+  }) : _shouldEncrypt = shouldEncrypt ?? ((_) async => false);
 
   final Logger _log = Logger('XmppService');
   ShouldEncrypt _shouldEncrypt;
@@ -285,6 +292,10 @@ class XmppService {
   /// B-track (PQ-OMEMO) support. Null disables the PQ track entirely and
   /// leaves the app on standard OMEMO.
   final BTrackManager? bTrack;
+
+  /// Per-fingerprint trust (monocles TrustKeys). Null → encrypt to every
+  /// reachable device (legacy behaviour).
+  final FingerprintTrustStore? fingerprintTrust;
 
   /// A B-track message we could not open, reported instead of swallowed.
   Stream<PqDecryptFailure> get pqFailures => _pqFailures.stream;
@@ -2597,12 +2608,195 @@ class XmppService {
   }
 
   /// Device list for [jid] across both OMEMO wire dialects.
+  ///
+  /// Skips fingerprints that are untrusted **or** inactive (monocles
+  /// `isTrustedAndActive` on send). Unknown fingerprints are remembered and
+  /// blindly trusted until the security page says otherwise (BTBV). A reliable
+  /// PEP read also updates local active/inactive bookkeeping.
   Future<List<int>?> _fetchDeviceListDialectAware(String jid) async {
     final resolved =
         await tracks?.resolveOmemoDevices(JID.fromString(jid)) ??
         (devices: const <int>{}, listReadable: false);
     if (!resolved.listReadable) return null;
-    return resolved.devices.toList();
+    final bare = JID.fromString(jid).toBare().toString();
+    final trust = fingerprintTrust;
+    await trust?.syncAnnouncedDevices(
+      jid: bare,
+      announcedIds: resolved.devices,
+      omemo2: false,
+    );
+    if (trust == null) return resolved.devices.toList();
+    final out = <int>[];
+    for (final id in resolved.devices) {
+      final fp = await _classicFingerprintFor(bare, id);
+      if (fp == null) continue;
+      if (await trust.mayEncryptToActive(bare, fp)) out.add(id);
+    }
+    return out;
+  }
+
+  Future<String?> _classicFingerprintFor(String bare, int deviceId) async {
+    final trust = fingerprintTrust;
+    final cached = await trust?.fingerprintOfDevice(
+      bare,
+      deviceId,
+      omemo2: false,
+    );
+    if (cached != null && cached.isNotEmpty) return cached;
+    final bundle = await tracks?.getOmemoBundle(JID.fromString(bare), deviceId);
+    if (bundle == null) return null;
+    final fp = bundle.fingerprint;
+    await trust?.rememberDevice(
+      jid: bare,
+      deviceId: deviceId,
+      fingerprint: fp,
+      omemo2: false,
+    );
+    return FingerprintTrustStore.normalize(fp);
+  }
+
+  /// Peer device fingerprints for the security / trust UI (classic + OMEMO2).
+  ///
+  /// Local [OmemoIdentities] first (including inactive). A live PEP refresh
+  /// updates fingerprints and active flags when the network is available.
+  Future<List<PeerFingerprintRow>> peerFingerprintRows(String bareJid) async {
+    final bare = JID.fromString(bareJid).toBare().toString();
+    final trust = fingerprintTrust;
+    // Refresh announced lists / bundles when we can; failures keep local rows.
+    try {
+      final caps = await capabilitiesFor(JID.fromString(bare));
+      if (caps != null) {
+        if (caps.classicReliable) {
+          await trust?.syncAnnouncedDevices(
+            jid: bare,
+            announcedIds: caps.peerDevices,
+            omemo2: false,
+          );
+          for (final id in caps.peerDevices) {
+            await _classicFingerprintFor(bare, id);
+          }
+        }
+        if (caps.pqReliable) {
+          await trust?.syncAnnouncedDevices(
+            jid: bare,
+            announcedIds: caps.pqDevices,
+            omemo2: true,
+          );
+          for (final id in caps.pqDevices) {
+            await _pqFingerprintFor(bare, id);
+          }
+        }
+      }
+    } catch (_) {
+      // Offline / timeout — fall through to persisted identities.
+    }
+
+    if (trust == null) return const [];
+    final stored = await trust.identitiesFor(bare);
+    final rows = <PeerFingerprintRow>[
+      for (final r in stored)
+        if (r.fingerprint.isNotEmpty && r.deviceId != 0)
+          PeerFingerprintRow(
+            peerJid: r.bareJid,
+            deviceId: r.deviceId,
+            fingerprint: r.fingerprint,
+            omemo2: r.omemo2,
+            trusted: r.trust != 'untrusted',
+            active: r.active,
+          ),
+    ];
+    rows.sort((a, b) {
+      final byActive = (b.active ? 1 : 0).compareTo(a.active ? 1 : 0);
+      if (byActive != 0) return byActive;
+      final byPeer = a.peerJid.compareTo(b.peerJid);
+      if (byPeer != 0) return byPeer;
+      final byStack = (a.omemo2 ? 1 : 0).compareTo(b.omemo2 ? 1 : 0);
+      if (byStack != 0) return byStack;
+      return a.deviceId.compareTo(b.deviceId);
+    });
+    return rows;
+  }
+
+  /// Fingerprints for a MUC: each occupant with a real JID (monocles trusts
+  /// per member, not the room address). Always skips [excludeBareJid] / our
+  /// own account so "their fingerprints" never lists this installation.
+  Future<List<PeerFingerprintRow>> groupFingerprintRows(
+    Iterable<String> memberBareJids, {
+    String? excludeBareJid,
+  }) async {
+    final skip = (excludeBareJid ?? myJid)?.toLowerCase();
+    final rows = <PeerFingerprintRow>[];
+    final seen = <String>{};
+    for (final raw in memberBareJids) {
+      final bare = JID.fromString(raw).toBare().toString();
+      if (skip != null && bare.toLowerCase() == skip) continue;
+      if (!seen.add(bare)) continue;
+      rows.addAll(await peerFingerprintRows(bare));
+    }
+    return rows;
+  }
+
+  /// Other devices on *our* bare JID (carbons recipients), excluding this
+  /// installation's classic / OMEMO2 ids — monocles EditAccount own-keys list.
+  Future<List<PeerFingerprintRow>> ownOtherDeviceFingerprintRows() async {
+    final bare = myJid;
+    if (bare == null) return const [];
+    final classicId = _omemo == null ? null : await _omemo!.getDeviceId();
+    final pqId = bTrack?.device?.id;
+    final all = await peerFingerprintRows(bare);
+    return [
+      for (final r in all)
+        if (r.omemo2
+            ? (pqId == null || r.deviceId != pqId)
+            : (classicId == null || r.deviceId != classicId))
+          r,
+    ];
+  }
+
+  Future<String?> _pqFingerprintFor(String bare, int deviceId) async {
+    final trust = fingerprintTrust;
+    final cached = await trust?.fingerprintOfDevice(
+      bare,
+      deviceId,
+      omemo2: true,
+    );
+    if (cached != null && cached.isNotEmpty) return cached;
+    final bundle = await tracks?.getPqBundle(JID.fromString(bare), deviceId);
+    if (bundle == null || !bundle.hasPqIdentity) return null;
+    final fp = hybridOmemo2Fingerprint(
+      bundle.ikSerialized,
+      Uint8List.fromList(base64Decode(bundle.pqIk)),
+    );
+    await trust?.rememberDevice(
+      jid: bare,
+      deviceId: deviceId,
+      fingerprint: fp,
+      omemo2: true,
+    );
+    return FingerprintTrustStore.normalize(fp);
+  }
+
+  /// Toggle trust for one peer fingerprint (security page switch).
+  Future<void> setPeerFingerprintTrust({
+    required String bareJid,
+    required String fingerprint,
+    required bool trusted,
+  }) async {
+    final store = fingerprintTrust;
+    if (store == null) return;
+    final bare = JID.fromString(bareJid).toBare().toString();
+    await store.setTrust(
+      bare,
+      fingerprint,
+      trusted ? FingerprintTrust.trusted : FingerprintTrust.untrusted,
+    );
+    // Refresh the classic encrypt target cache with the new trust filter.
+    final om = _omemo;
+    if (om != null) {
+      final filtered =
+          await _fetchDeviceListDialectAware(bare) ?? const <int>[];
+      await om.onDeviceListUpdate(bare, filtered);
+    }
   }
 
   /// Bundle for one device across both OMEMO wire dialects.

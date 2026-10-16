@@ -19,13 +19,14 @@ import 'package:omemo_dart/omemo_dart_omemo2.dart'
 
 import 'dart:typed_data';
 
+import '../crypto/fingerprint.dart';
 import '../crypto/omemo/bundle_codec.dart';
 import '../crypto/omemo/dual_track_manager.dart';
+import '../crypto/omemo/fingerprint_trust.dart';
 import '../crypto/omemo/message_codec.dart';
 import '../crypto/omemo/pq_message_layer.dart';
 import '../crypto/omemo/pq_session.dart';
 import '../crypto/omemo/protocol.dart';
-import '../crypto/fingerprint.dart';
 import '../crypto/pq/kem_wire.dart';
 import '../crypto/pq/mlkem_provider.dart';
 import '../crypto/pq_identity_store.dart';
@@ -51,6 +52,7 @@ class BTrackManager {
     required this.accountId,
     required this.pqIdentity,
     required this.deviceStore,
+    this.fingerprintTrust,
   });
 
   final Logger _log = Logger('BTrackManager');
@@ -62,6 +64,9 @@ class BTrackManager {
   final PqIdentityStore pqIdentity;
 
   final Omemo2DeviceStore deviceStore;
+
+  /// When set, skip devices whose fingerprint the user marked untrusted.
+  final FingerprintTrustStore? fingerprintTrust;
 
   BTrackSession? _session;
 
@@ -259,7 +264,20 @@ class BTrackManager {
     for (final jid in peerJids) {
       final bare = JID.fromString(jid).toBare().toString();
       if (!seen.add(bare)) continue;
-      devices.addAll(await tracks().loadPqDevices(JID.fromString(bare)));
+      final peer = JID.fromString(bare);
+      final listed = await tracks().fetchPqDeviceIds(peer);
+      if (listed.listReadable) {
+        await fingerprintTrust?.syncAnnouncedDevices(
+          jid: bare,
+          announcedIds: listed.devices,
+          omemo2: true,
+        );
+      }
+      for (final device in await tracks().loadPqDevices(peer)) {
+        if (await _mayEncryptToPqDevice(bare, device)) {
+          devices.add(device);
+        }
+      }
     }
     if (devices.isEmpty) return null;
 
@@ -268,6 +286,23 @@ class BTrackManager {
       recipients: devices,
     );
     return outgoing?.stanza;
+  }
+
+  /// BTBV + per-fingerprint distrust (monocles send gate).
+  Future<bool> _mayEncryptToPqDevice(String bare, PqDevice device) async {
+    final trust = fingerprintTrust;
+    if (trust == null) return true;
+    final pqIk = device.peerPqIdentityKey;
+    if (pqIk == null || pqIk.isEmpty) return true;
+    final ik = await device.identityPublicSerialized();
+    final fp = hybridOmemo2Fingerprint(ik, pqIk);
+    await trust.rememberDevice(
+      jid: bare,
+      deviceId: device.id,
+      fingerprint: fp,
+      omemo2: true,
+    );
+    return trust.mayEncryptToActive(bare, fp);
   }
 
   /// Decrypts an inbound PQ message; null when it is not for us (a different

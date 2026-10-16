@@ -336,6 +336,7 @@
   "membersAndOnlineCount": "{members} 名成员，{online} 人在线",
   "editSubject": "编辑群聊主题",
   "subjectHint": "主题",
+  "subjectDismiss": "关闭主题",
   "sendMessage": "发消息",
   "privateChat": "私聊",
   "privateMessageInRoom": "群内私聊",
@@ -427,7 +428,6 @@
   "searchInChat": "在此聊天中搜索",
   "appearance": "外观",
   "pinnedMessages": "置顶消息",
-  "loadHistoryMam": "加载历史（MAM）",
   "messageNotSentSnack": "消息未发送，仍保留在输入框中。",
   "couldNotLoadHistory": "无法加载历史（服务器可能不支持 MAM）",
   "loadedArchivedMessages": "已加载 {count} 条归档消息",
@@ -524,14 +524,6 @@
       "label": { "type": "String" }
     }
   },
-  "devicesThatCanRead": "可阅读的设备：{count}",
-  "@devicesThatCanRead": {
-    "placeholders": {
-      "count": { "type": "int" }
-    }
-  },
-  "noDeviceListYet": "尚未解析到设备列表。",
-  "deviceListDecidesSending": "消息必须能被所有这些设备阅读，因此这决定了能否发送。",
   "encryptionDetails": "加密详情",
   "fingerprintAndVerification": "指纹与验证",
   "actions": "操作",
@@ -552,16 +544,8 @@
   "protectedStandard": "端到端加密（标准 OMEMO，可与其他应用互通）。",
   "protectedNone": "按你的选择以明文发送。",
 
-  "thisChat": "此会话",
-  "youChoseTrack": "你选择了 {label}",
-  "@youChoseTrack": {
-    "placeholders": {
-      "label": { "type": "String" }
-    }
-  },
   "devices": "设备",
   "omemoEncryption": "OMEMO 加密",
-  "omemoFingerprint": "OMEMO 指纹",
   "omemo2Fingerprint": "PQ OMEMO2 指纹",
   "omemoLegacyFingerprint": "旧版 OMEMO 指纹",
   "omemo2FingerprintShort": "OMEMO2",
@@ -589,43 +573,41 @@
       "id": { "type": "String" }
     }
   },
+  "otherOwnDevices": "其他设备",
+  "otherOwnDevicesIntro": "你账号下其他已公告的 OMEMO 设备指纹。它们可通过 Carbons 收到你消息的副本。",
+  "noOtherOwnDevices": "尚未公告其他设备。",
+  "ownOtherDeviceLabel": "设备 {id}（{stack}）",
+  "@ownOtherDeviceLabel": {
+    "placeholders": {
+      "id": { "type": "int" },
+      "stack": { "type": "String" }
+    }
+  },
   "deviceCountedForCarbons": "计为接收方，以便 Carbons 生效",
-  "recipientDevicesCount": "对方设备：{count}",
-  "@recipientDevicesCount": {
-    "placeholders": {
-      "count": { "type": "int" }
-    }
-  },
-  "nonePublishedYet": "尚未发布任何设备",
-  "postQuantumDeviceCount": "后量子：{count} 台设备",
-  "@postQuantumDeviceCount": {
-    "placeholders": {
-      "count": { "type": "int" }
-    }
-  },
-  "noPqBundlePublished": "没有设备发布 PQ bundle",
-  "pqUpgradeAutomatic": "所有设备都支持后会自动升级",
   "verifyIdentity": "验证身份",
   "verifyIdentityIntro": "与对方当面或在你已信任的通话中核对。这能证明你在与正确的设备通信，且中间没有人窃听。一次比对同时覆盖两条加密轨。",
   "copyFingerprint": "复制指纹",
   "fingerprintCopied": "已复制指纹",
-  "verificationStatus": "验证状态",
-  "verifyIShowedFingerprint": "我已向对方出示我的指纹",
-  "verifyTheyMustSeeSame": "对方屏幕上必须看到相同的数字",
-  "verifyTheyConfirmed": "对方确认与其指纹一致",
-  "verifyReadGroupsAloud": "勾选前请逐组大声核对",
-  "verifyTickPreviousFirst": "请先勾选上一项",
-  "verifiedInPerson": "已当面验证。密钥变更时将提醒你。",
-  "trackUsableBlocked": "{consequence} 在你另行选择之前，不会通过 {label} 发送任何内容。",
-  "@trackUsableBlocked": {
+  "theirFingerprints": "对方指纹",
+  "theirFingerprintsIntro": "每台设备有独立指纹。关闭你不认识的设备的信任后，消息将不再加密发给该设备；其余已信任设备不受影响。",
+  "noPeerFingerprintsYet": "尚无对方设备指纹。拉取其 OMEMO 设备列表与 bundle 后会显示。",
+  "couldNotLoadPeerFingerprints": "无法加载对方指纹。",
+  "trustDeviceFingerprint": "设备 {id}（{stack}）",
+  "@trustDeviceFingerprint": {
     "placeholders": {
-      "consequence": { "type": "String" },
+      "id": { "type": "int" },
+      "stack": { "type": "String" }
+    }
+  },
+  "fingerprintTrustedSummary": "已信任 — 该设备可读取加密消息",
+  "fingerprintDistrustedSummary": "未信任 — 加密发送时会跳过",
+  "fingerprintInactiveSummary": "未活动 — 已不在对方公告的设备列表中",
+  "omemoFingerprintInactive": "{label} · 已不再使用",
+  "@omemoFingerprintInactive": {
+    "placeholders": {
       "label": { "type": "String" }
     }
   },
-  "trackUsablePq": "使用后量子密钥进行端到端加密",
-  "trackUsableStandard": "端到端加密（标准 OMEMO，可与其他应用互通）",
-  "trackUsableNone": "按你的选择以明文发送",
 
   "notDelivered": "未送达：{reason}",
   "@notDelivered": {

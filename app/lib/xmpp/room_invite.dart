@@ -49,8 +49,8 @@ class RoomInviteManager extends XmppManagerBase {
   List<StanzaHandler> getIncomingStanzaHandlers() => [
     StanzaHandler(
       stanzaTag: 'message',
-      // After MUC (-99), before MessageManager (-100).
-      priority: MessageManager.messageHandlerPriority + 1,
+      // Same band as other message extensions: before MessageManager.
+      priority: messageExtensionPriority,
       callback: _onMessage,
     ),
   ];

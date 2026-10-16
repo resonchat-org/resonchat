@@ -379,6 +379,41 @@ class Meta extends Table {
   Set<Column> get primaryKey => {key};
 }
 
+/// Persisted peer / own-other OMEMO identities (monocles `identities`).
+///
+/// One row per (bare JID, fingerprint). Trust and active/inactive live here so
+/// the security UI and encrypt path do not depend on a live PEP fetch. Device
+/// list sync flips [active]; missing from the announced list → inactive, never
+/// deleted (so the user can still see and distrust old keys).
+///
+/// Not sealed private material — public fingerprint + local trust decision —
+/// so it belongs in the account DB rather than the keystore blob.
+class OmemoIdentities extends Table {
+  /// Bare JID that published this identity key.
+  TextColumn get bareJid => text()();
+
+  /// Lowercase hex fingerprint without whitespace (classic IK or hybrid OMEMO2).
+  TextColumn get fingerprint => text()();
+
+  /// PEP device id last associated with this fingerprint.
+  IntColumn get deviceId => integer()();
+
+  /// True for the PQ OMEMO2 stack; false for legacy A-track.
+  BoolColumn get omemo2 => boolean()();
+
+  /// `trusted` or `untrusted`. Unseen fingerprints are inserted as trusted (BTBV).
+  TextColumn get trust => text()();
+
+  /// Currently present on the peer's announced device list for this stack.
+  BoolColumn get active => boolean()();
+
+  /// Epoch ms when this row last transitioned inactive → active; 0 if never.
+  IntColumn get lastActivation => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {bareJid, fingerprint};
+}
+
 @DriftDatabase(
   tables: [
     Chats,
@@ -391,6 +426,7 @@ class Meta extends Table {
     PendingCorrections,
     Reactions,
     Meta,
+    OmemoIdentities,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -398,13 +434,15 @@ class AppDatabase extends _$AppDatabase {
 
   @override
   // Keep in sync with [kAccountSchemaVersion] in database_connection_io.dart.
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (m) async => m.createAll(),
     onUpgrade: (m, from, to) async {
-      // Intentionally empty — rebuild migrations from here when needed.
+      if (from < 2) {
+        await m.createTable(omemoIdentities);
+      }
     },
   );
 
@@ -688,6 +726,11 @@ class AppDatabase extends _$AppDatabase {
     await (delete(meta)..where((m) => m.key.equals(key))).go();
   }
 
+  /// Meta rows whose key starts with [prefix] (SQL `LIKE 'prefix%'`).
+  Future<List<MetaData>> metaEntriesWithPrefix(String prefix) {
+    return (select(meta)..where((m) => m.key.like('$prefix%'))).get();
+  }
+
   Future<String?> rosterVersion() async {
     final row = await (select(
       meta,
@@ -905,6 +948,22 @@ class AppDatabase extends _$AppDatabase {
     await deleteMetaValue('draft:$chatJid');
     if (trimmed.isEmpty) return;
     await setMetaValue('draft:$chatJid', text!);
+  }
+
+  /// MUC subject text the user dismissed after reading, or null.
+  ///
+  /// Compared to the live subject: equal → hide the floating banner; different
+  /// (or missing) → show again until they open the detail and dismiss.
+  Future<String?> mucSubjectRead(String chatJid) =>
+      metaValue('muc_subject_read:$chatJid');
+
+  Future<void> setMucSubjectRead(String chatJid, String subject) async {
+    final trimmed = subject.trim();
+    if (trimmed.isEmpty) {
+      await deleteMetaValue('muc_subject_read:$chatJid');
+      return;
+    }
+    await setMetaValue('muc_subject_read:$chatJid', trimmed);
   }
 
   /// Pins a message, or unpins it when already pinned.

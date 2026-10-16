@@ -1,8 +1,8 @@
 // Copyright (C) 2026 resonchat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// Room profile page — description, subject/topic, notification mode, members,
-// leave/destroy.
+// Room profile page — description, subject/topic, encryption, notifications,
+// members, leave/destroy. Shared blocks live in chat_profile_sections.dart.
 //
 // Description (`muc#roominfo_description` / `muc#roomconfig_roomdesc`) is not
 // the subject: Conversations `Room.of` reads description from disco; subject is
@@ -19,12 +19,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../account/resolve.dart';
 import '../../l10n/l10n.dart';
 import '../../state/providers.dart';
-import '../../store/database.dart';
 import '../../xmpp/avatar.dart';
 import '../../xmpp/connection.dart';
 import '../../xmpp/local_nickname.dart';
 import '../../xmpp/muc.dart';
-import '../chats/notify_mode_sheet.dart';
+import '../chat/chat_profile_sections.dart';
 import '../contact_avatar.dart';
 import '../theme.dart';
 import 'occupant_actions.dart';
@@ -528,30 +527,8 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
                       : null,
                 ),
 
-                _section(tg, l10n.notificationSettings),
-                if (chatRow != null)
-                  ListTile(
-                    leading: Icon(
-                      notifyModeIcon(
-                        chatNotifyModeOf(
-                          muted: chatRow.muted,
-                          alwaysNotify: chatRow.alwaysNotify,
-                        ),
-                      ),
-                    ),
-                    title: Text(l10n.notificationSettings),
-                    subtitle: Text(
-                      notifyModeLabel(
-                        l10n,
-                        chatNotifyModeOf(
-                          muted: chatRow.muted,
-                          alwaysNotify: chatRow.alwaysNotify,
-                        ),
-                      ),
-                    ),
-                    onTap: () =>
-                        openChatNotifySettings(context, widget.chatJid),
-                  ),
+                ChatEncryptionSection(chatJid: widget.chatJid),
+                ChatNotifySection(chatJid: widget.chatJid),
 
                 _section(
                   tg,
@@ -596,6 +573,7 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
                 ],
 
                 _section(tg, l10n.actions),
+                ChatHistoryActions(chatJid: widget.chatJid),
                 if (caps?.canInvite ?? false)
                   ListTile(
                     leading: const Icon(Icons.person_add_outlined),

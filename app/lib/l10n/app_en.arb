@@ -372,6 +372,7 @@
   },
   "editSubject": "Edit group chat subject",
   "subjectHint": "Subject",
+  "subjectDismiss": "Dismiss subject",
   "sendMessage": "Send message",
   "privateChat": "Private chat",
   "privateMessageInRoom": "Private message in room",
@@ -478,7 +479,6 @@
   "searchInChat": "Search in this chat",
   "appearance": "Appearance",
   "pinnedMessages": "Pinned messages",
-  "loadHistoryMam": "Load history (MAM)",
   "messageNotSentSnack": "Message not sent. It is still in the box.",
   "couldNotLoadHistory": "Could not load history (server may not support MAM)",
   "loadedArchivedMessages": "Loaded {count} archived message(s)",
@@ -636,14 +636,6 @@
       "label": { "type": "String" }
     }
   },
-  "devicesThatCanRead": "Devices that can read it: {count}",
-  "@devicesThatCanRead": {
-    "placeholders": {
-      "count": { "type": "int" }
-    }
-  },
-  "noDeviceListYet": "No device list has been resolved yet.",
-  "deviceListDecidesSending": "A message must be readable by all of them, so this is what decides whether it can be sent at all.",
   "encryptionDetails": "Encryption details",
   "fingerprintAndVerification": "Fingerprint and verification",
   "actions": "Actions",
@@ -664,16 +656,8 @@
   "protectedStandard": "End-to-end encrypted (standard OMEMO, works with other apps).",
   "protectedNone": "Sent in the clear, as you chose.",
 
-  "thisChat": "This chat",
-  "youChoseTrack": "You chose {label}",
-  "@youChoseTrack": {
-    "placeholders": {
-      "label": { "type": "String" }
-    }
-  },
   "devices": "Devices",
   "omemoEncryption": "OMEMO encryption",
-  "omemoFingerprint": "OMEMO fingerprint",
   "omemo2Fingerprint": "PQ OMEMO2 fingerprint",
   "omemoLegacyFingerprint": "Legacy OMEMO fingerprint",
   "omemo2FingerprintShort": "OMEMO2",
@@ -701,43 +685,41 @@
       "id": { "type": "String" }
     }
   },
+  "otherOwnDevices": "Other devices",
+  "otherOwnDevicesIntro": "Fingerprints of your other announced OMEMO devices. They can receive copies of your messages (Carbons).",
+  "noOtherOwnDevices": "No other devices announced yet.",
+  "ownOtherDeviceLabel": "Device {id} ({stack})",
+  "@ownOtherDeviceLabel": {
+    "placeholders": {
+      "id": { "type": "int" },
+      "stack": { "type": "String" }
+    }
+  },
   "deviceCountedForCarbons": "Counted as a recipient so Carbons work",
-  "recipientDevicesCount": "Recipient devices: {count}",
-  "@recipientDevicesCount": {
-    "placeholders": {
-      "count": { "type": "int" }
-    }
-  },
-  "nonePublishedYet": "None published yet",
-  "postQuantumDeviceCount": "Post-quantum: {count} device(s)",
-  "@postQuantumDeviceCount": {
-    "placeholders": {
-      "count": { "type": "int" }
-    }
-  },
-  "noPqBundlePublished": "No device publishes a PQ bundle",
-  "pqUpgradeAutomatic": "Upgrade is automatic once every device does",
   "verifyIdentity": "Verify identity",
   "verifyIdentityIntro": "Compare this with the other person, in person or over a call you already trust. It proves you are talking to the right device and that nobody is in the middle. One comparison covers both encryption tracks.",
   "copyFingerprint": "Copy fingerprint",
   "fingerprintCopied": "Fingerprint copied",
-  "verificationStatus": "Verification status",
-  "verifyIShowedFingerprint": "I showed my fingerprint to them",
-  "verifyTheyMustSeeSame": "They must see the same digits on their own screen",
-  "verifyTheyConfirmed": "They confirmed theirs matches",
-  "verifyReadGroupsAloud": "Read every group out loud before ticking this",
-  "verifyTickPreviousFirst": "Tick the previous box first",
-  "verifiedInPerson": "Verified in person. Key changes will now warn you.",
-  "trackUsableBlocked": "{consequence} Nothing is sent on {label} until you choose otherwise.",
-  "@trackUsableBlocked": {
+  "theirFingerprints": "Their fingerprints",
+  "theirFingerprintsIntro": "Each device has its own fingerprint. Turn trust off for a device you do not recognise — messages will no longer be encrypted to it. Other trusted devices keep working.",
+  "noPeerFingerprintsYet": "No peer device fingerprints yet. They appear after their OMEMO device list and bundles are fetched.",
+  "couldNotLoadPeerFingerprints": "Could not load peer fingerprints.",
+  "trustDeviceFingerprint": "Device {id} ({stack})",
+  "@trustDeviceFingerprint": {
     "placeholders": {
-      "consequence": { "type": "String" },
+      "id": { "type": "int" },
+      "stack": { "type": "String" }
+    }
+  },
+  "fingerprintTrustedSummary": "Trusted — this device can read encrypted messages",
+  "fingerprintDistrustedSummary": "Not trusted — skipped when encrypting",
+  "fingerprintInactiveSummary": "Inactive — no longer on their announced device list",
+  "omemoFingerprintInactive": "{label} · no longer in use",
+  "@omemoFingerprintInactive": {
+    "placeholders": {
       "label": { "type": "String" }
     }
   },
-  "trackUsablePq": "End-to-end encrypted with post-quantum keys",
-  "trackUsableStandard": "End-to-end encrypted (standard OMEMO, works with other apps)",
-  "trackUsableNone": "Sent in the clear, as you chose",
 
   "notDelivered": "Not delivered: {reason}",
   "@notDelivered": {

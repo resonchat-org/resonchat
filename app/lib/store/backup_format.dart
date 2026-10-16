@@ -189,6 +189,9 @@ enum BackupTable {
   subscriptionRequests,
   pendingCorrections,
   reactions,
+
+  /// Peer fingerprints + trust/active (public; not sealed private keys).
+  omemoIdentities,
   meta;
 
   /// The SQLite table name, which is what the archive uses.
@@ -205,6 +208,7 @@ enum BackupTable {
     subscriptionRequests => 'subscription_requests',
     pendingCorrections => 'pending_corrections',
     reactions => 'reactions',
+    omemoIdentities => 'omemo_identities',
     meta => 'meta',
   };
 }
@@ -355,6 +359,18 @@ const Map<BackupTable, BackupTableSpec> kBackupTables = {
     BackupColumn('reactor', BackupColumnKind.text),
     BackupColumn('reacted_at', BackupColumnKind.stamp),
   ]),
+  // Public fingerprints and local trust/active decisions — not sealed private
+  // keys. Restoring them keeps verification state across reinstalls the way
+  // monocles keeps the identities table with the account DB.
+  BackupTable.omemoIdentities: BackupTableSpec(BackupTable.omemoIdentities, [
+    BackupColumn('bare_jid', BackupColumnKind.text),
+    BackupColumn('fingerprint', BackupColumnKind.text),
+    BackupColumn('device_id', BackupColumnKind.integer),
+    BackupColumn('omemo2', BackupColumnKind.flag),
+    BackupColumn('trust', BackupColumnKind.text),
+    BackupColumn('active', BackupColumnKind.flag),
+    BackupColumn('last_activation', BackupColumnKind.integer),
+  ]),
   // meta is the one table that cannot be dumped whole, because it is a
   // key/value bag and not a shape. `OmemoDeviceStore` saves the sealed identity
   // key to "a meta-style row", so copying this table wholesale copies the key
@@ -373,7 +389,7 @@ const Map<BackupTable, BackupTableSpec> kBackupTables = {
       BackupColumn('key', BackupColumnKind.text),
       BackupColumn('value', BackupColumnKind.text),
     ],
-    metaKeyPrefixes: ['draft:', 'plaintext_ack:'],
+    metaKeyPrefixes: ['draft:', 'plaintext_ack:', 'muc_subject_read:'],
   ),
 };
 

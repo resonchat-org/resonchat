@@ -564,6 +564,31 @@ Future<void> saveDraft(WidgetRef ref, String chatKey, String? text) async {
       ref.read(draftRevisionProvider) + 1;
 }
 
+/// Live MUC subject text previously marked read (dismissed) for [chatKey].
+final mucSubjectReadProvider = FutureProvider.family<String?, String>((
+  ref,
+  chatKey,
+) {
+  ref.watch(mucSubjectReadRevisionProvider);
+  final r = resolveChatKey(chatKey);
+  return r.session.db.mucSubjectRead(r.jid);
+});
+
+final mucSubjectReadRevisionProvider = StateProvider<int>((ref) => 0);
+
+/// Marks [subject] as read so the floating topic banner stays hidden until it
+/// changes.
+Future<void> markMucSubjectRead(
+  WidgetRef ref,
+  String chatKey,
+  String subject,
+) async {
+  final r = resolveChatKey(chatKey);
+  await r.session.db.setMucSubjectRead(r.jid, subject);
+  ref.read(mucSubjectReadRevisionProvider.notifier).state =
+      ref.read(mucSubjectReadRevisionProvider) + 1;
+}
+
 /// Stanza ids pinned in [chatKey], most recent first.
 final pinnedIdsProvider = StreamProvider.family<List<String>, String>((
   ref,

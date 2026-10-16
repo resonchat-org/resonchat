@@ -16,6 +16,7 @@ import 'package:moxxmpp/moxxmpp.dart' show ConferenceBookmark, PresenceShow;
 import '../net/app_network.dart';
 import '../xmpp/connect_failure.dart';
 import '../crypto/omemo/dual_track_manager.dart';
+import '../crypto/omemo/fingerprint_trust.dart';
 import '../store/account_store.dart';
 import '../store/database.dart';
 import '../store/omemo_device_store.dart';
@@ -203,14 +204,20 @@ class AccountHub extends ChangeNotifier {
           db.setMetaValue('omemo2_device_blob', base64Encode(bytes)),
       deleteSecret: () => db.deleteMetaValue('omemo2_device_blob'),
     );
+    final fingerprintTrust = FingerprintTrustStore(db);
     final bTrack = BTrackManager(
       tracks: () => xmpp.tracks!,
       pubsubOf: () => xmpp.pubsub,
       accountId: accountId,
       pqIdentity: deviceStore.pqIdentity,
       deviceStore: omemo2Store,
+      fingerprintTrust: fingerprintTrust,
     );
-    xmpp = XmppService(deviceStore: deviceStore, bTrack: bTrack);
+    xmpp = XmppService(
+      deviceStore: deviceStore,
+      bTrack: bTrack,
+      fingerprintTrust: fingerprintTrust,
+    );
     return xmpp;
   }
 
