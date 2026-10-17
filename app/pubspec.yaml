@@ -1,7 +1,7 @@
 name: resonchat
 description: Flutter XMPP client with dual-track OMEMO (standard + post-quantum).
 publish_to: none
-version: 0.0.3
+version: 0.0.4
 
 environment:
   sdk: ^3.13.4
