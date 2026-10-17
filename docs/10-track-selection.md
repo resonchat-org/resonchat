@@ -18,7 +18,7 @@
 
 | 轨道 | 简写 | 图标 | 含义 |
 |---|---|---|---|
-| 后量子 PQ-OMEMO | `PO` | 护盾带对钩 | 自研混合轨道，ResonChat 之间可读 |
+| 后量子 PQ-OMEMO | `O2` | 护盾带对钩 | 混合轨道（PQXDH + SPQR），ResonChat 之间可读 |
 | 标准 OMEMO | `OM` | 护盾 | Conversations/axolotl，第三方客户端可读 |
 | 无加密 | `NO` | 叉 | 明文 |
 
@@ -58,7 +58,7 @@
 |---|---|
 | `eu.siacs.conversations.axolotl` | **OM**（Conversations 实际发送） |
 | `urn:xmpp:omemo:1` / `urn:xmpp:omemo:2` | OM |
-| `urn:xmpp:pomemo:0` | **PO** |
+| `urn:monocles:omemo-pq:1` | **O2** |
 | 无 `<encryption>` 元素 | NO |
 
 未知 namespace 落 `NO`，不崩溃。
@@ -125,11 +125,11 @@ desired = pq
 
 ### 9.1 顶栏 EncBadge → 协议选择弹层
 
-三行 PO / OM / NO；底部「设为全局默认」。实现见 `track_dialogs.dart`。
+三行 O2 / OM / NO；底部「设为全局默认」。实现见 `track_dialogs.dart`。
 
 ### 9.2 气泡下方标识
 
-`PO` / `OM` / `NO`，与时间戳同行。入站解不开时标签仍反映对方实际使用的协议（EME），并保留占位符。
+`O2` / `OM` / `NO`，与时间戳同行。入站解不开时标签仍反映对方实际使用的协议（EME），并保留占位符。
 
 ### 9.3 加密信息页
 
@@ -146,7 +146,7 @@ desired = pq
 > 任何情况下都不得出现「标签标着 PQ 而实际发出的是 OM」这类不一致；发送失败
 > 就不发送。
 
-其余：不变量 2（PQ root key 含 ML-KEM）、3（合法 XML）、4（A 轨指纹可跨客户端核对）、5（私钥不落明文）。
+其余：不变量 2（PQ root key 含 ML-KEM，棘轮含 SPQR）、3（合法 XML）、4（A 轨指纹可跨客户端核对）、5（私钥不落明文）。
 
 ## 11. 测试
 
@@ -156,10 +156,10 @@ desired = pq
 | 2 | EME 映射全覆盖；未知 namespace 落 `NO` 不崩溃 |
 | 3 | 会话覆盖优先于全局默认 |
 | 4 | PQ 发送失败 → 不发 + 报错 |
-| 5 | 入站 EME 说是 PQ 但解不开 → 保留 `PO` 标签 + 占位符 |
+| 5 | 入站 EME 说是 PQ 但解不开 → 保留 `O2` 标签 + 占位符 |
 | 6 | 能力变化只提示、不改设置 |
 | 7 | 无加密的确认状态按会话记忆 |
-| 8 | 选定 PO/OM 但有设备不支持 → 阻断直至用户改选 |
+| 8 | 选定 O2/OM 但有设备不支持 → 阻断直至用户改选 |
 | 9 | `Meta` `global_track` + `chats.track_override` 读写往返 |
 
 覆盖见 `app/test/crypto/track_*.dart` 等。

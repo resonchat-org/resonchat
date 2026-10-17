@@ -12,13 +12,34 @@ ResonChat is early and iterating quickly. **M0–M5 are complete, M6 is in progr
 
 The encryption is a custom post-quantum extension to OMEMO and has **not been audited by a third party**. Do not rely on it for high-sensitivity use, and do not claim that it is secure.
 
+## Install
+
+Android builds are attached to the [GitHub Releases](https://github.com/resonchat-org/resonchat/releases) page. [Obtainium](https://github.com/ImranR98/Obtainium) installs straight from there and keeps the app updated:
+
+[![Get it on Obtainium](https://img.shields.io/badge/Get_it_on-Obtainium-3DDC84?logo=android&logoColor=white)](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22org.resonchat.resonchat%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fresonchat-org%2Fresonchat%22%2C%22author%22%3A%22resonchat-org%22%2C%22name%22%3A%22ResonChat%22%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Atrue%2C%5C%22fallbackToOlderReleases%5C%22%3Atrue%2C%5C%22autoApkFilterByArch%5C%22%3Atrue%7D%22%7D)
+
+The link carries the whole configuration, so no directory listing is involved: it adds ResonChat following the **newest release including pre-releases** (the developer previews below), and lets Obtainium pick the `arm64` or `x86_64` APK for the device automatically.
+
+<details>
+<summary>The config the link adds, and how to add it by hand</summary>
+
+```json
+{"id":"org.resonchat.resonchat","url":"https://github.com/resonchat-org/resonchat","author":"resonchat-org","name":"ResonChat","additionalSettings":"{\"includePrereleases\":true,\"fallbackToOlderReleases\":true,\"autoApkFilterByArch\":true}"}
+```
+
+Adding `https://github.com/resonchat-org/resonchat` as an Obtainium source by hand and turning on **Include pre-releases** and **Auto-select by architecture** is equivalent.
+
+</details>
+
+Every release so far is a **developer preview** signed with the debug keystore. If you have a locally built APK installed, uninstall it first — a locally built APK and a release APK share the package name (`org.resonchat.resonchat`) but not the signing key, so Android will refuse to replace one with the other.
+
 ## Features
 
 | Feature | Status | Notes |
 |---|---|---|
 | Dual-track end-to-end encryption (A track) | Done | Standard OMEMO (XEP-0384), interoperable with Conversations / Moxxy / Dino. Verified end to end against a real Conversations 2.20.4 |
-| Dual-track end-to-end encryption (B track) | Done | PQ-OMEMO (X25519 + ML-KEM-1024 hybrid, PQXDH). Sent when the user picks PO and the peer's devices are reachable. Cross-tested between two accounts on different servers |
-| Track selection (PO / OM / NO) | Done | The user's choice plus a `TrackResolver` feasibility decision — see [docs/10](docs/10-track-selection.md) |
+| Dual-track end-to-end encryption (B track) | Done | PQ-OMEMO (X25519 + ML-KEM-1024 hybrid, PQXDH + SPQR). Sent when the user picks O2 and the peer's devices are reachable. Cross-tested between two accounts on different servers |
+| Track selection (O2 / OM / NO) | Done | The user's choice plus a `TrackResolver` feasibility decision — see [docs/10](docs/10-track-selection.md) |
 | Zero server changes / zero new XEPs | Done | Reuses existing standards (PEP, EME, …) |
 | Encrypted database at rest | Done | SQLCipher, with the key protected by the Android Keystore |
 | Standard protocol extensions | Done | MAM (XEP-0313) history sync, delivery receipts (XEP-0184), chat states (XEP-0085), carbons (XEP-0280) |
@@ -34,7 +55,7 @@ The encryption is a custom post-quantum extension to OMEMO and has **not been au
 | M0 Project skeleton | Done | Monorepo skeleton, upstream forks wired in, CI, drift storage, PQXDH and dual-track codecs, a buildable Android debug APK |
 | M1 Communication baseline | Done | SASL SCRAM-SHA-256, resource binding, roster (RFC 6121 versioning), plaintext send/receive, MAM history sync, carbons, message storage |
 | M2 Standard OMEMO | Done | **Interoperability accepted against a real Conversations 2.20.4** (messages we encrypt are decrypted and shown by a third-party client) |
-| M3 PQ core | Done | ML-KEM through pure-Dart `pqcrypto`; PQXDH/SPQR through `libsignal`; **cross-tested between two accounts on different servers** (conversations.im and jabber.fr); the PQ bundle is really published to the server |
+| M3 PQ core | Done | ML-KEM / PQXDH / SPQR through native `libsignal`; pure-Dart `pqcrypto` for ML-DSA-87 and SHA3-512; **cross-tested between two accounts on different servers** (conversations.im and jabber.fr); the PQ bundle is really published to the server |
 | M4 Negotiation and send policy | Done | Capability service, user track choice and `TrackResolver` (docs/10); PEP changes invalidate the cache |
 | M5 Storage and protection | Done | OMEMO device keys sealed through the Keystore, SQLCipher-encrypted database, a chat-history backup format. **Key backup/restore and a "never store plaintext" option are not done** |
 | M6 UI | In progress | Per [docs/05](docs/05-ui-telegram.md) |

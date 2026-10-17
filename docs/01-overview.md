@@ -6,7 +6,7 @@
 |---|---|
 | G1 | 基于 Flutter 的 XMPP 客户端，**Android 优先**，并提供 Web 与 Linux AppImage 构建路径 |
 | G2 | 与 **标准 OMEMO 客户端**（Conversations / Moxxy / Dino / Gajim）完全互通 |
-| G3 | 在双方均为本客户端且用户选定后量子轨道时，使用**后量子混合加密**（X25519 + ML-KEM-768） |
+| G3 | 在双方均为本客户端且用户选定后量子轨道时，使用**后量子混合加密**（X25519 + ML-KEM-1024；握手 PQXDH、棘轮 SPQR） |
 | G4 | **不修改服务端**、**不引入新 XEP**、**不依赖服务端特殊支持** |
 | G5 | UI 观感与 **Telegram Android 高度一致** |
 | G6 | 以 **GPLv3** 开源发布 |
@@ -25,7 +25,7 @@
 | C1 | 服务端不可改 | 加密负载必须是服务端可存储的不透明 XML |
 | C2 | 不加 XEP | 能力协商必须复用既有 XEP（PEP 0163/0060、EME 0380、disco 0030） |
 | C3 | 必须互通 | 标准 OMEMO 轨道必须完整、正确 |
-| C4 | 后量子 | 初始密钥协商必须混合 ML-KEM-768 |
+| C4 | 后量子 | 初始密钥协商必须混合 ML-KEM-1024；棘轮必须并行运行 SPQR（libsignal v0.105.0 默认行为） |
 | C5 | 移动端优先 | 密码学实现需适配 Android NDK/ABI |
 
 ## 4. 关键决策记录（ADR）
@@ -35,10 +35,11 @@
 - **理由**：C3（互通）与 C4（后量子）在逻辑上互斥，除非分层。标准客户端只认 Conversations/axolotl 线格式。
 - **后果**：实现与测试成本约翻倍；需要一套健壮的能力查询、提示与标签一致性规则。
 
-### ADR-002：PQ 仅用于初始握手（PQXDH），棘轮保持经典
-- **决定**：ML-KEM 只在会话建立时使用；Double Ratchet 的 DH 棘轮继续用 X25519。
-- **理由**：与 Signal PQXDH 一致；会话密钥的保密性由初始 PQ 秘密保护，后续棘轮提供前向保密。避免每条消息都携带 1 KB 的 KEM 密文。
-- **后果**：首条消息体积增大；需要保证 PQ 秘密确实混入 root key。
+### ADR-002：PQ 覆盖握手与棘轮（PQXDH + SPQR）
+- **决定**：会话建立用 PQXDH（X25519 + ML-KEM-1024）派生 root/chain key；此后每条消息的消息密钥**同时**混入 SPQR（Signal Sparse Post-Quantum Ratchet，ML-KEM Braid）的输出。经典 DH 棘轮仍为 X25519，两者并行。
+- **理由**：与 Signal 当前协议一致。B 轨会话直接使用上游 `signalapp/libsignal` v0.105.0，其 Double Ratchet 无条件初始化 SPQR（`min_version: V1`），本项目不做关闭。只做 PQXDH 只能防「握手被抓包即解」；SPQR 另外提供 PQ 前向保密与 PQ 后妥协安全（post-compromise security）。
+- **后果**：对端必须同样支持 SPQR（同代 libsignal）；`SignalMessage` 头部携带分块的 `pq_ratchet`（field 5），KEM 公钥按块摊薄而非每条消息 1 KB。首条消息体积仍增大。
+- **修订记录**：原 ADR 写于仅预期 PQXDH 的阶段（「棘轮保持经典」）；libsignal v0.105.0 起 SPQR 默认启用，措辞与实现不符，故修订。
 
 ### ADR-003：能力发现复用 PEP 节点存在性，不新增 disco 特性
 - **决定**：设备是否支持 PQ = 其 JID 是否在 PQ device list 中且 bundle 节点存在。
@@ -54,7 +55,7 @@
   - moxlib 上游：`codeberg.org/moxxy/moxlib`（GPL-3.0）。
   - MAM（XEP-0313）已从上游 `feat/mam` 并入 moxxmpp fork。
   - `moxxmpp_socket_tcp` 的 SDK 约束提升到 Dart 3。
-  - OMEMO 密码学由 `omemo_dart` 提供，moxxmpp 做 stanza 编解码/传输；app 侧保留 PEP/XML、KMAC 载荷、ML-DSA、以及 ML-KEM 平台后端（`lib/crypto/pq/`）。
+  - OMEMO 密码学由 `omemo_dart` 提供，moxxmpp 做 stanza 编解码/传输；app 侧保留 PEP/XML、KMAC 载荷与 ML-DSA 身份（`lib/crypto/`）。ML-KEM（设备密钥与会话 KEM）由 native `libsignal` 生成消费；`lib/crypto/pq/` 的纯 Dart `pqcrypto` 路径仅供测试/诊断。
 - **后果**：需跟进上游变更；A 轨保持与上游最小差异，便于合并。
 
 ### ADR-005：UI 移植 Telegram Android（Kotlin → Dart），整体 GPLv3
@@ -62,11 +63,11 @@
 - **理由**：TG Android 是 GPLv2-or-later，可合法并入 GPLv3 工程。
 - **后果**：需逐文件标注来源与修改；商标问题需人工审查。
 
-### ADR-006：ML-KEM 用纯 Dart `pqcrypto`
-- **决定**：OMEMO2 密钥材料走 `pqcrypto` ML-KEM-1024；会话层 PQXDH 走 `libsignal`（native）。
-- **理由**：monocles 对齐的是 ML-KEM-1024；纯 Dart 路径与 Web/桌面一致，日常 `flutter build apk` 无额外 NDK/CMake 步骤。
-- **后果**：构建路径统一；体积与许可面更小。
-- **待定**：Q1（ML-DSA-65 是否默认携带）仍按「先不携带」推进。
+### ADR-006：ML-KEM 走 native `libsignal`，`pqcrypto` 只管 ML-DSA
+- **决定**：OMEMO2 设备密钥与 PQXDH 会话 KEM 一律由 native `libsignal`（ML-KEM-1024，wire tag `0x0A`）生成与消费；纯 Dart `pqcrypto` 只承担 ML-DSA-87 身份签名与 SHA3-512 摘要（以及测试/诊断）。
+- **理由**：monocles 对齐 ML-KEM-1024；libsignal 已随 Flutter 插件打包，`flutter build apk` 无需额外 NDK/CMake 步骤；KEM 复用上游实现，缩小自定义密码学面。
+- **后果**：`lib/crypto/pq/` 的纯 Dart KEM provider 在生产路径上不再被调用（仅为测试/诊断保留）。
+- **已定**：Q1 结论为「默认携带 ML-DSA-87」——`pq-ik`/`pq-sig` 是 OMEMO2 会话的强制条件，缺失即拒绝建会话（never-downgrade），不做「只签经典部分」的降级。
 
 ## 5. 架构总览
 
@@ -128,7 +129,7 @@ resonchat/
 ## 7. 不变量（Invariants，实现时必须始终成立）
 
 1. 轨道由用户选择。程序判断可行性、如实告知后果，**不阻止、不静默替换**。消息上显示的轨道永远反映实际使用的轨道（见 [10-track-selection.md](10-track-selection.md)）。
-2. PQ 会话的 root key **必须**包含 ML-KEM 的共享秘密。
+2. PQ 会话的 root key **必须**包含 ML-KEM 的共享秘密；每条消息的消息密钥**必须**混入 SPQR 输出（libsignal v0.105.0 默认行为，不得关闭）。
 3. 任何加密负载都必须是服务端可存储的合法 XML（无自定义 stanza 类型）。
 4. 指纹展示：Legacy 覆盖 A 轨 Conversations 身份密钥；Hybrid（默认）覆盖 OMEMO2 经典 IK + 已发布 ML-DSA-87（与 monocles 一致）。两套 IK **分栈不共享**。
 5. 私钥**永不**离开设备明文存储；Android 上由 Keystore 封存对称密钥保护落库材料，Web 走平台存储模型。

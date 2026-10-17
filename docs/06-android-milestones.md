@@ -51,7 +51,7 @@
 ## M3 — PQ 内核 ✅
 
 **任务**
-- [x] 纯 Dart ML-KEM（`pqcrypto`：1024 发版 / 768 诊断）
+- [x] 纯 Dart ML-KEM（`pqcrypto`：1024 发版 / 768 诊断）——后改为生产 KEM 走 `libsignal`，纯 Dart 仅测试/诊断
 - [x] PQXDH / SessionCipher / SPQR 经 `libsignal`（native）
 - [x] PQXDH + B 轨设备列表/bundle 发布
 - [x] 双账号跨服务器真实互测（`tool/pq_interop.dart`）
@@ -65,7 +65,7 @@
 **任务**
 - [x] `decideEncMode` / `CapabilityService`（最高可达轨道、缓存、PEP 订阅失效）
 - [x] 用户轨道选择 + `TrackResolver`（见 [10-track-selection.md](10-track-selection.md)）
-- [x] UI：EncBadge、气泡 `PO`/`OM`/`NO`、阻断对话框
+- [x] UI：EncBadge、气泡 `O2`/`OM`/`NO`、阻断对话框
 - [x] 加密信息页与能力变化提示
 
 **验收**

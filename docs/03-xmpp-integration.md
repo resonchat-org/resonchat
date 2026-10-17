@@ -64,8 +64,8 @@ DNS 非 0 状态码一律降级为「无记录」，绝不抛异常。
 | `eu.siacs.conversations.axolotl.bundles:<id>` | A（主） | 每设备一个 bundle | 依设备数 | open |
 | `urn:xmpp:omemo:2:devices` | A（辅） | 规范设备列表 | 1 | open |
 | `urn:xmpp:omemo:2:bundles` | A（辅） | 规范 bundle | 依设备数 | open |
-| `urn:xmpp:pomemo:0:devices` | B | PQ 设备列表 | 1 | open |
-| `urn:xmpp:pomemo:0:bundles` | B | 含经典 + PQ 字段的 bundle | 依设备数 | open |
+| `urn:monocles:omemo-pq:1:devices` | B | PQ 设备列表 | 1 | open |
+| `urn:monocles:omemo-pq:1:bundles` | B | 含经典 + PQ 字段的 bundle | 依设备数 | open |
 
 **要点**
 
@@ -80,7 +80,7 @@ DNS 非 0 状态码一律降级为「无记录」，绝不抛异常。
 ```
 1. 连接并完成 SASL
 2. 绑定资源，发送初始 presence
-3. 加载/生成本地设备密钥（A 轨 axolotl + B 轨 IK/SPK/OPK/PQSPK/PQOPK）
+3. 加载/生成本地设备密钥（A 轨 axolotl + B 轨 IK/SPK/OPK/kem-spk/kem-prekeys）
 4. 发布 A 轨设备列表与 bundle（axolotl 主节点 + 规范辅节点）
 5. 发布 B 轨设备列表与 bundle（含 PQ 字段）
 6. 订阅联系人的相关 PEP 节点，接收变更通知
@@ -105,7 +105,7 @@ UI 提交明文 + 用户选定 Track（会话覆盖 ?: 全局默认）
 构造 <message type='chat'>
   <body>降级文案</body>
   <encryption xmlns='urn:xmpp:eme:0' .../>
-  <encrypted xmlns='…'/>   <!-- axolotl 或 urn:xmpp:pomemo:0 -->
+  <encrypted xmlns='…'/>   <!-- axolotl 或 urn:monocles:omemo-pq:1 -->
   <store xmlns='urn:xmpp:hints'/>
    │
    ▼
@@ -126,7 +126,7 @@ moxxmpp 发送 → 服务端转发 → 各设备
    │
    ├─ 含 <encrypted xmlns='eu.siacs.conversations.axolotl'> → A 轨解密
    ├─ 含 <encrypted xmlns='urn:xmpp:omemo:2'>（若出现）→ A 轨辅路径
-   ├─ 含 <encrypted xmlns='urn:xmpp:pomemo:0'> → B 轨解密
+   ├─ 含 <encrypted xmlns='urn:monocles:omemo-pq:1'> → B 轨解密
    └─ 无 encrypted → 明文
    │
    ▼
@@ -163,8 +163,8 @@ Future<Set<int>> _getPqCapableDevices(Jid jid) async {
 | 场景 | 处理 |
 |---|---|
 | 用户选 OM，对方有 A 轨 | 走 A 轨；气泡标 `OM` |
-| 用户选 PO，对方全部设备 PQ 可用 | 走 B 轨；气泡标 `PO` |
-| 用户选 PO，存在非 PQ 设备 | `TrackBlocked.pqUnavailable`：阻断发送，提示改用 OM |
+| 用户选 O2，对方全部设备 PQ 可用 | 走 B 轨；气泡标 `O2` |
+| 用户选 O2，存在非 PQ 设备 | `TrackBlocked.pqUnavailable`：阻断发送，提示改用 OM |
 | 用户选 OM，存在无 OMEMO bundle 的设备 | `TrackBlocked.standardUnavailable`：阻断，提示改用 NO |
 | 能力快照不可靠 | `TrackBlocked.unknownPeers`：阻断，直至可读 |
 | 收到未知设备的 A 轨消息 | 正常解密（双轨都实现） |
@@ -179,4 +179,4 @@ Future<Set<int>> _getPqCapableDevices(Jid jid) async {
 | Openfire | 同上 |
 | 自建（可选） | 同上 |
 
-关键指标：单条 `<message>` 的字节数不得超过服务端限制（一般为 64KB 以上，但需实测）；B 轨首条消息在有 N 个设备时约为 `N × 1.2KB + 明文`，N=10 时约 12KB，需重点验证。
+关键指标：单条 `<message>` 的字节数不得超过服务端限制（一般为 64KB 以上，但需实测）；B 轨首条消息在有 N 个设备时约为 `N × 1.6KB + 明文`，N=10 时约 16KB，需重点验证。

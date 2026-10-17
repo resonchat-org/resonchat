@@ -1,6 +1,6 @@
 # ResonChat — 设计文档
 
-Flutter XMPP 客户端：**不修改服务端、不引入新 XEP**，在标准 OMEMO 之上叠加后量子轨道（X25519 + ML-KEM-768），与 Conversations 等客户端互通；UI 采用 Telegram Android 观感。Android 优先，并提供 Web 与 Linux AppImage 构建路径。
+Flutter XMPP 客户端：**不修改服务端、不引入新 XEP**，在标准 OMEMO 之上叠加后量子轨道（X25519 + ML-KEM-1024），与 Conversations 等客户端互通；UI 采用 Telegram Android 观感。Android 优先，并提供 Web 与 Linux AppImage 构建路径。
 
 实现状态、构建与验证以仓库根目录 [`README.md`](../README.md) 与 [`README.dev.md`](../README.dev.md) 为准。
 
@@ -26,13 +26,13 @@ Flutter XMPP 客户端：**不修改服务端、不引入新 XEP**，在标准 O
 
 ## 三条铁律
 
-1. **双轨叠加**。A 轨（Conversations / axolotl）完整实现以保持互通；B 轨（`urn:xmpp:pomemo:0`）在对端设备支持时可用。发送走哪条轨由用户选择，可行性由 `TrackResolver` 判定并告知（见 [10-track-selection.md](10-track-selection.md)）。
+1. **双轨叠加**。A 轨（Conversations / axolotl）完整实现以保持互通；B 轨（`urn:monocles:omemo-pq:1`）在对端设备支持时可用。发送走哪条轨由用户选择，可行性由 `TrackResolver` 判定并告知（见 [10-track-selection.md](10-track-selection.md)）。
 2. **零服务端改动**。PQ 轨道使用自定义命名空间的 PEP 节点；服务端按不透明 XML 存储与转发。
-3. **PQ 用于握手**。ML-KEM 只进入 X3DH→PQXDH 的初始密钥协商；后续 Double Ratchet 仍为经典 DH。首条消息体积约增加 1.1 KB/设备。
+3. **PQ 覆盖握手与棘轮**。ML-KEM 进入 X3DH→PQXDH 的初始密钥协商，此后每条消息的消息密钥还混入 SPQR（libsignal 默认行为）。首条消息体积约增加 1.6 KB/设备。
 
 ## 术语
 
 - **OMEMO**：XEP-0384；线格式以 Conversations 的 `eu.siacs.conversations.axolotl`（0.3.0 / axolotl）为主，规范节点 `urn:xmpp:omemo:2` 为辅。
-- **PQ-OMEMO / pomemo**：本项目私有轨道，命名空间 `urn:xmpp:pomemo:0`。
-- **PQXDH**：Post-Quantum X3DH（X25519 + ML-KEM-768）。
-- **Track**：用户选定的发送轨道——后量子（PO）、标准 OMEMO（OM）、明文（NO）。
+- **PQ-OMEMO**（旧名 pomemo）：本项目私有轨道，命名空间 `urn:monocles:omemo-pq:1`。
+- **PQXDH**：Post-Quantum X3DH（X25519 + ML-KEM-1024）。
+- **Track**：用户选定的发送轨道——后量子（O2）、标准 OMEMO（OM）、明文（NO）。

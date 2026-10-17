@@ -7,7 +7,7 @@
 | R1 | **标准 OMEMO 互通失败**（命名空间/格式理解偏差） | 低 | 极高 | M2 已用真实 Conversations 验收出站；反向互通补真机；双方言见 `defacto.dart` |
 | R2 | 对端只支持 OMEMO 0.3（`eu.siacs.conversations.axolotl`） | — | — | **已采纳为 A 轨主路径**；规范 `urn:xmpp:omemo:2` 为辅 |
 | R3 | ML-KEM 消息体积导致服务端拒绝 | 中 | 高 | 实测各服务端 stanza 上限；必要时分组发送或改选 OM |
-| R4 | ML-KEM 实现与 monocles / FIPS 203 偏差 | 低 | 高 | OMEMO2 用 `pqcrypto`；会话 PQXDH 用 `libsignal`；单元与设备 round-trip |
+| R4 | ML-KEM 实现与 monocles / FIPS 203 偏差 | 低 | 高 | OMEMO2 的 ML-DSA/KMAC 走纯 Dart 实现；KEM/PQXDH 走上游 `libsignal`；单元与设备 round-trip |
 | R5 | 发送对端无法解密的消息 | 中 | 极高 | `TrackResolver` 阻断不可行选择；标签与 `enc_mode` 必须一致 |
 | R6 | 服务端 PEP `max_items`/大小限制不足 | 中 | 中 | 拆分节点；减少预密钥数量；文档化最低服务端要求 |
 | R7 | UI 移植工作量被低估 | 高 | 中 | 分期交付，先可用后精修（M6） |
@@ -21,8 +21,8 @@
 
 | # | 问题 | 选项 | 建议 |
 |---|---|---|---|
-| Q1 | 是否默认携带 ML-DSA-65 签名？ | 携带（体积大）/ 不携带 | 先不携带，靠 TOFU + 一次性预密钥；后续视安全需求加入 |
-| Q2 | PQXDH 是否双封装（PQSPK + PQOPK 各一次）？ | 单/双 | 单封装起步，安全裕度可后续增强 |
+| Q1 | 是否默认携带 ML-DSA-87 签名？ | 携带（体积大）/ 不携带 | **已定：携带**。`pq-ik`/`pq-sig` 为建会话的强制条件（never-downgrade） |
+| Q2 | PQXDH 是否双封装（kem-spk + kem-prekey 各一次）？ | 单/双 | 单封装起步，安全裕度可后续增强 |
 | Q3 | 群聊（MUC）何时支持完整 fan-out？ | 一期/二期 | MUC 成员与收发已接线；成员设备发现频率与策略继续打磨 |
 | Q4 | 是否支持 OMEMO 0.3 旧命名空间？ | 支持/不支持 | **已决定：支持**。A 轨完整走 Conversations/0.3.0（axolotl）；B 轨底层经典栈对齐 0.9.1 |
 | Q5 | 消息明文是否本地保存？ | 全保存/不保存/可选 | 当前一律落库（库已加密）；「不保存明文」开关待做 |
@@ -33,10 +33,10 @@
 ## 3. 明确的技术限制（接受）
 
 1. **B 轨不与任何外部客户端互通**——这是物理限制，不是缺陷。
-2. **首条 PQ 消息体积大**——每设备约 +1.2 KB。
+2. **首条 PQ 消息体积大**——每设备约 +1.6 KB（ML-KEM-1024 密文 1568B + 握手开销）。
 3. **没有服务端背书**——PEP 数据由用户账号自行发布，无服务器验证，与标准 OMEMO 相同的信任假设。
 4. **终端安全边界**——设备被入侵则加密无效，与所有 E2EE 一致。
-5. **Web / 桌面 / Android PQ**——统一走纯 Dart `pqcrypto` + `libsignal`。
+5. **Web / 桌面 / Android PQ**——统一走 native `libsignal`（KEM/棘轮）+ 纯 Dart `pqcrypto`（ML-DSA/摘要）。
 6. **换机**——设备密钥仅存本机 Keystore，无密钥备份时会话需重建。
 7. **录音前静音探测非整平台**——Linux / Android / Windows 已接；Web / iOS / macOS 当前跳过（见 [05-ui-telegram.md](05-ui-telegram.md) §3.1）。
 

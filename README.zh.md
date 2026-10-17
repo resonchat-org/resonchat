@@ -12,13 +12,34 @@ ResonChat 处于早期阶段，正在快速迭代。**M0–M5 已完成，M6 进
 
 加密协议为自定义的 OMEMO 后量子扩展，**尚未经过第三方安全审计**。在完成独立审计之前，请勿用于高敏感场景，也不应对外宣称其安全性。
 
+## 安装
+
+Android 构建产物挂在 [GitHub Releases](https://github.com/resonchat-org/resonchat/releases) 页面。[Obtainium](https://github.com/ImranR98/Obtainium) 可以直接从那里安装，并自动跟进更新：
+
+[![Get it on Obtainium](https://img.shields.io/badge/Get_it_on-Obtainium-3DDC84?logo=android&logoColor=white)](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22org.resonchat.resonchat%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fresonchat-org%2Fresonchat%22%2C%22author%22%3A%22resonchat-org%22%2C%22name%22%3A%22ResonChat%22%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Atrue%2C%5C%22fallbackToOlderReleases%5C%22%3Atrue%2C%5C%22autoApkFilterByArch%5C%22%3Atrue%7D%22%7D)
+
+该链接自带完整配置，不涉及任何应用市场收录：添加后跟随**最新发布（含预发布）**，即下方的开发者预览版，并由 Obtainium 自动挑选适配设备的 `arm64` / `x86_64` APK。
+
+<details>
+<summary>链接内置的配置，以及手动添加方式</summary>
+
+```json
+{"id":"org.resonchat.resonchat","url":"https://github.com/resonchat-org/resonchat","author":"resonchat-org","name":"ResonChat","additionalSettings":"{\"includePrereleases\":true,\"fallbackToOlderReleases\":true,\"autoApkFilterByArch\":true}"}
+```
+
+在 Obtainium 中手动添加源 `https://github.com/resonchat-org/resonchat`，并打开 **含预发布（Include pre-releases）** 与 **按架构自动选择（Auto-select by architecture）**，效果相同。
+
+</details>
+
+目前所有发布均为**开发者预览版**，且使用 debug 密钥签名。若本机已安装自行构建的 APK，请先卸载 —— 两者包名相同（`org.resonchat.resonchat`）但签名密钥不同，Android 会拒绝覆盖安装。
+
 ## 特性
 
 | 特性 | 状态 | 说明 |
 |---|---|---|
 | 双轨端到端加密（A 轨） | 已完成 | 标准 OMEMO（XEP-0384），与 Conversations / Moxxy / Dino 等互通。已与真实 Conversations 2.20.4 完成互通验收 |
-| 双轨端到端加密（B 轨） | 已完成 | PQ-OMEMO（X25519 + ML-KEM-1024 混合，PQXDH）；用户选定 PO 且对端设备可达时发送。已双账号跨服务器互测通过 |
-| 三轨选择（PO / OM / NO） | 已完成 | 用户选定 + `TrackResolver` 判定可行性（见 [docs/10](docs/10-track-selection.md)） |
+| 双轨端到端加密（B 轨） | 已完成 | PQ-OMEMO（X25519 + ML-KEM-1024 混合，PQXDH + SPQR）；用户选定 O2 且对端设备可达时发送。已双账号跨服务器互测通过 |
+| 三轨选择（O2 / OM / NO） | 已完成 | 用户选定 + `TrackResolver` 判定可行性（见 [docs/10](docs/10-track-selection.md)） |
 | 零服务端改动 / 零新 XEP | 已完成 | 复用 PEP、EME 等既有标准 |
 | 数据库落盘加密 | 已完成 | SQLCipher，口令由 Android Keystore 保护 |
 | 标准协议扩展 | 已完成 | MAM（XEP-0313）历史同步、回执（XEP-0184）、输入状态（XEP-0085）、Carbons（XEP-0280） |
@@ -34,7 +55,7 @@ ResonChat 处于早期阶段，正在快速迭代。**M0–M5 已完成，M6 进
 | M0 工程骨架 | 已完成 | mono-repo 骨架、上游 fork 接线、CI、drift 存储、PQXDH 与双轨编解码、Android debug APK 可构建 |
 | M1 通信基线 | 已完成 | SASL SCRAM-SHA-256、资源绑定、roster（RFC 6121 版本控制）、明文收发、MAM 历史同步、Carbons、消息存储 |
 | M2 标准 OMEMO | 已完成 | **与真实 Conversations 2.20.4 互通验收通过**（我们加密的消息被第三方客户端解密并显示） |
-| M3 PQ 内核 | 已完成 | ML-KEM 走纯 Dart `pqcrypto`；PQXDH/SPQR 走 `libsignal`；**双账号跨服务器互测通过**（conversations.im 与 jabber.fr）；PQ bundle 已真实发布到服务器 |
+| M3 PQ 内核 | 已完成 | ML-KEM / PQXDH / SPQR 走 native `libsignal`；纯 Dart `pqcrypto` 用于 ML-DSA-87 与 SHA3-512；**双账号跨服务器互测通过**（conversations.im 与 jabber.fr）；PQ bundle 已真实发布到服务器 |
 | M4 协商与发送策略 | 已完成 | 能力服务 + 用户 Track / `TrackResolver`（docs/10）；PEP 变更失效缓存 |
 | M5 存储与保护 | 已完成 | OMEMO 设备密钥经 Keystore 封存落库；数据库 SQLCipher 加密；聊天历史备份格式已有。**密钥备份/恢复与「不保存明文」选项未做** |
 | M6 UI | 进行中 | 按 [docs/05](docs/05-ui-telegram.md) |
