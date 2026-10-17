@@ -16,60 +16,6 @@ import '../../state/providers.dart';
 import '../../xmpp/muc_create.dart';
 import '../home/open_chat.dart';
 import '../theme.dart';
-import 'channel_discovery_sheet.dart';
-import 'room_sheet.dart';
-
-/// Bottom sheet: join / discover / create private / create public.
-Future<void> showGroupActionsSheet(BuildContext context) async {
-  final l10n = context.l10n;
-  final action = await showModalBottomSheet<_GroupEntryAction>(
-    context: context,
-    builder: (sheetContext) => SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ListTile(
-            leading: const Icon(Icons.login),
-            title: Text(l10n.joinGroup),
-            onTap: () => Navigator.pop(sheetContext, _GroupEntryAction.join),
-          ),
-          ListTile(
-            leading: const Icon(Icons.travel_explore_outlined),
-            title: Text(l10n.discoverChannels),
-            onTap: () =>
-                Navigator.pop(sheetContext, _GroupEntryAction.discover),
-          ),
-          ListTile(
-            leading: const Icon(Icons.group_add_outlined),
-            title: Text(l10n.createPrivateGroup),
-            onTap: () =>
-                Navigator.pop(sheetContext, _GroupEntryAction.createPrivate),
-          ),
-          ListTile(
-            leading: const Icon(Icons.campaign_outlined),
-            title: Text(l10n.createPublicChannel),
-            onTap: () =>
-                Navigator.pop(sheetContext, _GroupEntryAction.createPublic),
-          ),
-          const SizedBox(height: 8),
-        ],
-      ),
-    ),
-  );
-  if (!context.mounted || action == null) return;
-  switch (action) {
-    case _GroupEntryAction.join:
-      await showJoinRoomSheet(context);
-    case _GroupEntryAction.discover:
-      await showChannelDiscoverySheet(context);
-    case _GroupEntryAction.createPrivate:
-      await showCreatePrivateGroupSheet(context);
-    case _GroupEntryAction.createPublic:
-      await showCreatePublicChannelSheet(context);
-  }
-}
-
-enum _GroupEntryAction { join, discover, createPrivate, createPublic }
 
 /// Conversations “Create private group chat”.
 Future<void> showCreatePrivateGroupSheet(BuildContext context) {

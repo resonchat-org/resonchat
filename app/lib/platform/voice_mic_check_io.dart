@@ -9,8 +9,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 
 import 'linux_cli_io.dart';
-
-export 'linux_cli_types.dart' show MicMuteProbe;
+import 'linux_cli_types.dart';
 
 const _audioChannel = MethodChannel('org.resonchat.resonchat/audio');
 

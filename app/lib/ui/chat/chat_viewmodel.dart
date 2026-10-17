@@ -21,6 +21,8 @@ import '../../l10n/generated/app_localizations.dart';
 import '../../state/app_wiring.dart';
 import '../../state/providers.dart';
 import '../../store/database.dart';
+import '../../store/message_send_status.dart';
+import '../../store/sticker_link.dart';
 import '../../xmpp/connection.dart';
 import '../../xmpp/conversation_archive.dart';
 import '../../xmpp/forwarding.dart';
@@ -85,6 +87,7 @@ class ChatAttachResult {
     this.queued = false,
     this.failureReason,
     this.error,
+    this.uploadUnavailable = false,
   });
 
   final bool sent;
@@ -97,6 +100,9 @@ class ChatAttachResult {
 
   /// Set when upload or send threw.
   final String? error;
+
+  /// The server has no XEP-0363 slot, and this sticker still needs an upload.
+  final bool uploadUnavailable;
 }
 
 /// What [ChatViewModel.forwardToChat] did.
@@ -900,6 +906,161 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
         uploaded.shareUrl,
         track: fileTrack,
         oobUrl: uploaded.shareUrl,
+        messageType: messageType,
+        originId: stanzaId,
+      );
+      if (!outcome.sent) {
+        final reason =
+            outcome.blocked?.localizedTitle(l10n) ?? l10n.unknownReason;
+        await _db.updateSendStatus(
+          peerStr,
+          stanzaId,
+          MessageSendStatus.sendFailed,
+          deliveryError: reason,
+        );
+        return ChatAttachResult(queued: true, failureReason: reason);
+      }
+
+      await _db.updateSendStatus(peerStr, stanzaId, MessageSendStatus.send);
+      return const ChatAttachResult(sent: true, queued: true);
+    } catch (e) {
+      return ChatAttachResult(error: '$e');
+    } finally {
+      _set((s) => s.copyWith(sending: false));
+    }
+  }
+
+  Stream<List<Sticker>> watchStickers() => _db.watchStickers();
+
+  /// Saves image bytes with every send-link left empty.
+  ///
+  /// A hash that is already stored returns that row instead of inserting.
+  Future<StickerSave> saveStickerImage(Uint8List image, String mime) =>
+      _db.addSticker(image: image, mime: mime);
+
+  Future<void> deleteSticker(int id) => _db.deleteSticker(id);
+
+  /// Sends a saved sticker on the current track.
+  ///
+  /// The link stored for that track is sent as-is when it is still inside
+  /// 30 days. An empty link, or one older than that, is uploaded first and
+  /// written back. The other two tracks are not touched.
+  Future<ChatAttachResult> sendSticker(
+    Sticker sticker, {
+    required ChatTrackConfirm confirm,
+    required AppLocalizations l10n,
+  }) async {
+    if (state.sending) return const ChatAttachResult();
+    final xmpp = _xmpp;
+    final peerStr = peerJid;
+    final isGroup = state.isGroup;
+    final plainRoom = isGroup && !state.mucEncryptable;
+    _set((s) => s.copyWith(sending: true));
+    try {
+      final track = plainRoom
+          ? Track.none
+          : await ref.read(chatTrackProvider(arg).future);
+      final outcomeTrack = await resolveTrackForSend(
+        plainRoom ? Track.none : track,
+        confirm,
+      );
+      if (outcomeTrack == null) return const ChatAttachResult();
+
+      final pmNick = state.mucPmNick;
+      final mucPm = isGroup && pmNick != null && pmNick.isNotEmpty;
+      final fileTrack = mucPm ? Track.none : outcomeTrack;
+      final kind = switch (fileTrack) {
+        Track.none => StickerSendKind.plain,
+        Track.standard => StickerSendKind.omemo,
+        Track.pq => StickerSendKind.pq,
+      };
+      final fresh = await _db.stickerById(sticker.id);
+      if (fresh == null) return const ChatAttachResult();
+
+      final slot = switch (kind) {
+        StickerSendKind.plain => (
+          url: fresh.plainUrl,
+          at: fresh.plainUploadedAt,
+        ),
+        StickerSendKind.omemo => (
+          url: fresh.omemoUrl,
+          at: fresh.omemoUploadedAt,
+        ),
+        StickerSendKind.pq => (url: fresh.pqUrl, at: fresh.pqUploadedAt),
+      };
+      final now = DateTime.now();
+      late final String shareUrl;
+      late final String mime;
+      late final String fileName;
+      if (stickerLinkUsable(
+        url: slot.url,
+        uploadedAt: slot.at,
+        kind: kind,
+        now: now,
+      )) {
+        shareUrl = slot.url.trim();
+        mime = fresh.mime;
+        fileName = stickerUploadName(fresh.id, fresh.mime);
+      } else {
+        if (!await xmpp.httpFiles.isAvailable()) {
+          return const ChatAttachResult(uploadUnavailable: true);
+        }
+        final uploaded = await xmpp.httpFiles.uploadBytes(
+          fresh.image,
+          fileName: stickerUploadName(fresh.id, fresh.mime),
+          encrypt: fileTrack != Track.none,
+          mimeOverride: fresh.mime,
+        );
+        shareUrl = uploaded.shareUrl;
+        mime = uploaded.mime;
+        fileName = uploaded.fileName;
+        final uploadedAt = DateTime.now();
+        if (stickerLinkUsable(
+          url: shareUrl,
+          uploadedAt: uploadedAt,
+          kind: kind,
+          now: uploadedAt,
+        )) {
+          await _db.rememberStickerLink(
+            id: fresh.id,
+            kind: kind,
+            url: shareUrl,
+            uploadedAt: uploadedAt,
+          );
+        }
+      }
+
+      final cached = await xmpp.httpFiles.cacheLocalBytes(
+        fresh.image,
+        preferredName: fileName,
+      );
+      final sendTo = mucPm
+          ? JID.fromString('$peerStr/$pmNick')
+          : JID.fromString(peerStr);
+      final messageType = mucPm ? 'chat' : (isGroup ? 'groupchat' : 'chat');
+      final stanzaId = xmpp.allocateStanzaId();
+      await _db.insertMessage(
+        MessagesCompanion(
+          chatJid: Value(peerStr),
+          sender: const Value('me'),
+          stanzaId: Value(stanzaId),
+          body: Value(shareUrl),
+          timestamp: Value(DateTime.now()),
+          encMode: Value(EncModeToken.of(fileTrack).wire),
+          incoming: const Value(false),
+          sendStatus: const Value(MessageSendStatus.waiting),
+          mediaUrl: Value(shareUrl),
+          mediaMime: Value(mime),
+          mediaName: Value(fileName),
+          localPath: Value(cached.path),
+        ),
+      );
+
+      final outcome = await xmpp.sendOnTrack(
+        sendTo,
+        shareUrl,
+        track: fileTrack,
+        oobUrl: shareUrl,
         messageType: messageType,
         originId: stanzaId,
       );

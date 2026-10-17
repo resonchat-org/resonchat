@@ -27,6 +27,7 @@ class MessageActions {
     required this.canEdit,
     required this.canRetract,
     required this.canSaveFile,
+    this.canSaveSticker = false,
     required this.isPinned,
   });
 
@@ -67,6 +68,12 @@ class MessageActions {
   /// “Save file”). Hidden for plain text and for undownloaded attachments.
   final bool canSaveFile;
 
+  /// Save this image into the account sticker collection.
+  ///
+  /// Only an image that is already on disk. Other files, and images that
+  /// have not been downloaded, do not offer it.
+  final bool canSaveSticker;
+
   /// Whether this message is already pinned, so the entry can offer the
   /// opposite action rather than a verb that does the wrong thing.
   final bool isPinned;
@@ -78,6 +85,7 @@ class MessageActions {
     required bool addressable,
     required bool pinned,
     bool canSaveFile = false,
+    bool canSaveSticker = false,
     bool canTranslate = false,
   }) {
     return MessageActions(
@@ -90,6 +98,7 @@ class MessageActions {
       canEdit: mine && !retracted && decrypted,
       canRetract: mine && !retracted && addressable,
       canSaveFile: !retracted && canSaveFile,
+      canSaveSticker: !retracted && canSaveSticker,
       isPinned: pinned,
     );
   }
@@ -103,7 +112,8 @@ class MessageActions {
       !canEdit &&
       !canForward &&
       !canRetract &&
-      !canSaveFile;
+      !canSaveFile &&
+      !canSaveSticker;
 }
 
 /// The result of the menu.
@@ -118,6 +128,7 @@ enum MessageAction {
   pin,
   retract,
   saveFile,
+  saveSticker,
 }
 
 /// Shows the menu and returns what the user picked, or null.
@@ -185,6 +196,12 @@ Future<MessageAction?> showMessageMenu(
               leading: const Icon(Icons.save_alt),
               title: Text(l10n.saveFile),
               onTap: () => Navigator.of(context).pop(MessageAction.saveFile),
+            ),
+          if (actions.canSaveSticker)
+            ListTile(
+              leading: const Icon(Icons.emoji_emotions_outlined),
+              title: Text(l10n.saveSticker),
+              onTap: () => Navigator.of(context).pop(MessageAction.saveSticker),
             ),
           if (actions.canEdit)
             ListTile(

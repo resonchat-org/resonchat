@@ -46,6 +46,15 @@ class CachedMedia {
   final String path;
 }
 
+/// Automatic preview stopped because the body is larger than the cap.
+class DownloadTooLarge implements Exception {
+  DownloadTooLarge(this.bytes);
+  final int bytes;
+
+  @override
+  String toString() => 'DownloadTooLarge($bytes)';
+}
+
 /// PUT/GET + aesgcm around moxxmpp [HttpFileUploadManager].
 class HttpFileService {
   HttpFileService(this._connection);
@@ -136,28 +145,48 @@ class HttpFileService {
   }
 
   /// Download [shareUrl] into the media store; decrypt when aesgcm.
+  ///
+  /// When [maxBytes] is set and positive, stop without writing a file if the
+  /// declared or received length exceeds it ([DownloadTooLarge]).
   Future<CachedMedia> downloadToCache(
     String shareUrl, {
     String? preferredName,
+    int? maxBytes,
   }) async {
     final https = AesGcmUrl.httpsUri(shareUrl);
     final client = appNetwork.createHttpClient();
-    late final http.Response resp;
+    late Uint8List bytes;
     try {
-      resp = await client.get(https);
+      final resp = await client.send(http.Request('GET', https));
+      if (resp.statusCode != 200 && resp.statusCode != 206) {
+        await resp.stream.drain<void>();
+        throw http.ClientException(
+          'download failed with ${resp.statusCode}',
+          https,
+        );
+      }
+      final cap = maxBytes != null && maxBytes > 0 ? maxBytes : null;
+      final declared = resp.contentLength;
+      if (cap != null && declared != null && declared > cap) {
+        await resp.stream.drain<void>();
+        throw DownloadTooLarge(declared);
+      }
+      final builder = BytesBuilder(copy: false);
+      var total = 0;
+      await for (final chunk in resp.stream) {
+        total += chunk.length;
+        if (cap != null && total > cap) {
+          throw DownloadTooLarge(total);
+        }
+        builder.add(chunk);
+      }
+      bytes = builder.takeBytes();
     } finally {
       client.close();
     }
-    if (resp.statusCode != 200 && resp.statusCode != 206) {
-      throw http.ClientException(
-        'download failed with ${resp.statusCode}',
-        https,
-      );
-    }
-    var bytes = resp.bodyBytes;
     final frag = Uri.tryParse(AesGcmUrl.primaryUrl(shareUrl))?.fragment;
     if (frag != null && frag.isNotEmpty && AesGcmUrl.isAesGcm(shareUrl)) {
-      bytes = await AesGcmFileCrypto.decrypt(Uint8List.fromList(bytes), frag);
+      bytes = await AesGcmFileCrypto.decrypt(bytes, frag);
     }
 
     final base =

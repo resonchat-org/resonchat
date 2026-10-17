@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 export 'generated/app_localizations.dart';
-export 'locale_controller.dart';
 
 import 'package:flutter/widgets.dart';
 

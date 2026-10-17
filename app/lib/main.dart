@@ -14,7 +14,9 @@ import 'account/account_hub.dart';
 import 'account/chat_ref.dart';
 import 'crypto/libsignal_bootstrap.dart';
 import 'l10n/l10n.dart';
+import 'l10n/locale_controller.dart';
 import 'net/app_network.dart';
+import 'net/socks5_config.dart';
 import 'platform/app_notifications.dart';
 import 'state/app_wiring.dart';
 import 'security/app_lock.dart';
@@ -22,6 +24,8 @@ import 'store/prefs_database.dart';
 import 'ui/accent_theme.dart';
 import 'ui/disguise/disguise_2048_page.dart';
 import 'ui/home/home_shell.dart';
+import 'ui/home/landscape_rail.dart';
+import 'ui/home/shell_chrome.dart';
 import 'ui/column_mode_sync.dart';
 import 'ui/login/login_page.dart';
 import 'ui/login/register_page.dart';
@@ -34,6 +38,9 @@ import 'ui/settings/settings_page.dart';
 
 /// Root navigator — used to remap `/chat` ↔ column pane across resizes.
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
+
+/// True while `/chats` is still in the root stack (landscape rail).
+final shellChrome = ShellChrome();
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -376,14 +383,30 @@ class _AppState extends ConsumerState<App> {
             }
             return const Locale('en');
           },
+          navigatorObservers: [shellChrome],
           builder: (context, child) {
             return AppWiring(
               child: ListenableBuilder(
                 listenable: AppLock.instance,
                 builder: (context, _) {
+                  final navigator = child ?? const SizedBox.shrink();
                   final body = ColumnModeSync(
                     navigatorKey: appNavigatorKey,
-                    child: child ?? const SizedBox.shrink(),
+                    child: ValueListenableBuilder<bool>(
+                      valueListenable: shellChrome.visible,
+                      child: navigator,
+                      builder: (context, shellVisible, navigator) {
+                        final landscape =
+                            MediaQuery.orientationOf(context) ==
+                            Orientation.landscape;
+                        final page = navigator ?? const SizedBox.shrink();
+                        if (!landscape || !shellVisible) return page;
+                        return LandscapeFrame(
+                          navigatorKey: appNavigatorKey,
+                          child: page,
+                        );
+                      },
+                    ),
                   );
                   if (!AppLock.instance.needsDisguise) return body;
                   // Keep navigator mounted under the disguise so unlock

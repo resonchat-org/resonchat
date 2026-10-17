@@ -3,13 +3,19 @@
 //
 // Pure helpers for the contacts search field (no Flutter / Riverpod).
 
-/// Non-empty local and domain parts around `@` (bare JID, no spaces).
+/// Bare JID shaped like `local@domain.tld`.
+///
+/// A domain with no dot (`a@b`) is not enough: the suggestion only appears
+/// once the domain has a label after a dot (`a@b.c`).
 String? completeJidCandidate(String raw) {
   final t = raw.trim();
   if (t.isEmpty || t.contains(RegExp(r'\s'))) return null;
   final at = t.indexOf('@');
   if (at <= 0 || at >= t.length - 1) return null;
   if (t.contains('/')) return null;
+  final domain = t.substring(at + 1);
+  final dot = domain.indexOf('.');
+  if (dot <= 0 || dot >= domain.length - 1) return null;
   return t;
 }
 

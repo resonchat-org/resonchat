@@ -10,10 +10,6 @@ import 'rule.dart';
 import 'rules.dart';
 import 'url.dart';
 
-export 'prefs.dart';
-export 'rule.dart';
-export 'url.dart';
-
 final _ignoredScheme = RegExp(r'^(rtsp|ftp)://', caseSensitive: false);
 final _hasScheme = RegExp(r'^https?://', caseSensitive: false);
 

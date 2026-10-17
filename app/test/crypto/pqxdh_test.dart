@@ -3,9 +3,9 @@
 //
 // PQXDH lives in native libsignal; this file covers KEM sizes + label constant.
 
+import 'package:omemo_dart/omemo_dart_omemo2.dart' show omemo2PqxdhHkdfLabel;
 import 'package:test/test.dart';
 import 'package:resonchat/crypto/fingerprint.dart';
-import 'package:resonchat/crypto/pqxdh.dart';
 import 'package:resonchat/crypto/pq/pqcrypto_mlkem.dart';
 
 void main() {

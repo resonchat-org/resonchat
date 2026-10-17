@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 
 import '../../account/resolve.dart';
 import '../../l10n/l10n.dart';
+import '../../store/chat_notify_mode.dart';
 import '../../store/database.dart';
 
 /// Icon for the current [ChatNotifyMode] (list row / settings tile).

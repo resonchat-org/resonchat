@@ -22,6 +22,7 @@ import '../utils/appearance.dart';
 import '../xmpp/b_track_manager.dart';
 import '../xmpp/capabilities.dart';
 import '../xmpp/connection.dart';
+import '../xmpp/presence_store.dart';
 
 /// Multi-account hub (installed in `main()`).
 ///

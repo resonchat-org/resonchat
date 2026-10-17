@@ -24,6 +24,7 @@ import '../../account/resolve.dart';
 import '../../l10n/l10n.dart';
 import '../../crypto/omemo/track.dart';
 import '../../state/providers.dart';
+import '../../store/chat_notify_mode.dart';
 import '../../store/database.dart';
 import '../../xmpp/conversation_archive.dart';
 import '../../xmpp/local_nickname.dart';

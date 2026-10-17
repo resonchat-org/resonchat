@@ -9,8 +9,6 @@ import 'package:logging/logging.dart';
 
 import 'socks5_config.dart';
 
-export 'socks5_config.dart';
-
 /// Web [AppNetwork]: SOCKS prefs are kept for UI/sync, but TCP is unsupported.
 class AppNetwork {
   AppNetwork({this._config = Socks5ProxyConfig.disabled});

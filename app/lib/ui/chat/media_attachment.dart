@@ -15,10 +15,13 @@ import 'package:open_filex/open_filex.dart';
 import '../../account/account_hub.dart';
 import '../../account/resolve.dart';
 import '../../l10n/l10n.dart';
+import '../../platform/linux_cli_types.dart';
 import '../../platform/linux_cli_io.dart'
     if (dart.library.js_interop) '../../platform/linux_cli_stub.dart';
 import '../../platform/media_store.dart';
 import '../../store/database.dart';
+import '../../xmpp/file_preview.dart';
+import '../../xmpp/http_files.dart';
 import '../theme.dart';
 
 bool isImageMime(String mime, String pathOrName) {
@@ -48,6 +51,7 @@ class MediaAttachment extends ConsumerStatefulWidget {
 
 class _MediaAttachmentState extends ConsumerState<MediaAttachment> {
   bool _busy = false;
+  bool _tooBig = false;
   String? _error;
   Uint8List? _imageBytes;
 
@@ -59,6 +63,7 @@ class _MediaAttachmentState extends ConsumerState<MediaAttachment> {
   void initState() {
     super.initState();
     unawaited(_loadImageBytes());
+    unawaited(_maybeAutoDownload());
   }
 
   @override
@@ -80,11 +85,38 @@ class _MediaAttachmentState extends ConsumerState<MediaAttachment> {
     setState(() => _imageBytes = bytes);
   }
 
-  Future<void> _download() async {
-    if (_busy || m.mediaUrl.isEmpty) return;
+  Future<void> _maybeAutoDownload() async {
+    if (_hasLocal || m.mediaUrl.isEmpty) return;
+    final maxBytes = await loadPreviewMaxFileSize();
+    if (!mounted) return;
+    var isGroup = false;
+    var membersOnly = false;
+    final key = widget.chatKey;
+    if (key != null && key.isNotEmpty) {
+      final resolved = resolveChatKey(key);
+      final chat = await resolved.session.db.getChat(resolved.jid);
+      isGroup = chat?.isGroup ?? false;
+      if (isGroup) {
+        membersOnly = resolved.session.xmpp.isMembersOnly(resolved.jid);
+      }
+    }
+    if (!shouldAutoDownload(
+      maxBytes: maxBytes,
+      incoming: m.incoming,
+      isGroup: isGroup,
+      membersOnly: membersOnly,
+    )) {
+      return;
+    }
+    await _download(maxBytes: maxBytes);
+  }
+
+  Future<void> _download({int? maxBytes}) async {
+    if (_busy || m.mediaUrl.isEmpty || _hasLocal) return;
     setState(() {
       _busy = true;
       _error = null;
+      _tooBig = false;
     });
     try {
       final session = _session();
@@ -93,14 +125,34 @@ class _MediaAttachmentState extends ConsumerState<MediaAttachment> {
         preferredName: m.mediaName.isNotEmpty
             ? m.mediaName
             : (m.mediaUrl.split('/').last.split('#').first),
+        maxBytes: maxBytes,
       );
       await session.db.setMessageLocalPath(m.id, file.path);
       await _loadImageBytes();
+    } on DownloadTooLarge {
+      if (mounted) setState(() => _tooBig = true);
     } catch (e) {
       if (mounted) setState(() => _error = '$e');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  void _openInApp(BuildContext context) {
+    final bytes = _imageBytes;
+    if (bytes == null) return;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) => Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(
+            backgroundColor: Colors.black,
+            foregroundColor: Colors.white,
+          ),
+          body: Center(child: InteractiveViewer(child: Image.memory(bytes))),
+        ),
+      ),
+    );
   }
 
   AccountSession _session() {
@@ -163,7 +215,7 @@ class _MediaAttachmentState extends ConsumerState<MediaAttachment> {
         borderRadius: BorderRadius.circular(8),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
-          onTap: _openLocal,
+          onTap: () => _openInApp(context),
           borderRadius: BorderRadius.circular(8),
           child: Image.memory(
             _imageBytes!,
@@ -196,8 +248,8 @@ class _MediaAttachmentState extends ConsumerState<MediaAttachment> {
       name: name.isEmpty ? l10n.fileAttachment : name,
       busy: _busy,
       error: _error,
-      subtitle: l10n.tapToDownload,
-      onTap: _busy ? null : _download,
+      subtitle: _tooBig ? l10n.fileTooBigForPreview : l10n.tapToDownload,
+      onTap: _busy ? null : () => _download(),
       audio: audio,
     );
   }

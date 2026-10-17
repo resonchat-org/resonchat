@@ -14,8 +14,6 @@ import 'package:logging/logging.dart';
 import 'socks5.dart';
 import 'socks5_config.dart';
 
-export 'socks5_config.dart';
-
 /// App-wide connector: XMPP TCP and HTTP file PUT/GET both call [openTcp].
 class AppNetwork {
   AppNetwork({this._config = Socks5ProxyConfig.disabled});

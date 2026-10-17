@@ -9,7 +9,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
+import '../../l10n/locale_controller.dart';
 import '../../net/app_network.dart';
+import '../../untracker/prefs.dart';
 import '../../crypto/omemo/track.dart';
 import '../../security/app_lock.dart';
 import '../../state/providers.dart';
@@ -23,8 +25,8 @@ import 'socks5_proxy_sheet.dart';
 import 'translation_settings_sheet.dart';
 import '../../translate/translation_engine.dart';
 import '../../translate/translation_prefs.dart';
-import '../../untracker/prefs.dart';
 import '../../xmpp/channel_discovery.dart';
+import '../../xmpp/file_preview.dart';
 
 /// App settings. Deliberately free of branding that would suggest any
 /// affiliation with other messengers (docs/05 §6).
@@ -39,6 +41,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   TranslationPrefs? _translationPrefs;
   ChannelDiscoveryMethod _channelMethod = ChannelDiscoveryMethod.jabberNetwork;
   bool _removeTrackingEnabled = false;
+  int _previewMaxBytes = kDefaultPreviewMaxFileSize;
 
   @override
   void initState() {
@@ -46,6 +49,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     unawaited(_reloadTranslationPrefs());
     unawaited(_reloadChannelMethod());
     unawaited(_reloadRemoveTracking());
+    unawaited(_reloadPreviewMax());
   }
 
   Future<void> _reloadTranslationPrefs() async {
@@ -64,6 +68,12 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final enabled = await loadRemoveTrackingEnabled();
     if (!mounted) return;
     setState(() => _removeTrackingEnabled = enabled);
+  }
+
+  Future<void> _reloadPreviewMax() async {
+    final bytes = await loadPreviewMaxFileSize();
+    if (!mounted) return;
+    setState(() => _previewMaxBytes = bytes);
   }
 
   Future<void> _setRemoveTracking(bool enabled) async {
@@ -191,6 +201,15 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     unawaited(_pickDefaultEncryption(context, current, vm)),
               );
             },
+          ),
+          ListTile(
+            leading: const Icon(Icons.download_outlined),
+            title: Text(l10n.previewMaxFileSize),
+            subtitle: Text(
+              '${_previewLimitLabel(l10n, _previewMaxBytes)}\n'
+              '${l10n.previewMaxFileSizeSummary}',
+            ),
+            onTap: () => unawaited(_pickPreviewMax(context)),
           ),
           SwitchListTile(
             secondary: const Icon(Icons.link_off_outlined),
@@ -486,6 +505,44 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         SnackBar(content: Text(l10n.themeColorDynamicUnavailable)),
       );
     }
+  }
+
+  String _previewLimitLabel(AppLocalizations l10n, int bytes) {
+    return switch (bytes) {
+      0 => l10n.noAutomaticPreview,
+      262144 => '256 KiB',
+      524288 => '512 KiB',
+      1048576 => '1 MiB',
+      5242880 => '5 MiB',
+      10485760 => '10 MiB',
+      26214400 => '25 MiB',
+      _ => l10n.noAutomaticPreview,
+    };
+  }
+
+  Future<void> _pickPreviewMax(BuildContext context) async {
+    final l10n = context.l10n;
+    final chosen = await showModalBottomSheet<int>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final bytes in previewMaxFileSizeChoices)
+              ListTile(
+                title: Text(_previewLimitLabel(l10n, bytes)),
+                trailing: bytes == _previewMaxBytes
+                    ? const Icon(Icons.check)
+                    : null,
+                onTap: () => Navigator.pop(ctx, bytes),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (chosen == null || !mounted) return;
+    await savePreviewMaxFileSize(chosen);
+    setState(() => _previewMaxBytes = chosen);
   }
 
   Future<void> _pickLanguage(BuildContext context, Locale? current) async {

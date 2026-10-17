@@ -61,7 +61,7 @@ Android 构建产物挂在 [GitHub Releases](https://github.com/resonchat-org/re
 | M6 UI | 进行中 | 按 [docs/05](docs/05-ui-telegram.md) |
 | M7 发布 | 未开始 | — |
 
-每次 push 都会跑 CI：`dart analyze` 与完整的 `flutter test`；`./scripts/build_android.sh` 用于产出 debug APK。
+每次 push 都会跑 CI：`dart analyze` 与完整的 `flutter test`，并在同一次任务里编译 Linux 和 Web，只确认能编过。
 
 **已知限制与未完成项**（完整清单见 [`README.dev.md`](README.dev.md)）：
 

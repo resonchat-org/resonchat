@@ -1,8 +1,7 @@
 // Copyright (C) 2026 ResonChat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// Public channel search sheet (Conversations ChannelDiscoveryActivity),
-// opened beside join / create from [showGroupActionsSheet].
+// Public channel search sheet (Conversations ChannelDiscoveryActivity).
 
 import 'dart:async';
 

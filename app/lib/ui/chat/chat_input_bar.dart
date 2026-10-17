@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../l10n/l10n.dart';
+import '../../platform/linux_cli_types.dart';
 import '../../platform/voice_recorder.dart';
 import '../theme.dart';
 
@@ -22,6 +23,8 @@ class ChatInputBar extends StatefulWidget {
     required this.onSend,
     required this.onAttach,
     required this.onVoice,
+    required this.onStickers,
+    required this.stickersOpen,
     required this.attachEnabled,
   });
 
@@ -31,6 +34,11 @@ class ChatInputBar extends StatefulWidget {
   final VoidCallback onSend;
   final VoidCallback onAttach;
   final Future<void> Function(VoiceClip clip) onVoice;
+
+  /// Opens or closes the sticker panel under the composer.
+  final VoidCallback onStickers;
+
+  final bool stickersOpen;
 
   /// False when the server has no XEP-0363 — attach/mic stay muted.
   final bool attachEnabled;
@@ -319,6 +327,17 @@ class _ChatInputBarState extends State<ChatInputBar> {
                         ),
                       ),
               ),
+              if (!_recording)
+                IconButton(
+                  tooltip: l10n.stickers,
+                  icon: Icon(
+                    widget.stickersOpen
+                        ? Icons.emoji_emotions
+                        : Icons.emoji_emotions_outlined,
+                  ),
+                  color: widget.stickersOpen ? tg.accent : tg.textPrimary,
+                  onPressed: widget.onStickers,
+                ),
               if (empty || _recording)
                 Listener(
                   behavior: HitTestBehavior.opaque,

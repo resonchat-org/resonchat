@@ -11,20 +11,30 @@ import 'package:moxxmpp/moxxmpp.dart';
 
 /// One contact's aggregated availability for the UI.
 class ContactPresence {
-  const ContactPresence({required this.show, this.status});
+  const ContactPresence({required this.show, this.status, this.idleSince});
 
   final PresenceShow show;
   final String? status;
+
+  /// Latest XEP-0319 idle time when every resource is idle. Null when any
+  /// resource is active (Gajim [BareContact.idle_datetime]).
+  final DateTime? idleSince;
 
   bool get isAvailable => true;
 }
 
 class _ResourcePresence {
-  _ResourcePresence({required this.show, required this.priority, this.status});
+  _ResourcePresence({
+    required this.show,
+    required this.priority,
+    this.status,
+    this.idleSince,
+  });
 
   PresenceShow show;
   int priority;
   String? status;
+  DateTime? idleSince;
 }
 
 /// Live presence map for one XMPP session.
@@ -37,7 +47,14 @@ class PresenceStore {
     if (resources == null || resources.isEmpty) return null;
 
     _ResourcePresence? best;
+    DateTime? idle;
+    var everyResourceIdle = true;
     for (final r in resources.values) {
+      if (r.idleSince == null) {
+        everyResourceIdle = false;
+      } else if (idle == null || r.idleSince!.isAfter(idle)) {
+        idle = r.idleSince;
+      }
       if (best == null) {
         best = r;
         continue;
@@ -48,11 +65,17 @@ class PresenceStore {
       }
     }
     if (best == null) return null;
-    return ContactPresence(show: best.show, status: best.status);
+    return ContactPresence(
+      show: best.show,
+      status: best.status,
+      idleSince: everyResourceIdle ? idle : null,
+    );
   }
 
   /// Applies an inbound presence stanza.
-  void apply(PresenceData data) {
+  ///
+  /// [idleSince] is XEP-0319 data from [IdleData], not part of RFC 6121.
+  void apply(PresenceData data, {DateTime? idleSince}) {
     final bare = data.from.toBare().toString().toLowerCase();
     final resource = data.from.resource;
 
@@ -75,6 +98,7 @@ class PresenceStore {
       show: data.show,
       priority: data.priority,
       status: data.status,
+      idleSince: idleSince,
     );
   }
 

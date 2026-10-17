@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
 import '../../net/app_network.dart';
+import '../../net/socks5_config.dart';
 import '../../store/prefs_database.dart';
 
 /// Bottom sheet: enable SOCKS5 + host + port.

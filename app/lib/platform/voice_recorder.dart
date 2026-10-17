@@ -12,10 +12,9 @@ import 'package:record/record.dart';
 import 'linux_cli_io.dart' if (dart.library.js_interop) 'linux_cli_stub.dart';
 import 'voice_mic_check_io.dart'
     if (dart.library.js_interop) 'voice_mic_check_stub.dart';
+import 'linux_cli_types.dart';
 import 'voice_recording_io.dart'
     if (dart.library.js_interop) 'voice_recording_web.dart';
-
-export 'linux_cli_types.dart';
 
 /// Telegram discards clips shorter than ~700 ms.
 const kMinVoiceMs = 700;

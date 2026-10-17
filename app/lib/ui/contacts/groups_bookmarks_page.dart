@@ -16,7 +16,6 @@ import '../account_filter_overlay.dart';
 import '../account_list_chrome.dart';
 import '../contact_avatar.dart';
 import '../home/open_chat.dart';
-import '../room/create_group_sheet.dart';
 import '../theme.dart';
 
 class GroupsBookmarksPage extends ConsumerStatefulWidget {
@@ -84,16 +83,7 @@ class _GroupsBookmarksPageState extends ConsumerState<GroupsBookmarksPage>
     final bookmarks = ref.watch(bookmarksProvider);
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(l10n.groupBookmarks),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.group_add_outlined),
-            tooltip: l10n.joinGroup,
-            onPressed: () => unawaited(showGroupActionsSheet(context)),
-          ),
-        ],
-      ),
+      appBar: AppBar(title: Text(l10n.groupBookmarks)),
       body: AccountFilterOverlay(
         controller: _accountPanel,
         slide: _accountSlide,

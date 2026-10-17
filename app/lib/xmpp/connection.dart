@@ -42,11 +42,6 @@ import 'replies.dart';
 import 'room_invite.dart';
 import 'xmpp_socket.dart';
 
-export 'reconnect_policy.dart' show MonoclesBackoffReconnectionPolicy;
-
-export 'presence_store.dart' show ContactPresence, PresenceStore;
-export 'room_invite.dart' show RoomInvite;
-
 /// Decrypted inbound chat message, either track or plaintext.
 class InboundMessage {
   InboundMessage({
@@ -2182,6 +2177,8 @@ class XmppService {
     messageManager.registerMessageSendingCallback(pqSendingCallback);
     await connection.registerManagers([
       PresenceManager(),
+      // XEP-0319 idle timestamp on presence (parsed in moxxmpp).
+      IdleManager(),
       // Whitespace keepalives (monocles Config.PING_MAX_INTERVAL ≈ 5 min).
       // Without Stream Management this is what notices a half-open TCP.
       PingManager(const Duration(minutes: 5)),
@@ -3389,6 +3386,12 @@ class XmppService {
     );
   }
 
+  /// Disco `muc_membersonly` for [roomJid]. False until that disco result lands.
+  bool isMembersOnly(String roomJid) {
+    final bare = JID.fromString(roomJid).toBare().toString();
+    return _membersOnly[bare] ?? false;
+  }
+
   /// Whether the member list for [roomJid] includes offline affiliates.
   bool roomCanSeeMemberJids(String roomJid) {
     final bare = JID.fromString(roomJid).toBare().toString();
@@ -3613,7 +3616,10 @@ class XmppService {
     } else if (event is PresenceReceivedEvent) {
       // MUC occupant presence is consumed by MUCManager (higher priority).
       // What reaches here is roster / 1:1 availability (RFC 6121 §4).
-      presence.apply(event.data);
+      presence.apply(
+        event.data,
+        idleSince: event.data.available ? event.get<IdleData>()?.since : null,
+      );
       if (!_presenceChanges.isClosed) _presenceChanges.add(null);
     } else if (event is SubscriptionRequestReceivedEvent) {
       // Recorded, not approved. Auto-approving means anyone can subscribe and

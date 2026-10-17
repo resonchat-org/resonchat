@@ -14,9 +14,7 @@ import 'package:resonchat/crypto/omemo/track.dart';
 import 'chat_notify_mode.dart';
 import 'database_connection.dart';
 import 'message_send_status.dart';
-
-export 'chat_notify_mode.dart';
-export 'message_send_status.dart';
+import 'sticker_link.dart';
 
 part 'database.g.dart';
 
@@ -414,6 +412,40 @@ class OmemoIdentities extends Table {
   Set<Column> get primaryKey => {bareJid, fingerprint};
 }
 
+/// One saved sticker image for this account.
+///
+/// The picture is the collection. The three links are filled only after this
+/// account sends the sticker on that mode. Saving from a message stores the
+/// bytes and leaves every link empty.
+class Stickers extends Table {
+  IntColumn get id => integer().autoIncrement()();
+
+  BlobColumn get image => blob()();
+
+  TextColumn get mime => text()();
+
+  /// `https://` upload for plaintext sends. Empty until this account sends it.
+  TextColumn get plainUrl => text().withDefault(const Constant(''))();
+
+  DateTimeColumn get plainUploadedAt => dateTime().nullable()();
+
+  /// `aesgcm://` upload for standard OMEMO sends.
+  TextColumn get omemoUrl => text().withDefault(const Constant(''))();
+
+  DateTimeColumn get omemoUploadedAt => dateTime().nullable()();
+
+  /// `aesgcm://` upload for PQ sends. Independent of [omemoUrl].
+  TextColumn get pqUrl => text().withDefault(const Constant(''))();
+
+  DateTimeColumn get pqUploadedAt => dateTime().nullable()();
+
+  /// Lowercase SHA-256 of [image].
+  TextColumn get contentHash => text()();
+
+  /// Grid order. A repeated save moves the existing row to the end.
+  IntColumn get position => integer()();
+}
+
 @DriftDatabase(
   tables: [
     Chats,
@@ -427,6 +459,7 @@ class OmemoIdentities extends Table {
     Reactions,
     Meta,
     OmemoIdentities,
+    Stickers,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -434,7 +467,7 @@ class AppDatabase extends _$AppDatabase {
 
   @override
   // Keep in sync with [kAccountSchemaVersion] in database_connection_io.dart.
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -442,6 +475,9 @@ class AppDatabase extends _$AppDatabase {
     onUpgrade: (m, from, to) async {
       if (from < 2) {
         await m.createTable(omemoIdentities);
+      }
+      if (from < 3) {
+        await m.createTable(stickers);
       }
     },
   );
@@ -1711,6 +1747,82 @@ class AppDatabase extends _$AppDatabase {
             .getSingleOrNull();
     return row?.id;
   }
+
+  /// Saved stickers in grid order. The add tile is drawn after the last row.
+  Stream<List<Sticker>> watchStickers() =>
+      (select(stickers)..orderBy([
+            (s) => OrderingTerm.asc(s.position),
+            (s) => OrderingTerm.asc(s.id),
+          ]))
+          .watch();
+
+  Future<Sticker?> stickerById(int id) =>
+      (select(stickers)..where((s) => s.id.equals(id))).getSingleOrNull();
+
+  /// Stores the picture only. Links stay empty until [rememberStickerLink].
+  ///
+  /// A matching [contentHash] reuses that row, leaves its links alone, and
+  /// moves it to the end of the grid.
+  Future<StickerSave> addSticker({
+    required Uint8List image,
+    required String mime,
+  }) async {
+    final hash = await stickerContentHash(image);
+    final position = await _nextStickerPosition();
+    final existing =
+        await (select(stickers)
+              ..where((s) => s.contentHash.equals(hash))
+              ..limit(1))
+            .getSingleOrNull();
+    if (existing != null) {
+      await (update(stickers)..where((s) => s.id.equals(existing.id))).write(
+        StickersCompanion(position: Value(position)),
+      );
+      return StickerSave(id: existing.id, hashMatched: true);
+    }
+    final id = await into(stickers).insert(
+      StickersCompanion.insert(
+        image: image,
+        mime: mime,
+        contentHash: hash,
+        position: position,
+      ),
+    );
+    return StickerSave(id: id, hashMatched: false);
+  }
+
+  Future<int> _nextStickerPosition() async {
+    final max = stickers.position.max();
+    final row = await (selectOnly(stickers)..addColumns([max])).getSingle();
+    return (row.read(max) ?? 0) + 1;
+  }
+
+  /// Writes the link for [kind] only. The other two modes are left alone.
+  Future<void> rememberStickerLink({
+    required int id,
+    required StickerSendKind kind,
+    required String url,
+    required DateTime uploadedAt,
+  }) {
+    final row = switch (kind) {
+      StickerSendKind.plain => StickersCompanion(
+        plainUrl: Value(url),
+        plainUploadedAt: Value(uploadedAt),
+      ),
+      StickerSendKind.omemo => StickersCompanion(
+        omemoUrl: Value(url),
+        omemoUploadedAt: Value(uploadedAt),
+      ),
+      StickerSendKind.pq => StickersCompanion(
+        pqUrl: Value(url),
+        pqUploadedAt: Value(uploadedAt),
+      ),
+    };
+    return (update(stickers)..where((s) => s.id.equals(id))).write(row);
+  }
+
+  Future<void> deleteSticker(int id) =>
+      (delete(stickers)..where((s) => s.id.equals(id))).go();
 }
 
 /// Opens the per-account DB (`resonchat_<accountId>.sqlite3`).

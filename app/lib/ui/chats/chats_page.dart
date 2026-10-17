@@ -16,8 +16,7 @@ import '../../l10n/l10n.dart';
 import '../../state/providers.dart';
 import '../chat/chat_page.dart';
 import '../home/open_chat.dart';
-import '../pending/pending_requests_page.dart';
-import '../room/create_group_sheet.dart';
+import '../home/shell_actions.dart';
 import '../theme.dart';
 import 'chat_row.dart';
 import 'chats_filter_bar.dart';
@@ -124,27 +123,7 @@ class _ChatsPageState extends ConsumerState<ChatsPage>
         // Filter hamburger opens the account panel; no AppBar drawer leading.
         automaticallyImplyLeading: false,
         title: Text(l10n.appName),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.person_add_alt),
-            tooltip: l10n.pendingRequests,
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => const PendingRequestsPage(),
-              ),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.group_add_outlined),
-            tooltip: l10n.joinGroup,
-            onPressed: () => unawaited(showGroupActionsSheet(context)),
-          ),
-          IconButton(
-            icon: const Icon(Icons.settings),
-            tooltip: l10n.settings,
-            onPressed: () => Navigator.of(context).pushNamed('/settings'),
-          ),
-        ],
+        actions: portraitShellActions(context),
       ),
       // ClipRect: SlideTransition moves the panel by its own width to the
       // left of this body. Without clipping it paints over the landscape

@@ -14,8 +14,7 @@ import '../../l10n/l10n.dart';
 import '../../state/providers.dart';
 import '../account_filter_overlay.dart';
 import '../home/open_chat.dart';
-import '../pending/pending_requests_page.dart';
-import '../room/create_group_sheet.dart';
+import '../home/shell_actions.dart';
 import '../room/room_sheet.dart';
 import '../theme.dart';
 import 'contacts_match.dart';
@@ -83,6 +82,16 @@ class _ContactsPageState extends ConsumerState<ContactsPage>
       _contactsExpanded = false;
       _groupsExpanded = false;
     });
+  }
+
+  Future<void> _promptAddContact() async {
+    final raw = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => const _AddContactSheet(),
+    );
+    if (raw == null || raw.isEmpty || !mounted) return;
+    await _addContact(raw);
   }
 
   Future<void> _addContact(String raw) async {
@@ -171,27 +180,7 @@ class _ContactsPageState extends ConsumerState<ContactsPage>
       appBar: AppBar(
         automaticallyImplyLeading: false,
         title: Text(l10n.tabContacts),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.person_add_alt),
-            tooltip: l10n.pendingRequests,
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => const PendingRequestsPage(),
-              ),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.group_add_outlined),
-            tooltip: l10n.joinGroup,
-            onPressed: () => showGroupActionsSheet(context),
-          ),
-          IconButton(
-            icon: const Icon(Icons.settings),
-            tooltip: l10n.settings,
-            onPressed: () => Navigator.of(context).pushNamed('/settings'),
-          ),
-        ],
+        actions: portraitShellActions(context),
       ),
       body: AccountFilterOverlay(
         controller: _accountPanel,
@@ -275,6 +264,7 @@ class _ContactsPageState extends ConsumerState<ContactsPage>
                       contacts: contacts,
                       bookmarkCount: bookmarkCount,
                       filterAccountId: _accountId,
+                      onAddContact: () => unawaited(_promptAddContact()),
                     );
                   }
                   return _SearchResults(
@@ -289,6 +279,9 @@ class _ContactsPageState extends ConsumerState<ContactsPage>
                     onToggleGroups: () =>
                         setState(() => _groupsExpanded = !_groupsExpanded),
                     onAddJid: (jid) => unawaited(_addContact(jid)),
+                    onAddGroup: (jid) => unawaited(
+                      showJoinRoomSheet(context, initialRoomJid: jid),
+                    ),
                     onOpenBookmark: (row) => unawaited(_openBookmark(row)),
                   );
                 },
@@ -314,6 +307,7 @@ class _SearchResults extends StatelessWidget {
     required this.onToggleContacts,
     required this.onToggleGroups,
     required this.onAddJid,
+    required this.onAddGroup,
     required this.onOpenBookmark,
   });
 
@@ -326,6 +320,7 @@ class _SearchResults extends StatelessWidget {
   final VoidCallback onToggleContacts;
   final VoidCallback onToggleGroups;
   final ValueChanged<String> onAddJid;
+  final ValueChanged<String> onAddGroup;
   final ValueChanged<AccountBookmark> onOpenBookmark;
 
   @override
@@ -353,11 +348,19 @@ class _SearchResults extends StatelessWidget {
         .toList();
 
     final addJid = completeJidCandidate(needle);
-    final showAdd =
+    final showAddContact =
         addJid != null &&
         !contacts.any((c) => c.entry.jid.toLowerCase() == addJid.toLowerCase());
+    final showAddGroup =
+        addJid != null &&
+        !bookmarks.any(
+          (g) => g.bookmark.jid.toLowerCase() == addJid.toLowerCase(),
+        );
 
-    if (!showAdd && contactHits.isEmpty && groupHits.isEmpty) {
+    if (!showAddContact &&
+        !showAddGroup &&
+        contactHits.isEmpty &&
+        groupHits.isEmpty) {
       return Center(
         child: Text(
           l10n.noContactsMatch,
@@ -367,7 +370,10 @@ class _SearchResults extends StatelessWidget {
     }
 
     final rows = <Widget>[
-      if (showAdd) AddJidTile(jid: addJid, onTap: () => onAddJid(addJid)),
+      if (addJid != null && showAddContact)
+        AddJidTile(jid: addJid, onTap: () => onAddJid(addJid)),
+      if (addJid != null && showAddGroup)
+        AddGroupTile(jid: addJid, onTap: () => onAddGroup(addJid)),
       if (contactHits.isNotEmpty) ...[
         SearchSectionHeader(
           title: l10n.searchSectionContacts,
@@ -417,6 +423,60 @@ class _SearchResults extends StatelessWidget {
         );
       },
       itemBuilder: (context, i) => rows[i],
+    );
+  }
+}
+
+/// Same shape as the join-room sheet: a short form pulled up from the bottom.
+class _AddContactSheet extends StatefulWidget {
+  const _AddContactSheet();
+
+  @override
+  State<_AddContactSheet> createState() => _AddContactSheetState();
+}
+
+class _AddContactSheetState extends State<_AddContactSheet> {
+  final _jid = TextEditingController();
+
+  @override
+  void dispose() {
+    _jid.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final raw = _jid.text.trim();
+    if (raw.isEmpty) return;
+    Navigator.of(context).pop(raw);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final bottom = MediaQuery.of(context).viewInsets.bottom;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, 16, 20, bottom + 20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(l10n.addContact, style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _jid,
+            autofocus: true,
+            keyboardType: TextInputType.emailAddress,
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => _submit(),
+            decoration: InputDecoration(
+              labelText: l10n.jid,
+              hintText: l10n.addContactHint,
+            ),
+          ),
+          const SizedBox(height: 16),
+          FilledButton(onPressed: _submit, child: Text(l10n.addContact)),
+        ],
+      ),
     );
   }
 }

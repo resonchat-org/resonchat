@@ -17,6 +17,7 @@ import '../crypto/omemo/track_advice.dart';
 import '../platform/app_notifications.dart';
 import '../security/app_lock.dart';
 import '../store/database.dart';
+import '../store/message_send_status.dart';
 import '../account/chat_ref.dart';
 import '../xmpp/capabilities.dart';
 import '../xmpp/blocking.dart';

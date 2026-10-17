@@ -19,6 +19,7 @@ import '../../account/resolve.dart';
 import '../../l10n/l10n.dart';
 import '../../state/providers.dart';
 import '../../xmpp/connection.dart';
+import '../../xmpp/last_seen.dart';
 import '../chat/chat_profile_sections.dart';
 import '../theme.dart';
 
@@ -37,7 +38,9 @@ class ProfilePage extends ConsumerWidget {
     final xmpp = resolved.session.xmpp;
     final chat = ref.watch(chatProvider(chatJid)).value;
     final contact = ref.watch(contactStateProvider(chatJid)).value;
+    final presence = ref.watch(contactPresenceProvider(chatJid)).value;
     final connected = xmpp.state == XmppConnectionState.connected;
+    final seen = lastSeenLine(l10n, presence?.idleSince);
 
     final title = (chat?.title.isNotEmpty ?? false) ? chat!.title : peer;
 
@@ -70,6 +73,17 @@ class ProfilePage extends ConsumerWidget {
                 ),
               ],
             ),
+          ),
+
+          ListTile(
+            leading: const Icon(Icons.circle_outlined),
+            title: Text(presenceLabel(l10n, presence?.show)),
+            subtitle: seen == null
+                ? null
+                : Text(
+                    seen,
+                    style: TextStyle(fontSize: 12, color: tg.textSecondary),
+                  ),
           ),
 
           ChatProfileSectionTitle(l10n.relationship),

@@ -9,6 +9,8 @@ import 'package:drift/native.dart';
 import 'package:moxxmpp/moxxmpp.dart' show XmppRosterItem;
 import 'package:test/test.dart';
 import 'package:resonchat/store/database.dart';
+import 'package:resonchat/store/message_send_status.dart';
+import 'package:resonchat/store/sticker_link.dart';
 
 void main() {
   late AppDatabase db;
@@ -260,4 +262,59 @@ void main() {
     expect(await db.allRosterEntries(), isEmpty);
     expect(await db.rosterVersion(), 'v2');
   });
+
+  test(
+    'a saved sticker starts with empty links and updates one mode',
+    () async {
+      final image = Uint8List.fromList(const [1, 2, 3, 4]);
+      final saved = await db.addSticker(image: image, mime: 'image/png');
+      expect(saved.hashMatched, isFalse);
+      final id = saved.id;
+      final stored = await db.stickerById(id);
+      expect(stored, isNotNull);
+      expect(stored!.contentHash, await stickerContentHash(image));
+      expect(stored.plainUrl, isEmpty);
+      expect(stored.omemoUrl, isEmpty);
+      expect(stored.pqUrl, isEmpty);
+      expect(stored.plainUploadedAt, isNull);
+      expect(stored.omemoUploadedAt, isNull);
+      expect(stored.pqUploadedAt, isNull);
+
+      final again = await db.addSticker(image: image, mime: 'image/jpeg');
+      expect(again.hashMatched, isTrue);
+      expect(again.id, id);
+      expect((await db.stickerById(id))!.mime, 'image/png');
+
+      final other = await db.addSticker(
+        image: Uint8List.fromList(const [9, 9, 9]),
+        mime: 'image/png',
+      );
+      expect(other.hashMatched, isFalse);
+      expect(other.id, isNot(id));
+
+      final moved = await db.addSticker(image: image, mime: 'image/png');
+      expect(moved.hashMatched, isTrue);
+      final order = await db.watchStickers().first;
+      expect(order.map((s) => s.id).toList(), [other.id, id]);
+      await db.deleteSticker(other.id);
+
+      final at = DateTime(2026, 1, 2, 3, 4, 5);
+      await db.rememberStickerLink(
+        id: id,
+        kind: StickerSendKind.omemo,
+        url: 'aesgcm://files.example/a#k',
+        uploadedAt: at,
+      );
+      final after = (await db.stickerById(id))!;
+      expect(after.omemoUrl, 'aesgcm://files.example/a#k');
+      expect(after.omemoUploadedAt, at);
+      expect(after.plainUrl, isEmpty);
+      expect(after.pqUrl, isEmpty);
+      expect(after.plainUploadedAt, isNull);
+      expect(after.pqUploadedAt, isNull);
+
+      await db.deleteSticker(id);
+      expect(await db.stickerById(id), isNull);
+    },
+  );
 }

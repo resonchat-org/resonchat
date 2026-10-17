@@ -9,8 +9,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../account/account_hub.dart';
 import '../chats/chats_viewmodel.dart';
 
-export '../chats/chats_viewmodel.dart' show OpenChatResult;
-
 /// Contacts-tab side effects (add contact / open group bookmark).
 class ContactsViewModel extends Notifier<void> {
   @override

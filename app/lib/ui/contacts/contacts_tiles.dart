@@ -9,9 +9,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../account/account_hub.dart';
 import '../../l10n/l10n.dart';
 import '../../state/providers.dart';
+import '../../xmpp/last_seen.dart';
 import '../account_list_chrome.dart';
 import '../contact_avatar.dart';
 import '../home/open_chat.dart';
+import '../room/channel_discovery_sheet.dart';
+import '../room/create_group_sheet.dart';
+import '../room/room_sheet.dart';
 import '../theme.dart';
 import 'contacts_viewmodel.dart';
 import 'groups_bookmarks_page.dart';
@@ -22,26 +26,61 @@ class IdleContactsList extends StatelessWidget {
     super.key,
     required this.contacts,
     required this.bookmarkCount,
+    required this.onAddContact,
     this.filterAccountId,
   });
 
   final List<AccountContact> contacts;
   final int bookmarkCount;
+  final VoidCallback onAddContact;
 
   /// When set, Groups opens with this account pre-selected.
   final String? filterAccountId;
+
+  List<Widget> _prefix(BuildContext context) {
+    final l10n = context.l10n;
+    return [
+      ContactActionTile(
+        icon: Icons.person_add_outlined,
+        title: l10n.addContact,
+        onTap: onAddContact,
+      ),
+      ContactActionTile(
+        icon: Icons.login,
+        title: l10n.joinGroup,
+        onTap: () => showJoinRoomSheet(context),
+      ),
+      ContactActionTile(
+        icon: Icons.travel_explore_outlined,
+        title: l10n.discoverChannels,
+        onTap: () => showChannelDiscoverySheet(context),
+      ),
+      ContactActionTile(
+        icon: Icons.group_add_outlined,
+        title: l10n.createPrivateGroup,
+        onTap: () => showCreatePrivateGroupSheet(context),
+      ),
+      ContactActionTile(
+        icon: Icons.campaign_outlined,
+        title: l10n.createPublicChannel,
+        onTap: () => showCreatePublicChannelSheet(context),
+      ),
+      GroupsBookmarkEntry(
+        count: bookmarkCount,
+        filterAccountId: filterAccountId,
+      ),
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final tg = context.tg;
+    final prefix = _prefix(context);
     if (contacts.isEmpty && bookmarkCount == 0) {
       return ListView(
         children: [
-          GroupsBookmarkEntry(
-            count: bookmarkCount,
-            filterAccountId: filterAccountId,
-          ),
+          ...prefix,
           Padding(
             padding: const EdgeInsets.all(32),
             child: Center(
@@ -55,20 +94,43 @@ class IdleContactsList extends StatelessWidget {
       );
     }
     return ListView.separated(
-      itemCount: contacts.length + 1,
+      itemCount: contacts.length + prefix.length,
       separatorBuilder: (_, _) => Padding(
         padding: const EdgeInsets.only(left: 82),
         child: Divider(height: 0.5, color: tg.separator),
       ),
       itemBuilder: (context, i) {
-        if (i == 0) {
-          return GroupsBookmarkEntry(
-            count: bookmarkCount,
-            filterAccountId: filterAccountId,
-          );
-        }
-        return ContactRosterTile(entry: contacts[i - 1]);
+        if (i < prefix.length) return prefix[i];
+        return ContactRosterTile(entry: contacts[i - prefix.length]);
       },
+    );
+  }
+}
+
+/// One shortcut row, drawn like a contact: round icon, then the title.
+class ContactActionTile extends StatelessWidget {
+  const ContactActionTile({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final tg = context.tg;
+    return ListTile(
+      leading: CircleAvatar(
+        radius: 22,
+        backgroundColor: tg.accent.withValues(alpha: 0.18),
+        child: Icon(icon, color: tg.accent),
+      ),
+      title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+      onTap: onTap,
     );
   }
 }
@@ -146,10 +208,8 @@ class ContactRosterTile extends ConsumerWidget {
     final tg = context.tg;
     final multi = ref.watch(accountHubProvider).accounts.length > 1;
     final accent = entry.accent;
-    final presence = ref
-        .watch(contactPresenceProvider(entry.ref.key))
-        .value
-        ?.show;
+    final presence = ref.watch(contactPresenceProvider(entry.ref.key)).value;
+    final seen = lastSeenLine(context.l10n, presence?.idleSince);
     final jidLine = entry.displayName == entry.entry.jid
         ? null
         : Text(
@@ -172,7 +232,7 @@ class ContactRosterTile extends ConsumerWidget {
             title: entry.displayName,
             radius: 22,
             showPresence: true,
-            presence: presence,
+            presence: presence?.show,
           ),
         ),
         title: Text(
@@ -180,7 +240,7 @@ class ContactRosterTile extends ConsumerWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
-        subtitle: (!multi && jidLine == null)
+        subtitle: (!multi && jidLine == null && seen == null)
             ? null
             : Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -188,6 +248,16 @@ class ContactRosterTile extends ConsumerWidget {
                 children: [
                   if (multi) accountViaText(entry.account.bareJid, accent),
                   ?jidLine,
+                  if (seen != null)
+                    Text(
+                      seen,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: tg.textSecondary,
+                        fontSize: TgDimens.timeFontSize,
+                      ),
+                    ),
                 ],
               ),
         onTap: () async {
@@ -261,10 +331,43 @@ class AddJidTile extends StatelessWidget {
     final tg = context.tg;
     return ListTile(
       leading: CircleAvatar(
+        radius: 22,
         backgroundColor: tg.accent.withValues(alpha: 0.18),
         child: Icon(Icons.person_add, color: tg.accent),
       ),
       title: Text(l10n.addContact),
+      subtitle: Text(
+        jid,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: tg.textSecondary,
+          fontSize: TgDimens.timeFontSize,
+        ),
+      ),
+      trailing: Icon(Icons.arrow_forward, color: tg.accent, size: 20),
+      onTap: onTap,
+    );
+  }
+}
+
+class AddGroupTile extends StatelessWidget {
+  const AddGroupTile({super.key, required this.jid, required this.onTap});
+
+  final String jid;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final tg = context.tg;
+    return ListTile(
+      leading: CircleAvatar(
+        radius: 22,
+        backgroundColor: tg.accent.withValues(alpha: 0.18),
+        child: Icon(Icons.group_add_outlined, color: tg.accent),
+      ),
+      title: Text(l10n.joinGroup),
       subtitle: Text(
         jid,
         maxLines: 1,

@@ -8,11 +8,11 @@ import 'dart:async';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:mime/mime.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:moxxmpp/moxxmpp.dart' show PresenceShow;
 
 import '../../account/account_hub.dart';
 import '../../account/chat_ref.dart';
@@ -24,11 +24,15 @@ import '../../platform/media_store.dart';
 import '../../platform/voice_recorder.dart';
 import '../../state/providers.dart';
 import '../../store/database.dart';
+import '../../store/sticker_link.dart';
 import '../../translate/translatable_text.dart';
 import '../../translate/translation_prefs.dart';
 import '../../translate/translation_service.dart';
+import '../../untracker/prefs.dart';
 import '../../untracker/untracker.dart';
 import '../../xmpp/connection.dart';
+import '../../xmpp/last_seen.dart';
+import '../../xmpp/presence_store.dart';
 import '../../xmpp/forwarding.dart';
 import '../../xmpp/local_nickname.dart';
 import '../../xmpp/muc.dart';
@@ -36,6 +40,8 @@ import '../../xmpp/reactions.dart';
 import '../contact_avatar.dart';
 import '../../utils/appearance.dart';
 import 'chat_input_bar.dart';
+import 'media_attachment.dart';
+import 'sticker_panel.dart';
 import 'chat_message_list.dart';
 import 'chat_nicks.dart';
 import 'chat_subscription_banner.dart';
@@ -88,6 +94,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   final _input = TextEditingController();
   final _scroll = ScrollController();
   final _focus = FocusNode();
+  var _stickersOpen = false;
+  Stream<List<Sticker>>? _stickers;
 
   /// Avatar-tap @-mentions (Conversations `highlightInConference`).
   final _mentions = ConferenceMentionSession();
@@ -222,6 +230,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   void initState() {
     super.initState();
     _scroll.addListener(_onScroll);
+    _focus.addListener(_onComposerFocus);
     _bindViewModel();
     // Deliberately *not* marked read here. Marking on arrival would clear the
     // unread badge before the user has read anything, and the boundary in the
@@ -259,6 +268,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   /// starts its subscriptions; here we only listen for what needs a snackbar.
   void _bindViewModel() {
     _vm = ref.read(chatViewModelProvider(widget.chatJid).notifier);
+    _stickers = _vm.watchStickers();
     _failureNoticeSub?.cancel();
     _noticeSub?.cancel();
     _failureNoticeSub = _vm.failureNotices.listen(_onFailureNotice);
@@ -359,6 +369,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     );
     _failureNoticeSub?.cancel();
     _noticeSub?.cancel();
+    _focus.removeListener(_onComposerFocus);
     _scroll
       ..removeListener(_onScroll)
       ..dispose();
@@ -377,30 +388,24 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     return l10n.membersAndOnlineCount(room.affiliatedMemberCount, online);
   }
 
-  /// AppBar subtitle: typing or RFC 6121 presence (1:1 only).
+  /// AppBar subtitle: typing, or presence plus last-seen when every resource
+  /// is idle (XEP-0319).
   String _peerStatusSubtitle(
     BuildContext context,
     TypingState peerTyping, {
-    PresenceShow? presence,
+    required ContactPresence? presence,
   }) {
-    // Prefer a short local name when the JID is long.
     final name = _peerJid.split('@').first;
     final l10n = context.l10n;
     return switch (peerTyping) {
       TypingState.composing => l10n.contactIsTyping(name),
       TypingState.paused => l10n.contactStoppedTyping(name),
-      TypingState.inactive => _presenceLabel(l10n, presence),
-    };
-  }
-
-  static String _presenceLabel(AppLocalizations l10n, PresenceShow? show) {
-    return switch (show) {
-      null => l10n.presenceOffline,
-      PresenceShow.online => l10n.presenceOnline,
-      PresenceShow.chat => l10n.presenceChat,
-      PresenceShow.away => l10n.presenceAway,
-      PresenceShow.xa => l10n.presenceXa,
-      PresenceShow.dnd => l10n.presenceDnd,
+      TypingState.inactive => () {
+        final label = presenceLabel(l10n, presence?.show);
+        final seen = lastSeenLine(l10n, presence?.idleSince);
+        if (seen == null) return label;
+        return '$label ($seen)';
+      }(),
     };
   }
 
@@ -516,6 +521,138 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(context.l10n.notSent(reason))));
+  }
+
+  void _onComposerFocus() {
+    if (_focus.hasFocus && _stickersOpen && mounted) {
+      setState(() => _stickersOpen = false);
+    }
+  }
+
+  void _toggleStickers() {
+    final next = !_stickersOpen;
+    setState(() => _stickersOpen = next);
+    if (next) _focus.unfocus();
+  }
+
+  void _insertStickerText(String text) {
+    final value = _input.value;
+    final start = value.selection.start < 0
+        ? value.text.length
+        : value.selection.start;
+    final end = value.selection.end < 0
+        ? value.text.length
+        : value.selection.end;
+    final next = value.text.replaceRange(start, end, text);
+    _input.value = TextEditingValue(
+      text: next,
+      selection: TextSelection.collapsed(offset: start + text.length),
+    );
+    _vm.onInputChanged(next);
+  }
+
+  String _stickerSaveLabel(StickerSave saved) {
+    final l10n = context.l10n;
+    return saved.hashMatched ? l10n.stickerAlreadySaved : l10n.stickerSaved;
+  }
+
+  bool _canSaveSticker(Message message) {
+    if (message.retracted) return false;
+    if (!mediaStore.existsSync(message.localPath)) return false;
+    final name = message.mediaName.isNotEmpty
+        ? message.mediaName
+        : message.localPath;
+    return isImageMime(message.mediaMime, name);
+  }
+
+  /// Copies an already-downloaded image into this account's stickers.
+  ///
+  /// The send links stay empty. They are written only when this account
+  /// sends the sticker.
+  Future<void> _saveMessageSticker(Message message) async {
+    final l10n = context.l10n;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final bytes = await mediaStore.readBytes(message.localPath);
+      if (!mounted) return;
+      if (bytes == null || bytes.isEmpty || !_canSaveSticker(message)) {
+        messenger.showSnackBar(
+          SnackBar(content: Text(l10n.stickerSaveFailed(l10n.unknownReason))),
+        );
+        return;
+      }
+      final mime = message.mediaMime.toLowerCase().startsWith('image/')
+          ? message.mediaMime
+          : (lookupMimeType(
+                  message.mediaName.isNotEmpty
+                      ? message.mediaName
+                      : message.localPath,
+                ) ??
+                'image/png');
+      final saved = await _vm.saveStickerImage(bytes, mime);
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(content: Text(_stickerSaveLabel(saved))));
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text(l10n.stickerSaveFailed('$e'))),
+      );
+    }
+  }
+
+  Future<void> _addStickerFromFile() async {
+    if (_ui.pickingFile) return;
+    _vm.setPickingFile(true);
+    await WidgetsBinding.instance.endOfFrame;
+    PlatformFile? picked;
+    try {
+      picked = await FilePicker.pickFile(type: FileType.image);
+    } finally {
+      _vm.setPickingFile(false);
+    }
+    if (!mounted || picked == null) return;
+    final bytes = await picked.readAsBytes();
+    if (!mounted || bytes.isEmpty) return;
+    final mime = lookupMimeType(picked.name) ?? 'image/png';
+    if (!isImageMime(mime, picked.name)) return;
+    try {
+      final saved = await _vm.saveStickerImage(bytes, mime);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(_stickerSaveLabel(saved))));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.stickerSaveFailed('$e'))),
+      );
+    }
+  }
+
+  Future<void> _sendSticker(Sticker sticker) async {
+    if (_ui.sending) return;
+    final result = await _vm.sendSticker(
+      sticker,
+      confirm: _confirm,
+      l10n: context.l10n,
+    );
+    if (!mounted) return;
+    if (result.uploadUnavailable) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.httpUploadUnavailable)),
+      );
+      return;
+    }
+    final error = result.error;
+    if (error != null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(context.l10n.uploadFailed(error))));
+    } else if (result.failureReason != null) {
+      _showNotSent(result.failureReason!);
+    }
+    if (result.queued || result.sent) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    }
   }
 
   Future<void> _attachFile() async {
@@ -891,6 +1028,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       pinned: pinned,
       canSaveFile:
           !kIsWeb && isFileMessage && mediaStore.existsSync(message.localPath),
+      canSaveSticker: _canSaveSticker(message),
       canTranslate: canOfferTranslate(
         body: body,
         decrypted: decrypted,
@@ -939,6 +1077,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         await _forwardMessage(message, body);
       case MessageAction.saveFile:
         await _saveMessageFile(message);
+      case MessageAction.saveSticker:
+        await _saveMessageSticker(message);
       case MessageAction.pin:
         await _vm.togglePinned(message.stanzaId);
         if (mounted) setState(() {});
@@ -1415,8 +1555,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                                                   widget.chatJid,
                                                 ),
                                               )
-                                              .value
-                                              ?.show,
+                                              .value,
                                         ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
@@ -1624,7 +1763,21 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                     onSend: _send,
                     onAttach: _attachFile,
                     onVoice: _sendVoice,
+                    onStickers: _toggleStickers,
+                    stickersOpen: _stickersOpen,
                     attachEnabled: attachEnabled,
+                  ),
+                if (_stickersOpen && !_selectionMode && _editingId == null)
+                  SizedBox(
+                    height: 280,
+                    child: StickerPanel(
+                      stickers: _stickers ?? const Stream.empty(),
+                      onInsert: _insertStickerText,
+                      onSend: (sticker) => unawaited(_sendSticker(sticker)),
+                      onAdd: () => unawaited(_addStickerFromFile()),
+                      onDelete: (sticker) =>
+                          unawaited(_vm.deleteSticker(sticker.id)),
+                    ),
                   ),
                 if (_reactingToId != null)
                   QuickReactionBar(

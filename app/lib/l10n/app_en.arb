@@ -119,6 +119,12 @@
   "presenceXa": "Extended away",
   "presenceDnd": "Do not disturb",
   "presenceOffline": "Offline",
+  "lastSeen": "Last seen: {when}",
+  "@lastSeen": {
+    "placeholders": {
+      "when": { "type": "String" }
+    }
+  },
   "aboutBody": "ResonChat — a dual-track OMEMO client for XMPP.\nLicensed GPL-3.0-or-later.\n\nIndependent project. Not affiliated with, endorsed by, or derived from any other messaging product.\n\nThe post-quantum track is a custom extension and has not been independently audited. Use at your own risk.",
   "jid": "JID",
   "password": "Password",
@@ -502,6 +508,10 @@
   "edited": "edited",
   "fileAttachment": "File",
   "tapToDownload": "Tap to download",
+  "fileTooBigForPreview": "Too large to download automatically. Tap to download",
+  "previewMaxFileSize": "Automatic download size",
+  "previewMaxFileSizeSummary": "Images and files at or under this size download on their own. Larger ones wait for a tap",
+  "noAutomaticPreview": "No automatic download",
   "couldNotOpenFile": "Could not open file",
   "uploadingFile": "Uploading…",
   "uploadFailed": "Upload failed: {error}",
@@ -809,5 +819,21 @@
   "startupFailedBody": "Something went wrong while opening the app's own storage. Message history is kept in an encrypted database, and the app will not fall back to storing it unencrypted.",
   "startupFailedHint": "Trying again may work. If it keeps failing, the system key store may have been reset — for example after changing how the device is unlocked.",
   "startupFailedDetails": "Technical details",
-  "startupFailedRetry": "Try again"
+  "startupFailedRetry": "Try again",
+  "stickers": "Stickers",
+  "stickerEmoji": "Emoji",
+  "stickerKaomoji": "Kaomoji",
+  "stickerCustom": "Custom",
+  "addSticker": "Add sticker",
+  "saveSticker": "Save to stickers",
+  "stickerSaved": "Saved to stickers",
+  "stickerAlreadySaved": "An identical image is already saved",
+  "stickerSaveFailed": "Could not save sticker: {error}",
+  "@stickerSaveFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "deleteSticker": "Delete sticker",
+  "deleteStickerConfirm": "Delete this sticker?"
 }

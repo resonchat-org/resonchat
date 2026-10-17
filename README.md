@@ -61,7 +61,7 @@ Every release so far is a **developer preview** signed with the debug keystore. 
 | M6 UI | In progress | Per [docs/05](docs/05-ui-telegram.md) |
 | M7 Release | Not started | — |
 
-CI runs `dart analyze` and the full `flutter test` suite on every push, and `./scripts/build_android.sh` produces the debug APK.
+CI runs `dart analyze` and the full `flutter test` suite on every push, and compiles Linux and Web together as a smoke check.
 
 **Known limitations and unfinished work** (the complete list is in [`README.dev.md`](README.dev.md)):
 

@@ -5,8 +5,6 @@
 
 import 'linux_cli_types.dart';
 
-export 'linux_cli_types.dart' show MicMuteProbe;
-
 Future<MicMuteProbe> probeDefaultMicMute() async => const MicMuteProbe();
 
 Future<bool?> isDefaultMicMuted() async => null;

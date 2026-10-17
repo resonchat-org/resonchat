@@ -8,8 +8,6 @@ import 'dart:io';
 
 import 'linux_cli_types.dart';
 
-export 'linux_cli_types.dart';
-
 const _parecordShimMarker = 'resonchat-parecord-shim';
 
 /// Absolute path to [name] on PATH / common dirs, or `null`.
