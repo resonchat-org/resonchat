@@ -145,7 +145,7 @@ jobs:
           test -f "$src"
           cp "$src" "dist/resonchat-${TAG}-x86_64.AppImage"
           chmod +x "dist/resonchat-${TAG}-x86_64.AppImage"
-          deb=$(ls app/build/ResonChat_*.deb | head -1)
+          deb=$(ls app/build/resonchat_*.deb | head -1)
           test -f "$deb"
           cp "$deb" "dist/resonchat-${TAG}-x86_64.deb"
           rpm=$(ls app/build/resonchat-*.rpm | head -1)
