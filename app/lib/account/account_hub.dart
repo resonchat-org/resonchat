@@ -287,10 +287,28 @@ class AccountHub extends ChangeNotifier {
     if (!ok) return false;
     final session = _sessions[accountId];
     if (session == null) return false;
-    await bootstrapSession(session);
-    notifyListeners();
-    _sessionChanges.add(null);
+    // Bootstrap is *not* part of being logged in. It is a roster fetch, two
+    // OMEMO bundle publishes, a bookmarks fetch, one MUC join per autojoin
+    // room (20 s timeout each) and up to 15 serial MAM pages — all of which
+    // used to sit between "authenticated" and the login spinner stopping.
+    // Run it behind the session, exactly like the cold-start path
+    // ([connectAll]) already does, and report completion on the session
+    // ticks the UI already listens to.
+    unawaited(_bootstrapInBackground(session));
     return true;
+  }
+
+  /// Runs [bootstrapSession] off the login path and surfaces its completion.
+  ///
+  /// [bootstrapSession] already swallows and logs its own failures, so this
+  /// only has to make sure listeners hear about the finished state.
+  Future<void> _bootstrapInBackground(AccountSession session) async {
+    try {
+      await bootstrapSession(session);
+    } finally {
+      notifyListeners();
+      _sessionChanges.add(null);
+    }
   }
 
   /// Roster / OMEMO / bookmarks / MUC rejoin / MAM catch-up after a successful login.

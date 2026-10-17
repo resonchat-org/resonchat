@@ -2307,15 +2307,37 @@ class XmppService {
   /// [StreamNegotiationsDoneEvent] is the only place that re-runs this on a
   /// TCP drop (monocles re-joins MUCs / flushes queue on the same signal).
   Future<void> _afterStreamReady({required bool resumed}) async {
-    if (_carbons != null) {
-      _carbonsEnabled = await _carbons!.enableCarbons();
-    }
-    _mamAvailable = await _isMamAvailable();
-    await _subscribeOwnPep();
+    // Carbons, the MAM disco probe and the own-PEP subscribes do not depend on
+    // each other, and the subscribes do not depend on each other. Start all of
+    // them before awaiting any: serially this was ~9 round-trips the user paid
+    // for on every login before [connect] would even return.
+    final carbonsFuture = _enableCarbonsSafely();
+    final mamFuture = _isMamAvailable();
+    final pepFuture = _subscribeOwnPep();
+    _carbonsEnabled = await carbonsFuture;
+    _mamAvailable = await mamFuture;
+    await pepFuture;
     _log.info(
       'stream ready (resumed=$resumed) carbons=$_carbonsEnabled '
       'mam=$_mamAvailable',
     );
+  }
+
+  /// [CarbonsManager.enableCarbons] with the failure kept inside.
+  ///
+  /// Carbons are an optimisation: a server that refuses the IQ, or a socket
+  /// that dies mid-flight, must not turn an already-authenticated login into a
+  /// reported failure — which is what letting the exception escape
+  /// [_afterStreamReady] did.
+  Future<bool> _enableCarbonsSafely() async {
+    final carbons = _carbons;
+    if (carbons == null) return false;
+    try {
+      return await carbons.enableCarbons();
+    } catch (e) {
+      _log.info('could not enable carbons: $e');
+      return false;
+    }
   }
 
   /// PEP nodes worth a subscription: both OMEMO dialects plus the PQ track.
@@ -2351,13 +2373,32 @@ class XmppService {
   /// republish). Peer nodes are subscribed lazily on first use.
   Future<void> _subscribeOwnPep() async {
     final pm = _pubsub;
-    if (pm == null) return;
-    final bare = _connection!.connectionSettings.jid.toBare();
-    for (final node in _subscribedPepNodes) {
+    final connection = _connection;
+    if (pm == null || connection == null) return;
+    final bare = connection.connectionSettings.jid.toBare();
+    // One IQ per node, all independent: sending them together costs the
+    // slowest of the seven instead of the sum.
+    await Future.wait([
+      for (final node in _subscribedPepNodes) _subscribePepNode(pm, bare, node),
+    ]);
+  }
+
+  /// Subscribes to one PEP node, logging — never propagating — a refusal.
+  ///
+  /// A subscription that fails is a missing push notification, not a broken
+  /// session, and must not abort the other six.
+  Future<void> _subscribePepNode(
+    PubSubManager pm,
+    JID bare,
+    String node,
+  ) async {
+    try {
       final result = await pm.subscribe(bare, node);
       if (!result.isType<bool>() || !result.get<bool>()) {
         _log.fine('could not subscribe to $node: $result');
       }
+    } catch (e) {
+      _log.fine('could not subscribe to $node: $e');
     }
   }
 
@@ -2367,9 +2408,9 @@ class XmppService {
     final pm = _pubsub;
     if (pm == null) return;
     final bare = peer.toBare();
-    for (final node in _subscribedPepNodes) {
-      await pm.subscribe(bare, node);
-    }
+    await Future.wait([
+      for (final node in _subscribedPepNodes) _subscribePepNode(pm, bare, node),
+    ]);
   }
 
   /// Asks the server whether it keeps a message archive.
