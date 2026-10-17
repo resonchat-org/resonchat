@@ -279,7 +279,11 @@ EOF
     -bb "$spec"
 
   local built
-  built="$(find "$rpm_top/RPMS" -name 'resonchat-*.rpm' | head -1)"
+  # rpmbuild names its output after the spec's `Name:` field (ResonChat →
+  # `ResonChat-<version>-1.<arch>.rpm`), so matching the lowercased name we
+  # ship with a case-sensitive find never hit anything and the package was
+  # reported as "not produced" even though rpmbuild had just written it.
+  built="$(find "$rpm_top/RPMS" -type f -iname 'resonchat-*.rpm' | head -1)"
   if [ -z "$built" ]; then
     echo "rpmbuild produced no package" >&2
     return 1
