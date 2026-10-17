@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // Home after login: Telegram-style Chats / Contacts / Me.
-// Portrait uses [MainTabsLayout] (floating glass capsule); landscape uses a
-// normal [NavigationRail] on the left. Wide windows keep FluffyChat-style
-// master/detail for the Chats tab only.
+// Portrait uses [NavigationDock] (the floating lens bar ported from FlClash);
+// landscape uses a normal [NavigationRail] on the left. Wide windows keep
+// FluffyChat-style master/detail for the Chats tab only.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -19,7 +19,7 @@ import '../empty_chat_pane.dart';
 import '../me/me_page.dart';
 import '../theme.dart';
 import '../two_column_layout.dart';
-import 'main_tabs_layout.dart';
+import 'navigation_dock.dart';
 
 /// Route `/chats`: main-tab shell.
 class HomeShell extends ConsumerStatefulWidget {
@@ -68,7 +68,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
               onDestinationSelected: _selectTab,
               labelType: NavigationRailLabelType.all,
               backgroundColor: tg.pageBackground,
-              // Match portrait MainTabsLayout: accent selected, textPrimary idle.
+              // Match portrait NavigationDock: accent selected, textPrimary idle.
               indicatorColor: tg.accent.withValues(alpha: 0.09),
               selectedIconTheme: IconThemeData(color: tg.accent, size: 24),
               unselectedIconTheme: IconThemeData(
@@ -111,14 +111,10 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       );
     }
 
-    final bottomGap = media.padding.bottom + kMainTabsMarginBottom;
+    final inset = NavigationDock.insetOf(context);
     final paddedMedia = media.copyWith(
-      padding: media.padding.copyWith(
-        bottom: media.padding.bottom + MainTabsLayout.contentInset,
-      ),
-      viewPadding: media.viewPadding.copyWith(
-        bottom: media.viewPadding.bottom + MainTabsLayout.contentInset,
-      ),
+      padding: media.padding.copyWith(bottom: inset),
+      viewPadding: media.viewPadding.copyWith(bottom: inset),
     );
 
     return Scaffold(
@@ -134,29 +130,24 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           Positioned(
             left: 0,
             right: 0,
-            bottom: bottomGap,
-            child: Center(
-              child: MainTabsLayout(
-                selectedIndex: tab,
-                onSelected: _selectTab,
-                tabs: [
-                  GlassTab(
-                    icon: Icons.chat_bubble_outline,
-                    selectedIcon: Icons.chat_bubble,
-                    label: l10n.tabChats,
-                  ),
-                  GlassTab(
-                    icon: Icons.people_outline,
-                    selectedIcon: Icons.people,
-                    label: l10n.tabContacts,
-                  ),
-                  GlassTab(
-                    icon: Icons.person_outline,
-                    selectedIcon: Icons.person,
-                    label: l10n.tabMe,
-                  ),
-                ],
-              ),
+            bottom: 0,
+            child: NavigationDock(
+              selectedIndex: tab,
+              onSelected: _selectTab,
+              destinations: [
+                NavigationDockDestination(
+                  icon: Icons.chat_bubble,
+                  label: l10n.tabChats,
+                ),
+                NavigationDockDestination(
+                  icon: Icons.people,
+                  label: l10n.tabContacts,
+                ),
+                NavigationDockDestination(
+                  icon: Icons.person,
+                  label: l10n.tabMe,
+                ),
+              ],
             ),
           ),
         ],
