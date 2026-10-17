@@ -2,113 +2,94 @@
 
 [![CI](https://github.com/resonchat-org/resonchat/actions/workflows/ci.yml/badge.svg)](https://github.com/resonchat-org/resonchat/actions/workflows/ci.yml)
 
-一个基于 Flutter 的 XMPP 客户端：在**不修改服务端、不引入新 XEP** 的前提下，实现与 OMEMO 同构的**后量子加密**（X25519 + ML-KEM-768），同时**保持与标准 OMEMO 客户端互通**；UI 采用 Telegram Android 观感。Android 优先。
+English | [中文](README.zh.md)
 
-## 特性
+A Flutter XMPP client that implements **post-quantum encryption isomorphic to OMEMO** — X25519 + ML-KEM-1024 — with **no server changes and no new XEP**, while staying **interoperable with standard OMEMO clients**. The UI follows Telegram for Android. Android first.
 
-| 特性 | 状态 | 说明 |
+## Developer preview
+
+ResonChat is early and iterating quickly. **M0–M5 are complete, M6 is in progress and M7 has not started. THERE WILL BE COMPATIBILITY-BREAKING CHANGES.**
+
+The encryption is a custom post-quantum extension to OMEMO and has **not been audited by a third party**. Do not rely on it for high-sensitivity use, and do not claim that it is secure.
+
+## Features
+
+| Feature | Status | Notes |
 |---|---|---|
-| 双轨端到端加密（A 轨） | 已完成 | 标准 OMEMO（XEP-0384），与 Conversations / Moxxy / Dino 等互通。已与真实 Conversations 2.20.4 完成互通验收 |
-| 双轨端到端加密（B 轨） | 已完成 | PQ-OMEMO（X25519 + ML-KEM-768 混合，PQXDH）；用户选定 PO 且对端设备可达时发送。已双账号跨服务器互测通过 |
-| 三轨选择（PO / OM / NO） | 已完成 | 用户选定 + `TrackResolver` 判定可行性（见 [docs/10](docs/10-track-selection.md)） |
-| 零服务端改动 / 零新 XEP | 已完成 | 复用 PEP、EME 等既有标准 |
-| 数据库落盘加密 | 已完成 | SQLCipher，口令由 Android Keystore 保护 |
-| 标准协议扩展 | 已完成 | MAM（XEP-0313）历史同步、回执（XEP-0184）、输入状态（XEP-0085）、Carbons（XEP-0280） |
-| 平台支持 | 部分完成 | Android（arm64-v8a / x86_64，`pqcrypto` + `libsignal`）；Web（Dart→Wasm + Drift WASM + WebSocket）；Linux AppImage；Windows 安装包；iOS 未做 |
-| Telegram Android 观感 UI | 进行中 | 气泡、色板、列表布局已实现；动画、平板适配未做 |
+| Dual-track end-to-end encryption (A track) | Done | Standard OMEMO (XEP-0384), interoperable with Conversations / Moxxy / Dino. Verified end to end against a real Conversations 2.20.4 |
+| Dual-track end-to-end encryption (B track) | Done | PQ-OMEMO (X25519 + ML-KEM-1024 hybrid, PQXDH). Sent when the user picks PO and the peer's devices are reachable. Cross-tested between two accounts on different servers |
+| Track selection (PO / OM / NO) | Done | The user's choice plus a `TrackResolver` feasibility decision — see [docs/10](docs/10-track-selection.md) |
+| Zero server changes / zero new XEPs | Done | Reuses existing standards (PEP, EME, …) |
+| Encrypted database at rest | Done | SQLCipher, with the key protected by the Android Keystore |
+| Standard protocol extensions | Done | MAM (XEP-0313) history sync, delivery receipts (XEP-0184), chat states (XEP-0085), carbons (XEP-0280) |
+| Platform support | Partial | Android (arm64-v8a / x86_64, `pqcrypto` + native `libsignal`); Web (Dart→Wasm + Drift WASM + WebSocket); Linux AppImage / deb / rpm; Windows installer; iOS not started |
+| Telegram-for-Android look | In progress | Bubbles, palette and list layout are in place; animation and tablet layout are not |
 
-## 状态
+## Status
 
-**M0–M5 已完成，M6 进行中，M7 未开始。**
+**M0–M5 are complete, M6 is in progress and M7 has not started.**
 
-| 里程碑 | 状态 | 要点 |
+| Milestone | Status | Highlights |
 |---|---|---|
-| M0 工程骨架 | 已完成 | mono-repo 骨架、三个上游 fork 接线、CI、drift 存储、PQXDH 与双轨编解码、Android debug APK 可构建 |
-| M1 通信基线 | 已完成 | SASL SCRAM-SHA-256、资源绑定、roster（RFC 6121 版本控制）、明文收发、MAM 历史同步、Carbons、消息存储 |
-| M2 标准 OMEMO | 已完成 | **与真实 Conversations 2.20.4 互通验收通过**（我们加密的消息被第三方客户端解密并显示） |
-| M3 PQ 内核 | 已完成 | ML-KEM 走纯 Dart `pqcrypto`；PQXDH/SPQR 走 `libsignal`；**双账号跨服务器互测通过**（conversations.im 与 jabber.fr）；PQ bundle 已真实发布到服务器 |
-| M4 协商与发送策略 | 已完成 | 能力服务 + 用户 Track / `TrackResolver`（docs/10）；PEP 变更失效缓存 |
-| M5 存储与保护 | 已完成 | OMEMO 设备密钥经 Keystore 封存落库；数据库 SQLCipher 加密；聊天历史备份格式已有。**密钥备份/恢复与「不保存明文」选项未做** |
-| M6 UI | 进行中 | 按 [docs/05](docs/05-ui-telegram.md) |
-| M7 发布 | 未开始 | — |
+| M0 Project skeleton | Done | Monorepo skeleton, upstream forks wired in, CI, drift storage, PQXDH and dual-track codecs, a buildable Android debug APK |
+| M1 Communication baseline | Done | SASL SCRAM-SHA-256, resource binding, roster (RFC 6121 versioning), plaintext send/receive, MAM history sync, carbons, message storage |
+| M2 Standard OMEMO | Done | **Interoperability accepted against a real Conversations 2.20.4** (messages we encrypt are decrypted and shown by a third-party client) |
+| M3 PQ core | Done | ML-KEM through pure-Dart `pqcrypto`; PQXDH/SPQR through `libsignal`; **cross-tested between two accounts on different servers** (conversations.im and jabber.fr); the PQ bundle is really published to the server |
+| M4 Negotiation and send policy | Done | Capability service, user track choice and `TrackResolver` (docs/10); PEP changes invalidate the cache |
+| M5 Storage and protection | Done | OMEMO device keys sealed through the Keystore, SQLCipher-encrypted database, a chat-history backup format. **Key backup/restore and a "never store plaintext" option are not done** |
+| M6 UI | In progress | Per [docs/05](docs/05-ui-telegram.md) |
+| M7 Release | Not started | — |
 
-当前验证结果：`dart analyze lib test tool integration_test` 无告警；`flutter test` 123 项通过；`./scripts/build_android.sh` 成功。
+CI runs `dart analyze` and the full `flutter test` suite on every push, and `./scripts/build_android.sh` produces the debug APK.
 
-**已知限制与未完成项**（完整清单见 [`README.dev.md`](README.dev.md)）：
+**Known limitations and unfinished work** (the complete list is in [`README.dev.md`](README.dev.md)):
 
-- 反向互通（Conversations 到本客户端）尚未验证 —— 验收环境对非双向订阅拒绝投递，需两台真实设备补齐
-- 设备密钥仅存本机 Keystore，**换机即全部会话失效**（无备份与恢复）
-- iOS 未做；Android 仅打 arm64-v8a / x86_64
-- 消息一律落库（虽已加密），无「不保存明文」选项
-- 加密协议**未经第三方安全审计**
+- Reverse interoperability (Conversations → this client) is not verified yet; the acceptance environment refuses delivery to non-mutually-subscribed devices, so two real devices are still needed
+- Device keys live only in the local Keystore, so **switching devices invalidates every session** (no backup or restore)
+- iOS is not started; Android is only built for arm64-v8a / x86_64
+- Messages are always stored (encrypted), with no "don't store plaintext" option
+- The encryption protocol has **not been audited by a third party**
 
-## 构建指南
+## Building
 
-本仓库通过 **Git 子模块** 引入 `vendor/moxlib`、`vendor/omemo_dart`、`vendor/moxxmpp`（见 [`.gitmodules`](.gitmodules)）。子模块里有一部分**生成代码不在 Git 中**（例如 `omemo_dart` 的 `schema.pb.dart`），必须先在各子模块里生成，再进入 `app` 构建；否则 `flutter pub get` / 编译会报缺少文件。
+The repository brings its upstream forks in as **Git submodules** — `vendor/omemo_dart`, `vendor/moxxmpp`, `vendor/libsignal_dart` and `vendor/moxlib` (see [`.gitmodules`](.gitmodules)). Some code they need is **not committed** (for example the `moxxmpp` builder output), so it has to be generated before `flutter pub get` and before building; otherwise `flutter pub get` or the compiler reports missing files.
 
-### 环境要求
+### Requirements
 
-- [Flutter](https://docs.flutter.dev/get-started/install) stable（与 [`README.dev.md`](README.dev.md) 一致：Dart 3.13+）
-- Android 开发：JDK 21、Android SDK（运行/打包 APK 时需要）
-- **`protoc`**：`omemo_dart` 从 `protobuf/schema.proto` 生成 Dart 代码时需要（例如 Debian/Ubuntu：`protobuf-compiler`）
+- [Flutter](https://docs.flutter.dev/get-started/install) stable (Dart 3.13+, matching [`README.dev.md`](README.dev.md))
+- Android: JDK 21 and the Android SDK (needed to run or package an APK)
 
-### 1. 克隆仓库与子模块
+### 1. Clone the repository and its submodules
 
 ```bash
 git clone --recurse-submodules https://github.com/resonchat-org/resonchat
 cd resonchat
 ```
 
-### 2. 在子模块中生成代码
-
-按依赖顺序执行（路径均相对于仓库根目录）：
-
-**`moxlib`（无代码生成，只需解析依赖）**
+### 2. Generate the submodule code
 
 ```bash
-cd vendor/moxlib && dart pub get && cd ../..
+./scripts/generate_submodule_code.sh
 ```
 
-**`omemo_dart`（Protobuf → `lib/src/protobuf/schema.pb.dart`）**
+The script resolves the path packages in dependency order and runs `build_runner` where it is needed. (The old `protoc` step for `omemo_dart` is gone with the pure-Dart OMEMO stack — do not run `protoc` against `vendor/omemo_dart`.)
 
-```bash
-cd vendor/omemo_dart
-dart pub get
-dart pub global activate protoc_plugin
-export PATH="$PATH:$HOME/.pub-cache/bin"
-protoc --dart_out=lib/src/protobuf -Iprotobuf protobuf/schema.proto
-cd ../..
-```
-
-**`moxxmpp`（拉取依赖并跑 `build_runner`；与上游 monorepo 习惯一致）**
-
-```bash
-cd vendor/moxxmpp/packages/moxxmpp
-dart pub get
-dart run build_runner build
-cd ../moxxmpp_socket_tcp
-dart pub get
-cd ../../..
-```
-
-也可在 `vendor/moxxmpp` 使用 [melos](https://melos.invertase.dev/)：`melos bootstrap`（需本机已安装 `melos`），再于 `vendor/moxxmpp/packages/moxxmpp` 执行上面的 `build_runner` 命令。
-
-### 3. 构建并运行应用
+### 3. Build and run the app
 
 ```bash
 cd app
 flutter pub get
-dart run build_runner build   # 生成 drift：database.g.dart 等
-flutter run                   # 连接设备或模拟器
+dart run build_runner build   # generates drift: database.g.dart, …
+flutter run                   # with a device or emulator attached
 ```
 
-调试 APK（仓库根目录）：
+Debug APK, from the repository root:
 
 ```bash
 ./scripts/build_android.sh
 ```
 
-Linux AppImage（x86_64 / aarch64，需本机已装 Flutter Linux 桌面依赖：clang、cmake、ninja、GTK 3、libsecret 等）：
+Linux AppImage (x86_64 / aarch64; needs the Flutter Linux desktop dependencies installed — clang, cmake, ninja, GTK 3, libsecret, …):
 
 ```bash
 ./scripts/build_appimage.sh
@@ -117,81 +98,92 @@ chmod +x app/build/resonchat-*-x86_64.AppImage
 ./app/build/resonchat-*-x86_64.AppImage
 ```
 
-Debian / RPM（同一 release bundle；链接库依赖由打包工具自动推断，CLI 依赖见 `scripts/linux_pkg_deps.sh`）：
+Debian / RPM (the same release bundle; library dependencies are inferred by the packaging tools, CLI dependencies are listed in `scripts/linux_pkg_deps.sh`):
 
 ```bash
-./scripts/build_deb_rpm.sh          # 或 --skip-build 复用已有 bundle
-# → app/build/ResonChat_*_x86_64.deb  /  app/build/resonchat-*-x86_64.rpm
+./scripts/build_deb_rpm.sh          # or --skip-build to reuse an existing bundle
+# → app/build/resonchat_<version>_x86_64.deb
+#   app/build/resonchat-<version>-1.x86_64.rpm
 ```
 
-Web（Drift `sqlite3.wasm` + Dart→Wasm；产物在 `app/build/web/`）：
+Windows installer, from PowerShell (`scripts/build_windows.ps1`):
+
+```powershell
+./scripts/build_windows.ps1
+# → app/build/windows/installer/resonchat-<version>-x86_64-setup.exe
+```
+
+Web (Drift `sqlite3.wasm` + Dart→Wasm; output in `app/build/web/`):
 
 ```bash
 ./scripts/build_web.sh
-# Release 包：resonchat-<tag>-wasm.tar.gz（CD 从 app/build/web 打 tar.gz）
+# release tarball: resonchat-<tag>-wasm.tar.gz (CD tars up app/build/web)
 ```
 
-更完整的工具链版本、分析与测试命令见 [`README.dev.md`](README.dev.md)。
+`vendor/libsignal_dart` supplies the native libsignal library. Its build hook downloads the prebuilt `libsignal_frb` release for the target platform, so the first build of a checkout needs network access.
 
-## 开发
+A fuller toolchain list, plus the analysis and test commands, is in [`README.dev.md`](README.dev.md) (Chinese).
 
-构建、测试与本地环境见 [`README.dev.md`](README.dev.md)。
+## Development
 
-## 文档
+Local setup, analysis and tests: [`README.dev.md`](README.dev.md) (Chinese).
 
-完整设计文档见 [`docs/`](docs/README.md)：
+## Documentation
 
-| 文档 | 内容 |
+The full design documentation lives in [`docs/`](docs/README.md) (Chinese):
+
+| Document | Contents |
 |---|---|
-| [总览与关键决策](docs/01-overview.md) | 目标、约束、ADR、架构 |
-| [协议规范](docs/02-protocol-pqomemo.md) | 双轨 OMEMO、PQXDH、消息格式 |
-| [XMPP 集成](docs/03-xmpp-integration.md) | PEP 节点、收发流程 |
-| [密码学实现](docs/04-crypto-android.md) | pqcrypto / libsignal、密钥存储 |
-| [UI 规范](docs/05-ui-telegram.md) | Telegram 观感与移植 |
-| [里程碑](docs/06-android-milestones.md) | M0–M7 |
-| [合规](docs/07-licensing-compliance.md) | 许可证与商标 |
-| [风险](docs/08-risks-open-questions.md) | 风险与待决问题 |
-| [Briar 借鉴](docs/09-briar-lessons.md) | 信任 UX、省电设计 |
-| [三轨选择](docs/10-track-selection.md) | 用户选定、可行性判定、标签一致性 |
+| [Overview and key decisions](docs/01-overview.md) | Goals, constraints, ADRs, architecture |
+| [Protocol specification](docs/02-protocol-pqomemo.md) | Dual-track OMEMO, PQXDH, message format |
+| [XMPP integration](docs/03-xmpp-integration.md) | PEP nodes, send and receive flows |
+| [Cryptography](docs/04-crypto-android.md) | pqcrypto / libsignal, key storage |
+| [UI specification](docs/05-ui-telegram.md) | Telegram look and porting |
+| [Milestones](docs/06-android-milestones.md) | M0–M7 |
+| [Compliance](docs/07-licensing-compliance.md) | Licenses and trademarks |
+| [Risks](docs/08-risks-open-questions.md) | Risks and open questions |
+| [Briar lessons](docs/09-briar-lessons.md) | Trust UX, power-saving design |
+| [Track selection](docs/10-track-selection.md) | User choice, feasibility, label consistency |
 
-## 许可证
+## License
 
-[GNU GPL-3.0-or-later](LICENSE)。
+[GNU GPL-3.0-or-later](LICENSE).
 
-## 第三方代码声明
+## Third-party code
 
-本项目以 GPL-3.0-or-later 发布，并包含以下第三方代码。完整矩阵见 [`docs/07-licensing-compliance.md`](docs/07-licensing-compliance.md)。
+This project is released under GPL-3.0-or-later and contains the following third-party code. The full matrix is in [`docs/07-licensing-compliance.md`](docs/07-licensing-compliance.md).
 
-### 仓库内上游 fork（`vendor/`，git 子模块）
+### Upstream forks in the repository (`vendor/`, Git submodules)
 
-以下三个库为上游 fork，**原 license 头与版权声明均予保留**：
+These four libraries are forks of upstream projects. **Their original license headers and copyright notices are kept.**
 
-| 路径 | 上游 | 许可证 | 本地改动 |
+| Path | Upstream | License | Local changes |
 |---|---|---|---|
-| `vendor/moxxmpp` | [codeberg.org/moxxy/moxxmpp](https://codeberg.org/moxxy/moxxmpp) | MIT | 移除私有 registry；Dart 3；MAM；RFC 7395 / XEP-0156 |
-| `vendor/omemo_dart` | [github.com/PapaTutuWawa/omemo_dart](https://github.com/PapaTutuWawa/omemo_dart) | MIT | 移除私有 registry；axolotl 路径 |
-| `vendor/moxlib` | [codeberg.org/moxxy/moxlib](https://codeberg.org/moxxy/moxlib) | **GPL-3.0** | SDK 约束提升到 Dart 3 |
+| `vendor/moxxmpp` | [codeberg.org/moxxy/moxxmpp](https://codeberg.org/moxxy/moxxmpp) | MIT | Removed the private registry; Dart 3; MAM; RFC 7395 / XEP-0156 |
+| `vendor/omemo_dart` | [github.com/PapaTutuWawa/omemo_dart](https://github.com/PapaTutuWawa/omemo_dart) | MIT | Removed the private registry; axolotl path |
+| `vendor/libsignal_dart` | [github.com/djx-y-z/libsignal_dart](https://github.com/djx-y-z/libsignal_dart) | **AGPL-3.0** | ML-KEM-1024 (`0x0A`) patch; publishes the prebuilt native `libsignal_frb` release it downloads |
+| `vendor/moxlib` | [codeberg.org/moxxy/moxlib](https://codeberg.org/moxxy/moxlib) | **GPL-3.0** | Raised the SDK constraint to Dart 3 |
 
-### UI 设计参考
+### UI design reference
 
-`app/lib/ui/` 下的界面设计参照 Telegram for Android 的布局与交互范式（GPL-2.0-or-later）。移植自 Telegram 的文件保留原始版权声明与 NOTICE，并显著标注修改来源与日期。**本项目不是 Telegram 官方客户端，与 Telegram 无关**；Telegram 名称与 Logo 均为其各自所有者的商标。
+The interface under `app/lib/ui/` follows the layout and interaction patterns of Telegram for Android (GPL-2.0-or-later). Files ported from Telegram keep their original copyright notices and NOTICE, and note the source and date of modification prominently. **This project is not an official Telegram client and is not affiliated with Telegram**; the Telegram name and logo are trademarks of their respective owners.
 
-### 运行时依赖（经包管理器获取，不在本仓库内）
+### Runtime dependencies (obtained through package managers, not in this repository)
 
-| 依赖 | 许可证 |
+| Dependency | License |
 |---|---|
-| `cryptography`（Dart） | Apache-2.0 |
-| `pqcrypto`（Dart） | MIT |
-| `libsignal`（path → `libsignal_dart`） | AGPL-3.0 |
+| `cryptography` (Dart) | Apache-2.0 |
+| `pqcrypto` (Dart) | MIT |
+| `libsignal` (path → `vendor/libsignal_dart`) | AGPL-3.0 |
 | drift | MIT |
-| SQLCipher / sqlcipher_flutter_libs | BSD-style（含 OpenSSL） |
+| SQLCipher / sqlcipher_flutter_libs | BSD-style (includes OpenSSL) |
 | flutter_secure_storage | BSD-3-Clause |
 | riverpod / flutter_riverpod | MIT |
 
-> 自有源文件均带 `SPDX-License-Identifier: GPL-3.0-or-later` 文件头。
+> Our own source files all carry an `SPDX-License-Identifier: GPL-3.0-or-later` header.
 
-## 免责声明
+## Disclaimer
 
-加密协议为自定义的 OMEMO 后量子扩展，**尚未经过第三方安全审计**。在完成独立审计之前，请勿用于高敏感场景，也不应对外宣称其安全性。
+The encryption protocol is a custom post-quantum extension to OMEMO and **has not been audited by a third party**. Until an independent audit is done, do not use it for high-sensitivity material and do not claim that it is secure.
 
-本项目**不是** Telegram 官方客户端，与 Telegram 无关；Telegram 名称与 Logo 为其各自所有者的商标。
+This project is **not** an official Telegram client and is not affiliated with Telegram; the Telegram name and logo are trademarks of their respective owners.
