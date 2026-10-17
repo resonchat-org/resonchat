@@ -18,7 +18,7 @@
 
 | 轨道 | 简写 | 图标 | 含义 |
 |---|---|---|---|
-| 后量子 PQ-OMEMO | `PO` | 护盾带对钩 | 自研混合轨道，resonchat 之间可读 |
+| 后量子 PQ-OMEMO | `PO` | 护盾带对钩 | 自研混合轨道，ResonChat 之间可读 |
 | 标准 OMEMO | `OM` | 护盾 | Conversations/axolotl，第三方客户端可读 |
 | 无加密 | `NO` | 叉 | 明文 |
 

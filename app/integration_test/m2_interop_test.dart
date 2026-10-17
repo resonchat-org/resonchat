@@ -1,4 +1,4 @@
-// Copyright (C) 2026 resonchat contributors.
+// Copyright (C) 2026 ResonChat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // M2 acceptance: interoperate with a real OMEMO client.
@@ -185,7 +185,7 @@ void main() {
       // --- send a real OMEMO message -----------------------------------
       // The standard track is named explicitly: the reference client speaks
       // OMEMO and cannot read PQ, so this exercises exactly the path it can.
-      const plaintext = 'interop from resonchat 9f3a2b';
+      const plaintext = 'interop from ResonChat 9f3a2b';
       final outcome = await xmpp.sendOnTrack(
         peer,
         plaintext,

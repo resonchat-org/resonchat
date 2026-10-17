@@ -1,4 +1,4 @@
-; Copyright (C) 2026 resonchat contributors.
+; Copyright (C) 2026 ResonChat contributors.
 ; SPDX-License-Identifier: GPL-3.0-or-later
 ;
 ; Inno Setup script for the Windows installer (setup.exe).
@@ -16,8 +16,8 @@
   #define MyAppVersion "0.0.0"
 #endif
 
-#define MyAppName "resonchat"
-#define MyAppPublisher "resonchat contributors"
+#define MyAppName "ResonChat"
+#define MyAppPublisher "ResonChat contributors"
 #define MyAppURL "https://github.com/resonchat-org/resonchat"
 #define MyAppExeName "resonchat.exe"
 ; Absolute roots from the script location (packaging/ → app/).

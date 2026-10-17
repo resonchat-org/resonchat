@@ -647,7 +647,7 @@ packages:
   libsignal:
     dependency: "direct main"
     description:
-      path: "../packages/libsignal_dart"
+      path: "../vendor/libsignal_dart"
       relative: true
     source: path
     version: "8.0.0"
@@ -710,21 +710,21 @@ packages:
   moxlib:
     dependency: "direct main"
     description:
-      path: "../packages/moxlib"
+      path: "../vendor/moxlib"
       relative: true
     source: path
     version: "0.2.0"
   moxxmpp:
     dependency: "direct main"
     description:
-      path: "../packages/moxxmpp/packages/moxxmpp"
+      path: "../vendor/moxxmpp/packages/moxxmpp"
       relative: true
     source: path
     version: "0.4.0"
   moxxmpp_socket_tcp:
     dependency: "direct main"
     description:
-      path: "../packages/moxxmpp/packages/moxxmpp_socket_tcp"
+      path: "../vendor/moxxmpp/packages/moxxmpp_socket_tcp"
       relative: true
     source: path
     version: "0.4.0"
@@ -755,7 +755,7 @@ packages:
   omemo_dart:
     dependency: "direct main"
     description:
-      path: "../packages/omemo_dart"
+      path: "../vendor/omemo_dart"
       relative: true
     source: path
     version: "0.6.0"

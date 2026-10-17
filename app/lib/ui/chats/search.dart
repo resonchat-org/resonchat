@@ -1,4 +1,4 @@
-// Copyright (C) 2026 resonchat contributors.
+// Copyright (C) 2026 ResonChat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // Search UI: the results list, the empty states, and jumping to a hit.

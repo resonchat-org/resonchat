@@ -1,4 +1,4 @@
-// Copyright (C) 2026 resonchat contributors.
+// Copyright (C) 2026 ResonChat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // Noticing that a contact's capabilities changed, without acting on it
@@ -58,7 +58,7 @@ class TrackAdvice {
   /// A single line, safe to put in a banner.
   String get message => switch (kind) {
     TrackAdviceKind.pqNowPossible =>
-      'Post-quantum is now possible here — only resonchat apps can read it.',
+      'Post-quantum is now possible here — only ResonChat apps can read it.',
     TrackAdviceKind.chosenTrackBlocked =>
       '${blocked?.consequence ?? 'This contact can no longer be reached.'} '
           'Messages on ${track.label} will ask you what to do.',

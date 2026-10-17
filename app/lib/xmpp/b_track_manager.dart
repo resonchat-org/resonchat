@@ -1,4 +1,4 @@
-// Copyright (C) 2026 resonchat contributors.
+// Copyright (C) 2026 ResonChat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // Owns the local B-track (PQ-OMEMO) device and wires it into the message
@@ -227,6 +227,15 @@ class BTrackManager {
     if (!listResult.isType<bool>() || !listResult.get<bool>()) {
       return false;
     }
+    // Conversations / monocles refine access_model after publish so contacts
+    // outside our roster can still fetch the list (open PEP).
+    try {
+      await pm.configure(
+        bare,
+        omemo2DevicesXmlns,
+        const PubSubPublishOptions(accessModel: 'open'),
+      );
+    } catch (_) {}
 
     final bundleResult = await pm.publish(
       bare,
@@ -235,7 +244,17 @@ class BTrackManager {
       id: '${session.device.id}',
       options: const PubSubPublishOptions(accessModel: 'open', maxItems: 'max'),
     );
-    return bundleResult.isType<bool>() && bundleResult.get<bool>();
+    final ok = bundleResult.isType<bool>() && bundleResult.get<bool>();
+    if (ok) {
+      try {
+        await pm.configure(
+          bare,
+          omemo2BundlesXmlns,
+          const PubSubPublishOptions(accessModel: 'open', maxItems: 'max'),
+        );
+      } catch (_) {}
+    }
+    return ok;
   }
 
   /// Encrypts [plaintext] for every PQ-capable device of [peerJid].
@@ -416,6 +435,9 @@ class BTrackManager {
       kemBinding: binding,
     );
     final pqSig = await pqIdentity.sign(transcript);
+    // monocles: classical IK also signs the transcript (`<ik-sig>`). Without
+    // this, peers refuse the bundle and never show our fingerprint.
+    final ikSig = await device.sign(transcript);
 
     return Omemo2Bundle(
       deviceId: device.id,
@@ -432,6 +454,7 @@ class BTrackManager {
       kemPrekeySignatures: kemSigs,
       pqIk: base64Encode(pqIk),
       pqSig: base64Encode(pqSig),
+      ikSig: base64Encode(ikSig),
     );
   }
 

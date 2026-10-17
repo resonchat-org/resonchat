@@ -1,4 +1,4 @@
-// Copyright (C) 2026 resonchat contributors.
+// Copyright (C) 2026 ResonChat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // monocles PQ-OMEMO2 protocol constants (`urn:monocles:omemo-pq:1`).
@@ -52,6 +52,12 @@ const String omemo2KemBindingLabel = 'monocles:omemo2:kem-binding:v2';
 /// Fixed algorithm identifiers bound into the signed transcript.
 const String omemo2PqIkAlgorithm = 'ML-DSA-87';
 const String omemo2KemAlgorithm = 'ML-KEM-1024';
+
+/// Diagnostic `rev` on published `<bundle/>` (monocles `OMEMO2_BUNDLE_REVISION`).
+///
+/// Unsigned — does not select behaviour. Monocles logs it when `<ik-sig>` is
+/// missing so the peer knows to update.
+const String omemo2BundleRevision = '4';
 
 /// libsignal ML-KEM-1024 public-key type tag (proto-XEP / CryptoHelper).
 const int mlKem1024Tag = 0x0A;

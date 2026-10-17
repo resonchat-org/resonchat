@@ -1,4 +1,4 @@
-# Copyright (C) 2026 resonchat contributors.
+# Copyright (C) 2026 ResonChat contributors.
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 # Build the Windows x86_64 Inno Setup installer from the Flutter release tree.

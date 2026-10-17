@@ -46,7 +46,7 @@
 - **后果**：需要处理 bundle 过期/清理（服务端 max_items 与 TTL）。
 
 ### ADR-004：Fork `moxxmpp` + `omemo_dart` + `moxlib`
-- **决定**：以 moxxmpp、omemo_dart、moxlib 为基础，以 git 子模块置于 `packages/`，`app` 用 path 依赖引用。
+- **决定**：以 moxxmpp、omemo_dart、moxlib 为基础，以 git 子模块置于 `vendor/`，`app` 用 path 依赖引用。
 - **理由**：三者均为纯 Dart、跨平台；moxxmpp / omemo_dart 为 MIT，moxlib 为 GPL-3.0，与 GPLv3 兼容。上游不在 pub.dev，fork 删除 `publish_to`，由 `dependency_overrides` 指向本地路径。
 - **要点**：
   - moxxmpp 上游：`codeberg.org/moxxy/moxxmpp`（MIT）。
@@ -119,7 +119,7 @@ resonchat/
 │     ├─ state/                 # Riverpod providers
 │     ├─ net/ / platform/ / l10n/
 │     └─ ui/                    # 登录、会话、聊天、设置、账号管理等
-└─ packages/                    # git 子模块（path 依赖）
+└─ vendor/                    # git 子模块（path 依赖）
    ├─ moxxmpp/                  # monorepo：moxxmpp + moxxmpp_socket_tcp（MIT）
    ├─ omemo_dart/               # MIT；axolotl + omemo2（PQXDH/SessionCipher）
    └─ moxlib/                   # GPL-3.0

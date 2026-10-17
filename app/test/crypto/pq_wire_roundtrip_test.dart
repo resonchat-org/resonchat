@@ -1,4 +1,4 @@
-// Copyright (C) 2026 resonchat contributors.
+// Copyright (C) 2026 ResonChat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // App-path PQ round-trip: publish-shaped XML → fromXml(PEP item id) →
@@ -57,6 +57,7 @@ Future<Omemo2Bundle> _publishShaped(Omemo2Device device) async {
     kemBinding: binding,
   );
   final pqSig = pq.sign(message: transcript).serialize();
+  final ikSig = await device.sign(transcript);
   return Omemo2Bundle(
     deviceId: device.id,
     jid: device.jid,
@@ -72,6 +73,7 @@ Future<Omemo2Bundle> _publishShaped(Omemo2Device device) async {
     kemPrekeySignatures: kemSigs,
     pqIk: base64Encode(pqIk),
     pqSig: base64Encode(pqSig),
+    ikSig: base64Encode(ikSig),
   );
 }
 

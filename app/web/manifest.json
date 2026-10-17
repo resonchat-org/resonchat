@@ -1,6 +1,6 @@
 {
-    "name": "resonchat",
-    "short_name": "resonchat",
+    "name": "ResonChat",
+    "short_name": "ResonChat",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

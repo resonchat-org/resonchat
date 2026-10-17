@@ -1,4 +1,4 @@
-// Copyright (C) 2026 resonchat contributors.
+// Copyright (C) 2026 ResonChat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import 'dart:convert';
@@ -29,6 +29,7 @@ Omemo2Bundle _sample() {
     kemPrekeySignatures: {7: base64Encode(List<int>.filled(64, 8))},
     pqIk: base64Encode(List<int>.filled(2592, 9)),
     pqSig: base64Encode(List<int>.filled(4627, 10)),
+    ikSig: base64Encode(List<int>.filled(64, 11)),
   );
 }
 
@@ -40,6 +41,7 @@ void main() {
     expect(xml, contains('kem-spk'));
     expect(xml, contains('pq-ik'));
     expect(xml, contains('pq-sig'));
+    expect(xml, contains('ik-sig'));
     expect(xml, isNot(contains('pqspk')));
 
     final back = Omemo2Bundle.fromXml(bundle.toXml(), jidOfBundle: bundle.jid);
@@ -47,6 +49,7 @@ void main() {
     expect(back.spkId, 3);
     expect(back.kemSpkId, 5);
     expect(back.hasPqIdentity, isTrue);
+    expect(back.ikSig, isNotEmpty);
     expect(back.ikSerialized.first, 0x05);
     expect(isMlKem1024PublicKey(base64Decode(back.kemSpk)), isTrue);
   });

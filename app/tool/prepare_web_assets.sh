@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright (C) 2026 resonchat contributors.
+# Copyright (C) 2026 ResonChat contributors.
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 # Fetch Drift WASM assets into web/ (not committed). Required before

@@ -63,7 +63,7 @@ DH4=DH(EK_A,OPK_B) 若有 EC OPK
 SS = ML-KEM-1024.Encaps(选中的 kem-pk 或 kem-spk)   # 仅一次 KEM
 ```
 
-`<key>` 内容为 **不透明** base64：`PreKeySignalMessage` / `SignalMessage`（version 4，含 `kyber_pre_key_id` / `kyber_ciphertext`，以及 SPQR 的 `pq_ratchet` field 5）。KEM 密文在 protobuf field 8。本地需使用 `packages/libsignal_dart` 的 ML-KEM-1024（`0x0A`）补丁构建。
+`<key>` 内容为 **不透明** base64：`PreKeySignalMessage` / `SignalMessage`（version 4，含 `kyber_pre_key_id` / `kyber_ciphertext`，以及 SPQR 的 `pq_ratchet` field 5）。KEM 密文在 protobuf field 8。本地需使用 `vendor/libsignal_dart` 的 ML-KEM-1024（`0x0A`）补丁构建。
 
 ## 4. Bundle 内容（B 轨）
 

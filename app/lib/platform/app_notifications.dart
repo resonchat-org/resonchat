@@ -1,4 +1,4 @@
-// Copyright (C) 2026 resonchat contributors.
+// Copyright (C) 2026 ResonChat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import 'package:flutter/foundation.dart';
@@ -55,8 +55,8 @@ final class AppNotifications {
     const linux = LinuxInitializationSettings(defaultActionName: 'Open');
     // Required on Windows or initialize() throws and we stay !_ready.
     const windows = WindowsInitializationSettings(
-      appName: 'resonchat',
-      appUserModelId: 'Org.Resonchat.Resonchat',
+      appName: 'ResonChat',
+      appUserModelId: 'org.resonchat.resonchat',
       guid: _windowsNotificationGuid,
     );
     const settings = InitializationSettings(

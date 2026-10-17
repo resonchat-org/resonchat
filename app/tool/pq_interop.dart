@@ -1,4 +1,4 @@
-// Copyright (C) 2026 resonchat contributors.
+// Copyright (C) 2026 ResonChat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // Two-account post-quantum interop over real XMPP servers.
@@ -286,6 +286,8 @@ Future<PqBundle> publish(Peer peer) async {
     DilithiumParams.mlDsa87,
     ctx: Uint8List.fromList(utf8.encode(omemo2PqIdContext)),
   );
+  // monocles v4: classical IK must also sign the same transcript.
+  final ikSig = await device.sign(transcript);
 
   final bundle = PqBundle(
     deviceId: device.id,
@@ -302,6 +304,7 @@ Future<PqBundle> publish(Peer peer) async {
     kemPrekeySignatures: kemSigs,
     pqIk: _b64(peer.pqIk),
     pqSig: _b64(pqSig),
+    ikSig: _b64(ikSig),
   );
 
   final bare = peer.jid.toBare();

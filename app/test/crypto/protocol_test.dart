@@ -1,4 +1,4 @@
-// Copyright (C) 2026 resonchat contributors.
+// Copyright (C) 2026 ResonChat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // Track-selection state machine (docs/02 §6) and codec round-trips.
@@ -38,6 +38,7 @@ Omemo2Bundle _fullBundle() {
     kemPrekeySignatures: {20: base64Encode(List<int>.filled(64, 8))},
     pqIk: base64Encode(List<int>.filled(2592, 9)),
     pqSig: base64Encode(List<int>.filled(4627, 10)),
+    ikSig: base64Encode(List<int>.filled(64, 11)),
   );
 }
 
@@ -125,8 +126,11 @@ void main() {
       expect(parsed.kemPrekeys.length, 1);
     });
 
-    test('bundle without pq-sig is not hasPqIdentity', () {
-      final bundle = Omemo2Bundle(
+    test('bundle without pq-sig / ik-sig is not hasPqIdentity', () {
+      final tagged = serializeMlKem1024PublicKey(
+        List<int>.filled(MlKem1024.publicKeyLength, 0),
+      );
+      final incomplete = Omemo2Bundle(
         deviceId: 7,
         jid: 'me@example.org',
         spk: base64Encode(List<int>.filled(32, 0)),
@@ -135,18 +139,34 @@ void main() {
         ik: base64Encode(List<int>.filled(32, 0)),
         prekeys: const {},
         kemSpkId: 1,
-        kemSpk: base64Encode(
-          serializeMlKem1024PublicKey(
-            List<int>.filled(MlKem1024.publicKeyLength, 0),
-          ),
-        ),
+        kemSpk: base64Encode(tagged),
         kemSpkSignature: base64Encode(List<int>.filled(64, 0)),
         kemPrekeys: const {},
         kemPrekeySignatures: const {},
         pqIk: '',
         pqSig: '',
+        ikSig: '',
       );
-      expect(bundle.hasPqIdentity, isFalse);
+      expect(incomplete.hasPqIdentity, isFalse);
+
+      final noIkSig = Omemo2Bundle(
+        deviceId: 7,
+        jid: 'me@example.org',
+        spk: base64Encode(List<int>.filled(32, 0)),
+        spkId: 1,
+        spkSignature: base64Encode(List<int>.filled(64, 0)),
+        ik: base64Encode(List<int>.filled(32, 0)),
+        prekeys: const {},
+        kemSpkId: 1,
+        kemSpk: base64Encode(tagged),
+        kemSpkSignature: base64Encode(List<int>.filled(64, 0)),
+        kemPrekeys: const {},
+        kemPrekeySignatures: const {},
+        pqIk: base64Encode(List<int>.filled(2592, 1)),
+        pqSig: base64Encode(List<int>.filled(4627, 2)),
+        ikSig: '',
+      );
+      expect(noIkSig.hasPqIdentity, isFalse);
     });
   });
 

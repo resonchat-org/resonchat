@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright (C) 2026 resonchat contributors.
+# Copyright (C) 2026 ResonChat contributors.
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 # Build Debian (.deb) and Fedora/RHEL (.rpm) packages from the Flutter Linux
@@ -16,7 +16,7 @@
 # ffmpeg, xdg-utils — see linux_runtime_deps.md.
 #
 # Outputs (under app/build/):
-#   resonchat_<version>_<arch>.deb
+#   ResonChat_<version>_<arch>.deb
 #   resonchat-<version>-1.<arch>.rpm
 
 set -euo pipefail
@@ -134,7 +134,7 @@ for size in 16 32 48 64 128 256 512; do
 done
 
 {
-  echo "resonchat ${VERSION}"
+  echo "ResonChat ${VERSION}"
   echo
   echo "XMPP client with dual-track OMEMO (standard + post-quantum)."
   echo "Homepage: https://github.com/resonchat-org/resonchat"
@@ -183,17 +183,17 @@ build_deb() {
   fi
 
   cat > "$deb_root/DEBIAN/control" <<EOF
-Package: resonchat
+Package: ResonChat
 Version: ${VERSION}
 Section: net
 Priority: optional
 Architecture: ${DEB_ARCH}
-Maintainer: resonchat contributors <noreply@resonchat.org>
+Maintainer: ResonChat contributors <noreply@resonchat.org>
 Homepage: https://github.com/resonchat-org/resonchat
 Depends: ${depends}
 Recommends: $(debian_recommends_csv)
 Description: XMPP client with dual-track OMEMO
- resonchat is a Flutter XMPP messenger with standard OMEMO and an optional
+ ResonChat is a Flutter XMPP messenger with standard OMEMO and an optional
  post-quantum track. This package installs the Linux desktop build.
  .
  Linked libraries come from dpkg-shlibdeps. Extra Depends are CLI tools
@@ -226,7 +226,7 @@ build_rpm() {
   spec="$rpm_top/SPECS/resonchat.spec"
   {
     cat <<EOF
-Name:           resonchat
+Name:           ResonChat
 Version:        ${VERSION}
 Release:        1%{?dist}
 Summary:        XMPP client with dual-track OMEMO
@@ -245,7 +245,7 @@ EOF
     cat <<EOF
 
 %description
-resonchat is a Flutter XMPP messenger with standard OMEMO and an optional
+ResonChat is a Flutter XMPP messenger with standard OMEMO and an optional
 post-quantum track. This package installs the Linux desktop build.
 
 Linked libraries come from rpm AutoReq. Extra Requires are CLI tools
@@ -268,7 +268,7 @@ cp -a . %{buildroot}/
 /usr/share/doc/resonchat
 
 %changelog
-* $(date -u '+%a %b %d %Y') resonchat contributors <noreply@resonchat.org> - ${VERSION}-1
+* $(date -u '+%a %b %d %Y') ResonChat contributors <noreply@resonchat.org> - ${VERSION}-1
 - Packaged Flutter Linux release bundle.
 EOF
   } > "$spec"

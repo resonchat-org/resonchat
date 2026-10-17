@@ -1,4 +1,4 @@
-// Copyright (C) 2026 resonchat contributors.
+// Copyright (C) 2026 ResonChat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // ML-DSA-87 post-quantum identity for monocles OMEMO2 (`pq-ik` / `pq-sig`).

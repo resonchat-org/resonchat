@@ -1,6 +1,6 @@
 #!/bin/sh
 # resonchat-parecord-shim
-# Copyright (C) 2026 resonchat contributors.
+# Copyright (C) 2026 ResonChat contributors.
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 # record_linux always execs `parecord`. Prefer host `pw-record` (PipeWire);
@@ -43,5 +43,5 @@ for d in $PATH; do
 done
 IFS=$old_ifs
 
-echo "resonchat: neither pw-record nor parecord found" >&2
+echo "ResonChat: neither pw-record nor parecord found" >&2
 exit 127

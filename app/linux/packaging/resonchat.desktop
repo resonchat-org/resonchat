@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
-Name=resonchat
+Name=ResonChat
 GenericName=XMPP Client
 Comment=XMPP client with dual-track OMEMO (standard + post-quantum)
 Exec=resonchat

@@ -1,12 +1,12 @@
-[submodule "packages/omemo_dart"]
-	path = packages/omemo_dart
+[submodule "vendor/omemo_dart"]
+	path = vendor/omemo_dart
 	url = https://github.com/resonchat-org/omemo_dart
-[submodule "packages/moxxmpp"]
-	path = packages/moxxmpp
+[submodule "vendor/moxxmpp"]
+	path = vendor/moxxmpp
 	url = https://github.com/resonchat-org/moxxmpp
-[submodule "packages/libsignal_dart"]
-	path = packages/libsignal_dart
+[submodule "vendor/libsignal_dart"]
+	path = vendor/libsignal_dart
 	url = https://github.com/resonchat-org/libsignal_dart
-[submodule "packages/moxlib"]
-	path = packages/moxlib
+[submodule "vendor/moxlib"]
+	path = vendor/moxlib
 	url = https://github.com/resonchat-org/moxlib

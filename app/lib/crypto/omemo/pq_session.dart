@@ -1,4 +1,4 @@
-// Copyright (C) 2026 resonchat contributors.
+// Copyright (C) 2026 ResonChat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // B-track device + session facade over omemo_dart [Omemo2Manager].
@@ -158,21 +158,44 @@ class PqSessionManager {
       kyberPreKeyPublic: bundle.kyberPreKeyPublicTagged,
       kyberPreKeySignature: bundle.kyberPreKeySignature,
     );
-    if (bundle.hasPqIdentity) {
-      final kemBinding = ls.pqKemBinding(
-        kemSignedPreKeyId: bundle.kemSignedPreKeyId,
-        kemSignedPreKeyPublic: bundle.kemSignedPreKeyPublicTagged,
-        oneTime: [
-          for (final k in bundle.kemOneTimeKeys)
-            ls.KemOneTimeKey(id: k.id, publicKey: k.publicTagged),
-        ],
-      );
-      preKeyBundle = preKeyBundle.withPqIdentity(
-        pqIdentityKey: bundle.pqIdentityKey!,
-        pqSignature: bundle.pqSignature!,
-        kemBinding: kemBinding,
+    // monocles never-downgrade (same gate as Omemo2Manager._processBundle).
+    if (!bundle.hasPqIdentity) {
+      throw StateError(
+        'OMEMO2 bundle for ${bundle.jid}/${bundle.deviceId} has no usable '
+        'PQ identity (pq-ik/pq-sig/ik-sig) — refusing session',
       );
     }
+    final kemBinding = ls.pqKemBinding(
+      kemSignedPreKeyId: bundle.kemSignedPreKeyId,
+      kemSignedPreKeyPublic: bundle.kemSignedPreKeyPublicTagged,
+      oneTime: [
+        for (final k in bundle.kemOneTimeKeys)
+          ls.KemOneTimeKey(id: k.id, publicKey: k.publicTagged),
+      ],
+    );
+    final transcript = ls.pqBundleTranscript(
+      identityKey: bundle.identityPublicTagged,
+      pqIdentityKey: bundle.pqIdentityKey!,
+      signedPreKeyId: bundle.signedPreKeyId,
+      signedPreKeyPublic: bundle.signedPreKeyPublicTagged,
+      kemBinding: kemBinding,
+    );
+    final ikOk =
+        ls.PublicKey.deserialize(bytes: bundle.identityPublicTagged.toList())
+            .verify(
+              message: transcript.toList(),
+              signature: bundle.ikSignature!.toList(),
+            );
+    if (!ikOk) {
+      throw StateError(
+        'OMEMO2 bundle for ${bundle.jid}/${bundle.deviceId} has invalid ik-sig',
+      );
+    }
+    preKeyBundle = preKeyBundle.withPqIdentity(
+      pqIdentityKey: bundle.pqIdentityKey!,
+      pqSignature: bundle.pqSignature!,
+      kemBinding: kemBinding,
+    );
     final builder = ls.SessionBuilder(
       localAddress: own.localAddress,
       sessionStore: own.sessionStore,

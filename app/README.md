@@ -1,4 +1,4 @@
-# resonchat
+# ResonChat
 
 A new Flutter project.
 

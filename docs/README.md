@@ -1,4 +1,4 @@
-# resonchat — 设计文档
+# ResonChat — 设计文档
 
 Flutter XMPP 客户端：**不修改服务端、不引入新 XEP**，在标准 OMEMO 之上叠加后量子轨道（X25519 + ML-KEM-768），与 Conversations 等客户端互通；UI 采用 Telegram Android 观感。Android 优先，并提供 Web 与 Linux AppImage 构建路径。
 

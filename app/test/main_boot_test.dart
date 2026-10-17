@@ -1,4 +1,4 @@
-// Copyright (C) 2026 resonchat contributors.
+// Copyright (C) 2026 ResonChat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // Startup used to run straight through `main()` before `runApp`. Anything that
@@ -30,7 +30,7 @@ void main() {
     await tester.pumpWidget(const StartupGate(boot: _failingBoot));
     await tester.pumpAndSettle();
 
-    expect(find.text('resonchat could not start'), findsOneWidget);
+    expect(find.text('ResonChat could not start'), findsOneWidget);
     expect(
       find.textContaining('will not fall back to storing it unencrypted'),
       findsOneWidget,
@@ -70,7 +70,7 @@ void main() {
     expect(attempts, 2, reason: 'the button must actually retry');
     // Still on the failure screen, since this boot failed too. The point is
     // that an attempt happened without a relaunch.
-    expect(find.text('resonchat could not start'), findsOneWidget);
+    expect(find.text('ResonChat could not start'), findsOneWidget);
   });
 
   testWidgets('booting shows progress rather than a blank window', (

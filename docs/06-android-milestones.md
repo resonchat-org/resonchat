@@ -11,7 +11,7 @@
 **任务**
 - [x] Flutter 稳定版 + Android SDK/NDK 环境
 - [x] 建立 mono-repo 结构（见 01 文档 §6）
-- [x] fork `moxxmpp`、`omemo_dart`、`moxlib` 至 `packages/`（git 子模块）
+- [x] fork `moxxmpp`、`omemo_dart`、`moxlib` 至 `vendor/`（git 子模块）
 - [x] 添加 GPLv3 LICENSE、各文件来源标注规范
 - [x] GitHub Actions：analyze + test + `./scripts/build_android.sh`；CD 挂 arm64 / x86_64 APK + AppImage
 

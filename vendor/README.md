@@ -1,4 +1,4 @@
-# packages/ — 上游 fork（git 子模块）
+# vendor/ — 上游 fork（git 子模块）
 
 本目录内的代码是上游库的**本地 fork**，以 **git 子模块** 纳入本仓库（见根目录 `.gitmodules`）。克隆时使用 `git clone --recurse-submodules`，或之后 `git submodule update --init --recursive`。
 

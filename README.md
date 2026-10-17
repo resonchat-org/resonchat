@@ -1,4 +1,4 @@
-# resonchat
+# ResonChat
 
 [![CI](https://github.com/resonchat-org/resonchat/actions/workflows/ci.yml/badge.svg)](https://github.com/resonchat-org/resonchat/actions/workflows/ci.yml)
 
@@ -44,7 +44,7 @@
 
 ## 构建指南
 
-本仓库通过 **Git 子模块** 引入 `packages/moxlib`、`packages/omemo_dart`、`packages/moxxmpp`（见 [`.gitmodules`](.gitmodules)）。子模块里有一部分**生成代码不在 Git 中**（例如 `omemo_dart` 的 `schema.pb.dart`），必须先在各子模块里生成，再进入 `app` 构建；否则 `flutter pub get` / 编译会报缺少文件。
+本仓库通过 **Git 子模块** 引入 `vendor/moxlib`、`vendor/omemo_dart`、`vendor/moxxmpp`（见 [`.gitmodules`](.gitmodules)）。子模块里有一部分**生成代码不在 Git 中**（例如 `omemo_dart` 的 `schema.pb.dart`），必须先在各子模块里生成，再进入 `app` 构建；否则 `flutter pub get` / 编译会报缺少文件。
 
 ### 环境要求
 
@@ -66,13 +66,13 @@ cd resonchat
 **`moxlib`（无代码生成，只需解析依赖）**
 
 ```bash
-cd packages/moxlib && dart pub get && cd ../..
+cd vendor/moxlib && dart pub get && cd ../..
 ```
 
 **`omemo_dart`（Protobuf → `lib/src/protobuf/schema.pb.dart`）**
 
 ```bash
-cd packages/omemo_dart
+cd vendor/omemo_dart
 dart pub get
 dart pub global activate protoc_plugin
 export PATH="$PATH:$HOME/.pub-cache/bin"
@@ -83,7 +83,7 @@ cd ../..
 **`moxxmpp`（拉取依赖并跑 `build_runner`；与上游 monorepo 习惯一致）**
 
 ```bash
-cd packages/moxxmpp/packages/moxxmpp
+cd vendor/moxxmpp/packages/moxxmpp
 dart pub get
 dart run build_runner build
 cd ../moxxmpp_socket_tcp
@@ -91,7 +91,7 @@ dart pub get
 cd ../../..
 ```
 
-也可在 `packages/moxxmpp` 使用 [melos](https://melos.invertase.dev/)：`melos bootstrap`（需本机已安装 `melos`），再于 `packages/moxxmpp/packages/moxxmpp` 执行上面的 `build_runner` 命令。
+也可在 `vendor/moxxmpp` 使用 [melos](https://melos.invertase.dev/)：`melos bootstrap`（需本机已安装 `melos`），再于 `vendor/moxxmpp/packages/moxxmpp` 执行上面的 `build_runner` 命令。
 
 ### 3. 构建并运行应用
 
@@ -121,7 +121,7 @@ Debian / RPM（同一 release bundle；链接库依赖由打包工具自动推�
 
 ```bash
 ./scripts/build_deb_rpm.sh          # 或 --skip-build 复用已有 bundle
-# → app/build/resonchat_*_x86_64.deb  /  app/build/resonchat-*-x86_64.rpm
+# → app/build/ResonChat_*_x86_64.deb  /  app/build/resonchat-*-x86_64.rpm
 ```
 
 Web（Drift `sqlite3.wasm` + Dart→Wasm；产物在 `app/build/web/`）：
@@ -162,15 +162,15 @@ Web（Drift `sqlite3.wasm` + Dart→Wasm；产物在 `app/build/web/`）：
 
 本项目以 GPL-3.0-or-later 发布，并包含以下第三方代码。完整矩阵见 [`docs/07-licensing-compliance.md`](docs/07-licensing-compliance.md)。
 
-### 仓库内上游 fork（`packages/`，git 子模块）
+### 仓库内上游 fork（`vendor/`，git 子模块）
 
 以下三个库为上游 fork，**原 license 头与版权声明均予保留**：
 
 | 路径 | 上游 | 许可证 | 本地改动 |
 |---|---|---|---|
-| `packages/moxxmpp` | [codeberg.org/moxxy/moxxmpp](https://codeberg.org/moxxy/moxxmpp) | MIT | 移除私有 registry；Dart 3；MAM；RFC 7395 / XEP-0156 |
-| `packages/omemo_dart` | [github.com/PapaTutuWawa/omemo_dart](https://github.com/PapaTutuWawa/omemo_dart) | MIT | 移除私有 registry；axolotl 路径 |
-| `packages/moxlib` | [codeberg.org/moxxy/moxlib](https://codeberg.org/moxxy/moxlib) | **GPL-3.0** | SDK 约束提升到 Dart 3 |
+| `vendor/moxxmpp` | [codeberg.org/moxxy/moxxmpp](https://codeberg.org/moxxy/moxxmpp) | MIT | 移除私有 registry；Dart 3；MAM；RFC 7395 / XEP-0156 |
+| `vendor/omemo_dart` | [github.com/PapaTutuWawa/omemo_dart](https://github.com/PapaTutuWawa/omemo_dart) | MIT | 移除私有 registry；axolotl 路径 |
+| `vendor/moxlib` | [codeberg.org/moxxy/moxlib](https://codeberg.org/moxxy/moxlib) | **GPL-3.0** | SDK 约束提升到 Dart 3 |
 
 ### UI 设计参考
 

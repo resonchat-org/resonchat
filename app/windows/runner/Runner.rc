@@ -90,13 +90,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "resonchat contributors" "\0"
+            VALUE "CompanyName", "ResonChat contributors" "\0"
             VALUE "FileDescription", "resonchat" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "resonchat" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 resonchat contributors. All rights reserved." "\0"
+            VALUE "InternalName", "ResonChat" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 ResonChat contributors. All rights reserved." "\0"
             VALUE "OriginalFilename", "resonchat.exe" "\0"
-            VALUE "ProductName", "resonchat" "\0"
+            VALUE "ProductName", "ResonChat" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

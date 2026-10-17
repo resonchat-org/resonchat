@@ -1,16 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Copyright (C) 2026 resonchat contributors -->
+<!-- Copyright (C) 2026 ResonChat contributors -->
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 <component type="desktop-application">
   <id>org.resonchat.resonchat</id>
-  <name>resonchat</name>
+  <name>ResonChat</name>
   <summary>XMPP client with dual-track OMEMO</summary>
   <metadata_license>FSFAP</metadata_license>
   <project_license>GPL-3.0-or-later</project_license>
-  <developer_name>resonchat contributors</developer_name>
+  <developer_name>ResonChat contributors</developer_name>
   <description>
     <p>
-      resonchat is a Flutter XMPP client with standard OMEMO and an optional
+      ResonChat is a Flutter XMPP client with standard OMEMO and an optional
       post-quantum track (X25519 + ML-KEM-768), without requiring server changes.
     </p>
   </description>

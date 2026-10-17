@@ -1,4 +1,4 @@
-// Copyright (C) 2026 resonchat contributors.
+// Copyright (C) 2026 ResonChat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // ML-KEM interfaces. OMEMO2 uses ML-KEM-1024 (monocles); ML-KEM-768 is

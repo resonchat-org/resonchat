@@ -1,4 +1,4 @@
-# resonchat — 构建、测试与本地开发
+# ResonChat — 构建、测试与本地开发
 
 ## 工具链
 
@@ -34,7 +34,7 @@ resonchat/
 │  │  └─ xmpp/               连接生命周期与事件分发
 │  ├─ test/                  按关注点：crypto / rooms / store / messages / session / ui
 │  └─ tool/                  Flutter 构建前置（web assets 等）+ Dart 探针
-└─ packages/                 上游 fork（git 子模块，path 依赖）
+└─ vendor/                 上游 fork（git 子模块，path 依赖）
    ├─ moxxmpp/packages/moxxmpp
    ├─ moxxmpp/packages/moxxmpp_socket_tcp
    ├─ omemo_dart
@@ -57,8 +57,6 @@ flutter build apk
 | `moxxmpp` | codeberg.org/moxxy/moxxmpp | MIT | 移除私有 registry；Dart 3；并入 MAM；RFC 7395 / XEP-0156 |
 | `omemo_dart` | github.com/PapaTutuWawa/omemo_dart | MIT | 移除私有 registry；axolotl 路径 |
 | `moxlib` | codeberg.org/moxxy/moxlib | **GPL-3.0** | SDK 约束提升到 Dart 3 |
-
-`app/pubspec.yaml` 用 `dependency_overrides` 把依赖全部指向 `packages/`，`flutter pub get` 不需要访问上游自建 Gitea。
 
 ## Architecture: MVVM + Riverpod
 
@@ -152,7 +150,7 @@ XMPP 传输同样条件导入（`lib/xmpp/xmpp_socket.dart`）：
 | 原生 | TCP + SOCKS5（`moxxmpp_socket_tcp`） |
 | Web | `moxxmpp` RFC 7395 WebSocket + XEP-0156 host-meta |
 
-RFC 7395 framing / `WebSocketXmppSocket` 与 XEP-0156 在 `packages/moxxmpp`（`rfcs/rfc_7395`、`xeps/xep_0156`），主库只做平台工厂。
+RFC 7395 framing / `WebSocketXmppSocket` 与 XEP-0156 在 `vendor/moxxmpp`（`rfcs/rfc_7395`、`xeps/xep_0156`），主库只做平台工厂。
 登录页「主机」可填 `wss://…` 覆盖自动发现；SOCKS5 UI 在 web 上隐藏。
 
 ## 当前实现状态

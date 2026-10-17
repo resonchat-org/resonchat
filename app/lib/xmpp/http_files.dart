@@ -1,9 +1,9 @@
-// Copyright (C) 2026 resonchat contributors.
+// Copyright (C) 2026 ResonChat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // App-layer HTTP I/O on top of moxxmpp's XEP-0363 manager.
 //
-// Slot discovery / request: [HttpFileUploadManager] (packages/moxxmpp).
+// Slot discovery / request: [HttpFileUploadManager] (vendor/moxxmpp).
 // OOB parse/send: [OOBManager] (XEP-0066).
 // PUT/GET + Conversations aesgcm://: here (same split as Conversations
 // HttpUploadManager vs HttpUploadConnection / HttpDownloadConnection).

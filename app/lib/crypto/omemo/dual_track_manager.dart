@@ -1,4 +1,4 @@
-// Copyright (C) 2026 resonchat contributors.
+// Copyright (C) 2026 ResonChat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // Dual-track manager: A track (standard OMEMO via moxxmpp) plus B track
@@ -22,10 +22,11 @@ import '../pq/mlkem.dart';
 import 'bounded.dart';
 import 'bundle_codec.dart';
 import 'defacto.dart';
+import 'device_pruning.dart';
 import 'negotiation.dart';
+import 'omemo2_bundle_verify.dart';
 import 'pq_session.dart';
 import 'protocol.dart';
-import 'device_pruning.dart';
 
 /// [ids] as an ascending, comma-separated string.
 ///
@@ -120,7 +121,12 @@ class DualTrackManager {
   /// encrypt *to* it, never to decrypt.
   static Future<PqDevice?> deviceFromBundle(PqBundle bundle) async {
     try {
-      if (!bundle.hasPqIdentity) return null;
+      // monocles never-downgrade: refuse bundles without a verified v4
+      // hybrid identity (pq-ik + pq-sig + ik-sig).
+      if (!bundle.hasPqIdentity || !await verifyOmemo2Bundle(bundle)) {
+        return null;
+      }
+      final pqId = parseOmemo2PqIdentity(bundle)!;
       final spk = base64Decode(bundle.spk);
       final signature = base64Decode(bundle.spkSignature);
       final ik = bundle.ikBytes;
@@ -193,8 +199,9 @@ class DualTrackManager {
         ),
         opks: opks,
         pqOpks: pqOpks,
-        peerPqIdentityKey: Uint8List.fromList(base64Decode(bundle.pqIk)),
-        peerPqSignature: Uint8List.fromList(base64Decode(bundle.pqSig)),
+        peerPqIdentityKey: pqId.pqIk,
+        peerPqSignature: pqId.pqSig,
+        peerIkSignature: pqId.ikSig,
       );
     } catch (_) {
       return null;
@@ -666,11 +673,19 @@ class DualTrackManager {
       final doc = XmlDocument.parse(res.get<PubSubItem>().payload.toXml());
       // PEP item id is the device id — the payload historically omitted it,
       // which made every fetched peer look like device 0 and decrypt fail.
-      return PqBundle.fromXml(
+      final bundle = PqBundle.fromXml(
         doc.rootElement,
         jidOfBundle: jid.toBare().toString(),
         deviceId: deviceId,
       );
+      // monocles IqParser + PqBundle.verify: refuse incomplete / bad signatures
+      // so we never encrypt to or display a half-published device.
+      final reason = await omemo2BundleRefusal(bundle);
+      if (reason != null) {
+        _log.warning('PQ bundle for $jid:$deviceId refused: $reason');
+        return null;
+      }
+      return bundle;
     } catch (e, st) {
       _log.warning('PQ bundle parse failed for $jid:$deviceId: $e\n$st');
       return null;
