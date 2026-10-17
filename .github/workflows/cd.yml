@@ -3,22 +3,35 @@
 #
 # Trigger: publish a Release in the GitHub UI (or `gh release create`).
 # Assets land on that Release page — the usual place for downloadable binaries.
+#
+# Also dispatchable by hand: a release run checks out the *tag's* commit, so a
+# packaging fix on main cannot reach an already-published tag without rewriting
+# it. Dispatching from main builds the fixed tree and attaches the artifacts to
+# the existing Release named by `tag` (nothing is rewritten).
+#
+#   gh workflow run CD -f tag=0.0.4
 
 name: CD
 
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag whose Release should receive the artifacts
+        required: true
+        type: string
 
 permissions:
   contents: write
 
 concurrency:
-  group: cd-${{ github.event.release.tag_name }}
+  group: cd-${{ github.event.release.tag_name || inputs.tag }}
   cancel-in-progress: true
 
 env:
-  TAG: ${{ github.event.release.tag_name }}
+  TAG: ${{ github.event.release.tag_name || inputs.tag }}
 
 jobs:
   build-apk:
