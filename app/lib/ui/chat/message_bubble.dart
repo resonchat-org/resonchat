@@ -67,7 +67,11 @@ class _BubblePainter extends CustomPainter {
         ..lineTo(size.width, size.height - tailSize)
         ..lineTo(size.width - tailSize, size.height)
         ..lineTo(radii.bottomLeft.x, size.height)
-        ..lineTo(0, radii.bottomLeft.x)
+        ..arcToPoint(
+          Offset(0, size.height - radii.bottomLeft.x),
+          radius: Radius.circular(radii.bottomLeft.x),
+        )
+        ..lineTo(0, lt)
         ..arcToPoint(Offset(lt, 0), radius: Radius.circular(lt))
         ..close();
     } else {
@@ -80,7 +84,10 @@ class _BubblePainter extends CustomPainter {
         ..lineTo(size.width - rt, 0)
         ..arcToPoint(Offset(size.width, rt), radius: Radius.circular(rt))
         ..lineTo(size.width, size.height - br)
-        ..lineTo(size.width - br, size.height)
+        ..arcToPoint(
+          Offset(size.width - br, size.height),
+          radius: Radius.circular(br),
+        )
         ..lineTo(tailSize, size.height)
         ..lineTo(0, size.height - tailSize)
         ..lineTo(0, lt)
