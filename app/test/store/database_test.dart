@@ -121,6 +121,54 @@ void main() {
     expect(byBody['received']!.delivered, isFalse);
   });
 
+  test('updateEncMode rewrites only our own outgoing row', () async {
+    await seedOutgoing('out-1');
+    await db.insertMessage(
+      MessagesCompanion(
+        chatJid: const Value('bob@example.org'),
+        sender: const Value('bob@example.org'),
+        stanzaId: const Value('out-1'),
+        body: const Value('theirs'),
+        incoming: const Value(true),
+      ),
+    );
+
+    // The row is queued with the track the composer was set to; the track
+    // resolution that follows can substitute a different one.
+    expect(await db.updateEncMode('bob@example.org', 'out-1', 'pq'), 1);
+    expect(await db.updateEncMode('bob@example.org', 'missing', 'pq'), 0);
+
+    final rows = await db.watchMessages('bob@example.org').first;
+    final byBody = {for (final r in rows) r.body: r};
+    expect(byBody['hi']!.encMode, 'pq');
+    expect(
+      byBody['theirs']!.encMode,
+      isNot('pq'),
+      reason: 'an inbound message must not be rewritten',
+    );
+  });
+
+  test('deleteOutgoingByStanzaId drops only the placeholder row', () async {
+    await seedOutgoing('out-1');
+    await db.insertMessage(
+      MessagesCompanion(
+        chatJid: const Value('bob@example.org'),
+        sender: const Value('bob@example.org'),
+        stanzaId: const Value('out-1'),
+        body: const Value('theirs'),
+        incoming: const Value(true),
+      ),
+    );
+
+    // A send cancelled at a track dialog must leave nothing behind; only the
+    // outgoing row with that id is affected.
+    expect(await db.deleteOutgoingByStanzaId('bob@example.org', 'out-1'), 1);
+    expect(await db.deleteOutgoingByStanzaId('bob@example.org', 'out-1'), 0);
+
+    final rows = await db.watchMessages('bob@example.org').first;
+    expect(rows.map((r) => r.body), ['theirs']);
+  });
+
   test('messages stream is ordered oldest first', () async {
     await db.upsertChat('bob@example.org', at: clock(0));
     for (final (i, body) in ['a', 'b', 'c'].indexed) {

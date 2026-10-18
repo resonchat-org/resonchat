@@ -42,7 +42,8 @@ abstract final class MessageSendStatus {
   }
 
   /// True while queued locally or still mid-flight (`unsend`).
-  /// [send] is not pending — UI shows no tick until a receipt arrives.
+  /// [send] is not pending: the stanza is on the socket, and the UI draws one
+  /// tick for it. Two ticks mean a receipt ([sendReceived] / [sendDisplayed]).
   static bool isPending(int status) => status == waiting || status == unsend;
 
   /// Delivery or read confirmed ([sendDisplayed] implies delivered).

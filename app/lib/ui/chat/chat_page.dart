@@ -810,27 +810,43 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
   Future<void> _send() async {
     if (_ui.sending) return;
-    final body = await _prepareBodyForSend(_input.text);
-    if (body == null || !mounted) return;
+    final raw = _input.text;
+    if (raw.trim().isEmpty) return;
+
+    // Take the composer's contents now, synchronously: the row is written to
+    // the DB before any network work, and a second tap must find an empty
+    // composer rather than queueing the same line twice.
+    final reply = _replyingTo;
+    if (reply != null) setState(() => _replyingTo = null);
+    _input.clear();
+
+    final body = await _prepareBodyForSend(raw);
+    if (!mounted) return;
+    if (body == null) {
+      // Cancelled at the tracking prompt — put the draft back.
+      _restoreUnsentDraft(raw, reply);
+      return;
+    }
+
+    // The bubble goes up as soon as the row is written; the send itself only
+    // reports back later (a failure notice, or nothing when it worked).
+    _vm.onMessageSent();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
     final result = await _vm.sendText(
       body,
       confirm: _confirm,
       l10n: context.l10n,
-      reply: _replyingTo,
+      reply: reply,
     );
     if (!mounted) return;
     final failure = result.failureReason;
     if (failure != null) _showNotSent(failure);
 
-    // Composer clears once the row is local (Conversations). A later socket
-    // failure keeps the bubble with STATUS_SEND_FAILED — text is not restored.
-    if (result.queued || result.sent) {
-      if (_replyingTo != null) setState(() => _replyingTo = null);
-      _input.clear();
-      _vm.onMessageSent();
-      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
-    } else if (_input.text.trim().isNotEmpty) {
-      // Cancelled before queue (track dialog) — keep the draft.
+    // A socket failure keeps the bubble with STATUS_SEND_FAILED and does not
+    // restore the text. Only a send the user cancelled at a track dialog left
+    // no row behind, and that draft must come back.
+    if (!result.queued && !result.sent) {
+      _restoreUnsentDraft(body, reply);
       _showUnsentNotice();
     }
   }
@@ -1436,6 +1452,22 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         duration: const Duration(seconds: 4),
       ),
     );
+  }
+
+  /// Puts a draft back after a send that never reached the DB.
+  ///
+  /// The composer is emptied up front (so the bubble can appear at once), so
+  /// anything that stops the send before the row is written has to undo that —
+  /// text and the reply-quote it was going to carry.
+  void _restoreUnsentDraft(
+    String text,
+    ({String id, String body, String author})? reply,
+  ) {
+    if (!mounted) return;
+    setState(() {
+      if (_input.text.isEmpty) _input.text = text;
+      if (reply != null && _replyingTo == null) _replyingTo = reply;
+    });
   }
 
   Future<void> _loadHistory() async {

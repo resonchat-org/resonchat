@@ -762,10 +762,6 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
     // Public / anonymous rooms: plaintext only (Conversations).
     if (isGroup && !state.mucEncryptable) chosen = Track.none;
 
-    final resolved = await resolveTrackForSend(chosen, confirm);
-    if (resolved == null) return const ChatSendResult();
-    chosen = resolved;
-
     // Conversations nextCounterpart: MUC PM is type=chat to room/nick.
     final pmNick = state.mucPmNick;
     final mucPm = isGroup && pmNick != null && pmNick.isNotEmpty;
@@ -773,8 +769,14 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
     final messageType = mucPm ? 'chat' : (isGroup ? 'groupchat' : 'chat');
     if (mucPm) chosen = Track.none;
 
-    // Allocate id → insert locally (WAITING/clock) → put on the wire →
-    // STATUS_SEND (one tick). 0184 / MUC reflection → STATUS_SEND_RECEIVED.
+    // Queue the row *before* resolving the track.
+    //
+    // [resolveTrackForSend] reads the peer's PEP device list and probes a
+    // bundle per device, which on an account with a long history is tens of
+    // seconds. The message must not be invisible for that long, so the bubble
+    // goes up now carrying the track the composer is set to, and the
+    // resolution below either confirms it or rewrites it. The id is allocated
+    // first so the row and the stanza share one [stanzaId].
     final stanzaId = xmpp.allocateStanzaId();
     await _db.insertMessage(
       MessagesCompanion(
@@ -791,6 +793,32 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
         replyAuthor: Value(reply?.author ?? ''),
       ),
     );
+    if (_disposed) {
+      // The page is gone, so the send below would be abandoned anyway
+      // ([resolveTrackForSend] answers "cancelled" once disposed). Leaving the
+      // placeholder behind would park a message on the clock forever.
+      await _db.deleteOutgoingByStanzaId(peerStr, stanzaId);
+      return const ChatSendResult();
+    }
+
+    // The row is local, so the composer may take the next message: holding the
+    // re-entrancy guard across the whole resolution is what made a second send
+    // wait on the first one's round-trips.
+    if (state.sending) _set((s) => s.copyWith(sending: false));
+
+    // Only now the part that may need the network, and may need to ask.
+    final resolved = await resolveTrackForSend(chosen, confirm);
+    if (resolved == null) {
+      // Cancelled at a track dialog. The row was only ever a placeholder, so
+      // drop it: a message the user chose not to send must not linger as a
+      // failed bubble.
+      await _db.deleteOutgoingByStanzaId(peerStr, stanzaId);
+      return const ChatSendResult();
+    }
+    if (resolved != chosen) {
+      chosen = resolved;
+      await _db.updateEncMode(peerStr, stanzaId, EncModeToken.of(chosen).wire);
+    }
 
     final outcome = reply == null
         ? await xmpp.sendOnTrack(

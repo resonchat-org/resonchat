@@ -1568,6 +1568,36 @@ class AppDatabase extends _$AppDatabase {
         );
   }
 
+  /// Corrects the declared track of an outgoing row.
+  ///
+  /// The row is written as soon as the send is queued — before the track is
+  /// resolved, so the bubble is not held up by the peer's PEP round-trips —
+  /// and the resolution can substitute a different track. Without this the
+  /// badge would keep showing the track the composer was set to rather than
+  /// the one the message actually went out on.
+  Future<int> updateEncMode(String chatJid, String stanzaId, String encMode) =>
+      (update(messages)..where(
+            (m) =>
+                m.chatJid.equals(chatJid) &
+                m.stanzaId.equals(stanzaId) &
+                m.incoming.equals(false),
+          ))
+          .write(MessagesCompanion(encMode: Value(encMode)));
+
+  /// Removes a queued outgoing row that was never sent.
+  ///
+  /// Used when the user cancels at a track dialog: the row existed only so the
+  /// bubble could appear immediately, and a send the user chose not to make
+  /// must leave no trace rather than a permanent "failed" mark.
+  Future<int> deleteOutgoingByStanzaId(String chatJid, String stanzaId) =>
+      (delete(messages)..where(
+            (m) =>
+                m.chatJid.equals(chatJid) &
+                m.stanzaId.equals(stanzaId) &
+                m.incoming.equals(false),
+          ))
+          .go();
+
   /// Marks an outgoing message (and older sent ones) as read (XEP-0333).
   ///
   /// The named stanza always becomes [MessageSendStatus.sendDisplayed] (read

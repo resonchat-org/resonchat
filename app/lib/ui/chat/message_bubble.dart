@@ -638,6 +638,30 @@ class ReactionChip extends StatelessWidget {
   }
 }
 
+/// Receipt ticks for one message, or null when there is nothing to draw.
+///
+/// Clock (queued locally) → one tick (on the wire) → two ticks (delivered or
+/// read). Incoming messages carry no ticks at all.
+///
+/// [MessageSendStatus.send] used to draw no tick, which left a message the
+/// server had already accepted indistinguishable from one still sitting in the
+/// queue. The status is set the moment the stanza is on the socket — the
+/// comment on it has always said "one tick" — so one tick is what it means.
+/// A delivery receipt (0184) or a read marker (0333) is two.
+///
+/// A plain function so the mapping can be checked without building the bubble.
+IconData? receiptTicks({
+  required bool mine,
+  required bool failed,
+  required bool pending,
+  required bool delivered,
+}) {
+  if (!mine) return null;
+  if (failed) return Icons.error_outline;
+  if (pending) return Icons.schedule;
+  return delivered ? Icons.done_all : Icons.done;
+}
+
 /// Timestamp, receipt ticks and the track this message used.
 ///
 /// The track sits in the meta row rather than its own line: it is metadata
@@ -685,19 +709,12 @@ class _MetaRow extends StatelessWidget {
     final isDisplayed = status == MessageSendStatus.sendDisplayed || displayed;
     final isDeliveredOnly =
         !isDisplayed && (status == MessageSendStatus.sendReceived || delivered);
-    final isPending = MessageSendStatus.isPending(status);
-    // Clock → (sent: none) → delivery: one → read: two.
-    final IconData? ticks = !mine
-        ? null
-        : isFailed
-        ? Icons.error_outline
-        : isPending
-        ? Icons.schedule
-        : isDisplayed
-        ? Icons.done_all
-        : isDeliveredOnly
-        ? Icons.done
-        : null;
+    final ticks = receiptTicks(
+      mine: mine,
+      failed: isFailed,
+      pending: MessageSendStatus.isPending(status),
+      delivered: isDisplayed || isDeliveredOnly,
+    );
     final tickColor = isFailed
         ? tg.danger
         : isDisplayed
