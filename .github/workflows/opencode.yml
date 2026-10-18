@@ -1,0 +1,68 @@
+# Run OpenCode on demand: mention `/oc` or `/opencode` in an issue or PR
+# comment and OpenCode executes the task inside a GitHub Actions runner
+# (replies, creates branches, opens PRs).
+#
+# Auth uses the repository-provided GITHUB_TOKEN (`use_github_token: true`), so
+# no OpenCode GitHub App install is required. Note: branches/PRs created with
+# GITHUB_TOKEN do not trigger other workflows (GitHub limitation).
+#
+# The model is served by a local `commandcode-proxy` started inside the runner
+# and reached through the `ccproxy` provider in ../../opencode.json. The
+# Command Code key lives in the `CC_PROXY_KEY` repository secret.
+#
+# Only organization members (author_association MEMBER/OWNER) may trigger it,
+# so a random commenter on this public repo cannot spend the key's quota.
+
+name: opencode
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+jobs:
+  opencode:
+    if: |
+      (github.event.comment.author_association == 'MEMBER' ||
+       github.event.comment.author_association == 'OWNER') &&
+      (contains(github.event.comment.body, '/oc') ||
+       contains(github.event.comment.body, '/opencode'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Start commandcode-proxy
+        env:
+          # Pinned for reproducibility; bump deliberately.
+          CC_PROXY_COMMIT: 972828aff37f07c9cb12959bc6a1f4d44aaa005a
+        run: |
+          set -euo pipefail
+          git clone --quiet https://github.com/MAXeaglet/commandcode-proxy /tmp/cc-proxy
+          git -C /tmp/cc-proxy checkout --quiet "$CC_PROXY_COMMIT"
+          nohup node /tmp/cc-proxy/proxy.mjs > /tmp/cc-proxy.log 2>&1 &
+          for _ in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:3000/health >/dev/null; then
+              echo "commandcode-proxy is up"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "commandcode-proxy failed to start"; cat /tmp/cc-proxy.log; exit 1
+
+      - name: Run OpenCode
+        uses: anomalyco/opencode/github@latest
+        env:
+          CC_PROXY_KEY: ${{ secrets.CC_PROXY_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          model: ccproxy/deepseek/deepseek-v4.1-flash
+          use_github_token: true
+          share: false

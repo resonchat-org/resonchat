@@ -1,0 +1,61 @@
+# Automatically triage newly opened issues with OpenCode.
+#
+# Same runner-local `commandcode-proxy` + `ccproxy` provider setup as
+# ../../opencode.yml, and the same household rule: only issues opened by an
+# organization member (author_association MEMBER/OWNER) are triaged, so a
+# random reporter on this public repo cannot spend the `CC_PROXY_KEY` quota.
+
+name: Issue triage
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  triage:
+    if: |
+      github.event.issue.author_association == 'MEMBER' ||
+      github.event.issue.author_association == 'OWNER'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Start commandcode-proxy
+        env:
+          # Pinned for reproducibility; bump deliberately.
+          CC_PROXY_COMMIT: 972828aff37f07c9cb12959bc6a1f4d44aaa005a
+        run: |
+          set -euo pipefail
+          git clone --quiet https://github.com/MAXeaglet/commandcode-proxy /tmp/cc-proxy
+          git -C /tmp/cc-proxy checkout --quiet "$CC_PROXY_COMMIT"
+          nohup node /tmp/cc-proxy/proxy.mjs > /tmp/cc-proxy.log 2>&1 &
+          for _ in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:3000/health >/dev/null; then
+              echo "commandcode-proxy is up"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "commandcode-proxy failed to start"; cat /tmp/cc-proxy.log; exit 1
+
+      - name: Run OpenCode
+        uses: anomalyco/opencode/github@latest
+        env:
+          CC_PROXY_KEY: ${{ secrets.CC_PROXY_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          model: ccproxy/deepseek/deepseek-v4.1-flash
+          use_github_token: true
+          share: false
+          prompt: |
+            Review this issue. If there's a clear fix or relevant docs:
+            - Provide documentation links
+            - Add error handling guidance for code examples
+            Otherwise, do not comment.
