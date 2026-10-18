@@ -1,14 +1,33 @@
 name: debug-event
 
 on:
-  issues:
-    types: [opened]
+  workflow_dispatch:
+    inputs:
+      username:
+        required: true
+        type: string
 
 jobs:
   dump:
     runs-on: ubuntu-latest
     steps:
-      - run: |
-          echo "author_association=[${{ github.event.issue.author_association }}]"
-          echo "issue author=[${{ github.event.issue.user.login }}]"
-          echo "action=[${{ github.event.action }}]"
+      - name: org membership
+        env:
+          GH_TOKEN: ${{ github.token }}
+          U: ${{ inputs.username }}
+        run: |
+          echo -n "orgs/members -> "
+          curl -s -o /dev/null -w "%{http_code}\n" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/orgs/resonchat-org/members/$U"
+          echo -n "repos/collaborators -> "
+          curl -s -o /dev/null -w "%{http_code}\n" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/resonchat-org/resonchat/collaborators/$U"
+          echo -n "orgs/memberships -> "
+          curl -s -w "\n%{http_code}\n" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/orgs/resonchat-org/memberships/$U"
