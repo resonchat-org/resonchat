@@ -89,6 +89,24 @@
 - `app/android/.../MainActivity.kt`（Android channel）
 - `app/windows/runner/audio_mute.cpp`（Windows WASAPI）
 
+### 3.2 输入栏（`ChatActivityEnterView`）
+
+输入栏按 Telegram 的**扁平 44dp 面板**还原 —— 不是「带描边的输入框 + 顶部分隔线」，而是整条一色的面板 + 顶部 compose 阴影，文字直接落在面板上：
+
+| 元素 | 规格 | 出处（`ChatActivityEnterView.java`） |
+|---|---|---|
+| 栏高 / 各图标槽位 | `44dp`（`DEFAULT_HEIGHT`），顶部 1dp 内边距 | `:6551`、`:2663` |
+| 左侧表情 | 44dp 槽位、`dp(7.5)` 内边距 → 29dp 字形；表情/贴纸面板打开时换成键盘字形 | `:2723`、`:2760`、`:13158` |
+| 文字 | 18dp，上 `dp(9)` / 下 `dp(10)`，最多 6 行；距表情槽 8dp、距回形针槽 6dp | `:5890`—`:5901` |
+| 回形针 | 44dp 槽位、24dp 字形（`msg_input_attach2`） | `:2845` |
+| 最右槽位 | 44dp 列内缩 3dp 的 **38dp 圆**，填充 `chat_messagePanelSend`：空输入框显示麦克风（白色字形），有文字才显示发送字形 | `:3230`—`:3258`、`:10609` |
+| 面板底色 | `chat_messagePanelBackground` + 顶部 compose 阴影（无分隔线） | `:4734`—`:4758` |
+| 按住录音 | 左滑 `distCanMove` = min(宽度 35%, 140dp) 触发取消；红色 10dp 闪烁圆点 + 15dp 计时 + 居中「左滑取消」 | `:731`、`:3188`、`:14304`—`:14313` |
+
+服务端不支持语音/附件（无 XEP-0363）时，麦克风退化为**不带圆底的灰色字形**，与 Telegram 的 `audioVideoButtonContainerForbidden` 一致。
+
+品牌仍为自有（§6）：圆底用应用主题强调色，字形用 Material 图标，不使用 Telegram 官方蓝色与纸飞机商标图标。
+
 ## 4. 关键交互（必须还原）
 
 1. **会话列表**：长按多选、滑动归档/删除、未读计数徽标、置顶/静音图标、在线状态点；统一收件箱跨账号（`AccountHub`）；「发现公开群聊」对齐 Conversations（jabber.network Muclumbus 或本服 XEP-0030 disco）

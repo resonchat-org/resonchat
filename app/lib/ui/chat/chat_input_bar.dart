@@ -1,8 +1,38 @@
 // Copyright (C) 2026 ResonChat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Composer bar: attach, text, send, or hold-to-talk mic (Telegram enter view).
+//
+// Composer bar, translated from Telegram for Android's
+// `ChatActivityEnterView` (GPL-2.0-or-later); see docs/05 §3.1.
+//
+// The reference is a flat 44dp panel, not a boxed text field under a divider
+// line, so the layout below is read off it item by item:
+//
+//   * bar and every icon slot are `DEFAULT_HEIGHT` = 44dp with 1dp of top
+//     padding (`ChatActivityEnterView.java:6551`, `:2663`);
+//   * left: the smiley (`emojiButton`, 44dp, `dp(7.5)` padding → 29dp glyph,
+//     `:2723`, `:2760`), which becomes a keyboard glyph while the sticker
+//     panel is open (`setEmojiButtonImage`, `:13158`);
+//   * middle: the message, 18dp, `dp(9)`/`dp(10)` padding, six lines max,
+//     starting 8dp after the smiley slot and ending 6dp before the paperclip
+//     slot — `createFrame(MATCH_PARENT, WRAP_CONTENT, BOTTOM, 52, 0, 50, 1.5)`
+//     with the paperclip slot ending 44dp short of the bar, `:5901`, `:2707`;
+//   * then the paperclip (`attachButton`, 44dp, `:2845`);
+//   * far right: one 38dp circle inset 3dp into a 44dp column, filled
+//     `chat_messagePanelSend` with a white glyph — the mic while the field is
+//     empty, the paper plane once it has text (`:3230`-`:3258`, `:10609`);
+//   * panel fill `chat_messagePanelBackground` under the compose shadow, with
+//     no divider line (`:4734`-`:4758`);
+//   * hold-to-talk: press the mic, slide left `distCanMove` =
+//     min(35% of the width, 140dp) to arm cancel (`:731`, `:3188`), with a
+//     blinking 10dp `chat_recordedVoiceDot` dot, a 15dp medium
+//     `chat_recordTime` timer and a centred "slide to cancel" hint
+//     (`:1074`-`:1107`, `:14304`-`:14313`, `:9940`-`:9961`).
+//
+// Branding stays ours (docs/05 §6): the accent is the app theme's, not
+// stock Telegram blue, and the glyphs are Material icons.
 
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -12,8 +42,50 @@ import '../../platform/linux_cli_types.dart';
 import '../../platform/voice_recorder.dart';
 import '../theme.dart';
 
-/// Bottom input bar: attach, text field, send — or hold-to-talk mic when empty
-/// (Telegram `ChatActivityEnterView`, docs/05 §4.2).
+/// Metrics read off the reference (`ChatActivityEnterView.java`).
+class _EnterView {
+  const _EnterView._();
+
+  /// `DEFAULT_HEIGHT` — the bar and every icon slot.
+  static const double height = 44;
+
+  /// `emojiButton` is 44dp with `dp(7.5)` of padding, so its glyph is 29dp.
+  static const double emojiGlyph = 29;
+
+  /// `msg_input_attach2` / `input_mic` / `send_plane_24` are 24dp glyphs.
+  static const double glyph = 24;
+
+  /// Message text: 18dp with `dp(9)`/`dp(10)` of padding (`:5890`-`:5892`).
+  static const double fontSize = 18;
+  static const double textPadTop = 9;
+  static const double textPadBottom = 10;
+  static const int maxLines = 6;
+
+  /// Text inset inside its slot: `52 - 44` on the left of the field and
+  /// `94 - 88` on the right of it, per the margins above.
+  static const double textPadLeft = 8;
+  static const double textPadRight = 6;
+
+  /// The right slot: a 38dp circle inset 3dp in a 44dp column.
+  static const double buttonCircle = 38;
+
+  /// `distCanMove`: the drag that arms "release to cancel".
+  static const double cancelSlide = 80;
+  static const double cancelSlideFraction = 0.35;
+  static const double cancelSlideMax = 140;
+
+  /// Recording row: 10dp dot (`RecordDot`, `dp(5)` radius) ramping 0→1 over
+  /// 600ms, a 28dp slot for it, and 15dp text.
+  static const double recordDotSize = 10;
+  static const double recordDotSlot = 28;
+  static const double recordFontSize = 15;
+  static const double recordLeftPad = 13;
+  static const Duration dotBlink = Duration(milliseconds: 600);
+}
+
+/// Bottom input bar: smiley, text, paperclip, and send-or-mic — or the
+/// recording row while the mic is held (Telegram `ChatActivityEnterView`,
+/// docs/05 §4.2).
 class ChatInputBar extends StatefulWidget {
   const ChatInputBar({
     super.key,
@@ -47,8 +119,12 @@ class ChatInputBar extends StatefulWidget {
   State<ChatInputBar> createState() => _ChatInputBarState();
 }
 
-class _ChatInputBarState extends State<ChatInputBar> {
-  final _recorder = VoiceRecorder();
+class _ChatInputBarState extends State<ChatInputBar>
+    with SingleTickerProviderStateMixin {
+  /// Created on the first recording attempt: constructing [VoiceRecorder]
+  /// opens a platform channel (the `record` plugin), which a chat screen that
+  /// never records should not pay for.
+  VoiceRecorder? _recorder;
   var _recording = false;
   var _cancelArmed = false;
   var _starting = false;
@@ -59,13 +135,22 @@ class _ChatInputBarState extends State<ChatInputBar> {
   Duration _elapsed = Duration.zero;
   Timer? _tick;
 
-  /// Telegram slide-to-cancel threshold (~dp 80).
-  static const _cancelDx = -64.0;
+  /// `distCanMove` for the press in progress.
+  double _cancelDx = _EnterView.cancelSlide;
+
+  /// `RecordDot` blink: 600ms each way, and only while recording.
+  late final AnimationController _dotBlink = AnimationController(
+    vsync: this,
+    duration: _EnterView.dotBlink,
+    value: 1,
+  );
 
   @override
   void dispose() {
     _tick?.cancel();
-    unawaited(_recorder.dispose());
+    _dotBlink.dispose();
+    final recorder = _recorder;
+    if (recorder != null) unawaited(recorder.dispose());
     super.dispose();
   }
 
@@ -73,7 +158,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
     _tick?.cancel();
     _tick = Timer.periodic(const Duration(milliseconds: 200), (_) {
       if (!mounted || !_recording) return;
-      setState(() => _elapsed = _recorder.elapsed);
+      setState(() => _elapsed = _recorder!.elapsed);
     });
   }
 
@@ -91,8 +176,9 @@ class _ChatInputBarState extends State<ChatInputBar> {
       return;
     }
     _starting = true;
+    final recorder = _recorder ??= VoiceRecorder();
     try {
-      final ok = await _recorder.ensurePermission();
+      final ok = await recorder.ensurePermission();
       if (!mounted || !_pointerHeld) return;
       if (!ok) {
         ScaffoldMessenger.of(context)
@@ -113,9 +199,9 @@ class _ChatInputBarState extends State<ChatInputBar> {
             .showSnackBar(SnackBar(content: Text(l10n.voiceMicMuted)));
         return;
       }
-      await _recorder.start();
+      await recorder.start();
       if (!mounted || !_pointerHeld) {
-        await _recorder.stop(send: false);
+        await recorder.stop(send: false);
         return;
       }
       HapticFeedback.lightImpact();
@@ -124,6 +210,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
         _cancelArmed = false;
         _elapsed = Duration.zero;
       });
+      _dotBlink.repeat(reverse: true);
       _startTick();
     } on MissingLinuxCli catch (e) {
       if (mounted) {
@@ -143,17 +230,22 @@ class _ChatInputBarState extends State<ChatInputBar> {
 
   Future<void> _endRecord({required bool send}) async {
     _pointerHeld = false;
-    if (!_recording && !_recorder.isRecording) {
+    final recorder = _recorder;
+    if (recorder == null || (!_recording && !recorder.isRecording)) {
       _pointerOrigin = null;
       return;
     }
     _tick?.cancel();
-    final clip = await _recorder.stop(send: send);
+    final clip = await recorder.stop(send: send);
     if (!mounted) return;
+    _dotBlink
+      ..stop()
+      ..value = 1;
     setState(() {
       _recording = false;
       _cancelArmed = false;
       _pointerOrigin = null;
+      _cancelDx = _EnterView.cancelSlide;
       _elapsed = Duration.zero;
     });
     if (!send) return;
@@ -169,13 +261,19 @@ class _ChatInputBarState extends State<ChatInputBar> {
   void _onMicPointerDown(PointerDownEvent e) {
     _pointerHeld = true;
     _pointerOrigin = e.position;
+    // `distCanMove` is recomputed per gesture: 35% of the width, capped.
+    final width = MediaQuery.sizeOf(context).width;
+    _cancelDx = math.min(
+      width * _EnterView.cancelSlideFraction,
+      _EnterView.cancelSlideMax,
+    );
     unawaited(_beginRecord());
   }
 
   void _onMicPointerMove(PointerMoveEvent e) {
     if (!_recording || _pointerOrigin == null) return;
     final dx = e.position.dx - _pointerOrigin!.dx;
-    final armed = dx <= _cancelDx;
+    final armed = dx <= -_cancelDx;
     if (armed != _cancelArmed) {
       setState(() => _cancelArmed = armed);
       if (armed) HapticFeedback.selectionClick();
@@ -197,6 +295,11 @@ class _ChatInputBarState extends State<ChatInputBar> {
     return '$m:$s';
   }
 
+  /// Composer glyphs are `glass_defaultIcon` (`0x991B2227` in the day theme):
+  /// the primary ink at 60%, which is what keeps the bar reading as chrome
+  /// rather than as content.
+  Color _glyphColor(TgColors tg) => tg.textPrimary.withValues(alpha: 0.6);
+
   @override
   Widget build(BuildContext context) {
     final tg = context.tg;
@@ -204,169 +307,286 @@ class _ChatInputBarState extends State<ChatInputBar> {
     return ValueListenableBuilder<TextEditingValue>(
       valueListenable: widget.controller,
       builder: (context, value, _) {
-        final empty = value.text.trim().isEmpty;
-        return Container(
+        final hasText = value.text.trim().isNotEmpty;
+        return DecoratedBox(
           decoration: BoxDecoration(
             color: tg.pageBackground,
-            border: Border(top: BorderSide(color: tg.separator)),
-          ),
-          padding: const EdgeInsets.fromLTRB(4, 6, 4, 8),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              if (!_recording)
-                IconButton(
-                  icon: const Icon(Icons.attach_file),
-                  color: widget.attachEnabled
-                      ? tg.textPrimary
-                      : tg.textSecondary,
-                  disabledColor: tg.textSecondary,
-                  tooltip: widget.attachEnabled
-                      ? l10n.attachFile
-                      : l10n.httpUploadUnavailable,
-                  onPressed: widget.attachEnabled ? widget.onAttach : null,
-                )
-              else
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 12,
-                  ),
-                  child: Icon(
-                    Icons.mic,
-                    size: 22,
-                    color: _cancelArmed ? tg.danger : tg.accent,
-                  ),
-                ),
-              Expanded(
-                child: _recording
-                    ? Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 10,
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 8,
-                              height: 8,
-                              decoration: BoxDecoration(
-                                color: _cancelArmed
-                                    ? tg.danger
-                                    : const Color(0xFFE53935),
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              _formatElapsed(_elapsed),
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontFeatures: const [
-                                  FontFeature.tabularFigures(),
-                                ],
-                                color: tg.textPrimary,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                _cancelArmed
-                                    ? l10n.releaseToCancel
-                                    : l10n.slideToCancel,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: _cancelArmed
-                                      ? tg.danger
-                                      : tg.textSecondary,
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      )
-                    : ConstrainedBox(
-                        constraints: const BoxConstraints(maxHeight: 120),
-                        child: TextField(
-                          controller: widget.controller,
-                          focusNode: widget.focusNode,
-                          minLines: 1,
-                          maxLines: 5,
-                          textInputAction: TextInputAction.newline,
-                          onChanged: widget.onChanged,
-                          style: TextStyle(
-                            fontSize: TgDimens.messageFontSize,
-                            color: tg.textPrimary,
-                          ),
-                          decoration: InputDecoration(
-                            isDense: true,
-                            filled: true,
-                            fillColor: tg.pageBackground,
-                            hintText: l10n.messageComposerHint,
-                            hintStyle: TextStyle(color: tg.textSecondary),
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 10,
-                            ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(18),
-                              borderSide: BorderSide(color: tg.separator),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(18),
-                              borderSide: BorderSide(color: tg.separator),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(18),
-                              borderSide: BorderSide(color: tg.accent),
-                            ),
-                          ),
-                        ),
-                      ),
+            // The compose shadow above the panel, not a 1dp separator.
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.10),
+                blurRadius: 4,
+                offset: const Offset(0, -1),
               ),
-              if (!_recording)
-                IconButton(
-                  tooltip: l10n.stickers,
-                  icon: Icon(
-                    widget.stickersOpen
-                        ? Icons.emoji_emotions
-                        : Icons.emoji_emotions_outlined,
-                  ),
-                  color: widget.stickersOpen ? tg.accent : tg.textPrimary,
-                  onPressed: widget.onStickers,
-                ),
-              if (empty || _recording)
-                Listener(
-                  behavior: HitTestBehavior.opaque,
-                  onPointerDown: _onMicPointerDown,
-                  onPointerMove: _onMicPointerMove,
-                  onPointerUp: _onMicPointerUp,
-                  onPointerCancel: _onMicPointerCancel,
-                  child: Tooltip(
-                    message: l10n.holdToRecord,
-                    child: Padding(
-                      padding: const EdgeInsets.all(8),
-                      child: Icon(
-                        _cancelArmed ? Icons.delete_outline : Icons.mic,
-                        color: _cancelArmed ? tg.danger : tg.accent,
-                        size: 28,
-                      ),
-                    ),
-                  ),
-                )
-              else
-                IconButton(
-                  icon: const Icon(Icons.send),
-                  color: tg.accent,
-                  onPressed: widget.onSend,
-                ),
             ],
+          ),
+          // Transparent so ink features still paint above that fill.
+          child: Material(
+            type: MaterialType.transparency,
+            child: Padding(
+              // `textFieldContainer.setPadding(0, dp(1), 0, 0)`.
+              padding: const EdgeInsets.only(top: 1),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  if (!_recording)
+                    _glyphButton(
+                      tg,
+                      icon: widget.stickersOpen
+                          ? Icons.keyboard_outlined
+                          : Icons.emoji_emotions_outlined,
+                      size: _EnterView.emojiGlyph,
+                      tooltip: l10n.stickers,
+                      onTap: widget.onStickers,
+                    ),
+                  Expanded(
+                    child: _recording
+                        ? _recordStatus(tg, l10n)
+                        : _field(tg, l10n),
+                  ),
+                  if (!_recording)
+                    _glyphButton(
+                      tg,
+                      icon: Icons.attach_file,
+                      tooltip: widget.attachEnabled
+                          ? l10n.attachFile
+                          : l10n.httpUploadUnavailable,
+                      onTap: widget.attachEnabled ? widget.onAttach : null,
+                    ),
+                  if (!_recording && hasText)
+                    _circleButton(
+                      tg,
+                      fill: tg.accent,
+                      onTap: widget.onSend,
+                      semanticLabel: l10n.sendMessage,
+                      icon: const Icon(
+                        Icons.send,
+                        size: _EnterView.glyph,
+                        color: Colors.white,
+                      ),
+                    )
+                  else
+                    _micSlot(tg, l10n),
+                ],
+              ),
+            ),
           ),
         );
       },
+    );
+  }
+
+  /// Rippled 44dp icon slot (`emojiButton` / `attachButton`).
+  Widget _glyphButton(
+    TgColors tg, {
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback? onTap,
+    double size = _EnterView.glyph,
+  }) {
+    return SizedBox(
+      width: _EnterView.height,
+      height: _EnterView.height,
+      child: Tooltip(
+        message: tooltip,
+        child: InkResponse(
+          onTap: onTap,
+          radius: 20,
+          child: Center(
+            child: Icon(
+              icon,
+              size: size,
+              color: onTap == null
+                  ? tg.textSecondary.withValues(alpha: 0.5)
+                  : _glyphColor(tg),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _field(TgColors tg, AppLocalizations l10n) {
+    return TextField(
+      controller: widget.controller,
+      focusNode: widget.focusNode,
+      minLines: 1,
+      maxLines: _EnterView.maxLines,
+      keyboardType: TextInputType.multiline,
+      textInputAction: TextInputAction.newline,
+      onChanged: widget.onChanged,
+      cursorColor: tg.accent,
+      cursorWidth: 2,
+      cursorRadius: const Radius.circular(1),
+      style: TextStyle(fontSize: _EnterView.fontSize, color: tg.textPrimary),
+      decoration: InputDecoration(
+        isDense: true,
+        border: InputBorder.none,
+        hintText: l10n.messageComposerHint,
+        hintStyle: TextStyle(
+          fontSize: _EnterView.fontSize,
+          color: tg.textSecondary,
+        ),
+        contentPadding: const EdgeInsets.fromLTRB(
+          _EnterView.textPadLeft,
+          _EnterView.textPadTop,
+          _EnterView.textPadRight,
+          _EnterView.textPadBottom,
+        ),
+      ),
+    );
+  }
+
+  /// `recordPanel`: the timer on the left, the hint centred over it.
+  Widget _recordStatus(TgColors tg, AppLocalizations l10n) {
+    final timer = TextStyle(
+      fontSize: _EnterView.recordFontSize,
+      fontWeight: FontWeight.w500,
+      fontFeatures: const [FontFeature.tabularFigures()],
+      color: tg.textSecondary,
+    );
+    return SizedBox(
+      height: _EnterView.height,
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: Padding(
+              padding: const EdgeInsets.only(left: _EnterView.recordLeftPad),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: _EnterView.recordDotSlot,
+                    height: _EnterView.recordDotSlot,
+                    child: Center(
+                      child: FadeTransition(
+                        opacity: _dotBlink,
+                        child: Container(
+                          width: _EnterView.recordDotSize,
+                          height: _EnterView.recordDotSize,
+                          decoration: BoxDecoration(
+                            color: tg.danger,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(_formatElapsed(_elapsed), style: timer),
+                ],
+              ),
+            ),
+          ),
+          // `slideText` is centred from 45dp rightwards; sliding turns it into
+          // the blue "release to cancel".
+          Positioned.fill(
+            child: Padding(
+              padding: const EdgeInsets.only(
+                left: _EnterView.height + 1,
+                right: 4,
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.chevron_left,
+                    size: 20,
+                    color: _cancelArmed ? tg.accent : tg.textSecondary,
+                  ),
+                  Flexible(
+                    child: Text(
+                      _cancelArmed ? l10n.releaseToCancel : l10n.slideToCancel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: _EnterView.recordFontSize,
+                        fontWeight: _cancelArmed
+                            ? FontWeight.w500
+                            : FontWeight.w400,
+                        color: _cancelArmed ? tg.accent : tg.textSecondary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Send button: the reference's 38dp `chat_messagePanelSend` circle.
+  Widget _circleButton(
+    TgColors tg, {
+    required Color fill,
+    required Widget icon,
+    required VoidCallback onTap,
+    required String semanticLabel,
+  }) {
+    return SizedBox(
+      width: _EnterView.height,
+      height: _EnterView.height,
+      child: Center(
+        child: SizedBox(
+          width: _EnterView.buttonCircle,
+          height: _EnterView.buttonCircle,
+          child: Material(
+            color: fill,
+            shape: const CircleBorder(),
+            child: Semantics(
+              button: true,
+              label: semanticLabel,
+              child: InkWell(
+                onTap: onTap,
+                customBorder: const CircleBorder(),
+                splashColor: Colors.white24,
+                highlightColor: Colors.white10,
+                child: Center(child: icon),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The mic: same slot as the send button. While recording it keeps the
+  /// circle and swaps the glyph for the delete cup once cancel is armed; with
+  /// no upload slot it degrades to a plain glyph, which is what the reference
+  /// draws when voice messages are unavailable.
+  Widget _micSlot(TgColors tg, AppLocalizations l10n) {
+    final circle = widget.attachEnabled;
+    return SizedBox(
+      width: _EnterView.height,
+      height: _EnterView.height,
+      child: Listener(
+        behavior: HitTestBehavior.opaque,
+        onPointerDown: _onMicPointerDown,
+        onPointerMove: _onMicPointerMove,
+        onPointerUp: _onMicPointerUp,
+        onPointerCancel: _onMicPointerCancel,
+        child: Semantics(
+          button: true,
+          label: l10n.holdToRecord,
+          child: Center(
+            child: Container(
+              width: _EnterView.buttonCircle,
+              height: _EnterView.buttonCircle,
+              decoration: circle
+                  ? BoxDecoration(color: tg.accent, shape: BoxShape.circle)
+                  : null,
+              child: Center(
+                child: Icon(
+                  _recording && _cancelArmed ? Icons.delete_outline : Icons.mic,
+                  size: _EnterView.glyph,
+                  color: circle ? Colors.white : _glyphColor(tg),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
