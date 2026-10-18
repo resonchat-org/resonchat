@@ -112,6 +112,15 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   StreamSubscription<String>? _failureNoticeSub;
   StreamSubscription<String>? _noticeSub;
 
+  /// Transient send/connection notice shown above the composer.
+  ///
+  /// Kept as an inline banner rather than a [SnackBar]: a fixed SnackBar is
+  /// painted by the Scaffold over the body's floating input island and hides
+  /// the composer (issue #8). Carries an optional "details" action.
+  ({String message, VoidCallback? onDetails})? _notice;
+
+  Timer? _noticeTimer;
+
   final _input = TextEditingController();
   final _scroll = ScrollController();
   final _focus = FocusNode();
@@ -293,10 +302,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     _failureNoticeSub?.cancel();
     _noticeSub?.cancel();
     _failureNoticeSub = _vm.failureNotices.listen(_onFailureNotice);
-    _noticeSub = _vm.notices.listen((text) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
-    });
+    _noticeSub = _vm.notices.listen(_showNotice);
   }
 
   @override
@@ -336,16 +342,30 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
   void _onFailureNotice(String reason) {
     if (!mounted) return;
-    final l10n = context.l10n;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(l10n.notDelivered(reason)),
-        action: SnackBarAction(
-          label: l10n.details,
-          onPressed: () => _showRefusalHelp(reason),
-        ),
-      ),
+    _showNotice(
+      context.l10n.notDelivered(reason),
+      onDetails: () => _showRefusalHelp(reason),
     );
+  }
+
+  /// Shows a transient inline notice above the composer, then auto-dismisses.
+  ///
+  /// A SnackBar would be laid out by the Scaffold over the body's floating
+  /// input island and hide the field it is warning about; the banner below the
+  /// transcript cannot (issue #8). Six seconds is long enough to read a short
+  /// reason and short enough to stay out of the way; the close button and the
+  /// next notice both dismiss it early.
+  void _showNotice(String message, {VoidCallback? onDetails}) {
+    if (!mounted) return;
+    _noticeTimer?.cancel();
+    setState(() => _notice = (message: message, onDetails: onDetails));
+    _noticeTimer = Timer(const Duration(seconds: 6), _clearNotice);
+  }
+
+  void _clearNotice() {
+    _noticeTimer?.cancel();
+    _noticeTimer = null;
+    if (mounted && _notice != null) setState(() => _notice = null);
   }
 
   /// Turns the server's error into something actionable.
@@ -390,6 +410,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     );
     _failureNoticeSub?.cancel();
     _noticeSub?.cancel();
+    _noticeTimer?.cancel();
     _focus.removeListener(_onComposerFocus);
     _scroll
       ..removeListener(_onScroll)
@@ -540,8 +561,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
   void _showNotSent(String reason) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(context.l10n.notSent(reason))));
+    _showNotice(context.l10n.notSent(reason));
   }
 
   void _onComposerFocus() {
@@ -1467,12 +1487,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   }
 
   void _showUnsentNotice() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(context.l10n.messageNotSentSnack),
-        duration: const Duration(seconds: 4),
-      ),
-    );
+    _showNotice(context.l10n.messageNotSentSnack);
   }
 
   /// Puts a draft back after a send that never reached the DB.
@@ -2010,6 +2025,12 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                             body: _replyingTo!.body,
                             onCancel: () => setState(() => _replyingTo = null),
                           ),
+                        if (_notice != null)
+                          _ChatNoticeBanner(
+                            message: _notice!.message,
+                            onDetails: _notice!.onDetails,
+                            onDismiss: _clearNotice,
+                          ),
                         // Selection actions live in the AppBar (Telegram action mode).
                         // The composer stays hidden so keystrokes cannot go to a draft
                         // while the user is picking messages.
@@ -2106,6 +2127,56 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         hasUnreadDivider
             ? Icons.keyboard_double_arrow_up
             : Icons.keyboard_arrow_down,
+      ),
+    );
+  }
+}
+
+/// Inline transient notice shown above the composer.
+///
+/// A fixed [SnackBar] is laid out by the [Scaffold] at the bottom of the body
+/// and does not avoid the floating input island, so it covers the composer it
+/// is warning about. This banner lives in the body column above the island, so
+/// it can never hide the field, and is dismissed by hand or by its timer.
+class _ChatNoticeBanner extends StatelessWidget {
+  const _ChatNoticeBanner({
+    required this.message,
+    required this.onDismiss,
+    this.onDetails,
+  });
+
+  final String message;
+  final VoidCallback onDismiss;
+  final VoidCallback? onDetails;
+
+  @override
+  Widget build(BuildContext context) {
+    final tg = context.tg;
+    final l10n = context.l10n;
+    return Material(
+      color: tg.danger.withValues(alpha: 0.12),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+        child: Row(
+          children: [
+            Icon(Icons.error_outline, size: 18, color: tg.danger),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                message,
+                style: TextStyle(fontSize: 13, color: tg.textPrimary),
+              ),
+            ),
+            if (onDetails != null)
+              TextButton(onPressed: onDetails, child: Text(l10n.details)),
+            IconButton(
+              onPressed: onDismiss,
+              icon: const Icon(Icons.close, size: 18),
+              tooltip: l10n.dismiss,
+              color: tg.textSecondary,
+            ),
+          ],
+        ),
       ),
     );
   }
