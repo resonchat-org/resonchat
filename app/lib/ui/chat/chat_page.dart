@@ -48,6 +48,7 @@ import 'chat_subscription_banner.dart';
 import 'chat_topic_banner.dart';
 import 'chat_wallpaper.dart';
 import 'conference_mention.dart';
+import 'glass_panel.dart';
 import 'quoted_transcript.dart';
 import 'message_actions.dart';
 import '../home/open_chat.dart';
@@ -58,6 +59,23 @@ import '../chats/search.dart';
 import 'track_dialogs.dart';
 import 'chat_viewmodel.dart';
 import '../theme.dart';
+
+/// Header card metrics, read off the reference's action-bar glass: `s = dp(46)`
+/// for every blob and `p = dp(6)` of padding around it, with a 23dp radius
+/// (`ActionBar.java:2269`-`:2279`), applied by `setupGlass` (`:228`, `:239`).
+class _ChatHeader {
+  const _ChatHeader._();
+
+  /// Blob size — the back button, the menu button and the height of the title
+  /// pill.
+  static const double blob = 46;
+
+  /// Corner radius; on a 46dp blob that is a circle.
+  static const double radius = 23;
+
+  /// Gap above, below and between the blobs.
+  static const double gap = 6;
+}
 
 class ChatPage extends ConsumerStatefulWidget {
   const ChatPage({
@@ -1485,6 +1503,72 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     );
   }
 
+  /// Appearance is per chat, so the sheet writes on every change rather than on
+  /// dismissal: the swatches are the preview, and waiting for "done" would mean
+  /// choosing blind.
+  void _openAppearance() {
+    final appearance =
+        ref.read(chatAppearanceProvider(widget.chatJid)).value ??
+        const ChatAppearance();
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => AppearancePicker(
+        chatJid: _peerJid,
+        initial: appearance,
+        onChanged: (next) =>
+            unawaited(setChatAppearance(ref, widget.chatJid, next)),
+      ),
+    );
+  }
+
+  /// One of the header's glass blobs — the reference's `glassDrawableBack` /
+  /// `glassDrawableMenu` (`ActionBar.java:228`, `:239`): 46dp with a 23dp
+  /// radius, i.e. a circle.
+  Widget _glassBlob(
+    TgColors tg, {
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onTap,
+  }) {
+    return SizedBox(
+      width: _ChatHeader.blob,
+      height: _ChatHeader.blob,
+      child: GlassPanel(
+        radius: _ChatHeader.radius,
+        fill: tg.pageBackground.withValues(alpha: 0.86),
+        child: Tooltip(
+          message: tooltip,
+          child: Material(
+            type: MaterialType.transparency,
+            child: InkWell(
+              onTap: onTap,
+              customBorder: const CircleBorder(),
+              child: Center(child: Icon(icon, size: 22, color: tg.textPrimary)),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// One action inside the header's right-hand blob.
+  Widget _glassAction(IconData icon, String tooltip, VoidCallback onTap) {
+    final tg = context.tg;
+    return SizedBox(
+      width: _ChatHeader.blob,
+      height: _ChatHeader.blob,
+      child: Tooltip(
+        message: tooltip,
+        child: InkResponse(
+          onTap: onTap,
+          radius: 20,
+          child: Center(child: Icon(icon, size: 22, color: tg.textPrimary)),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final tg = context.tg;
@@ -1526,304 +1610,415 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       child: Stack(
         children: [
           Scaffold(
+            // The header and the composer are glass cards floating over the
+            // transcript (`ActionBar.setupGlass`, `ChatActivity.java:4911`),
+            // so the body has to reach behind the bar for them to blur
+            // anything at all.
+            extendBodyBehindAppBar: true,
             appBar: AppBar(
-              titleSpacing: _selectionMode ? null : 0,
-              automaticallyImplyLeading: !widget.embedded && !_selectionMode,
-              leading: _selectionMode
-                  ? IconButton(
-                      icon: const Icon(Icons.close),
-                      tooltip: l10n.cancel,
-                      onPressed: _clearSelection,
+              backgroundColor: Colors.transparent,
+              surfaceTintColor: Colors.transparent,
+              elevation: 0,
+              scrolledUnderElevation: 0,
+              // 46dp of card with 6dp above and below (`ActionBar.java:2269`).
+              toolbarHeight: _ChatHeader.blob + _ChatHeader.gap * 2,
+              // The bar no longer paints a colour, so the status bar icons must
+              // be told which surface they now sit on.
+              systemOverlayStyle:
+                  Theme.of(context).brightness == Brightness.dark
+                  ? SystemUiOverlayStyle.light
+                  : SystemUiOverlayStyle.dark,
+              titleSpacing: 0,
+              automaticallyImplyLeading: false,
+              leadingWidth: _ChatHeader.blob + _ChatHeader.gap * 2,
+              leading: (!widget.embedded || _selectionMode)
+                  ? Padding(
+                      padding: const EdgeInsets.only(left: _ChatHeader.gap),
+                      child: _glassBlob(
+                        tg,
+                        icon: _selectionMode ? Icons.close : Icons.arrow_back,
+                        tooltip: _selectionMode
+                            ? l10n.cancel
+                            : MaterialLocalizations.of(context)
+                                  .backButtonTooltip,
+                        onTap: _selectionMode
+                            ? _clearSelection
+                            : () => Navigator.maybePop(context),
+                      ),
                     )
                   : null,
               // Telegram createActionMode: count title + bulk actions.
-              title: _selectionMode
-                  ? Text(l10n.selectedCount(_selection.length))
-                  : GestureDetector(
-                      onTap: _openChatProfile,
-                      behavior: HitTestBehavior.opaque,
-                      child: Row(
-                        children: [
-                          ContactAvatar(
-                            jid: _peerJid,
-                            title: title,
-                            radius: TgDimens.avatarChat / 2,
-                            hero: true,
-                            showPresence: !ui.isGroup,
-                            presence: ui.isGroup
-                                ? null
-                                : ref
-                                      .watch(
-                                        contactPresenceProvider(widget.chatJid),
-                                      )
-                                      .value
-                                      ?.show,
+              title: SizedBox(
+                height: _ChatHeader.blob,
+                child: GlassPanel(
+                  radius: _ChatHeader.radius,
+                  fill: tg.pageBackground.withValues(alpha: 0.86),
+                  child: _selectionMode
+                      ? Center(
+                          child: Text(
+                            l10n.selectedCount(_selection.length),
+                            style: TextStyle(
+                              color: tg.textPrimary,
+                              fontSize: TgDimens.chatTitleFontSize,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisAlignment: MainAxisAlignment.center,
+                        )
+                      : GestureDetector(
+                          onTap: _openChatProfile,
+                          behavior: HitTestBehavior.opaque,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                            child: Row(
                               children: [
-                                Text(
-                                  title,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
+                                ContactAvatar(
+                                  jid: _peerJid,
+                                  title: title,
+                                  radius: TgDimens.avatarChat / 2,
+                                  hero: true,
+                                  showPresence: !ui.isGroup,
+                                  presence: ui.isGroup
+                                      ? null
+                                      : ref
+                                            .watch(
+                                              contactPresenceProvider(
+                                                widget.chatJid,
+                                              ),
+                                            )
+                                            .value
+                                            ?.show,
                                 ),
-                                Text(
-                                  ui.isGroup
-                                      ? (ui.room == null
-                                            ? l10n.joining
-                                            : _roomMembersSubtitle(
-                                                l10n,
-                                                ui.room!,
-                                              ))
-                                      : _peerStatusSubtitle(
-                                          context,
-                                          ui.peerTyping,
-                                          presence: ref
-                                              .watch(
-                                                contactPresenceProvider(
-                                                  widget.chatJid,
-                                                ),
-                                              )
-                                              .value,
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Flexible(
+                                            child: Text(
+                                              title,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                color: tg.textPrimary,
+                                                fontSize:
+                                                    TgDimens.chatTitleFontSize,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ),
+                                          // The lock badge sits with the name, where
+                                          // Telegram shows the verified tick: it is
+                                          // the state of the conversation, not an
+                                          // action.
+                                          if (!ui.isGroup || ui.mucEncryptable)
+                                            EncBadge(
+                                              label: track.label,
+                                              locked: track != Track.none,
+                                              onTap: () => showTrackPicker(
+                                                context,
+                                                ref,
+                                                widget.chatJid,
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                      Text(
+                                        ui.isGroup
+                                            ? (ui.room == null
+                                                  ? l10n.joining
+                                                  : _roomMembersSubtitle(
+                                                      l10n,
+                                                      ui.room!,
+                                                    ))
+                                            : _peerStatusSubtitle(
+                                                context,
+                                                ui.peerTyping,
+                                                presence: ref
+                                                    .watch(
+                                                      contactPresenceProvider(
+                                                        widget.chatJid,
+                                                      ),
+                                                    )
+                                                    .value,
+                                              ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: TgDimens.timeFontSize,
+                                          fontWeight: FontWeight.w400,
+                                          color: tg.textSecondary,
+                                          fontStyle:
+                                              !ui.isGroup &&
+                                                  (ui.peerTyping ==
+                                                          TypingState
+                                                              .composing ||
+                                                      ui.peerTyping ==
+                                                          TypingState.paused)
+                                              ? FontStyle.italic
+                                              : FontStyle.normal,
                                         ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: TgDimens.timeFontSize,
-                                    fontWeight: FontWeight.w400,
-                                    color: Colors.white70,
-                                    fontStyle:
-                                        !ui.isGroup &&
-                                            (ui.peerTyping ==
-                                                    TypingState.composing ||
-                                                ui.peerTyping ==
-                                                    TypingState.paused)
-                                        ? FontStyle.italic
-                                        : FontStyle.normal,
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ],
                             ),
                           ),
-                        ],
+                        ),
+                ),
+              ),
+              // The right-hand glass blob holds the bar's actions: one pill, so
+              // the header reads as the reference's three floating surfaces
+              // rather than a strip of loose icons.
+              actions: [
+                Padding(
+                  padding: const EdgeInsets.only(right: _ChatHeader.gap),
+                  child: SizedBox(
+                    height: _ChatHeader.blob,
+                    child: GlassPanel(
+                      radius: _ChatHeader.radius,
+                      fill: tg.pageBackground.withValues(alpha: 0.86),
+                      child: IconTheme(
+                        data: IconThemeData(color: tg.textPrimary),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: _selectionMode
+                              ? [
+                                  _glassAction(
+                                    Icons.copy,
+                                    l10n.copyText,
+                                    _copySelection,
+                                  ),
+                                  _glassAction(
+                                    Icons.forward,
+                                    l10n.forward,
+                                    _forwardSelection,
+                                  ),
+                                  _glassAction(
+                                    Icons.delete_outline,
+                                    l10n.deleteMine,
+                                    _deleteSelection,
+                                  ),
+                                ]
+                              : [
+                                  _glassAction(
+                                    Icons.search,
+                                    l10n.searchInChat,
+                                    _openInChatSearch,
+                                  ),
+                                  _glassAction(
+                                    Icons.palette_outlined,
+                                    l10n.appearance,
+                                    _openAppearance,
+                                  ),
+                                  _glassAction(
+                                    Icons.push_pin_outlined,
+                                    l10n.pinnedMessages,
+                                    _showPinned,
+                                  ),
+                                ],
+                        ),
                       ),
                     ),
-              actions: _selectionMode
-                  ? [
-                      IconButton(
-                        icon: const Icon(Icons.copy),
-                        tooltip: l10n.copyText,
-                        onPressed: _copySelection,
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.forward),
-                        tooltip: l10n.forward,
-                        onPressed: _forwardSelection,
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.delete_outline),
-                        tooltip: l10n.deleteMine,
-                        onPressed: _deleteSelection,
-                      ),
-                    ]
-                  : [
-                      if (!ui.isGroup || ui.mucEncryptable)
-                        EncBadge(
-                          label: track.label,
-                          locked: track != Track.none,
-                          onTap: () =>
-                              showTrackPicker(context, ref, widget.chatJid),
-                        ),
-                      IconButton(
-                        icon: const Icon(Icons.search),
-                        tooltip: l10n.searchInChat,
-                        onPressed: _openInChatSearch,
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.palette_outlined),
-                        tooltip: l10n.appearance,
-                        onPressed: () => showModalBottomSheet<void>(
-                          context: context,
-                          isScrollControlled: true,
-                          builder: (sheetContext) => AppearancePicker(
-                            chatJid: _peerJid,
-                            initial: appearance,
-                            // Written on every change rather than on dismissal: the swatches
-                            // are the preview, and waiting for "done" would mean choosing
-                            // blind.
-                            onChanged: (next) => unawaited(
-                              setChatAppearance(ref, widget.chatJid, next),
-                            ),
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.push_pin_outlined),
-                        tooltip: l10n.pinnedMessages,
-                        onPressed: _showPinned,
-                      ),
-                    ],
-            ),
-            body: Column(
-              children: [
-                // Rooms are not roster contacts — no subscription banner.
-                if (!ui.isGroup)
-                  ChatSubscriptionBanner(chatJid: widget.chatJid),
-                if (ui.advice != null)
-                  TrackAdviceBanner(
-                    advice: ui.advice!,
-                    onSwitch: _vm.adoptAdvice,
-                    onDismiss: _vm.dismissAdvice,
-                  ),
-                Expanded(
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      ChatWallpaper(
-                        chatJid: _peerJid,
-                        appearance: appearance,
-                        base: tg.pageBackground,
-                        // Theme accent tints the pattern (per-chat colour was
-                        // removed; the app theme colour already covers that).
-                        accent: tg.accent,
-                        imageEpoch: backgroundEpoch,
-                        child: messages.when(
-                          data: (list) {
-                            if (list.isNotEmpty) _ensureInitialScroll();
-                            return ChatMessageList(
-                              chatKey: widget.chatJid,
-                              messages: list,
-                              scroll: _scroll,
-                              onRetryDecrypt: () => _loadHistory(),
-                              onReact: _toggleReaction,
-                              onMenu: _showMessageMenu,
-                              onToggleSelected: _toggleSelected,
-                              onMentionNick: _mentionOccupant,
-                              onOccupantAvatarLongPress: (nick) =>
-                                  unawaited(_onOccupantAvatarLongPress(nick)),
-                              selectionMode: _selectionMode,
-                              selectedIds: _selection,
-                              translations: _translations,
-                              translatingIds: _translating,
-                              readAt: ref
-                                  .watch(chatLastReadProvider(widget.chatJid))
-                                  .value,
-                              unreadCount: _unreadCountHere ?? 0,
-                              unreadDividerKey: _unreadDividerKey,
-                              focusMessageAnchor: _activeFocusAnchor,
-                              focusMessageKey: _focusMessageKey,
-                              bubbleStyle: appearance.bubble,
-                              isGroup: ui.isGroup,
-                              room: ui.room,
-                              highlightNicks: highlightNicksFor(
-                                mucNick: ui.mucNick,
-                                chatKey: widget.chatJid,
-                              ),
-                            );
-                          },
-                          loading: () =>
-                              const Center(child: CircularProgressIndicator()),
-                          error: (e, _) => Center(child: Text('$e')),
-                        ),
-                      ),
-                      if (ui.isGroup &&
-                          (ui.room?.subject?.trim().isNotEmpty ?? false))
-                        Positioned(
-                          top: 6,
-                          left: 10,
-                          right: 10,
-                          child: ChatTopicBanner(
-                            chatJid: widget.chatJid,
-                            subject: ui.room!.subject!.trim(),
-                          ),
-                        ),
-                    ],
                   ),
                 ),
-                // Editing replaces the input bar rather than sitting above it: two
-                // text fields in one chat is ambiguous about which one a keystroke
-                // goes to.
-                if (ui.mucPmNick != null)
-                  Material(
-                    color: tg.accent.withValues(alpha: 0.12),
-                    child: ListTile(
-                      dense: true,
-                      leading: Icon(
-                        Icons.lock_outline,
-                        color: tg.accent,
-                        size: 20,
-                      ),
-                      title: Text(
-                        l10n.privateMessageTo(ui.mucPmNick!),
-                        style: TextStyle(color: tg.accent, fontSize: 13),
-                      ),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.close, size: 18),
-                        tooltip: l10n.cancel,
-                        onPressed: () => _vm.setMucPmNick(null),
-                      ),
-                    ),
-                  ),
-                if (_replyingTo != null && _editingId == null)
-                  ReplyPreview(
-                    author: _replyingTo!.author,
-                    body: _replyingTo!.body,
-                    onCancel: () => setState(() => _replyingTo = null),
-                  ),
-                // Selection actions live in the AppBar (Telegram action mode).
-                // The composer stays hidden so keystrokes cannot go to a draft
-                // while the user is picking messages.
-                if (_selectionMode)
-                  const SizedBox.shrink()
-                else if (_editingId != null)
-                  EditComposer(
-                    initialText: _editingBody,
-                    onSubmit: _submitCorrection,
-                    onCancel: () => setState(() {
-                      _editingId = null;
-                      _editingBody = '';
-                    }),
-                  )
-                else
-                  ChatInputBar(
-                    controller: _input,
-                    focusNode: _focus,
-                    onChanged: _vm.onInputChanged,
-                    onSend: _send,
-                    onAttach: _attachFile,
-                    onVoice: _sendVoice,
-                    onStickers: _toggleStickers,
-                    stickersOpen: _stickersOpen,
-                    attachEnabled: attachEnabled,
-                  ),
-                if (_stickersOpen && !_selectionMode && _editingId == null)
-                  SizedBox(
-                    height: 280,
-                    child: StickerPanel(
-                      stickers: _stickers ?? const Stream.empty(),
-                      onInsert: _insertStickerText,
-                      onSend: (sticker) => unawaited(_sendSticker(sticker)),
-                      onAdd: () => unawaited(_addStickerFromFile()),
-                      onDelete: (sticker) =>
-                          unawaited(_vm.deleteSticker(sticker.id)),
-                    ),
-                  ),
-                if (_reactingToId != null)
-                  QuickReactionBar(
-                    emoji: kQuickReactions,
-                    onPicked: (emoji) {
-                      final target = _reactingToId;
-                      setState(() => _reactingToId = null);
-                      if (target != null) {
-                        unawaited(_toggleReaction(target, emoji));
-                      }
-                    },
-                    onDismissed: () => setState(() => _reactingToId = null),
-                  ),
               ],
+            ),
+            body: BackdropGroup(
+              // One blurred snapshot of the transcript, shared by the header
+              // cards and the composer island (see `GlassPanel`).
+              child: Stack(
+                children: [
+                  ChatWallpaper(
+                    chatJid: _peerJid,
+                    appearance: appearance,
+                    base: tg.pageBackground,
+                    // Theme accent tints the pattern (per-chat colour was
+                    // removed; the app theme colour already covers that).
+                    accent: tg.accent,
+                    imageEpoch: backgroundEpoch,
+                    child: const SizedBox.expand(),
+                  ),
+                  Positioned.fill(
+                    child: Column(
+                      children: [
+                        // The header now floats over the transcript instead of
+                        // being painted by the AppBar, so its height is reserved
+                        // here — otherwise the oldest messages would sit under
+                        // the card with no way to scroll them clear of it.
+                        SizedBox(
+                          height:
+                              MediaQuery.paddingOf(context).top +
+                              _ChatHeader.blob +
+                              _ChatHeader.gap * 2,
+                        ),
+                        // Rooms are not roster contacts — no subscription banner.
+                        if (!ui.isGroup)
+                          ChatSubscriptionBanner(chatJid: widget.chatJid),
+                        if (ui.advice != null)
+                          TrackAdviceBanner(
+                            advice: ui.advice!,
+                            onSwitch: _vm.adoptAdvice,
+                            onDismiss: _vm.dismissAdvice,
+                          ),
+                        Expanded(
+                          child: Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              messages.when(
+                                data: (list) {
+                                  if (list.isNotEmpty) _ensureInitialScroll();
+                                  return ChatMessageList(
+                                    chatKey: widget.chatJid,
+                                    messages: list,
+                                    scroll: _scroll,
+                                    onRetryDecrypt: () => _loadHistory(),
+                                    onReact: _toggleReaction,
+                                    onMenu: _showMessageMenu,
+                                    onToggleSelected: _toggleSelected,
+                                    onMentionNick: _mentionOccupant,
+                                    onOccupantAvatarLongPress: (nick) =>
+                                        unawaited(
+                                          _onOccupantAvatarLongPress(nick),
+                                        ),
+                                    selectionMode: _selectionMode,
+                                    selectedIds: _selection,
+                                    translations: _translations,
+                                    translatingIds: _translating,
+                                    readAt: ref
+                                        .watch(
+                                          chatLastReadProvider(widget.chatJid),
+                                        )
+                                        .value,
+                                    unreadCount: _unreadCountHere ?? 0,
+                                    unreadDividerKey: _unreadDividerKey,
+                                    focusMessageAnchor: _activeFocusAnchor,
+                                    focusMessageKey: _focusMessageKey,
+                                    bubbleStyle: appearance.bubble,
+                                    isGroup: ui.isGroup,
+                                    room: ui.room,
+                                    highlightNicks: highlightNicksFor(
+                                      mucNick: ui.mucNick,
+                                      chatKey: widget.chatJid,
+                                    ),
+                                  );
+                                },
+                                loading: () => const Center(
+                                  child: CircularProgressIndicator(),
+                                ),
+                                error: (e, _) => Center(child: Text('$e')),
+                              ),
+                              if (ui.isGroup &&
+                                  (ui.room?.subject?.trim().isNotEmpty ??
+                                      false))
+                                Positioned(
+                                  top: 6,
+                                  left: 10,
+                                  right: 10,
+                                  child: ChatTopicBanner(
+                                    chatJid: widget.chatJid,
+                                    subject: ui.room!.subject!.trim(),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        // Editing replaces the input bar rather than sitting above it: two
+                        // text fields in one chat is ambiguous about which one a keystroke
+                        // goes to.
+                        if (ui.mucPmNick != null)
+                          Material(
+                            color: tg.accent.withValues(alpha: 0.12),
+                            child: ListTile(
+                              dense: true,
+                              leading: Icon(
+                                Icons.lock_outline,
+                                color: tg.accent,
+                                size: 20,
+                              ),
+                              title: Text(
+                                l10n.privateMessageTo(ui.mucPmNick!),
+                                style: TextStyle(
+                                  color: tg.accent,
+                                  fontSize: 13,
+                                ),
+                              ),
+                              trailing: IconButton(
+                                icon: const Icon(Icons.close, size: 18),
+                                tooltip: l10n.cancel,
+                                onPressed: () => _vm.setMucPmNick(null),
+                              ),
+                            ),
+                          ),
+                        if (_replyingTo != null && _editingId == null)
+                          ReplyPreview(
+                            author: _replyingTo!.author,
+                            body: _replyingTo!.body,
+                            onCancel: () => setState(() => _replyingTo = null),
+                          ),
+                        // Selection actions live in the AppBar (Telegram action mode).
+                        // The composer stays hidden so keystrokes cannot go to a draft
+                        // while the user is picking messages.
+                        if (_selectionMode)
+                          const SizedBox.shrink()
+                        else if (_editingId != null)
+                          EditComposer(
+                            initialText: _editingBody,
+                            onSubmit: _submitCorrection,
+                            onCancel: () => setState(() {
+                              _editingId = null;
+                              _editingBody = '';
+                            }),
+                          )
+                        else
+                          ChatInputBar(
+                            controller: _input,
+                            focusNode: _focus,
+                            onChanged: _vm.onInputChanged,
+                            onSend: _send,
+                            onAttach: _attachFile,
+                            onVoice: _sendVoice,
+                            onStickers: _toggleStickers,
+                            stickersOpen: _stickersOpen,
+                            attachEnabled: attachEnabled,
+                          ),
+                        if (_stickersOpen &&
+                            !_selectionMode &&
+                            _editingId == null)
+                          SizedBox(
+                            height: 280,
+                            child: StickerPanel(
+                              stickers: _stickers ?? const Stream.empty(),
+                              onInsert: _insertStickerText,
+                              onSend: (sticker) =>
+                                  unawaited(_sendSticker(sticker)),
+                              onAdd: () => unawaited(_addStickerFromFile()),
+                              onDelete: (sticker) =>
+                                  unawaited(_vm.deleteSticker(sticker.id)),
+                            ),
+                          ),
+                        if (_reactingToId != null)
+                          QuickReactionBar(
+                            emoji: kQuickReactions,
+                            onPicked: (emoji) {
+                              final target = _reactingToId;
+                              setState(() => _reactingToId = null);
+                              if (target != null) {
+                                unawaited(_toggleReaction(target, emoji));
+                              }
+                            },
+                            onDismissed: () =>
+                                setState(() => _reactingToId = null),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
             // Two different destinations, so two different affordances. Scrolling to
             // the bottom is "show me what just happened"; jumping to the first unread
