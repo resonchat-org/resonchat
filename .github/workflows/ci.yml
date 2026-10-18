@@ -43,6 +43,9 @@ jobs:
 
   compile:
     name: Compile
+    # Full Linux + Web compile is slow; only run it for pull requests and
+    # manual dispatches. Pushes to main keep the fast analyze + test job.
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
