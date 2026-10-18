@@ -13,9 +13,7 @@ on:
 
 jobs:
   triage:
-    if: |
-      github.event.issue.author_association == 'MEMBER' ||
-      github.event.issue.author_association == 'OWNER'
+    if: github.event.issue.author_association == 'MEMBER' || github.event.issue.author_association == 'OWNER'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -31,6 +29,9 @@ jobs:
         env:
           # Pinned for reproducibility; bump deliberately.
           CC_PROXY_COMMIT: 972828aff37f07c9cb12959bc6a1f4d44aaa005a
+          # The upstream config.json defaults to 3050; override so the proxy
+          # listens where the ccproxy provider in opencode.json points.
+          PORT: "3000"
         run: |
           set -euo pipefail
           git clone --quiet https://github.com/MAXeaglet/commandcode-proxy /tmp/cc-proxy
