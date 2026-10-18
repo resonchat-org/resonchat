@@ -15,10 +15,11 @@ on:
 jobs:
   triage:
     runs-on: ubuntu-latest
+    # The OpenCode App installation token performs the repo writes; this
+    # workflow only needs to mint the OIDC token for the exchange.
     permissions:
-      contents: write
-      pull-requests: write
-      issues: write
+      id-token: write
+      contents: read
     steps:
       - name: Require an organization member
         id: member
@@ -70,10 +71,8 @@ jobs:
         uses: anomalyco/opencode/github@latest
         env:
           CC_PROXY_KEY: ${{ secrets.CC_PROXY_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           model: ccproxy/deepseek/deepseek-v4.1-flash
-          use_github_token: true
           share: false
           prompt: |
             Review this issue. If there's a clear fix or relevant docs:

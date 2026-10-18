@@ -4,19 +4,22 @@
 # later). OpenCode investigates, changes code, validates with `dart analyze` and
 # `flutter test`, and opens a pull request that references the issue.
 #
-# Same auth model as ../../opencode.yml: repository GITHUB_TOKEN
-# (`use_github_token: true`) plus a runner-local `commandcode-proxy` reached via
-# the `ccproxy` provider in ../../opencode.json (see those files for the
-# CC_PROXY_KEY / MEMBERSHIP_TOKEN secrets and the org-membership gate).
+# Same auth model as ../../opencode.yml: the OpenCode GitHub App
+# (https://github.com/apps/opencode-agent) via OIDC, plus a runner-local
+# `commandcode-proxy` reached via the `ccproxy` provider in ../../opencode.json
+# (see those files for the CC_PROXY_KEY / MEMBERSHIP_TOKEN secrets and the
+# org-membership gate). The app must be installed on this organization.
 #
-# Note: PRs opened with GITHUB_TOKEN do not trigger other workflows, so CI does
-# not run automatically on the resulting pull request.
+# Because the app identity opens the PR, it DOES trigger CI (unlike a PR opened
+# with the repository GITHUB_TOKEN).
 
 name: opencode solve
 
 on:
   issues:
-    types: [opened, labeled]
+    # Only `labeled`: creating an issue with the label already applied emits
+    # both `opened` and `labeled`, which fired the job twice.
+    types: [labeled]
 
 concurrency:
   group: opencode-solve-${{ github.event.issue.number }}
@@ -27,10 +30,11 @@ jobs:
     if: contains(github.event.issue.labels.*.name, 'opencode')
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # The OpenCode App installation token performs the repo writes; this
+    # workflow only needs to mint the OIDC token for the exchange.
     permissions:
-      contents: write
-      pull-requests: write
-      issues: write
+      id-token: write
+      contents: read
     steps:
       - name: Require an organization member
         id: member
@@ -102,10 +106,8 @@ jobs:
         uses: anomalyco/opencode/github@latest
         env:
           CC_PROXY_KEY: ${{ secrets.CC_PROXY_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           model: ccproxy/deepseek/deepseek-v4.1-flash
-          use_github_token: true
           share: false
           prompt: |
             Implement a fix for this issue.

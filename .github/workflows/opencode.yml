@@ -2,9 +2,10 @@
 # comment and OpenCode executes the task inside a GitHub Actions runner
 # (replies, creates branches, opens PRs).
 #
-# Auth uses the repository-provided GITHUB_TOKEN (`use_github_token: true`), so
-# no OpenCode GitHub App install is required. Note: branches/PRs created with
-# GITHUB_TOKEN do not trigger other workflows (GitHub limitation).
+# Auth uses the OpenCode GitHub App (https://github.com/apps/opencode-agent)
+# via OIDC, so commits and pull requests are created as the app identity and DO
+# trigger other workflows (unlike the repository GITHUB_TOKEN). The app must be
+# installed on this organization.
 #
 # The model is served by a local `commandcode-proxy` started inside the runner
 # and reached through the `ccproxy` provider in ../../opencode.json. The
@@ -30,10 +31,11 @@ jobs:
       contains(github.event.comment.body, '/oc') ||
       contains(github.event.comment.body, '/opencode')
     runs-on: ubuntu-latest
+    # The OpenCode App installation token performs the repo writes; this
+    # workflow only needs to mint the OIDC token for the exchange.
     permissions:
-      contents: write
-      pull-requests: write
-      issues: write
+      id-token: write
+      contents: read
     steps:
       - name: Require an organization member
         id: member
@@ -85,8 +87,6 @@ jobs:
         uses: anomalyco/opencode/github@latest
         env:
           CC_PROXY_KEY: ${{ secrets.CC_PROXY_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           model: ccproxy/deepseek/deepseek-v4.1-flash
-          use_github_token: true
           share: false
