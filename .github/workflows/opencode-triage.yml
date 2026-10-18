@@ -14,6 +14,10 @@ on:
 
 jobs:
   triage:
+    # Issues carrying the `opencode` label are handled by
+    # ../../opencode-solve.yml; triaging them as well makes one issue start
+    # two workflows.
+    if: ${{ !contains(github.event.issue.labels.*.name, 'opencode') }}
     runs-on: ubuntu-latest
     # The OpenCode App installation token performs the repo writes; this
     # workflow only needs to mint the OIDC token for the exchange.
