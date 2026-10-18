@@ -26,6 +26,7 @@ import '../../xmpp/muc.dart';
 import '../chat/chat_profile_sections.dart';
 import '../contact_avatar.dart';
 import '../theme.dart';
+import 'invite_member_sheet.dart';
 import 'occupant_actions.dart';
 import 'room_config_page.dart';
 
@@ -322,34 +323,8 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
     final caps = _caps;
     if (caps == null || !caps.canInvite) return;
     final l10n = context.l10n;
-    final controller = TextEditingController();
-    final jid = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(l10n.inviteMember),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          keyboardType: TextInputType.emailAddress,
-          decoration: InputDecoration(hintText: l10n.inviteMemberHint),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text(l10n.cancel),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
-            child: Text(l10n.inviteMember),
-          ),
-        ],
-      ),
-    );
-    await WidgetsBinding.instance.endOfFrame;
-    controller.dispose();
-    if (jid == null || jid.isEmpty || !mounted) return;
-    final ok = await _xmpp.inviteToRoom(_roomJid, jid);
-    if (!mounted) return;
+    final ok = await showInviteMemberSheet(context, chatJid: widget.chatJid);
+    if (!mounted || ok == null) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(ok ? l10n.inviteSent : l10n.inviteFailed)),
     );

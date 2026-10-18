@@ -57,6 +57,10 @@ class Chats extends Table {
   /// highlights / MUC PMs alert. Ignored for 1:1 (use [muted] alone).
   BoolColumn get alwaysNotify => boolean().withDefault(const Constant(true))();
 
+  /// JSON list of bare JIDs or `nick:` keys who still notify while this
+  /// group is silenced. Empty for 1:1 and when nobody is excepted.
+  TextColumn get notifyExcept => text().withDefault(const Constant('[]'))();
+
   /// Moved out of the main list into the archive.
   BoolColumn get archived => boolean().withDefault(const Constant(false))();
 
@@ -467,7 +471,7 @@ class AppDatabase extends _$AppDatabase {
 
   @override
   // Keep in sync with [kAccountSchemaVersion] in database_connection_io.dart.
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -478,6 +482,9 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 3) {
         await m.createTable(stickers);
+      }
+      if (from < 4) {
+        await m.addColumn(chats, chats.notifyExcept);
       }
     },
   );
@@ -1193,6 +1200,20 @@ class AppDatabase extends _$AppDatabase {
       chatJid,
       muted: flags.muted,
       alwaysNotify: flags.alwaysNotify,
+    );
+  }
+
+  /// Notification mode plus the Still notify list. The list is kept even
+  /// when the mode is [ChatNotifyMode.all], so switching back does not
+  /// drop the checks.
+  Future<void> setChatNotifySettings(
+    String chatJid, {
+    required ChatNotifyMode mode,
+    required List<String> except,
+  }) async {
+    await setChatNotifyMode(chatJid, mode);
+    await (update(chats)..where((c) => c.jid.equals(chatJid))).write(
+      ChatsCompanion(notifyExcept: Value(encodeNotifyExcept(except))),
     );
   }
 

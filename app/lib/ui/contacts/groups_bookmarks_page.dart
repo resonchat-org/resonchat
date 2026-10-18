@@ -155,9 +155,15 @@ class _BookmarkTile extends ConsumerWidget {
     final accent = row.accent;
     final b = row.bookmark;
     final detail = b.autoJoin ? '${b.jid} · ${l10n.bookmarkAutoJoin}' : b.jid;
+    final detailStyle = TextStyle(
+      color: tg.textSecondary,
+      fontSize: TgDimens.timeFontSize,
+      height: 1.15,
+    );
     return Container(
       decoration: accountStripeDecoration(accent, show: multi),
       child: ListTile(
+        minTileHeight: TgDimens.chatsRowHeight,
         leading: accountAvatarRing(
           show: multi,
           accent: accent,
@@ -168,18 +174,18 @@ class _BookmarkTile extends ConsumerWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
+        subtitle: Row(
           children: [
-            if (multi) accountViaText(row.account.bareJid, accent),
-            Text(
-              detail,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: tg.textSecondary,
-                fontSize: TgDimens.timeFontSize,
+            if (multi) ...[
+              Flexible(child: accountViaText(row.account.bareJid, accent)),
+              const SizedBox(width: 8),
+            ],
+            Flexible(
+              child: Text(
+                detail,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: detailStyle,
               ),
             ),
           ],

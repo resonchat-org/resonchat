@@ -8,6 +8,7 @@ import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:moxxmpp/moxxmpp.dart' show XmppRosterItem;
 import 'package:test/test.dart';
+import 'package:resonchat/store/chat_notify_mode.dart';
 import 'package:resonchat/store/database.dart';
 import 'package:resonchat/store/message_send_status.dart';
 import 'package:resonchat/store/sticker_link.dart';
@@ -365,4 +366,27 @@ void main() {
       expect(await db.stickerById(id), isNull);
     },
   );
+
+  test('Still notify list survives a mode change', () async {
+    await db.upsertChat('room@conference.example', isGroup: true);
+    await db.setChatNotifySettings(
+      'room@conference.example',
+      mode: ChatNotifyMode.never,
+      except: const ['alice@example.org', 'nick:bob'],
+    );
+    final muted = await db.getChat('room@conference.example');
+    expect(muted!.muted, isTrue);
+    expect(decodeNotifyExcept(muted.notifyExcept), [
+      'alice@example.org',
+      'nick:bob',
+    ]);
+
+    await db.setChatNotifyMode('room@conference.example', ChatNotifyMode.all);
+    final unmuted = await db.getChat('room@conference.example');
+    expect(unmuted!.muted, isFalse);
+    expect(decodeNotifyExcept(unmuted.notifyExcept), [
+      'alice@example.org',
+      'nick:bob',
+    ]);
+  });
 }

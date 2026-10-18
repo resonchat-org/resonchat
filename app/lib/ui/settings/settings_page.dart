@@ -113,9 +113,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         : path == null
         ? l10n.devLogExportEmpty
         : l10n.devLogExported(path);
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _setRemoveTracking(bool enabled) async {

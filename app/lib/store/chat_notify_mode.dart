@@ -3,7 +3,10 @@
 //
 // Per-conversation notification mode (Conversations conference notify dialog).
 //
-// Groups have three states; 1:1 only uses [all] and [never].
+// Groups have three states; 1:1 only uses [all] and [never]. A silenced group
+// may also list people who still notify ("Still notify").
+
+import 'dart:convert';
 
 /// How loudly a conversation may interrupt the user.
 enum ChatNotifyMode {
@@ -42,3 +45,43 @@ ChatNotifyMode chatNotifyModeOf({
   if (!alwaysNotify) return ChatNotifyMode.highlights;
   return ChatNotifyMode.all;
 }
+
+/// Stored key for one room member: bare JID when we know it, otherwise nick.
+String notifyExceptKey({String? realJid, required String nick}) {
+  final jid = realJid?.trim().toLowerCase() ?? '';
+  if (jid.contains('@')) return jid;
+  return 'nick:${nick.trim()}';
+}
+
+/// True when [nick] or [realJid] is in the Still notify list.
+bool senderIsNotifyExcept({
+  required Iterable<String> except,
+  required String nick,
+  String? realJid,
+}) {
+  if (except.isEmpty) return false;
+  final keys = except is Set<String> ? except : except.toSet();
+  final jid = realJid?.trim().toLowerCase() ?? '';
+  if (jid.isNotEmpty && keys.contains(jid)) return true;
+  final name = nick.trim();
+  if (name.isNotEmpty && keys.contains('nick:$name')) return true;
+  return false;
+}
+
+/// JSON array stored on `chats.notify_except`.
+List<String> decodeNotifyExcept(String raw) {
+  final trimmed = raw.trim();
+  if (trimmed.isEmpty) return const [];
+  try {
+    final decoded = jsonDecode(trimmed);
+    if (decoded is! List) return const [];
+    return [
+      for (final item in decoded)
+        if (item is String && item.isNotEmpty) item,
+    ];
+  } on FormatException {
+    return const [];
+  }
+}
+
+String encodeNotifyExcept(Iterable<String> keys) => jsonEncode(keys.toList());

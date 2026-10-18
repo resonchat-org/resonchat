@@ -322,14 +322,14 @@ class EncBadge extends StatelessWidget {
           children: [
             Icon(
               locked ? Icons.lock_outline : Icons.lock_open_outlined,
-              size: 14,
+              size: 24,
               color: color,
             ),
             const SizedBox(width: 4),
             Text(
               label,
               style: TextStyle(
-                fontSize: TgDimens.timeFontSize,
+                fontSize: 13,
                 fontWeight: FontWeight.w600,
                 color: color,
               ),

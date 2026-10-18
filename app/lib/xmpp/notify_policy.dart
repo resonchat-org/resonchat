@@ -202,6 +202,7 @@ class NotifyPolicy {
     this.body = '',
     this.muted = false,
     this.alwaysNotify = true,
+    this.exceptSender = false,
     this.archived = false,
     this.pinned = false,
     this.isGroup = false,
@@ -230,6 +231,13 @@ class NotifyPolicy {
   /// Callers should force this true for 1:1 chats — highlight-only is a
   /// room setting.
   final bool alwaysNotify;
+
+  /// This sender is on the group's Still notify list.
+  ///
+  /// Bypasses both "notify never" and "only when highlighted". Does not
+  /// bypass a block, a carbon, an archive, or the user already reading
+  /// the conversation.
+  final bool exceptSender;
 
   /// The user moved this conversation out of the main list.
   final bool archived;
@@ -341,8 +349,9 @@ bool mentionsUser(NotifyPolicy policy) {
 ///      the only lever is to put it away — and a mention should not turn that
 ///      into a stream of pings from the whole membership.
 ///   5. [NotifyPolicy.muted] — Conversations "notify never"; no highlight
-///      override (unlike highlight-only below).
-///   6. Highlight-only (`!alwaysNotify`) — silent unless [mentionsUser].
+///      override (unlike highlight-only below), unless [exceptSender].
+///   6. Highlight-only (`!alwaysNotify`) — silent unless [mentionsUser]
+///      or [exceptSender].
 ///   7. [NotifyPolicy.appInForeground] — before the undecryptable rule,
 ///      because "the app is open" is about the phone and "we could not open the
 ///      message" is about the message. The foreground wins, or the user is told
@@ -377,8 +386,9 @@ NotifyDecision decide(NotifyPolicy policy) {
 
   // Conversations three-way: never / highlight-only / all.
   // "Never" is absolute — a nick in the body must not defeat it.
+  // Still notify is a chosen sender, not a mention, so it does.
   // Unread still counts: mute is about the shade, not the badge.
-  if (policy.muted) {
+  if (policy.muted && !policy.exceptSender) {
     return const NotifyDecision(
       post: false,
       sound: false,
@@ -390,7 +400,7 @@ NotifyDecision decide(NotifyPolicy policy) {
   }
 
   final mentioned = mentionsUser(policy);
-  if (!policy.alwaysNotify && !mentioned) {
+  if (!policy.alwaysNotify && !mentioned && !policy.exceptSender) {
     return const NotifyDecision(
       post: false,
       sound: false,

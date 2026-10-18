@@ -72,6 +72,7 @@ class _TranslationSettingsSheetState extends State<_TranslationSettingsSheet> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(context.l10n.translationSettingsSaved)),
     );
+    Navigator.of(context).pop();
   }
 
   Future<void> _test() async {
@@ -86,7 +87,6 @@ class _TranslationSettingsSheetState extends State<_TranslationSettingsSheet> {
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _testing = true);
     try {
-      await prefs.save();
       await translationService.testConnection(
         prefs: prefs,
         uiLanguageCode: lang,
@@ -105,9 +105,6 @@ class _TranslationSettingsSheetState extends State<_TranslationSettingsSheet> {
 
   @override
   void dispose() {
-    if (_ready) {
-      unawaited(_current().save());
-    }
     _baseUrl.dispose();
     _apiKey.dispose();
     super.dispose();
@@ -158,7 +155,6 @@ class _TranslationSettingsSheetState extends State<_TranslationSettingsSheet> {
                       hintText: l10n.translationBaseUrlHint,
                       helperText: l10n.translationBaseUrlHelper,
                     ),
-                    onEditingComplete: () => unawaited(_save()),
                   ),
                 ),
               if (_engine == TranslationEngineId.deepL)
@@ -167,10 +163,7 @@ class _TranslationSettingsSheetState extends State<_TranslationSettingsSheet> {
                   title: Text(l10n.translationDeepLPro),
                   subtitle: Text(l10n.translationDeepLProSummary),
                   value: _deepLPro,
-                  onChanged: (v) {
-                    setState(() => _deepLPro = v);
-                    unawaited(_save());
-                  },
+                  onChanged: (v) => setState(() => _deepLPro = v),
                 ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -185,7 +178,6 @@ class _TranslationSettingsSheetState extends State<_TranslationSettingsSheet> {
                         ? l10n.translationApiKeyRequired
                         : l10n.translationApiKeyOptional,
                   ),
-                  onEditingComplete: () => unawaited(_save()),
                 ),
               ),
               Padding(
@@ -199,6 +191,13 @@ class _TranslationSettingsSheetState extends State<_TranslationSettingsSheet> {
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : Text(l10n.translationTestConnection),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: FilledButton(
+                  onPressed: _testing ? null : () => unawaited(_save()),
+                  child: Text(l10n.save),
                 ),
               ),
             ],
@@ -241,6 +240,5 @@ class _TranslationSettingsSheetState extends State<_TranslationSettingsSheet> {
     );
     if (picked == null || !mounted) return;
     setState(() => _engine = picked);
-    await _save();
   }
 }

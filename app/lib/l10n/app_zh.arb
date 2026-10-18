@@ -303,6 +303,8 @@
   "notifyAllMessages": "所有消息都提醒",
   "notifyOnlyWhenHighlighted": "仅在被提及时提醒",
   "notifyNever": "从不提醒",
+  "notifyStill": "仍然提醒",
+  "notifyStillSummary": "这些人的消息仍会提醒",
   "pin": "置顶",
   "unpin": "取消置顶",
   "reply": "回复",

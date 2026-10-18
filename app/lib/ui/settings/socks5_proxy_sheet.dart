@@ -59,9 +59,8 @@ class _Socks5ProxySheetState extends State<_Socks5ProxySheet> {
     });
   }
 
-  Future<void> _apply({bool? enabled}) async {
+  Future<void> _save() async {
     final l10n = context.l10n;
-    final nextEnabled = enabled ?? _enabled;
     final host = _host.text.trim();
     if (host.isEmpty) {
       ScaffoldMessenger.of(context)
@@ -75,47 +74,23 @@ class _Socks5ProxySheetState extends State<_Socks5ProxySheet> {
       return;
     }
 
-    await appPrefs.setSocks5ProxyEnabled(nextEnabled);
+    await appPrefs.setSocks5ProxyEnabled(_enabled);
     await appPrefs.setSocks5ProxyHost(host);
     await appPrefs.setSocks5ProxyPort(parsed);
     appNetwork.config = Socks5ProxyConfig(
-      enabled: nextEnabled,
+      enabled: _enabled,
       host: host,
       port: parsed,
     );
 
     if (!mounted) return;
-    setState(() {
-      _enabled = nextEnabled;
-      _host.text = host;
-      _port.text = '$parsed';
-    });
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(l10n.socks5ProxyApplied)));
-  }
-
-  /// Persist current fields when the sheet is dismissed without an explicit
-  /// submit (same prefs path as [_apply]).
-  void _persistIfValid() {
-    if (!_ready) return;
-    final host = _host.text.trim();
-    final parsed = int.tryParse(_port.text.trim());
-    if (host.isEmpty || parsed == null || parsed < 1 || parsed > 65535) {
-      return;
-    }
-    final cfg = Socks5ProxyConfig(enabled: _enabled, host: host, port: parsed);
-    if (cfg == appNetwork.config) return;
-    appNetwork.config = cfg;
-    unawaited(() async {
-      await appPrefs.setSocks5ProxyEnabled(cfg.enabled);
-      await appPrefs.setSocks5ProxyHost(cfg.host);
-      await appPrefs.setSocks5ProxyPort(cfg.port);
-    }());
+    Navigator.of(context).pop();
   }
 
   @override
   void dispose() {
-    _persistIfValid();
     _host.dispose();
     _port.dispose();
     super.dispose();
@@ -142,7 +117,7 @@ class _Socks5ProxySheetState extends State<_Socks5ProxySheet> {
               title: Text(l10n.socks5Proxy),
               subtitle: Text(l10n.socks5ProxySummary),
               value: _enabled,
-              onChanged: (v) => _apply(enabled: v),
+              onChanged: (v) => setState(() => _enabled = v),
             ),
             if (_enabled) ...[
               Padding(
@@ -152,8 +127,6 @@ class _Socks5ProxySheetState extends State<_Socks5ProxySheet> {
                   keyboardType: TextInputType.url,
                   autocorrect: false,
                   decoration: InputDecoration(labelText: l10n.socks5ProxyHost),
-                  onSubmitted: (_) => _apply(),
-                  onEditingComplete: () => _apply(),
                 ),
               ),
               Padding(
@@ -165,11 +138,16 @@ class _Socks5ProxySheetState extends State<_Socks5ProxySheet> {
                     labelText: l10n.socks5ProxyPort,
                     helperText: l10n.socks5ProxyPortHint,
                   ),
-                  onSubmitted: (_) => _apply(),
-                  onEditingComplete: () => _apply(),
                 ),
               ),
             ],
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: FilledButton(
+                onPressed: () => unawaited(_save()),
+                child: Text(l10n.save),
+              ),
+            ),
           ],
         ),
       ),

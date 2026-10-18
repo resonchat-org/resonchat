@@ -1,28 +1,33 @@
 // Copyright (C) 2026 ResonChat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// Receipt ticks. The mapping is the user-visible contract for an outgoing
-// message: nothing while it is queued, one tick once the server has it, two
-// once the peer's client has confirmed. A message that has been accepted by
-// the server must never look the same as one still sitting in the queue.
+// Receipt ticks. Outgoing only: a clock while queued or still in flight,
+// nothing once the stanza is on the socket, one tick on delivery, two on read.
 
 import 'package:flutter/material.dart' show IconData, Icons;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:resonchat/store/message_send_status.dart';
 import 'package:resonchat/ui/chat/message_bubble.dart';
 
-/// The mapping as the bubble applies it: status → pending/delivered flags.
+/// The mapping as the bubble applies it.
 IconData? ticksForStatus(int status) => receiptTicks(
   mine: true,
   failed: status == MessageSendStatus.sendFailed,
   pending: MessageSendStatus.isPending(status),
-  delivered: MessageSendStatus.isDelivered(status),
+  delivered: status == MessageSendStatus.sendReceived,
+  read: status == MessageSendStatus.sendDisplayed,
 );
 
 void main() {
   test('incoming messages carry no ticks at all', () {
     expect(
-      receiptTicks(mine: false, failed: false, pending: false, delivered: true),
+      receiptTicks(
+        mine: false,
+        failed: false,
+        pending: false,
+        delivered: true,
+        read: true,
+      ),
       isNull,
     );
   });
@@ -32,20 +37,24 @@ void main() {
     expect(ticksForStatus(MessageSendStatus.unsend), Icons.schedule);
   });
 
-  test('accepted by the server is exactly one tick', () {
-    // The regression this guards: `send` used to draw nothing, so a message
-    // already on the wire looked like one still queued.
-    expect(ticksForStatus(MessageSendStatus.send), Icons.done);
+  test('on the socket with no receipt draws nothing', () {
+    expect(ticksForStatus(MessageSendStatus.send), isNull);
   });
 
-  test('delivery receipt and read marker are two ticks', () {
-    expect(ticksForStatus(MessageSendStatus.sendReceived), Icons.done_all);
+  test('delivery receipt is one tick and a read marker is two', () {
+    expect(ticksForStatus(MessageSendStatus.sendReceived), Icons.done);
     expect(ticksForStatus(MessageSendStatus.sendDisplayed), Icons.done_all);
   });
 
   test('failure outranks everything else', () {
     expect(
-      receiptTicks(mine: true, failed: true, pending: true, delivered: true),
+      receiptTicks(
+        mine: true,
+        failed: true,
+        pending: true,
+        delivered: true,
+        read: true,
+      ),
       Icons.error_outline,
     );
   });

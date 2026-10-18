@@ -49,9 +49,7 @@ Uint8List _transcript(Uint8List pqIk) {
     0x05,
     ...List<int>.generate(32, (i) => 0x80 + i),
   ]);
-  final kemBindingDigest = Uint8List.fromList(
-    List<int>.generate(64, (i) => i),
-  );
+  final kemBindingDigest = Uint8List.fromList(List<int>.generate(64, (i) => i));
   return pqBundleTranscript(
     ik: ik,
     pqIk: pqIk,
@@ -117,32 +115,19 @@ void main() {
       );
       // Same call the production Dart-side helper makes.
       expect(
-        PqIdentityStore.verify(
-          publicKey: pk,
-          message: message,
-          signature: sig,
-        ),
+        PqIdentityStore.verify(publicKey: pk, message: message, signature: sig),
         isTrue,
       );
 
       final tampered = Uint8List.fromList(message)..[0] ^= 0xFF;
       expect(
-        MlDsa.verify(
-          pk,
-          tampered,
-          sig,
-          DilithiumParams.mlDsa87,
-          ctx: _ctx,
-        ),
+        MlDsa.verify(pk, tampered, sig, DilithiumParams.mlDsa87, ctx: _ctx),
         isFalse,
       );
     });
 
     test('seeded keygen is reproducible', () {
-      final again = MlDsa.generateKeyPairSeeded(
-        DilithiumParams.mlDsa87,
-        _seed,
-      );
+      final again = MlDsa.generateKeyPairSeeded(DilithiumParams.mlDsa87, _seed);
       expect(again.$1, pair.$1);
       expect(again.$2, pair.$2);
     });
@@ -175,10 +160,7 @@ void main() {
         DilithiumParams.mlDsa87,
         ctx: _ctx,
       );
-      expect(
-        MlDsa.verify(pk, message, sig, DilithiumParams.mlDsa87),
-        isFalse,
-      );
+      expect(MlDsa.verify(pk, message, sig, DilithiumParams.mlDsa87), isFalse);
     });
   });
 }

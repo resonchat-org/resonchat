@@ -16,6 +16,7 @@ import '../crypto/omemo/track.dart';
 import '../crypto/omemo/track_advice.dart';
 import '../platform/app_notifications.dart';
 import '../security/app_lock.dart';
+import '../store/chat_notify_mode.dart';
 import '../store/database.dart';
 import '../store/message_send_status.dart';
 import '../account/chat_ref.dart';
@@ -290,6 +291,13 @@ Future<void> _acceptInbound(
   final reading = openKey == chatKey;
   final foreground = ref.read(appForegroundProvider);
 
+  final exceptSender = await _senderStillNotifies(
+    session: session,
+    chat: chat,
+    isGroup: isGroup,
+    roomJid: chatJid,
+    nick: msg.from.resource,
+  );
   final policy = NotifyPolicy(
     sender: NotifyIdentity(
       jid: msg.from.toString(),
@@ -306,6 +314,7 @@ Future<void> _acceptInbound(
     body: msg.encryptionError != null ? '' : msg.body,
     muted: chat?.muted ?? false,
     alwaysNotify: isGroup ? (chat?.alwaysNotify ?? true) : true,
+    exceptSender: exceptSender,
     archived: chat?.archived ?? false,
     pinned: chat?.pinned ?? false,
     isGroup: isGroup,
@@ -337,6 +346,33 @@ Future<void> _acceptInbound(
       ),
     );
   }
+}
+
+/// True when [nick] is on this group's Still notify list.
+Future<bool> _senderStillNotifies({
+  required AccountSession session,
+  required Chat? chat,
+  required bool isGroup,
+  required String roomJid,
+  required String nick,
+}) async {
+  if (!isGroup || chat == null) return false;
+  final mode = chatNotifyModeOf(
+    muted: chat.muted,
+    alwaysNotify: chat.alwaysNotify,
+  );
+  if (!mode.isSilenced) return false;
+  final except = decodeNotifyExcept(chat.notifyExcept);
+  if (except.isEmpty || nick.isEmpty) return false;
+  String? realJid;
+  final members = await session.xmpp.roomDisplayMembers(roomJid);
+  for (final occupant in members) {
+    if (occupant.nick == nick) {
+      realJid = occupant.realJid;
+      break;
+    }
+  }
+  return senderIsNotifyExcept(except: except, nick: nick, realJid: realJid);
 }
 
 /// Conversation bare JID for [msg], accounting for our own archived outbound.

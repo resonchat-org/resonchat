@@ -4,7 +4,8 @@
 // The composer mirrors Telegram's `ChatActivityEnterView` inside its floating
 // "input island" (docs/05 §3.1), so these lock the geometry both layers use:
 // the 7dp/9dp card with 22dp corners, the 44dp slots, the 29dp smiley on its
-// 42×38 tile, the ⋮ of the empty right-hand slot, and the 38dp send circle.
+// 42×38 tile, the microphone of the empty right-hand slot, and the 38dp send
+// circle.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -83,10 +84,7 @@ void main() {
 
     // Every icon slot is still `DEFAULT_HEIGHT` = 44dp.
     final slot = find
-        .ancestor(
-          of: find.byIcon(Icons.more_vert),
-          matching: find.byType(SizedBox),
-        )
+        .ancestor(of: find.byIcon(Icons.mic), matching: find.byType(SizedBox))
         .first;
     expect(tester.getSize(slot), const Size(44, 44));
   });
@@ -121,56 +119,62 @@ void main() {
     expect(tester.getSize(find.byIcon(Icons.attach_file)), const Size(24, 24));
   });
 
-  testWidgets('empty field: the right slot is a bare ⋮, no circle', (
+  testWidgets('empty field: the right slot is a bare microphone, no circle', (
     tester,
   ) async {
     await tester.pumpWidget(wrap(bar()));
 
-    expect(find.byIcon(Icons.more_vert), findsOneWidget);
+    expect(find.byIcon(Icons.mic), findsOneWidget);
     expect(find.byIcon(Icons.send), findsNothing);
-    expect(find.byIcon(Icons.mic), findsNothing);
-    expect(tester.getSize(find.byIcon(Icons.more_vert)), const Size(24, 24));
+    expect(find.byIcon(Icons.more_vert), findsNothing);
+    expect(tester.getSize(find.byIcon(Icons.mic)), const Size(24, 24));
 
-    // Stock Telegram draws the chat-menu button as a plain ⋮ there, so the
-    // slot carries no fill behind it.
+    // The record button is a plain glyph, so the slot carries no fill.
     expect(
       find.ancestor(
-        of: find.byIcon(Icons.more_vert),
+        of: find.byIcon(Icons.mic),
         matching: find.byType(Container),
       ),
       findsNothing,
     );
   });
 
-  testWidgets('text swaps the ⋮ for the paper plane in the same slot', (
-    tester,
-  ) async {
-    final controller = TextEditingController();
-    await tester.pumpWidget(wrap(bar(controller: controller)));
+  testWidgets(
+    'text swaps the microphone for the paper plane in the same slot',
+    (tester) async {
+      final controller = TextEditingController();
+      await tester.pumpWidget(wrap(bar(controller: controller)));
 
-    controller.text = 'hello';
-    await tester.pump();
+      controller.text = 'hello';
+      await tester.pump();
 
-    expect(find.byIcon(Icons.send), findsOneWidget);
-    expect(find.byIcon(Icons.more_vert), findsNothing);
-    final circle = find
-        .ancestor(of: find.byIcon(Icons.send), matching: find.byType(Material))
-        .first;
-    expect(tester.getSize(circle), const Size(38, 38));
-    expect(tester.widget<Material>(circle).color, _accent);
-  });
+      expect(find.byIcon(Icons.send), findsOneWidget);
+      expect(find.byIcon(Icons.mic), findsNothing);
+      final circle = find
+          .ancestor(
+            of: find.byIcon(Icons.send),
+            matching: find.byType(Material),
+          )
+          .first;
+      expect(tester.getSize(circle), const Size(38, 38));
+      expect(tester.widget<Material>(circle).color, _accent);
+    },
+  );
 
-  testWidgets('no upload slot: the ⋮ greys out instead of vanishing', (
+  testWidgets('no upload slot: the microphone greys out instead of vanishing', (
     tester,
   ) async {
     await tester.pumpWidget(wrap(bar(attachEnabled: false)));
 
-    final icon = tester.widget<Icon>(find.byIcon(Icons.more_vert));
-    expect(icon.color, isNot(const TgColors.light().textPrimary));
+    final icon = tester.widget<Icon>(find.byIcon(Icons.mic));
     expect(
-      find.byIcon(Icons.more_vert),
+      icon.color,
+      const TgColors.light().textSecondary.withValues(alpha: 0.5),
+    );
+    expect(
+      find.byIcon(Icons.mic),
       findsOneWidget,
-      reason: 'reference greys the slot rather than dropping it',
+      reason: 'the record slot greys out rather than dropping out',
     );
   });
 

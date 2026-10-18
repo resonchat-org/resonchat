@@ -126,7 +126,10 @@ final class _GuardedSqlite3 implements Sqlite3 {
   set tempDirectory(String? value) => _inner.tempDirectory = value;
 
   @override
-  void registerVirtualFileSystem(VirtualFileSystem vfs, {bool makeDefault = false}) {
+  void registerVirtualFileSystem(
+    VirtualFileSystem vfs, {
+    bool makeDefault = false,
+  }) {
     _inner.registerVirtualFileSystem(vfs, makeDefault: makeDefault);
   }
 

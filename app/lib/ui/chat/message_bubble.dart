@@ -647,14 +647,9 @@ class ReactionChip extends StatelessWidget {
 
 /// Receipt ticks for one message, or null when there is nothing to draw.
 ///
-/// Clock (queued locally) → one tick (on the wire) → two ticks (delivered or
-/// read). Incoming messages carry no ticks at all.
-///
-/// [MessageSendStatus.send] used to draw no tick, which left a message the
-/// server had already accepted indistinguishable from one still sitting in the
-/// queue. The status is set the moment the stanza is on the socket — the
-/// comment on it has always said "one tick" — so one tick is what it means.
-/// A delivery receipt (0184) or a read marker (0333) is two.
+/// Clock while the stanza is still local or mid-flight, nothing once it is on
+/// the socket ([MessageSendStatus.send]), one tick on a delivery receipt, two
+/// on a read marker. Incoming messages carry no ticks at all.
 ///
 /// A plain function so the mapping can be checked without building the bubble.
 IconData? receiptTicks({
@@ -662,11 +657,14 @@ IconData? receiptTicks({
   required bool failed,
   required bool pending,
   required bool delivered,
+  required bool read,
 }) {
   if (!mine) return null;
   if (failed) return Icons.error_outline;
   if (pending) return Icons.schedule;
-  return delivered ? Icons.done_all : Icons.done;
+  if (read) return Icons.done_all;
+  if (delivered) return Icons.done;
+  return null;
 }
 
 /// Timestamp, receipt ticks and the track this message used.
@@ -720,7 +718,8 @@ class _MetaRow extends StatelessWidget {
       mine: mine,
       failed: isFailed,
       pending: MessageSendStatus.isPending(status),
-      delivered: isDisplayed || isDeliveredOnly,
+      delivered: isDeliveredOnly,
+      read: isDisplayed,
     );
     final tickColor = isFailed
         ? tg.danger

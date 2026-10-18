@@ -20,7 +20,40 @@ import '../theme.dart';
 import 'contacts_viewmodel.dart';
 import 'groups_bookmarks_page.dart';
 
-/// Idle (no search): Groups entry + full roster.
+TextStyle _detailStyle(Color color) {
+  return TextStyle(color: color, fontSize: TgDimens.timeFontSize, height: 1.15);
+}
+
+/// Second line of a contact row. [leading] sits on the left (last seen).
+/// When it is absent, [rest] starts at the left of the line.
+Widget? _secondLine({
+  String? leading,
+  required Color leadingColor,
+  required List<Widget> rest,
+}) {
+  if (leading == null && rest.isEmpty) return null;
+  final children = <Widget>[
+    if (leading != null)
+      Flexible(
+        child: Text(
+          leading,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: _detailStyle(leadingColor),
+        ),
+      ),
+    for (final part in rest) Flexible(child: part),
+  ];
+  return Row(
+    children: [
+      for (var i = 0; i < children.length; i++) ...[
+        if (i > 0) const SizedBox(width: 8),
+        children[i],
+      ],
+    ],
+  );
+}
+
 class IdleContactsList extends StatelessWidget {
   const IdleContactsList({
     super.key,
@@ -124,6 +157,7 @@ class ContactActionTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final tg = context.tg;
     return ListTile(
+      minTileHeight: TgDimens.chatsRowHeight,
       leading: CircleAvatar(
         radius: 22,
         backgroundColor: tg.accent.withValues(alpha: 0.18),
@@ -210,20 +244,11 @@ class ContactRosterTile extends ConsumerWidget {
     final accent = entry.accent;
     final presence = ref.watch(contactPresenceProvider(entry.ref.key)).value;
     final seen = lastSeenLine(context.l10n, presence?.idleSince);
-    final jidLine = entry.displayName == entry.entry.jid
-        ? null
-        : Text(
-            entry.entry.jid,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: tg.textSecondary,
-              fontSize: TgDimens.timeFontSize,
-            ),
-          );
+    final jid = entry.displayName == entry.entry.jid ? null : entry.entry.jid;
     return Container(
       decoration: accountStripeDecoration(accent, show: multi),
       child: ListTile(
+        minTileHeight: TgDimens.chatsRowHeight,
         leading: accountAvatarRing(
           show: multi,
           accent: accent,
@@ -240,26 +265,20 @@ class ContactRosterTile extends ConsumerWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
-        subtitle: (!multi && jidLine == null && seen == null)
-            ? null
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (multi) accountViaText(entry.account.bareJid, accent),
-                  ?jidLine,
-                  if (seen != null)
-                    Text(
-                      seen,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: tg.textSecondary,
-                        fontSize: TgDimens.timeFontSize,
-                      ),
-                    ),
-                ],
+        subtitle: _secondLine(
+          leading: seen,
+          leadingColor: tg.textSecondary,
+          rest: [
+            if (multi) accountViaText(entry.account.bareJid, accent),
+            if (jid != null)
+              Text(
+                jid,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: _detailStyle(tg.textSecondary),
               ),
+          ],
+        ),
         onTap: () async {
           final key = await ref
               .read(contactsViewModelProvider.notifier)
@@ -287,6 +306,7 @@ class GroupBookmarkTile extends ConsumerWidget {
     return Container(
       decoration: accountStripeDecoration(accent, show: multi),
       child: ListTile(
+        minTileHeight: TgDimens.chatsRowHeight,
         leading: accountAvatarRing(
           show: multi,
           accent: accent,
@@ -297,19 +317,15 @@ class GroupBookmarkTile extends ConsumerWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
+        subtitle: _secondLine(
+          leadingColor: tg.textSecondary,
+          rest: [
             if (multi) accountViaText(row.account.bareJid, accent),
             Text(
               b.jid,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: tg.textSecondary,
-                fontSize: TgDimens.timeFontSize,
-              ),
+              style: _detailStyle(tg.textSecondary),
             ),
           ],
         ),
@@ -330,6 +346,7 @@ class AddJidTile extends StatelessWidget {
     final l10n = context.l10n;
     final tg = context.tg;
     return ListTile(
+      minTileHeight: TgDimens.chatsRowHeight,
       leading: CircleAvatar(
         radius: 22,
         backgroundColor: tg.accent.withValues(alpha: 0.18),
@@ -340,10 +357,7 @@ class AddJidTile extends StatelessWidget {
         jid,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          color: tg.textSecondary,
-          fontSize: TgDimens.timeFontSize,
-        ),
+        style: _detailStyle(tg.textSecondary),
       ),
       trailing: Icon(Icons.arrow_forward, color: tg.accent, size: 20),
       onTap: onTap,
@@ -362,6 +376,7 @@ class AddGroupTile extends StatelessWidget {
     final l10n = context.l10n;
     final tg = context.tg;
     return ListTile(
+      minTileHeight: TgDimens.chatsRowHeight,
       leading: CircleAvatar(
         radius: 22,
         backgroundColor: tg.accent.withValues(alpha: 0.18),
@@ -372,10 +387,7 @@ class AddGroupTile extends StatelessWidget {
         jid,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          color: tg.textSecondary,
-          fontSize: TgDimens.timeFontSize,
-        ),
+        style: _detailStyle(tg.textSecondary),
       ),
       trailing: Icon(Icons.arrow_forward, color: tg.accent, size: 20),
       onTap: onTap,
@@ -398,17 +410,18 @@ class GroupsBookmarkEntry extends StatelessWidget {
     final l10n = context.l10n;
     final tg = context.tg;
     return ListTile(
+      minTileHeight: TgDimens.chatsRowHeight,
       leading: CircleAvatar(
+        radius: 22,
         backgroundColor: tg.accent.withValues(alpha: 0.18),
         child: Icon(Icons.groups, color: tg.accent),
       ),
       title: Text(l10n.groupBookmarks),
       subtitle: Text(
         count == 0 ? l10n.groupBookmarksEmpty : l10n.groupBookmarksCount(count),
-        style: TextStyle(
-          color: tg.textSecondary,
-          fontSize: TgDimens.timeFontSize,
-        ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: _detailStyle(tg.textSecondary),
       ),
       trailing: Icon(Icons.chevron_right, color: tg.textSecondary),
       onTap: () => Navigator.of(context).push(

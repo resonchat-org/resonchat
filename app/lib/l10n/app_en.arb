@@ -313,6 +313,8 @@
   "notifyAllMessages": "Notify on all messages",
   "notifyOnlyWhenHighlighted": "Notify only when highlighted",
   "notifyNever": "Notify never",
+  "notifyStill": "Still notify",
+  "notifyStillSummary": "Messages from these people still notify you",
   "pin": "Pin",
   "unpin": "Unpin",
   "reply": "Reply",

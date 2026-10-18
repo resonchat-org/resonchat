@@ -596,14 +596,9 @@ class _ChatInputBarState extends State<ChatInputBar>
     );
   }
 
-  /// The rightmost slot while the field is empty. Stock Telegram draws its
-  /// chat-menu button as a plain ⋮ here (the reference puts the mic in the same
-  /// column), so that is the picture we match: no circle, the composer's glass
-  /// ink. Appearance only for now — tapping has no action yet — but the
-  /// press-and-hold gesture is kept, because otherwise voice messages would
-  /// have no entry point at all; once cancel is armed it becomes the delete
-  /// glyph. Without an upload slot it greys out, which is what the reference
-  /// does when voice messages are unavailable.
+  /// The rightmost slot while the field is empty: hold to record. Once cancel
+  /// is armed it becomes the delete glyph. Without an upload slot it greys
+  /// out, which is what happens when voice messages are unavailable.
   Widget _endSlot(TgColors tg, AppLocalizations l10n) {
     final enabled = widget.attachEnabled;
     return SizedBox(
@@ -620,9 +615,7 @@ class _ChatInputBarState extends State<ChatInputBar>
           label: l10n.holdToRecord,
           child: Center(
             child: Icon(
-              _recording && _cancelArmed
-                  ? Icons.delete_outline
-                  : Icons.more_vert,
+              _recording && _cancelArmed ? Icons.delete_outline : Icons.mic,
               size: _EnterView.glyph,
               color: enabled
                   ? _glyphColor(tg)

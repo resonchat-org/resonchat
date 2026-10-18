@@ -818,4 +818,52 @@ void main() {
       );
     });
   });
+
+  group('Still notify', () {
+    test('a listed sender gets through notify-never', () {
+      final d = decide(
+        const NotifyPolicy(
+          sender: roomAlice,
+          me: zoe,
+          body: 'hello',
+          isGroup: true,
+          muted: true,
+          exceptSender: true,
+        ),
+      );
+      expect(d.alerts, isTrue);
+      expect(d.reason, NotifyReason.incoming);
+    });
+
+    test('a listed sender gets through highlight-only without a mention', () {
+      final d = decide(
+        const NotifyPolicy(
+          sender: roomAlice,
+          me: zoe,
+          body: 'hello',
+          isGroup: true,
+          alwaysNotify: false,
+          exceptSender: true,
+        ),
+      );
+      expect(d.alerts, isTrue);
+      expect(d.reason, NotifyReason.incoming);
+    });
+
+    test('a block still beats Still notify', () {
+      final d = decide(
+        const NotifyPolicy(
+          sender: roomAlice,
+          me: zoe,
+          body: 'zoe: hi',
+          isGroup: true,
+          muted: true,
+          blocked: true,
+          exceptSender: true,
+        ),
+      );
+      expect(d.reason, NotifyReason.blocked);
+      expect(d.alerts, isFalse);
+    });
+  });
 }

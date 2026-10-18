@@ -40,27 +40,26 @@ void main() {
     await writer.close();
   });
 
-  test('a later run appends to the newest file instead of starting one', () async {
-    final first = LogFileWriter(dir: dir, clock: fixedClock);
-    await first.write('a');
-    await first.close();
+  test(
+    'a later run appends to the newest file instead of starting one',
+    () async {
+      final first = LogFileWriter(dir: dir, clock: fixedClock);
+      await first.write('a');
+      await first.close();
 
-    final second = LogFileWriter(dir: dir, clock: fixedClock);
-    await second.write('b');
-    await second.flush();
+      final second = LogFileWriter(dir: dir, clock: fixedClock);
+      await second.write('b');
+      await second.flush();
 
-    expect(await second.file!.readAsString(), 'a\nb\n');
-    expect(await second.files(), hasLength(1));
-    await second.close();
-  });
+      expect(await second.file!.readAsString(), 'a\nb\n');
+      expect(await second.files(), hasLength(1));
+      await second.close();
+    },
+  );
 
   test('rolls over once maxBytes is reached', () async {
     // 'aaaa\n' is five bytes, so the second write crosses an eight-byte cap.
-    final writer = LogFileWriter(
-      dir: dir,
-      maxBytes: 8,
-      clock: fixedClock,
-    );
+    final writer = LogFileWriter(dir: dir, maxBytes: 8, clock: fixedClock);
     await writer.write('aaaa');
     await writer.write('bbbb');
     await writer.flush();
