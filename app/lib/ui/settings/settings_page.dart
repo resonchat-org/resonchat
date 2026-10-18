@@ -10,6 +10,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
 import '../../l10n/locale_controller.dart';
+import '../../logging/dev_log.dart';
+import '../../logging/dev_log_prefs.dart';
 import '../../net/app_network.dart';
 import '../../untracker/prefs.dart';
 import '../../crypto/omemo/track.dart';
@@ -42,6 +44,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   ChannelDiscoveryMethod _channelMethod = ChannelDiscoveryMethod.jabberNetwork;
   bool _removeTrackingEnabled = false;
   int _previewMaxBytes = kDefaultPreviewMaxFileSize;
+  bool _devLogEnabled = false;
 
   @override
   void initState() {
@@ -50,6 +53,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     unawaited(_reloadChannelMethod());
     unawaited(_reloadRemoveTracking());
     unawaited(_reloadPreviewMax());
+    unawaited(_reloadDevLog());
   }
 
   Future<void> _reloadTranslationPrefs() async {
@@ -74,6 +78,44 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final bytes = await loadPreviewMaxFileSize();
     if (!mounted) return;
     setState(() => _previewMaxBytes = bytes);
+  }
+
+  Future<void> _reloadDevLog() async {
+    final enabled = await loadDevLogEnabled();
+    if (!mounted) return;
+    setState(() => _devLogEnabled = enabled);
+  }
+
+  /// Turning the mode on raises the log level and opens the file; turning it
+  /// off closes it. Logging starts here rather than at the next launch so that
+  /// reproducing something means "flip it, do the thing".
+  Future<void> _setDevLog(bool enabled) async {
+    await devLog.setEnabled(enabled);
+    if (!mounted) return;
+    setState(() => _devLogEnabled = enabled);
+  }
+
+  /// Copies the newest log into Downloads. This is the whole point of the
+  /// mode on a phone: the file has to be reachable by a file manager or a
+  /// share sheet without a cable.
+  Future<void> _exportDevLog() async {
+    final l10n = context.l10n;
+    String? path;
+    Object? failure;
+    try {
+      path = await devLog.exportToDownloads();
+    } catch (e) {
+      failure = e;
+    }
+    if (!mounted) return;
+    final message = failure != null
+        ? l10n.devLogExportFailed('$failure')
+        : path == null
+        ? l10n.devLogExportEmpty
+        : l10n.devLogExported(path);
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _setRemoveTracking(bool enabled) async {
@@ -273,6 +315,25 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             ),
             onTap: () => unawaited(_pickChannelDiscoveryMethod()),
           ),
+
+          // Developer last: it is for diagnosing the app, not for using it.
+          if (devLog.supported) ...[
+            _header(tg, l10n.developer),
+            SwitchListTile(
+              secondary: const Icon(Icons.bug_report_outlined),
+              title: Text(l10n.devLogMode),
+              subtitle: Text(l10n.devLogModeSummary),
+              value: _devLogEnabled,
+              onChanged: (v) => unawaited(_setDevLog(v)),
+            ),
+            if (_devLogEnabled)
+              ListTile(
+                leading: const Icon(Icons.save_alt),
+                title: Text(l10n.devLogExport),
+                subtitle: Text(l10n.devLogExportSummary),
+                onTap: () => unawaited(_exportDevLog()),
+              ),
+          ],
 
           _header(tg, l10n.about),
           Padding(

@@ -4,6 +4,19 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Dev builds (`RESONCHAT_DEV_BUILD=1`, set by scripts/dev_android.sh) are for
+// the real-device test loop: the version *name* stays put so it is obvious
+// which line a build came from, while the version *code* only ever goes up, so
+// the installer accepts the new APK over the installed one without an
+// uninstall. Android refuses a lower code outright
+// (INSTALL_FAILED_VERSION_DOWNGRADE), which is why "same version every time"
+// cannot mean a frozen code too. Minutes since the epoch outrank 0.0.4's code
+// and stay inside an Int for another few thousand years.
+val devBuild = System.getenv("RESONCHAT_DEV_BUILD") == "1"
+val devVersionCode: Int =
+    System.getenv("RESONCHAT_DEV_VERSION_CODE")?.toIntOrNull()
+        ?: (System.currentTimeMillis() / 60_000L).toInt()
+
 android {
     namespace = "org.resonchat.resonchat"
     // file_picker → flutter_plugin_android_lifecycle requires compileSdk ≥ 36.
@@ -22,8 +35,8 @@ android {
         applicationId = "org.resonchat.resonchat"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
-        versionCode = flutter.versionCode
-        versionName = flutter.versionName
+        versionCode = if (devBuild) devVersionCode else flutter.versionCode
+        versionName = if (devBuild) "${flutter.versionName}-dev" else flutter.versionName
         multiDexEnabled = true
 
         // Default: arm64-v8a (devices) + x86_64 (emulator). CD sets

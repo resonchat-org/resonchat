@@ -723,5 +723,13 @@
     }
   },
   "deleteSticker": "删除表情包",
-  "deleteStickerConfirm": "删除这个表情包？"
+  "deleteStickerConfirm": "删除这个表情包？",
+  "developer": "开发者",
+  "devLogMode": "开发者日志模式",
+  "devLogModeSummary": "把每一行日志写入文件，并使用最详细的级别。包含连接与加密握手的细节；标识已做缩减，但文件仍不宜外传。默认关闭。",
+  "devLogExport": "导出日志到 Download",
+  "devLogExportSummary": "把最新的日志文件复制到 Download/resonchat",
+  "devLogExported": "已保存到 {path}",
+  "devLogExportEmpty": "还没有日志文件——请先打开该模式，再复现问题。",
+  "devLogExportFailed": "导出日志失败：{reason}"
 }

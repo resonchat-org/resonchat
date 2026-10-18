@@ -15,6 +15,8 @@ import 'account/chat_ref.dart';
 import 'crypto/libsignal_bootstrap.dart';
 import 'l10n/l10n.dart';
 import 'l10n/locale_controller.dart';
+import 'logging/dev_log.dart';
+import 'logging/dev_log_prefs.dart';
 import 'net/app_network.dart';
 import 'net/socks5_config.dart';
 import 'platform/app_notifications.dart';
@@ -95,6 +97,12 @@ Future<StartupResult> bootApp() async {
   // Shared prefs DB first (SOCKS / locale), before any account session.
   final prefs = await openAppPrefs();
   await AppLock.instance.load(prefs);
+
+  // Developer log mode, before the first session: the connect sequence and the
+  // capability lookups are the part this file exists to capture.
+  if (await loadDevLogEnabled(prefs)) {
+    await devLog.start();
+  }
 
   final hub = AccountHub();
   installAccountHub(hub);

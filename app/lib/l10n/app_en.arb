@@ -835,5 +835,23 @@
     }
   },
   "deleteSticker": "Delete sticker",
-  "deleteStickerConfirm": "Delete this sticker?"
+  "deleteStickerConfirm": "Delete this sticker?",
+  "developer": "Developer",
+  "devLogMode": "Developer log mode",
+  "devLogModeSummary": "Write every log line to a file, at the most verbose level. Covers what the connection and the encryption handshake did — identifiers are reduced, but the file is still worth keeping to yourself. Off by default.",
+  "devLogExport": "Export log to Downloads",
+  "devLogExportSummary": "Copy the newest log file to Download/resonchat",
+  "devLogExported": "Saved to {path}",
+  "@devLogExported": {
+    "placeholders": {
+      "path": { "type": "String" }
+    }
+  },
+  "devLogExportEmpty": "No log file yet — turn the mode on first, then reproduce the problem.",
+  "devLogExportFailed": "Could not export the log: {reason}",
+  "@devLogExportFailed": {
+    "placeholders": {
+      "reason": { "type": "String" }
+    }
+  }
 }
