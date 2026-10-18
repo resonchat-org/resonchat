@@ -130,7 +130,7 @@ runner 内本地 `commandcode-proxy` 经 `opencode.json` 的 `ccproxy` provider 
 | 工作流 | 触发 | 作用 |
 |---|---|---|
 | `.github/workflows/opencode.yml` | issue / PR 评论里包含 `/oc` 或 `/opencode` | 在该评论下按指令执行任务（回复、建分支、提 PR） |
-| `.github/workflows/opencode-triage.yml` | 新 issue（`opened`） | 自动分类、补充文档链接与处理建议 |
+| `.github/workflows/opencode-triage.yml` | 新 issue（`opened`，未带 `opencode` 标签） | 自动分类、补充文档链接与处理建议 |
 | `.github/workflows/opencode-solve.yml` | issue 带上 `opencode` 标签 | 自动实现修复，跑 `dart analyze` / `flutter test` 后提 PR 并引用该 issue |
 
 ### 应用图标
