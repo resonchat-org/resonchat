@@ -13,6 +13,8 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqlite3/sqlite3.dart' show Database, sqlite3;
 
+import 'sqlite_guard.dart';
+
 /// Shared preferences DB (`resonchat.sqlite3`). Not an account store.
 Future<QueryExecutor> openPrefsDatabaseConnection() =>
     _openFile('resonchat.sqlite3', maxReadableVersion: 1);
@@ -82,8 +84,13 @@ Future<QueryExecutor> _openFile(
       probe.close();
     }
 
+    // `sqlite3:` goes through `guardedSqlite3` so Drift's unconditional
+    // `useNativeFunctions()` is skipped — registering a Dart SQL function needs
+    // executable memory, which Android denies to apps (SIGABRT at startup).
+    // See `sqlite_guard.dart`.
     return NativeDatabase.createInBackground(
       file,
+      sqlite3: guardedSqlite3,
       setup: (db) => applyCipherKey(db, passphrase),
     );
   }
