@@ -77,6 +77,9 @@ class _ChatHeader {
   static const double gap = 6;
 }
 
+/// Entries of the header's ⋮ menu.
+enum _ChatMenuAction { search, appearance, pinned }
+
 class ChatPage extends ConsumerStatefulWidget {
   const ChatPage({
     super.key,
@@ -1552,6 +1555,63 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     );
   }
 
+  /// The header's right-hand blob while nothing is selected: the single ⋮ of
+  /// the screenshot, holding the chat's actions. They used to sit loose in the
+  /// bar, which both reads unlike the reference and squeezes the title flat on
+  /// a phone.
+  Widget _glassMenuBlob(TgColors tg, AppLocalizations l10n) {
+    return SizedBox(
+      width: _ChatHeader.blob,
+      height: _ChatHeader.blob,
+      child: GlassPanel(
+        radius: _ChatHeader.radius,
+        fill: tg.pageBackground.withValues(alpha: 0.86),
+        child: PopupMenuButton<_ChatMenuAction>(
+          padding: EdgeInsets.zero,
+          iconSize: 22,
+          tooltip: MaterialLocalizations.of(context).showMenuTooltip,
+          icon: Icon(Icons.more_vert, color: tg.textPrimary),
+          onSelected: (action) => switch (action) {
+            _ChatMenuAction.search => _openInChatSearch(),
+            _ChatMenuAction.appearance => _openAppearance(),
+            _ChatMenuAction.pinned => unawaited(_showPinned()),
+          },
+          itemBuilder: (context) => [
+            _menuItem(Icons.search, l10n.searchInChat, _ChatMenuAction.search),
+            _menuItem(
+              Icons.palette_outlined,
+              l10n.appearance,
+              _ChatMenuAction.appearance,
+            ),
+            _menuItem(
+              Icons.push_pin_outlined,
+              l10n.pinnedMessages,
+              _ChatMenuAction.pinned,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  PopupMenuItem<_ChatMenuAction> _menuItem(
+    IconData icon,
+    String label,
+    _ChatMenuAction action,
+  ) {
+    final tg = context.tg;
+    return PopupMenuItem<_ChatMenuAction>(
+      value: action,
+      child: Row(
+        children: [
+          Icon(icon, size: 20, color: tg.textPrimary),
+          const SizedBox(width: 12),
+          Text(label, style: TextStyle(color: tg.textPrimary)),
+        ],
+      ),
+    );
+  }
+
   /// One action inside the header's right-hand blob.
   Widget _glassAction(IconData icon, String tooltip, VoidCallback onTap) {
     final tg = context.tg;
@@ -1653,178 +1713,168 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                 child: GlassPanel(
                   radius: _ChatHeader.radius,
                   fill: tg.pageBackground.withValues(alpha: 0.86),
-                  child: _selectionMode
-                      ? Center(
-                          child: Text(
-                            l10n.selectedCount(_selection.length),
-                            style: TextStyle(
-                              color: tg.textPrimary,
-                              fontSize: TgDimens.chatTitleFontSize,
-                              fontWeight: FontWeight.w600,
+                  // The badge takes its colour off the ambient icon theme,
+                  // which is still the bar's old white-on-blue palette here.
+                  child: IconTheme(
+                    data: IconThemeData(color: tg.textPrimary),
+                    child: _selectionMode
+                        ? Center(
+                            child: Text(
+                              l10n.selectedCount(_selection.length),
+                              style: TextStyle(
+                                color: tg.textPrimary,
+                                fontSize: TgDimens.chatTitleFontSize,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          )
+                        : GestureDetector(
+                            onTap: _openChatProfile,
+                            behavior: HitTestBehavior.opaque,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                              ),
+                              child: Row(
+                                children: [
+                                  ContactAvatar(
+                                    jid: _peerJid,
+                                    title: title,
+                                    radius: TgDimens.avatarChat / 2,
+                                    hero: true,
+                                    showPresence: !ui.isGroup,
+                                    presence: ui.isGroup
+                                        ? null
+                                        : ref
+                                              .watch(
+                                                contactPresenceProvider(
+                                                  widget.chatJid,
+                                                ),
+                                              )
+                                              .value
+                                              ?.show,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Flexible(
+                                              child: Text(
+                                                title,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  color: tg.textPrimary,
+                                                  fontSize: TgDimens
+                                                      .chatTitleFontSize,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                            ),
+                                            // The lock badge sits with the name, where
+                                            // Telegram shows the verified tick: it is
+                                            // the state of the conversation, not an
+                                            // action.
+                                            if (!ui.isGroup ||
+                                                ui.mucEncryptable)
+                                              EncBadge(
+                                                label: track.label,
+                                                locked: track != Track.none,
+                                                onTap: () => showTrackPicker(
+                                                  context,
+                                                  ref,
+                                                  widget.chatJid,
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                        Text(
+                                          ui.isGroup
+                                              ? (ui.room == null
+                                                    ? l10n.joining
+                                                    : _roomMembersSubtitle(
+                                                        l10n,
+                                                        ui.room!,
+                                                      ))
+                                              : _peerStatusSubtitle(
+                                                  context,
+                                                  ui.peerTyping,
+                                                  presence: ref
+                                                      .watch(
+                                                        contactPresenceProvider(
+                                                          widget.chatJid,
+                                                        ),
+                                                      )
+                                                      .value,
+                                                ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: TgDimens.timeFontSize,
+                                            fontWeight: FontWeight.w400,
+                                            color: tg.textSecondary,
+                                            fontStyle:
+                                                !ui.isGroup &&
+                                                    (ui.peerTyping ==
+                                                            TypingState
+                                                                .composing ||
+                                                        ui.peerTyping ==
+                                                            TypingState.paused)
+                                                ? FontStyle.italic
+                                                : FontStyle.normal,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
-                        )
-                      : GestureDetector(
-                          onTap: _openChatProfile,
-                          behavior: HitTestBehavior.opaque,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                  ),
+                ),
+              ),
+              // The right-hand glass blob. While messages are selected it holds
+              // the bulk actions (Telegram action mode); otherwise it is the
+              // single ⋮ the screenshot shows, with the chat's actions inside.
+              actions: [
+                Padding(
+                  padding: const EdgeInsets.only(right: _ChatHeader.gap),
+                  child: _selectionMode
+                      ? SizedBox(
+                          height: _ChatHeader.blob,
+                          child: GlassPanel(
+                            radius: _ChatHeader.radius,
+                            fill: tg.pageBackground.withValues(alpha: 0.86),
                             child: Row(
+                              mainAxisSize: MainAxisSize.min,
                               children: [
-                                ContactAvatar(
-                                  jid: _peerJid,
-                                  title: title,
-                                  radius: TgDimens.avatarChat / 2,
-                                  hero: true,
-                                  showPresence: !ui.isGroup,
-                                  presence: ui.isGroup
-                                      ? null
-                                      : ref
-                                            .watch(
-                                              contactPresenceProvider(
-                                                widget.chatJid,
-                                              ),
-                                            )
-                                            .value
-                                            ?.show,
+                                _glassAction(
+                                  Icons.copy,
+                                  l10n.copyText,
+                                  _copySelection,
                                 ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Flexible(
-                                            child: Text(
-                                              title,
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: TextStyle(
-                                                color: tg.textPrimary,
-                                                fontSize:
-                                                    TgDimens.chatTitleFontSize,
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                          ),
-                                          // The lock badge sits with the name, where
-                                          // Telegram shows the verified tick: it is
-                                          // the state of the conversation, not an
-                                          // action.
-                                          if (!ui.isGroup || ui.mucEncryptable)
-                                            EncBadge(
-                                              label: track.label,
-                                              locked: track != Track.none,
-                                              onTap: () => showTrackPicker(
-                                                context,
-                                                ref,
-                                                widget.chatJid,
-                                              ),
-                                            ),
-                                        ],
-                                      ),
-                                      Text(
-                                        ui.isGroup
-                                            ? (ui.room == null
-                                                  ? l10n.joining
-                                                  : _roomMembersSubtitle(
-                                                      l10n,
-                                                      ui.room!,
-                                                    ))
-                                            : _peerStatusSubtitle(
-                                                context,
-                                                ui.peerTyping,
-                                                presence: ref
-                                                    .watch(
-                                                      contactPresenceProvider(
-                                                        widget.chatJid,
-                                                      ),
-                                                    )
-                                                    .value,
-                                              ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          fontSize: TgDimens.timeFontSize,
-                                          fontWeight: FontWeight.w400,
-                                          color: tg.textSecondary,
-                                          fontStyle:
-                                              !ui.isGroup &&
-                                                  (ui.peerTyping ==
-                                                          TypingState
-                                                              .composing ||
-                                                      ui.peerTyping ==
-                                                          TypingState.paused)
-                                              ? FontStyle.italic
-                                              : FontStyle.normal,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                                _glassAction(
+                                  Icons.forward,
+                                  l10n.forward,
+                                  _forwardSelection,
+                                ),
+                                _glassAction(
+                                  Icons.delete_outline,
+                                  l10n.deleteMine,
+                                  _deleteSelection,
                                 ),
                               ],
                             ),
                           ),
-                        ),
-                ),
-              ),
-              // The right-hand glass blob holds the bar's actions: one pill, so
-              // the header reads as the reference's three floating surfaces
-              // rather than a strip of loose icons.
-              actions: [
-                Padding(
-                  padding: const EdgeInsets.only(right: _ChatHeader.gap),
-                  child: SizedBox(
-                    height: _ChatHeader.blob,
-                    child: GlassPanel(
-                      radius: _ChatHeader.radius,
-                      fill: tg.pageBackground.withValues(alpha: 0.86),
-                      child: IconTheme(
-                        data: IconThemeData(color: tg.textPrimary),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: _selectionMode
-                              ? [
-                                  _glassAction(
-                                    Icons.copy,
-                                    l10n.copyText,
-                                    _copySelection,
-                                  ),
-                                  _glassAction(
-                                    Icons.forward,
-                                    l10n.forward,
-                                    _forwardSelection,
-                                  ),
-                                  _glassAction(
-                                    Icons.delete_outline,
-                                    l10n.deleteMine,
-                                    _deleteSelection,
-                                  ),
-                                ]
-                              : [
-                                  _glassAction(
-                                    Icons.search,
-                                    l10n.searchInChat,
-                                    _openInChatSearch,
-                                  ),
-                                  _glassAction(
-                                    Icons.palette_outlined,
-                                    l10n.appearance,
-                                    _openAppearance,
-                                  ),
-                                  _glassAction(
-                                    Icons.push_pin_outlined,
-                                    l10n.pinnedMessages,
-                                    _showPinned,
-                                  ),
-                                ],
-                        ),
-                      ),
-                    ),
-                  ),
+                        )
+                      : _glassMenuBlob(tg, l10n),
                 ),
               ],
             ),

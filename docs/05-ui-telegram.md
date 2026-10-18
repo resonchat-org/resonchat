@@ -125,7 +125,7 @@
 | 颜色 provider | `topPanelChatActivity`（`key_chat_messagePanelBackground`） | `ChatActivity.java:4911` |
 | 状态栏 | 顶栏不再画底色，状态栏图标按明暗主题切换 | `setOccupyStatusBar`，`ChatActivity.java:4909` |
 
-Flutter 实现（`app/lib/ui/chat/chat_page.dart` + `glass_panel.dart`）：`Scaffold` 开启 `extendBodyBehindAppBar`，`AppBar` 透明，`leading` / `title` / `actions` 各自包一层 `GlassPanel`；标题胶囊内是头像 + 名称 + 状态，加密轨 `EncBadge` 移到名称右侧（对齐 Telegram 把锁/认证标贴在名字旁的做法），右侧玻璃胶囊里放搜索 / 外观 / 置顶三个动作。
+Flutter 实现（`app/lib/ui/chat/chat_page.dart` + `glass_panel.dart`）：`Scaffold` 开启 `extendBodyBehindAppBar`，`AppBar` 透明，`leading` / `title` / `actions` 各自包一层 `GlassPanel`；标题胶囊内是头像 + 名称 + 状态，加密轨 `EncBadge` 移到名称右侧（对齐 Telegram 把锁/认证标贴在名字旁的做法），右侧是截图里的那个 **⋮**，点开是搜索 / 外观 / 置顶（多选时该块换成复制 / 转发 / 删除三个动作）。这样手机宽度下标题也有足够空间，和截图一致。
 
 ## 4. 关键交互（必须还原）
 
