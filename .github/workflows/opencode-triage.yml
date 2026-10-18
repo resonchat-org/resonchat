@@ -1,9 +1,10 @@
 # Automatically triage newly opened issues with OpenCode.
 #
 # Same runner-local `commandcode-proxy` + `ccproxy` provider setup as
-# ../../opencode.yml, and the same household rule: only issues opened by an
-# organization member (author_association MEMBER/OWNER) are triaged, so a
-# random reporter on this public repo cannot spend the `CC_PROXY_KEY` quota.
+# ../../opencode.yml. Only issues opened by a current organization member are
+# triaged; membership is checked against the org members endpoint with
+# `MEMBERSHIP_TOKEN` because `author_association` reports CONTRIBUTOR for
+# private org memberships (see the note in ../../opencode.yml).
 
 name: Issue triage
 
@@ -13,19 +14,37 @@ on:
 
 jobs:
   triage:
-    if: github.event.issue.author_association == 'MEMBER' || github.event.issue.author_association == 'OWNER'
     runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: write
       issues: write
     steps:
+      - name: Require an organization member
+        id: member
+        env:
+          MEMBERSHIP_TOKEN: ${{ secrets.MEMBERSHIP_TOKEN }}
+        run: |
+          set -euo pipefail
+          code=$(curl -s -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer $MEMBERSHIP_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/orgs/resonchat-org/members/${{ github.actor }}")
+          if [ "$code" = "204" ]; then
+            echo "allowed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "allowed=false (org members lookup returned HTTP $code)"
+            echo "allowed=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@v6
+        if: steps.member.outputs.allowed == 'true'
         with:
           fetch-depth: 1
           persist-credentials: false
 
       - name: Start commandcode-proxy
+        if: steps.member.outputs.allowed == 'true'
         env:
           # Pinned for reproducibility; bump deliberately.
           CC_PROXY_COMMIT: 972828aff37f07c9cb12959bc6a1f4d44aaa005a
@@ -47,6 +66,7 @@ jobs:
           echo "commandcode-proxy failed to start"; cat /tmp/cc-proxy.log; exit 1
 
       - name: Run OpenCode
+        if: steps.member.outputs.allowed == 'true'
         uses: anomalyco/opencode/github@latest
         env:
           CC_PROXY_KEY: ${{ secrets.CC_PROXY_KEY }}

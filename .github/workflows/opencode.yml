@@ -10,8 +10,11 @@
 # and reached through the `ccproxy` provider in ../../opencode.json. The
 # Command Code key lives in the `CC_PROXY_KEY` repository secret.
 #
-# Only organization members (author_association MEMBER/OWNER) may trigger it,
-# so a random commenter on this public repo cannot spend the key's quota.
+# Only organization members may trigger it. `author_association` is NOT used:
+# resonchat-org memberships are private, and GitHub then reports CONTRIBUTOR in
+# event payloads even for members. Instead the actor is checked against the org
+# members endpoint with `MEMBERSHIP_TOKEN` (a fine-grained PAT with
+# `Members: read-only`), which sees private memberships too.
 
 name: opencode
 
@@ -24,22 +27,39 @@ on:
 jobs:
   opencode:
     if: |
-      (github.event.comment.author_association == 'MEMBER' ||
-       github.event.comment.author_association == 'OWNER') &&
-      (contains(github.event.comment.body, '/oc') ||
-       contains(github.event.comment.body, '/opencode'))
+      contains(github.event.comment.body, '/oc') ||
+      contains(github.event.comment.body, '/opencode')
     runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: write
       issues: write
     steps:
+      - name: Require an organization member
+        id: member
+        env:
+          MEMBERSHIP_TOKEN: ${{ secrets.MEMBERSHIP_TOKEN }}
+        run: |
+          set -euo pipefail
+          code=$(curl -s -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer $MEMBERSHIP_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/orgs/resonchat-org/members/${{ github.actor }}")
+          if [ "$code" = "204" ]; then
+            echo "allowed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "allowed=false (org members lookup returned HTTP $code)"
+            echo "allowed=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@v6
+        if: steps.member.outputs.allowed == 'true'
         with:
           fetch-depth: 1
           persist-credentials: false
 
       - name: Start commandcode-proxy
+        if: steps.member.outputs.allowed == 'true'
         env:
           # Pinned for reproducibility; bump deliberately.
           CC_PROXY_COMMIT: 972828aff37f07c9cb12959bc6a1f4d44aaa005a
@@ -61,6 +81,7 @@ jobs:
           echo "commandcode-proxy failed to start"; cat /tmp/cc-proxy.log; exit 1
 
       - name: Run OpenCode
+        if: steps.member.outputs.allowed == 'true'
         uses: anomalyco/opencode/github@latest
         env:
           CC_PROXY_KEY: ${{ secrets.CC_PROXY_KEY }}
