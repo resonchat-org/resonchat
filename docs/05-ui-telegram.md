@@ -89,29 +89,49 @@
 - `app/android/.../MainActivity.kt`（Android channel）
 - `app/windows/runner/audio_mute.cpp`（Windows WASAPI）
 
-### 3.2 输入栏（`ChatActivityEnterView`）
+### 3.2 输入栏（`ChatActivityEnterView` + `ChatInputViewsContainer`）
 
-输入栏按 Telegram 的**扁平 44dp 面板**还原 —— 不是「带描边的输入框 + 顶部分隔线」，而是整条一色的面板 + 顶部 compose 阴影，文字直接落在面板上：
+现行 Telegram 的输入栏是浮在聊天记录上的**圆角玻璃岛（input island）**，不再是满宽面板。岛本身**不是** `ChatActivityEnterView` 画的（它只填内容矩形），而是外层 `ChatInputViewsContainer` 画的：
 
-| 元素 | 规格 | 出处（`ChatActivityEnterView.java`） |
+| 元素 | 规格 | 出处 |
 |---|---|---|
-| 栏高 / 各图标槽位 | `44dp`（`DEFAULT_HEIGHT`），顶部 1dp 内边距 | `:6551`、`:2663` |
-| 左侧表情 | 44dp 槽位、`dp(7.5)` 内边距 → 29dp 字形；表情/贴纸面板打开时换成键盘字形 | `:2723`、`:2760`、`:13158` |
+| 卡片圆角 / 边距 | 圆角 **22dp**，左右各 **7dp**，距底部系统 inset **9dp**（键盘弹起时改为上圆角 29dp 的整块） | `ChatInputViewsContainer.java:27`—`:30`（`INPUT_BUBBLE_RADIUS` / `INPUT_KEYBOARD_RADIUS` / `INPUT_BUBBLE_BOTTOM`）；`ChatActivity.java:8431` |
+| 毛玻璃 | `BlurredBackgroundDrawable`，`setPadding(dp(7))`、`setRadius(dp(22))`，颜色 provider = `key_chat_messagePanelBackground` | `ChatInputViewsContainer.java:79`—`:88`；`ChatActivity.java:4935` |
+| 栏高 / 各图标槽位 | `44dp`（`DEFAULT_HEIGHT`），顶部 1dp 内边距 | `ChatActivityEnterView.java:6551`、`:2663` |
+| 左侧表情 | 44dp 槽位、`dp(7.5)` 内边距 → 29dp 字形；**另有一个 42×38、圆角 19 的 `key_listSelector`（6% 墨）底块** | `:2723`、`:2760`（`createInsetRoundRectDrawable(key_listSelector, dp(19), dp(1), dp(3))`） |
 | 文字 | 18dp，上 `dp(9)` / 下 `dp(10)`，最多 6 行；距表情槽 8dp、距回形针槽 6dp | `:5890`—`:5901` |
 | 回形针 | 44dp 槽位、24dp 字形（`msg_input_attach2`） | `:2845` |
-| 最右槽位 | 44dp 列内缩 3dp 的 **38dp 圆**，填充 `chat_messagePanelSend`：空输入框显示麦克风（白色字形），有文字才显示发送字形 | `:3230`—`:3258`、`:10609` |
-| 面板底色 | `chat_messagePanelBackground` + 顶部 compose 阴影（无分隔线） | `:4734`—`:4758` |
-| 按住录音 | 左滑 `distCanMove` = min(宽度 35%, 140dp) 触发取消；红色 10dp 闪烁圆点 + 15dp 计时 + 居中「左滑取消」 | `:731`、`:3188`、`:14304`—`:14313` |
+| 最右槽位 | 有文字时：44dp 列内缩 3dp 的 **38dp 圆**，填充 `chat_messagePanelSend`、白色字形 | `:3230`—`:3258`、`:10609` |
+| 按住录音 | 红色 10dp 闪烁圆点 + 15dp 计时 + 居中「左滑取消」 | `:1074`—`:1107`、`:14304`—`:14313` |
 
-服务端不支持语音/附件（无 XEP-0363）时，麦克风退化为**不带圆底的灰色字形**，与 Telegram 的 `audioVideoButtonContainerForbidden` 一致。
+两处刻意背离，均已与用户确认：
 
-品牌仍为自有（§6）：圆底用应用主题强调色，字形用 Material 图标，不使用 Telegram 官方蓝色与纸飞机商标图标。
+- **最右槽位空输入时画 ⋮**（无圆底）。这来自实机截图（Nagram 12.10.3.0，界面与同期上游一致）：空输入框的右槽是会话菜单的 ⋮，语义未验证（13.0.2 源码里该位置是麦克风，⋮ 是 `botButton`，位于回形针左侧）。目前 ⋮ **只有外观、点击无动作**；按住的录音手势保留，否则语音没有入口。服务端不支持语音/附件（无 XEP-0363）时 ⋮ 退化为灰色字形。
+- **取消阈值固定 64dp**。参考实现是 `distCanMove = min(宽度 35%, 140dp)`（`:731`、`:3188`），手机上约 126dp，实测手感明显偏钝，改为固定 64dp。
+
+毛玻璃在 Flutter 侧用 Material 的 `BackdropGroup` + `BackdropFilter.grouped`（`app/lib/ui/chat/glass_panel.dart`）：一份模糊快照在顶栏与输入栏之间共享，不重复糊。岛需要「背后有东西」才看得出玻璃，因此聊天背景（`ChatWallpaper`）被提到页面最底层。
+
+品牌仍为自有（§6）：圆底用应用主题强调色，字形用 Material 图标，不使用 Telegram 官方蓝色与纸飞机图标。
+
+### 3.3 顶栏（`ActionBar.setupGlass`）
+
+顶栏同样改成浮在聊天记录上的玻璃面，而且是**三个独立的卡片**，不是一条通栏：
+
+| 元素 | 规格 | 出处（`ActionBar.java`） |
+|---|---|---|
+| 卡片半径 | **23dp**（46dp 的方块即是圆），上下各 6dp 留白 | `:2269`—`:2279`（`p = dp(6)`、`s = dp(46)`）、`:228`、`:230` |
+| 返回 / 菜单 | 各自一块玻璃圆（`glassDrawableBack` / `glassDrawableMenu`），半径 23dp、内边距 6dp | `:239`、`:246`、`:250` |
+| 标题 | 中间一块玻璃胶囊（`glassDrawable`），边长 ≥ `s + 2p`，随头像容器宽度居中 | `:2285`—`:2310` |
+| 颜色 provider | `topPanelChatActivity`（`key_chat_messagePanelBackground`） | `ChatActivity.java:4911` |
+| 状态栏 | 顶栏不再画底色，状态栏图标按明暗主题切换 | `setOccupyStatusBar`，`ChatActivity.java:4909` |
+
+Flutter 实现（`app/lib/ui/chat/chat_page.dart` + `glass_panel.dart`）：`Scaffold` 开启 `extendBodyBehindAppBar`，`AppBar` 透明，`leading` / `title` / `actions` 各自包一层 `GlassPanel`；标题胶囊内是头像 + 名称 + 状态，加密轨 `EncBadge` 移到名称右侧（对齐 Telegram 把锁/认证标贴在名字旁的做法），右侧玻璃胶囊里放搜索 / 外观 / 置顶三个动作。
 
 ## 4. 关键交互（必须还原）
 
 1. **会话列表**：长按多选、滑动归档/删除、未读计数徽标、置顶/静音图标、在线状态点；统一收件箱跨账号（`AccountHub`）；「发现公开群聊」对齐 Conversations（jabber.network Muclumbus 或本服 XEP-0030 disco）
 2. **聊天页**：
-   - 发送按钮 → 变成麦克风（输入框为空时）；按住录音 / 左滑取消（§3.1）
+   - 发送按钮：有文字时是 38dp 圆形发送钮；空输入框时右槽是会话菜单的 ⋮（仅外观，见 §3.2）；按住 ⋮ / 发送槽录音、左滑取消（§3.1）
    - 上滑到底部按钮（FAB）
    - 长按消息弹出上下文菜单（含「选择消息」进入多选、「翻译」等），可滑动回复；翻译经外部 LibreTranslate 兼容或 DeepL API，目标语言跟随界面语言，结果显示在气泡下方
    - 日期分隔气泡、未读分隔线
