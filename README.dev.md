@@ -225,3 +225,4 @@ RFC 7395 framing / `WebSocketXmppSocket` 与 XEP-0156 在 `vendor/moxxmpp`（`rf
 | `app/tool/prepare_web_assets.sh` | 拉取 Drift `sqlite3.wasm` / `drift_worker.js`（web 构建前置） |
 | `app/tool/previews/` | 把 UI 渲染成 PNG 供设计评审 |
 | `integration_test/native_pq_test.dart` | 设备上确认纯 Dart `pqcrypto` ML-KEM 可用 |
+<!-- ci doc-only skip test -->
