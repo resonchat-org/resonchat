@@ -1,19 +1,23 @@
 // Copyright (C) 2026 ResonChat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// The composer mirrors Telegram's `ChatActivityEnterView` (docs/05 §3.1), so
-// these lock the geometry the reference uses: 44dp slots, a 24dp glyph, a 29dp
-// smiley, the 38dp send circle, and a flat panel instead of a boxed field
-// under a divider.
+// The composer mirrors Telegram's `ChatActivityEnterView` inside its floating
+// "input island" (docs/05 §3.1), so these lock the geometry both layers use:
+// the 7dp/9dp card with 22dp corners, the 44dp slots, the 29dp smiley on its
+// 42×38 tile, the ⋮ of the empty right-hand slot, and the 38dp send circle.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:resonchat/l10n/l10n.dart';
 import 'package:resonchat/ui/chat/chat_input_bar.dart';
+import 'package:resonchat/ui/chat/glass_panel.dart';
 import 'package:resonchat/ui/theme.dart';
 
-/// `TgColors.light()` (day) accent — the fill of the send/mic circle.
+/// `TgColors.light()` (day) accent — the fill of the send circle.
 final _accent = const TgColors.light().accent;
+
+/// The island's glass fill: the message panel, just short of opaque.
+final _glass = const TgColors.light().pageBackground.withValues(alpha: 0.86);
 
 Widget wrap(Widget child) => MaterialApp(
   debugShowCheckedModeBanner: false,
@@ -42,86 +46,103 @@ ChatInputBar bar({
   attachEnabled: attachEnabled,
 );
 
-/// Closest ancestor of [of] that is a [Container] — the circle around a glyph.
-Finder _circleAround(Finder of) =>
+/// The closest ancestor [Container] of [of] — the tile behind a glyph.
+Finder _containerAround(Finder of) =>
     find.ancestor(of: of, matching: find.byType(Container)).first;
 
 void main() {
-  testWidgets('is a flat 44dp panel: no divider, compose shadow instead', (
+  testWidgets('is a 22dp island: 7dp in from the sides, 9dp under it', (
     tester,
   ) async {
     await tester.pumpWidget(wrap(bar()));
 
-    // `DEFAULT_HEIGHT` = 44dp for every icon slot. The row only grows past
-    // 45dp when the font draws a line taller than 44dp; the reference's
-    // container is WRAP_CONTENT for the same reason.
-    final slot = find
-        .ancestor(of: find.byIcon(Icons.mic), matching: find.byType(SizedBox))
-        .first;
-    expect(tester.getSize(slot), const Size(44, 44));
-    expect(
-      tester.getSize(find.byType(ChatInputBar)).height,
-      greaterThanOrEqualTo(45),
-    );
-
-    final box = tester.widget<DecoratedBox>(
+    // `ChatActivity.java:8431` puts the bar inside the island bubble with 7dp
+    // of side margin; `INPUT_BUBBLE_BOTTOM` = 9dp keeps it off the inset.
+    final outer = tester.widget<Padding>(
       find
           .descendant(
             of: find.byType(ChatInputBar),
-            matching: find.byType(DecoratedBox),
+            matching: find.byType(Padding),
           )
           .first,
     );
-    final decoration = box.decoration as BoxDecoration;
+    expect(outer.padding, const EdgeInsets.fromLTRB(7, 0, 7, 9));
+
+    // `INPUT_BUBBLE_RADIUS` = 22, glass-filled, over a blur of the transcript
+    // (`ChatInputViewsContainer.java:27`, `:79`-`:88`).
+    final card = tester.widget<GlassPanel>(find.byType(GlassPanel));
+    expect(card.radius, 22);
+    expect(card.fill, _glass);
     expect(
-      decoration.border,
-      isNull,
-      reason: 'no separator line above the bar',
+      find.descendant(
+        of: find.byType(GlassPanel),
+        matching: find.byType(BackdropFilter),
+      ),
+      findsOneWidget,
     );
-    expect(decoration.boxShadow, isNotEmpty);
-    expect(decoration.color, const TgColors.light().pageBackground);
+
+    // Every icon slot is still `DEFAULT_HEIGHT` = 44dp.
+    final slot = find
+        .ancestor(
+          of: find.byIcon(Icons.more_vert),
+          matching: find.byType(SizedBox),
+        )
+        .first;
+    expect(tester.getSize(slot), const Size(44, 44));
   });
 
-  testWidgets(
-    'smiley is 29dp and the paperclip is a 24dp glyph, in 44dp slots',
-    (tester) async {
-      await tester.pumpWidget(wrap(bar()));
-
-      // `emojiButton`: 44dp with `dp(7.5)` of padding.
-      expect(
-        tester.getSize(find.byIcon(Icons.emoji_emotions_outlined)),
-        const Size(29, 29),
-      );
-      // `msg_input_attach2`.
-      expect(
-        tester.getSize(find.byIcon(Icons.attach_file)),
-        const Size(24, 24),
-      );
-      expect(
-        tester.getSize(find.byIcon(Icons.attach_file)).height,
-        lessThanOrEqualTo(44),
-      );
-    },
-  );
-
-  testWidgets('empty field: the mic sits in the 38dp filled circle', (
+  testWidgets('smiley is 29dp on a 42×38 tile, the paperclip a 24dp glyph', (
     tester,
   ) async {
     await tester.pumpWidget(wrap(bar()));
 
-    expect(find.byIcon(Icons.mic), findsOneWidget);
-    expect(find.byIcon(Icons.send), findsNothing);
-    expect(tester.getSize(find.byIcon(Icons.mic)), const Size(24, 24));
-
-    final circle = _circleAround(find.byIcon(Icons.mic));
-    expect(tester.getSize(circle), const Size(38, 38));
+    // `emojiButton`: 44dp with `dp(7.5)` of padding.
     expect(
-      (tester.widget<Container>(circle).decoration as BoxDecoration).color,
-      _accent,
+      tester.getSize(find.byIcon(Icons.emoji_emotions_outlined)),
+      const Size(29, 29),
+    );
+    // `createInsetRoundRectDrawable(key_listSelector, dp(19), dp(1), dp(3))`:
+    // the tile is 1dp off the sides and 3dp off the top and bottom.
+    final tile = _containerAround(find.byIcon(Icons.emoji_emotions_outlined));
+    expect(tester.getSize(tile), const Size(42, 38));
+    final decoration =
+        tester.widget<Container>(tile).decoration! as BoxDecoration;
+    expect(
+      decoration.color,
+      const TgColors.light().textPrimary.withValues(alpha: 0.06),
+    );
+    expect(
+      decoration.borderRadius,
+      BorderRadius.circular(19),
+      reason: '19dp radius is what rounds the reference tile',
+    );
+
+    // `msg_input_attach2`.
+    expect(tester.getSize(find.byIcon(Icons.attach_file)), const Size(24, 24));
+  });
+
+  testWidgets('empty field: the right slot is a bare ⋮, no circle', (
+    tester,
+  ) async {
+    await tester.pumpWidget(wrap(bar()));
+
+    expect(find.byIcon(Icons.more_vert), findsOneWidget);
+    expect(find.byIcon(Icons.send), findsNothing);
+    expect(find.byIcon(Icons.mic), findsNothing);
+    expect(tester.getSize(find.byIcon(Icons.more_vert)), const Size(24, 24));
+
+    // Stock Telegram draws the chat-menu button as a plain ⋮ there, so the
+    // slot carries no fill behind it.
+    expect(
+      find.ancestor(
+        of: find.byIcon(Icons.more_vert),
+        matching: find.byType(Container),
+      ),
+      findsNothing,
     );
   });
 
-  testWidgets('text swaps the mic for the paper plane in the same circle', (
+  testWidgets('text swaps the ⋮ for the paper plane in the same slot', (
     tester,
   ) async {
     final controller = TextEditingController();
@@ -131,32 +152,25 @@ void main() {
     await tester.pump();
 
     expect(find.byIcon(Icons.send), findsOneWidget);
-    expect(find.byIcon(Icons.mic), findsNothing);
-    expect(
-      tester.getSize(
-        find
-            .ancestor(
-              of: find.byIcon(Icons.send),
-              matching: find.byType(Material),
-            )
-            .first,
-      ),
-      const Size(38, 38),
-    );
+    expect(find.byIcon(Icons.more_vert), findsNothing);
+    final circle = find
+        .ancestor(of: find.byIcon(Icons.send), matching: find.byType(Material))
+        .first;
+    expect(tester.getSize(circle), const Size(38, 38));
+    expect(tester.widget<Material>(circle).color, _accent);
   });
 
-  testWidgets('no upload slot: the mic degrades to a plain glyph', (
+  testWidgets('no upload slot: the ⋮ greys out instead of vanishing', (
     tester,
   ) async {
     await tester.pumpWidget(wrap(bar(attachEnabled: false)));
 
-    final decoration = tester
-        .widget<Container>(_circleAround(find.byIcon(Icons.mic)))
-        .decoration;
+    final icon = tester.widget<Icon>(find.byIcon(Icons.more_vert));
+    expect(icon.color, isNot(const TgColors.light().textPrimary));
     expect(
-      decoration,
-      isNull,
-      reason: 'reference draws a bare mic when voice is unavailable',
+      find.byIcon(Icons.more_vert),
+      findsOneWidget,
+      reason: 'reference greys the slot rather than dropping it',
     );
   });
 
