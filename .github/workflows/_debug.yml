@@ -1,0 +1,14 @@
+name: debug-event
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "author_association=[${{ github.event.issue.author_association }}]"
+          echo "issue author=[${{ github.event.issue.user.login }}]"
+          echo "action=[${{ github.event.action }}]"
