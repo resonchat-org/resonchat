@@ -1,0 +1,119 @@
+# Implement a fix for an issue with OpenCode.
+#
+# Triggered when an issue carries the `opencode` label (added at creation or
+# later). OpenCode investigates, changes code, validates with `dart analyze` and
+# `flutter test`, and opens a pull request that references the issue.
+#
+# Same auth model as ../../opencode.yml: repository GITHUB_TOKEN
+# (`use_github_token: true`) plus a runner-local `commandcode-proxy` reached via
+# the `ccproxy` provider in ../../opencode.json (see those files for the
+# CC_PROXY_KEY / MEMBERSHIP_TOKEN secrets and the org-membership gate).
+#
+# Note: PRs opened with GITHUB_TOKEN do not trigger other workflows, so CI does
+# not run automatically on the resulting pull request.
+
+name: opencode solve
+
+on:
+  issues:
+    types: [opened, labeled]
+
+concurrency:
+  group: opencode-solve-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  solve:
+    if: contains(github.event.issue.labels.*.name, 'opencode')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Require an organization member
+        id: member
+        env:
+          MEMBERSHIP_TOKEN: ${{ secrets.MEMBERSHIP_TOKEN }}
+        run: |
+          set -euo pipefail
+          code=$(curl -s -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer $MEMBERSHIP_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/orgs/resonchat-org/members/${{ github.actor }}")
+          if [ "$code" = "204" ]; then
+            echo "allowed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "allowed=false (org members lookup returned HTTP $code)"
+            echo "allowed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v6
+        if: steps.member.outputs.allowed == 'true'
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - uses: subosito/flutter-action@v2
+        if: steps.member.outputs.allowed == 'true'
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate submodule code
+        if: steps.member.outputs.allowed == 'true'
+        run: ./scripts/generate_submodule_code.sh
+
+      - name: Resolve app dependencies
+        if: steps.member.outputs.allowed == 'true'
+        working-directory: app
+        run: flutter pub get
+
+      - name: Generate drift code
+        if: steps.member.outputs.allowed == 'true'
+        working-directory: app
+        run: dart run build_runner build
+
+      - name: Start commandcode-proxy
+        if: steps.member.outputs.allowed == 'true'
+        env:
+          # Pinned for reproducibility; bump deliberately.
+          CC_PROXY_COMMIT: 972828aff37f07c9cb12959bc6a1f4d44aaa005a
+          # The upstream config.json defaults to 3050; override so the proxy
+          # listens where the ccproxy provider in opencode.json points.
+          PORT: "3000"
+        run: |
+          set -euo pipefail
+          git clone --quiet https://github.com/MAXeaglet/commandcode-proxy /tmp/cc-proxy
+          git -C /tmp/cc-proxy checkout --quiet "$CC_PROXY_COMMIT"
+          nohup node /tmp/cc-proxy/proxy.mjs > /tmp/cc-proxy.log 2>&1 &
+          for _ in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:3000/health >/dev/null; then
+              echo "commandcode-proxy is up"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "commandcode-proxy failed to start"; cat /tmp/cc-proxy.log; exit 1
+
+      - name: Run OpenCode
+        if: steps.member.outputs.allowed == 'true'
+        uses: anomalyco/opencode/github@latest
+        env:
+          CC_PROXY_KEY: ${{ secrets.CC_PROXY_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          model: ccproxy/deepseek/deepseek-v4.1-flash
+          use_github_token: true
+          share: false
+          prompt: |
+            Implement a fix for this issue.
+
+            - Find the root cause and make the minimal correct change.
+            - The workspace is already prepared. Validate before opening the PR:
+                cd app && dart analyze lib test
+                cd app && flutter test --no-pub
+            - Open a pull request and reference this issue in its body.
+            - If the issue is not actionable (a question, or it needs more
+              information), reply in a comment instead of opening a PR.
