@@ -121,6 +121,17 @@ Release 的 Assets。产物名形如
 > 当前 release APK 仍用 debug 签名（`android/app/build.gradle.kts`）；上架
 > 商店前需换成正式 keystore。
 
+### opencode 自动化
+
+仓库接了三个 opencode 工作流（认证走 OpenCode GitHub App + OIDC，模型由
+runner 内本地 `commandcode-proxy` 经 `opencode.json` 的 `ccproxy` provider 提供；
+均要求触发者是组织成员）：
+
+| 工作流 | 触发 | 作用 |
+|---|---|---|
+| `.github/workflows/opencode.yml` | issue / PR 评论里包含 `/oc` 或 `/opencode` | 在该评论下按指令执行任务（回复、建分支、提 PR） |
+| `.github/workflows/opencode-triage.yml` | 新 issue（`opened`） | 自动分类、补充文档链接与处理建议 |
+| `.github/workflows/opencode-solve.yml` | issue 带上 `opencode` 标签 | 自动实现修复，跑 `dart analyze` / `flutter test` 后提 PR 并引用该 issue |
 
 ### 应用图标
 
