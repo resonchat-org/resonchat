@@ -125,7 +125,17 @@ class Messages extends Table {
   TextColumn get sender => text()();
 
   /// Stanza id, used to match XEP-0184 delivery receipts.
+  ///
+  /// For messages we sent this is the origin-id, which is also the message
+  /// `id`. Reactions and edits address that. A group retraction addresses
+  /// [roomStanzaId] instead.
   TextColumn get stanzaId => text().withDefault(const Constant(''))();
+
+  /// Stanza-id the room assigned (XEP-0359), empty outside a group chat.
+  ///
+  /// XEP-0424 retracts a group message by this id, not by the sender's
+  /// origin-id.
+  TextColumn get roomStanzaId => text().withDefault(const Constant(''))();
   TextColumn get body => text()();
   DateTimeColumn get timestamp => dateTime().withDefault(currentDateAndTime)();
   TextColumn get encMode => text().withDefault(const Constant('none'))();
@@ -180,6 +190,12 @@ class Messages extends Table {
   /// column could not answer the only question anyone asks of it. This is the
   /// same reasoning as [editedAt] below.
   DateTimeColumn get retractedAt => dateTime().nullable()();
+
+  /// Who retracted it, when that person is not the sender.
+  ///
+  /// Empty for a self-retraction (XEP-0424). A moderator's room nick
+  /// (XEP-0425) when someone else retracted the message.
+  TextColumn get retractedBy => text().withDefault(const Constant(''))();
 
   /// Origin-id of the message this one replies to (XEP-0461), or empty.
   TextColumn get replyTo => text().withDefault(const Constant(''))();
@@ -471,20 +487,19 @@ class AppDatabase extends _$AppDatabase {
 
   @override
   // Keep in sync with [kAccountSchemaVersion] in database_connection_io.dart.
-  int get schemaVersion => 4;
+  // Version 2 adds [Messages.roomStanzaId]. Version 3 adds
+  // [Messages.retractedBy].
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (m) async => m.createAll(),
     onUpgrade: (m, from, to) async {
       if (from < 2) {
-        await m.createTable(omemoIdentities);
+        await m.addColumn(messages, messages.roomStanzaId);
       }
       if (from < 3) {
-        await m.createTable(stickers);
-      }
-      if (from < 4) {
-        await m.addColumn(chats, chats.notifyExcept);
+        await m.addColumn(messages, messages.retractedBy);
       }
     },
   );
@@ -510,21 +525,39 @@ class AppDatabase extends _$AppDatabase {
   /// retraction for a message that arrived out of order, or for one we never
   /// had, has to be a no-op rather than a failure. The sender retracting
   /// something before we received it is ordinary, not exceptional.
-  Future<bool> markRetracted(String targetId) async {
+  Future<bool> markRetracted(
+    String targetId, {
+    DateTime? at,
+    String? by,
+  }) async {
     if (targetId.isEmpty) return false;
     // Never un-retract: a second retraction for the same message is a replay,
     // and honouring it would flip the marker back off.
-    final changed =
+    //
+    // A group retraction names the room's stanza-id. A 1:1 retraction names
+    // the message id, which we store in [Messages.stanzaId]. [by] is the
+    // moderator's nick for XEP-0425; a self-retraction leaves it empty.
+    final stamp = at ?? DateTime.now();
+    final mark = MessagesCompanion(
+      retracted: const Value(true),
+      retractedAt: Value(stamp),
+      retractedBy: (by != null && by.isNotEmpty)
+          ? Value(by)
+          : const Value.absent(),
+    );
+    final byMessageId =
         await (update(messages)..where(
               (m) => m.stanzaId.equals(targetId) & m.retracted.equals(false),
             ))
-            .write(
-              MessagesCompanion(
-                retracted: const Value(true),
-                retractedAt: Value(DateTime.now()),
-              ),
-            );
-    return changed > 0;
+            .write(mark);
+    if (byMessageId > 0) return true;
+    final byRoomId =
+        await (update(messages)..where(
+              (m) =>
+                  m.roomStanzaId.equals(targetId) & m.retracted.equals(false),
+            ))
+            .write(mark);
+    return byRoomId > 0;
   }
 
   /// Applies a correction (XEP-0308) to the message addressed by [targetId],
@@ -1783,6 +1816,28 @@ class AppDatabase extends _$AppDatabase {
       final prefix = row.incoming ? '' : 'You: ';
       return '$prefix${row.body}';
     });
+  }
+
+  /// The stored row addressed by [stanzaId], or null.
+  Future<Message?> messageWithStanzaId(String chatJid, String stanzaId) async {
+    if (stanzaId.isEmpty) return null;
+    return (select(messages)..where(
+          (m) => m.chatJid.equals(chatJid) & m.stanzaId.equals(stanzaId),
+        ))
+        .getSingleOrNull();
+  }
+
+  /// Records the room's stanza-id on a message we already stored by origin-id.
+  Future<void> setRoomStanzaId(
+    String chatJid,
+    String stanzaId,
+    String roomStanzaId,
+  ) async {
+    if (stanzaId.isEmpty || roomStanzaId.isEmpty) return;
+    await (update(messages)..where(
+          (m) => m.chatJid.equals(chatJid) & m.stanzaId.equals(stanzaId),
+        ))
+        .write(MessagesCompanion(roomStanzaId: Value(roomStanzaId)));
   }
 
   /// Finds an already-stored inbound message by its stanza id, so that a

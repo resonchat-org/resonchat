@@ -1066,6 +1066,12 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         message.encMode != EncModeToken.error.wire && !message.retracted;
     final actions = MessageActions.for_(
       mine: !message.incoming,
+      moderate:
+          _ui.canModerate &&
+          message.incoming &&
+          message.roomStanzaId.isNotEmpty,
+      groupchat: _ui.isGroup,
+      hasRoomStanzaId: message.roomStanzaId.isNotEmpty,
       retracted: message.retracted,
       // An undecryptable message has no body to copy or correct; offering
       // either would act on a placeholder.
@@ -1146,6 +1152,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
           _editingBody = body;
         });
       case MessageAction.retract:
+        if (!await _confirmRetract()) return;
         await _doRetract(message);
     }
   }
@@ -1227,7 +1234,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     if (!mounted) return;
     if (!sent) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.l10n.couldNotDeleteUnsent)),
+        SnackBar(content: Text(context.l10n.couldNotRetractUnsent)),
       );
       return;
     }
@@ -1471,8 +1478,34 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     return local.isNotEmpty ? local : 'me';
   }
 
+  /// Asks before a retraction. Gajim does the same: it cannot be undone, and
+  /// it is not a guaranteed removal.
+  Future<bool> _confirmRetract() async {
+    final l10n = context.l10n;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.retractConfirmTitle),
+        content: Text(l10n.retractConfirmBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(l10n.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(l10n.retractMessage),
+          ),
+        ],
+      ),
+    );
+    return ok ?? false;
+  }
+
   /// Retracts the selected messages that we sent.
   Future<void> _deleteSelection() async {
+    if (!mounted) return;
+    if (!await _confirmRetract()) return;
     if (!mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     final result = await _vm.deleteMineByIds(List<String>.from(_selection));
@@ -1480,14 +1513,14 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final l10n = context.l10n;
     if (result.mine == 0) {
       messenger.showSnackBar(
-        SnackBar(content: Text(l10n.onlyOwnMessagesDeletable)),
+        SnackBar(content: Text(l10n.onlyOwnMessagesRetractable)),
       );
       return;
     }
     if (result.deleted < result.mine) {
       messenger.showSnackBar(
         SnackBar(
-          content: Text(l10n.deletedPartial(result.deleted, result.mine)),
+          content: Text(l10n.retractedPartial(result.deleted, result.mine)),
         ),
       );
     }
@@ -1691,8 +1724,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                         onPressed: _forwardSelection,
                       ),
                       IconButton(
-                        icon: const Icon(Icons.delete_outline),
-                        tooltip: l10n.deleteMine,
+                        icon: const Icon(Icons.undo),
+                        tooltip: l10n.retractMine,
                         onPressed: _deleteSelection,
                       ),
                     ]
@@ -1792,6 +1825,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                                       mucNick: ui.mucNick,
                                       chatKey: widget.chatJid,
                                     ),
+                                    peerName: title,
+                                    selfNick: ui.mucNick,
                                   );
                                 },
                                 loading: () => const Center(

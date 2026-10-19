@@ -256,6 +256,7 @@ class _ChatsPageState extends ConsumerState<ChatsPage>
                                       return ChatRow(
                                         key: ValueKey(key),
                                         entry: entry,
+                                        showAccountChrome: _accountId == null,
                                         selected: widget.activeChatKey == key,
                                         onOpen: () => openChat(context, key),
                                       );

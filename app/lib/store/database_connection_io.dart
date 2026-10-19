@@ -21,9 +21,10 @@ Future<QueryExecutor> openPrefsDatabaseConnection() =>
 
 /// Must match [AppDatabase.schemaVersion] in `database.dart`.
 ///
-/// Used only to refuse *newer* files we cannot migrate. Older versions are
-/// left for Drift [MigrationStrategy.onUpgrade].
-const int kAccountSchemaVersion = 4;
+/// Version 1 is the current tables, plus [Messages.roomStanzaId] at 2 and
+/// [Messages.retractedBy] at 3. A file written by a newer build is deleted;
+/// nothing older is migrated from the documents directory.
+const int kAccountSchemaVersion = 3;
 
 /// Per-account DB (`resonchat_<accountId>.sqlite3`). [accountId] is required.
 Future<QueryExecutor> openAccountDatabaseConnection(String accountId) {
@@ -69,7 +70,9 @@ Future<QueryExecutor> _openFile(
   String name, {
   required int maxReadableVersion,
 }) async {
-  final dir = await getApplicationDocumentsDirectory();
+  // Same private directory as the developer log (`~/.local/share/<id>` on
+  // Linux). Documents is the user's own files, not the account store.
+  final dir = await getApplicationSupportDirectory();
   final file = File(p.join(dir.path, name));
   await _deleteIncompatible(file, maxReadableVersion: maxReadableVersion);
 
@@ -112,8 +115,7 @@ Future<QueryExecutor> _openFile(
 
 /// Wipe only databases from a *newer* build than this one can read.
 ///
-/// Older [user_version] values are migrated by Drift. Wiping on any mismatch
-/// (the previous behaviour) deleted the account DB whenever
+/// Wiping on any mismatch deleted the account DB whenever
 /// [AppDatabase.schemaVersion] moved past the hardcoded probe value — empty
 /// chat list on the next cold start.
 ///

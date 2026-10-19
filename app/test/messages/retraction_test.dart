@@ -13,7 +13,6 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:test/test.dart';
 import 'package:resonchat/store/database.dart';
-import 'package:resonchat/xmpp/retraction.dart';
 
 void main() {
   late AppDatabase db;
@@ -97,6 +96,33 @@ void main() {
       final rows = await db.watchMessages(chat).first;
       expect(rows.firstWhere((m) => m.stanzaId == 'a').retracted, isTrue);
       expect(rows.firstWhere((m) => m.stanzaId == 'b').retracted, isFalse);
+    });
+
+    test('a group retraction is addressed by the room stanza-id', () async {
+      await db.upsertChat(chat);
+      await db.insertMessage(
+        MessagesCompanion.insert(
+          chatJid: chat,
+          sender: 'me',
+          stanzaId: const Value('origin-id-1'),
+          roomStanzaId: const Value('room-stanza-1'),
+          body: 'in the room',
+          incoming: false,
+        ),
+      );
+      expect(await db.markRetracted('room-stanza-1'), isTrue);
+      final row = (await db.watchMessages(chat).first).single;
+      expect(row.retracted, isTrue);
+      expect(row.stanzaId, 'origin-id-1');
+      expect(row.retractedBy, isEmpty);
+    });
+
+    test('a moderation records the moderator nick', () async {
+      await store(stanzaId: id, incoming: true);
+      expect(await db.markRetracted(id, by: 'mod'), isTrue);
+      final row = (await db.watchMessages(chat).first).single;
+      expect(row.retracted, isTrue);
+      expect(row.retractedBy, 'mod');
     });
   });
 
@@ -219,16 +245,6 @@ void main() {
       );
       final rows = await db.watchMessages(chat).first;
       expect(rows.single.body, 'the original text');
-    });
-  });
-
-  group('the notice text', () {
-    test('says who deleted it, because the two sides can tell', () {
-      // The person who pressed the button is the only one who can tell that
-      // it worked; the other side is guessing.
-      expect(kRetractedNotice, contains('deleted'));
-      expect(kRetractedNoticeMine, contains('You'));
-      expect(kRetractedNotice, isNot(kRetractedNoticeMine));
     });
   });
 }

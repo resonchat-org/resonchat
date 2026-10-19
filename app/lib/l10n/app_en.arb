@@ -330,8 +330,18 @@
   "forwardSeparately": "Forward separately",
   "forwardSeparatelySummary": "Send each selected message as its own forward.",
   "edit": "Edit",
-  "deleteForEveryone": "Delete for everyone",
-  "deleteUnencryptedWarning": "This message went out unencrypted. Deleting it here removes your copy, but anyone who already read it still has it.",
+  "retractMessage": "Retract",
+  "retractConfirmTitle": "Retract this message?",
+  "retractConfirmBody": "Retracting a message does not guarantee that the server or the other person's device will remove it.",
+  "retractUnencryptedWarning": "This message went out unencrypted. Retracting it asks others to hide it, but anyone who already read it still has it.",
+  "youRetractedMessage": "You retracted a message",
+  "peerRetractedMessage": "{name} retracted a message",
+  "@peerRetractedMessage": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "viewRetractedMessage": "View retracted message",
   "selectMessages": "Select messages",
   "selectedCount": "{count} selected",
   "@selectedCount": {
@@ -346,7 +356,7 @@
     }
   },
   "nothingToCopy": "Nothing to copy.",
-  "deleteMine": "Delete mine",
+  "retractMine": "Retract mine",
   "replyingTo": "Replying to {author}",
   "@replyingTo": {
     "placeholders": {
@@ -763,7 +773,7 @@
     }
   },
   "reactionSendFailed": "Reaction could not be sent.",
-  "couldNotDeleteUnsent": "Could not delete: the message was not sent.",
+  "couldNotRetractUnsent": "Could not retract: the message was not sent.",
   "unblockBeforeForward": "Unblock {contact} before forwarding to them.",
   "@unblockBeforeForward": {
     "placeholders": {
@@ -791,9 +801,9 @@
     }
   },
   "nothingToForward": "Nothing there to forward.",
-  "onlyOwnMessagesDeletable": "Only your own messages can be deleted.",
-  "deletedPartial": "Deleted {deleted} of {mine}; the rest could not be sent.",
-  "@deletedPartial": {
+  "onlyOwnMessagesRetractable": "Only your own messages can be retracted.",
+  "retractedPartial": "Retracted {deleted} of {mine}; the rest could not be sent.",
+  "@retractedPartial": {
     "placeholders": {
       "deleted": { "type": "int" },
       "mine": { "type": "int" }

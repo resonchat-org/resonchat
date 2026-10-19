@@ -3,11 +3,9 @@
 //
 // The long-press menu on a message: a grid beside the bubble, not a sheet.
 //
-// What is on offer depends on who wrote the message, and getting that wrong is
-// not a cosmetic problem. Offering "delete for everyone" on somebody else's
-// message implies we could — and we cannot: the retraction is an instruction
-// to the recipient's own client, so it only ever affects copies of *our*
-// messages. Offering "edit" on somebody else's message is the same mistake.
+// Retract is offered on our own messages (XEP-0424) and, in a group, on
+// other people's messages when we are a moderator and the room supports
+// XEP-0425. Edit stays limited to our own messages.
 
 import 'dart:async';
 import 'dart:math' as math;
@@ -70,9 +68,8 @@ class MessageActions {
   /// somebody else's.
   final bool canEdit;
 
-  /// Only our own, and only while it is addressable. A message with no
-  /// origin-id cannot be referenced, so offering the action would mean
-  /// retracting "the last message" instead.
+  /// Our own messages (XEP-0424), or someone else's in a group we moderate
+  /// (XEP-0425). The message still has to be addressable.
   final bool canRetract;
 
   /// File / image message with a downloaded private cache copy (Copinc
@@ -99,6 +96,9 @@ class MessageActions {
     bool canSaveSticker = false,
     bool canTranslate = false,
     bool canCopySelection = false,
+    bool moderate = false,
+    bool groupchat = false,
+    bool hasRoomStanzaId = true,
   }) {
     return MessageActions(
       canReply: !retracted && addressable,
@@ -109,7 +109,12 @@ class MessageActions {
       canTranslate: canTranslate,
       canSelect: !retracted && addressable,
       canEdit: mine && !retracted && decrypted,
-      canRetract: mine && !retracted && addressable,
+      // Group messages are addressed by the room stanza-id. Offering retract
+      // without that id sends the origin-id, which other clients cannot match.
+      canRetract:
+          !retracted &&
+          addressable &&
+          (moderate || (mine && (!groupchat || hasRoomStanzaId))),
       canSaveFile: !retracted && canSaveFile,
       canSaveSticker: !retracted && canSaveSticker,
       isPinned: pinned,
@@ -286,8 +291,8 @@ class _AnchoredMessageMenu extends StatelessWidget {
         ),
       if (actions.canRetract)
         _MenuItem(
-          icon: Icons.delete_outline,
-          label: l10n.deleteForEveryone,
+          icon: Icons.undo,
+          label: l10n.retractMessage,
           action: MessageAction.retract,
           danger: true,
         ),
@@ -381,7 +386,7 @@ class _AnchoredMessageMenu extends StatelessWidget {
                   Padding(
                     padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
                     child: Text(
-                      l10n.deleteUnencryptedWarning,
+                      l10n.retractUnencryptedWarning,
                       style: TextStyle(
                         fontSize: 11,
                         color: theme.colorScheme.onSurfaceVariant,
@@ -501,12 +506,12 @@ class SelectionBar extends StatelessWidget {
                 tooltip: l10n.forward,
               ),
               IconButton(
-                // Delete-all only for our own messages, and only where it can
+                // Retract only our own messages, and only where it can
                 // actually work: XEP-0424 is per message, so a mixed selection
-                // deletes the subset we sent and says so.
+                // retracts the subset we sent and says so.
                 onPressed: count == 0 ? null : onDelete,
-                icon: const Icon(Icons.delete_outline),
-                tooltip: l10n.deleteMine,
+                icon: const Icon(Icons.undo),
+                tooltip: l10n.retractMine,
               ),
             ],
           ),

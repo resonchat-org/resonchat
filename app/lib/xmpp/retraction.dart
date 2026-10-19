@@ -10,7 +10,7 @@
 //   * A retraction is **metadata**. It says "this message is gone"; the
 //     recipient's client has to be able to act on it, and it must work
 //     whether or not it can decrypt. So it goes out in the clear, carrying a
-//     fallback body for clients that show something anyway.
+//     fallback body that supporting clients do not display.
 //   * A correction **is** the new content. Encrypting it is the whole point —
 //     a correction that leaks the corrected text to the server would be worse
 //     than no correction. So it goes out through the ordinary encrypted path.
@@ -26,40 +26,34 @@ import '../crypto/omemo/track.dart';
 import '../store/database.dart';
 import 'connection.dart';
 
-/// Shown in place of a retracted message.
-///
-/// Says who did it, so a reader who saw the message before it vanished is not
-/// left wondering whether their own client failed.
-const kRetractedNotice = 'This message was deleted';
-
-/// Shown in place of a retracted message that we sent.
-///
-/// Deliberately different wording: being unable to retract is a failure the
-/// person who hit the button needs to know about, and the sender's own copy is
-/// the only place that can say so.
-const kRetractedNoticeMine = 'You deleted this message';
-
 /// Retracts the message addressed by [targetId] for everyone in [chatJid].
 ///
 /// Returns false when the stanza could not be sent, or when [targetId] is
 /// empty. An empty id means the message was never addressable — most often a
 /// message from before this build added origin-ids — and retracting "the last
 /// message" instead would remove a different one.
+///
+/// [groupchat] sends `type='groupchat'`. [targetId] is then the room's
+/// stanza-id when we have one.
 Future<bool> retractMessage(
   XmppService xmpp, {
   required String chatJid,
   required String targetId,
+  bool groupchat = false,
 }) {
   if (targetId.isEmpty) return Future.value(false);
   return xmpp.retractMessage(
     JID.fromString(chatJid).toBare(),
     targetId: targetId,
+    groupchat: groupchat,
   );
 }
 
 /// Applies a retraction that arrived, and reports whether it changed anything.
-Future<bool> applyRetraction(AppDatabase db, String targetId) =>
-    db.markRetracted(targetId);
+///
+/// [by] is the moderator's nick when the retraction is XEP-0425.
+Future<bool> applyRetraction(AppDatabase db, String targetId, {String? by}) =>
+    db.markRetracted(targetId, by: by);
 
 /// Replaces the content of the message addressed by [targetId].
 ///

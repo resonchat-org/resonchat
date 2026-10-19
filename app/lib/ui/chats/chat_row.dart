@@ -26,6 +26,7 @@ import '../../store/chat_notify_mode.dart';
 import '../../store/database.dart';
 import '../../xmpp/conversation_archive.dart';
 import '../../xmpp/local_nickname.dart';
+import '../account_list_chrome.dart';
 import '../contact_avatar.dart';
 import '../dialog_cell.dart';
 import '../theme.dart';
@@ -43,7 +44,7 @@ class ChatRow extends ConsumerWidget {
   final AccountChat entry;
   final VoidCallback onOpen;
 
-  /// Left stripe + via label when more than one account is configured.
+  /// Account halo and via label when the list mixes more than one account.
   final bool showAccountChrome;
 
   /// Column-mode highlight for the open conversation.
@@ -83,7 +84,6 @@ class ChatRow extends ConsumerWidget {
     final row = DialogCell(
       onTap: onOpen,
       selected: selected,
-      stripe: multi && showAccountChrome ? accent : null,
       leading: _AccountAvatar(
         chat: chat,
         chatKey: chatKey,
@@ -280,15 +280,7 @@ class _AccountAvatar extends ConsumerWidget {
       showPresence: !chat.isGroup,
       presence: presence,
     );
-    if (!ring) return child;
-    return Container(
-      padding: const EdgeInsets.all(2),
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(color: accent, width: 2),
-      ),
-      child: child,
-    );
+    return accountAvatarRing(show: ring, accent: accent, child: child);
   }
 }
 

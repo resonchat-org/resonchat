@@ -152,6 +152,7 @@ class ChatUiState {
     this.mucNick = '',
     this.mucEncryptable = false,
     this.canChangeSubject = false,
+    this.canModerate = false,
     this.room,
     this.roomJid,
     this.mucPmNick,
@@ -170,6 +171,9 @@ class ChatUiState {
 
   /// Conversations `MucOptions.canChangeSubject`.
   final bool canChangeSubject;
+
+  /// Moderator in a room that advertises XEP-0425.
+  final bool canModerate;
 
   /// The group chat being shown, or null for 1:1 / not loaded yet.
   final GroupChat? room;
@@ -197,6 +201,7 @@ class ChatUiState {
     String? mucNick,
     bool? mucEncryptable,
     bool? canChangeSubject,
+    bool? canModerate,
     Object? room = _keep,
     Object? roomJid = _keep,
     Object? mucPmNick = _keep,
@@ -210,6 +215,7 @@ class ChatUiState {
       mucNick: mucNick ?? this.mucNick,
       mucEncryptable: mucEncryptable ?? this.mucEncryptable,
       canChangeSubject: canChangeSubject ?? this.canChangeSubject,
+      canModerate: canModerate ?? this.canModerate,
       room: identical(room, _keep) ? this.room : room as GroupChat?,
       roomJid: identical(roomJid, _keep) ? this.roomJid : roomJid as String?,
       mucPmNick: identical(mucPmNick, _keep)
@@ -352,6 +358,7 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
       if (_disposed || chat == null) return;
       state = state.copyWith(room: chat);
       unawaited(refreshCanChangeSubject());
+      unawaited(refreshCanModerate());
     });
     await loadRoom();
     await refreshRoomEncryptable();
@@ -363,6 +370,15 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
     final can = await _xmpp.canChangeSubject(jid);
     if (_disposed || can == state.canChangeSubject) return;
     state = state.copyWith(canChangeSubject: can);
+  }
+
+  /// Moderator role plus the room advertising XEP-0425.
+  Future<void> refreshCanModerate() async {
+    final jid = state.roomJid;
+    if (jid == null || !state.isGroup) return;
+    final can = await _xmpp.canModerate(jid);
+    if (_disposed || can == state.canModerate) return;
+    state = state.copyWith(canModerate: can);
   }
 
   /// Re-query disco so OMEMO availability matches Conversations after join.
@@ -401,6 +417,7 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
     if (_disposed || chat == null) return;
     state = state.copyWith(room: chat);
     await refreshCanChangeSubject();
+    await refreshCanModerate();
   }
 
   /// Disco / bookmark name when the stored title is still a JID placeholder.
@@ -1184,15 +1201,43 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
 
   /// Retracts [targetId], then applies it locally.
   ///
-  /// The local copy is updated only after the send succeeded. The other way
-  /// round would leave a message greyed out locally while the recipient — and
-  /// the user's other devices — still have it. Returns false when not sent.
+  /// Our own messages go out as XEP-0424. In a group, a moderator retracts
+  /// someone else's message with XEP-0425: an IQ to the room, addressed by
+  /// the room stanza-id. The local copy is updated only after the send
+  /// succeeded.
+  ///
+  /// [targetId] is the id we stored (origin-id).
   Future<bool> retractMessage(String targetId) async {
     final r = resolveChatKey(arg);
+    final chat = await r.session.db.getChat(r.jid);
+    final row = await r.session.db.messageWithStanzaId(r.jid, targetId);
+    if (row == null) return false;
+    final group = chat?.isGroup ?? false;
+    final xmpp = r.session.xmpp;
+    if (row.incoming) {
+      if (!group || row.roomStanzaId.isEmpty) return false;
+      if (!await xmpp.canModerate(r.jid)) return false;
+      final sent = await xmpp.moderateMessage(
+        JID.fromString(r.jid).toBare(),
+        stanzaId: row.roomStanzaId,
+      );
+      if (!sent) return false;
+      final nick = chat?.mucNick ?? '';
+      await r.session.db.markRetracted(
+        targetId,
+        by: nick.isEmpty ? null : nick,
+      );
+      return true;
+    }
+    // A group retraction that names the origin-id does not match the message
+    // other clients have. They show the notice and leave the message in place.
+    if (group && row.roomStanzaId.isEmpty) return false;
+    final wireId = group ? row.roomStanzaId : targetId;
     final sent = await retraction.retractMessage(
-      r.session.xmpp,
+      xmpp,
       chatJid: r.jid,
-      targetId: targetId,
+      targetId: wireId,
+      groupchat: group,
     );
     if (!sent) return false;
     await r.session.db.markRetracted(targetId);
@@ -1231,24 +1276,28 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
   /// Retracts the ones among [ids] that we sent.
   ///
   /// Only ours: XEP-0424 is an instruction to the recipient's own client, so
-  /// retracting somebody else's message would change only our copy — which is
-  /// not "delete for everyone" and is not what the button said.
+  /// retracting somebody else's message would change only our copy.
   Future<ChatDeleteResult> deleteMineByIds(List<String> ids) async {
     final r = resolveChatKey(arg);
+    final chat = await r.session.db.getChat(r.jid);
+    final group = chat?.isGroup ?? false;
     final messages = await r.session.db.watchMessages(r.jid).first;
     final mine = [
       for (final m in messages)
-        if (ids.contains(m.stanzaId) && !m.incoming) m.stanzaId,
+        if (ids.contains(m.stanzaId) && !m.incoming) m,
     ];
     var deleted = 0;
-    for (final id in mine) {
+    for (final row in mine) {
+      if (group && row.roomStanzaId.isEmpty) continue;
+      final wireId = group ? row.roomStanzaId : row.stanzaId;
       final ok = await retraction.retractMessage(
         r.session.xmpp,
         chatJid: r.jid,
-        targetId: id,
+        targetId: wireId,
+        groupchat: group,
       );
       if (!ok) break;
-      await r.session.db.markRetracted(id);
+      await r.session.db.markRetracted(row.stanzaId);
       deleted++;
     }
     return (mine: mine.length, deleted: deleted);

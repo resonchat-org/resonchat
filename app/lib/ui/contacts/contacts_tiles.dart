@@ -124,7 +124,12 @@ class IdleContactsList extends StatelessWidget {
           ),
         )
       else
-        ...contacts.map((entry) => ContactRosterTile(entry: entry)),
+        ...contacts.map(
+          (entry) => ContactRosterTile(
+            entry: entry,
+            showAccountColor: filterAccountId == null,
+          ),
+        ),
     ];
     return ListView.separated(
       itemCount: rows.length,
@@ -237,20 +242,27 @@ class SearchExpandToggle extends StatelessWidget {
 }
 
 class ContactRosterTile extends ConsumerWidget {
-  const ContactRosterTile({super.key, required this.entry});
+  const ContactRosterTile({
+    super.key,
+    required this.entry,
+    this.showAccountColor = true,
+  });
 
   final AccountContact entry;
+
+  /// Account halo and via label. Off when the list is filtered to one account.
+  final bool showAccountColor;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tg = context.tg;
-    final multi = ref.watch(accountHubProvider).accounts.length > 1;
+    final multi =
+        showAccountColor && ref.watch(accountHubProvider).accounts.length > 1;
     final accent = entry.accent;
     final presence = ref.watch(contactPresenceProvider(entry.ref.key)).value;
     final seen = lastSeenLine(context.l10n, presence?.idleSince);
     final jid = entry.displayName == entry.entry.jid ? null : entry.entry.jid;
     return DialogCell(
-      stripe: multi ? accent : null,
       onTap: () async {
         final key = await ref
             .read(contactsViewModelProvider.notifier)
@@ -288,19 +300,27 @@ class ContactRosterTile extends ConsumerWidget {
 }
 
 class GroupBookmarkTile extends ConsumerWidget {
-  const GroupBookmarkTile({super.key, required this.row, required this.onTap});
+  const GroupBookmarkTile({
+    super.key,
+    required this.row,
+    required this.onTap,
+    this.showAccountColor = true,
+  });
 
   final AccountBookmark row;
   final VoidCallback onTap;
 
+  /// Account halo and via label. Off when the list is filtered to one account.
+  final bool showAccountColor;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tg = context.tg;
-    final multi = ref.watch(accountHubProvider).accounts.length > 1;
+    final multi =
+        showAccountColor && ref.watch(accountHubProvider).accounts.length > 1;
     final accent = row.accent;
     final b = row.bookmark;
     return DialogCell(
-      stripe: multi ? accent : null,
       onTap: onTap,
       leading: accountAvatarRing(
         show: multi,

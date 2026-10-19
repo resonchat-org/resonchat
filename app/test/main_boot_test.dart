@@ -14,7 +14,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:resonchat/main.dart';
 
 /// A boot that fails, standing in for the platform-touching real one — which
-/// cannot run here at all (its first step, `getApplicationDocumentsDirectory`,
+/// cannot run here at all (its first step, `getApplicationSupportDirectory`,
 /// never completes without a real platform behind it).
 Future<StartupResult> _failingBoot() async {
   throw StateError(

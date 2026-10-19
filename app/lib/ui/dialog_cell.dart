@@ -24,7 +24,6 @@ class DialogCell extends StatelessWidget {
     this.onTap,
     this.onLongPress,
     this.selected = false,
-    this.stripe,
   });
 
   final Widget leading;
@@ -43,9 +42,6 @@ class DialogCell extends StatelessWidget {
   final VoidCallback? onLongPress;
   final bool selected;
 
-  /// Left account stripe. Null when the list is a single account.
-  final Color? stripe;
-
   @override
   Widget build(BuildContext context) {
     final tg = context.tg;
@@ -55,12 +51,7 @@ class DialogCell extends StatelessWidget {
       onLongPress: onLongPress,
       child: Container(
         height: TgDimens.chatsRowHeight,
-        decoration: BoxDecoration(
-          color: selected ? tg.accent.withValues(alpha: 0.12) : null,
-          border: stripe == null
-              ? null
-              : Border(left: BorderSide(color: stripe!, width: 3)),
-        ),
+        color: selected ? tg.accent.withValues(alpha: 0.12) : null,
         padding: const EdgeInsets.symmetric(
           horizontal: TgDimens.chatsHorizontalPadding,
         ),

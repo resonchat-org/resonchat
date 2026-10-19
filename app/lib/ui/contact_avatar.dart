@@ -173,7 +173,7 @@ class _Fallback extends StatelessWidget {
   Widget build(BuildContext context) {
     return CircleAvatar(
       radius: radius,
-      backgroundColor: colour.withValues(alpha: 0.22),
+      backgroundColor: avatarFill(colour),
       child: Text(
         initial,
         style: TextStyle(
@@ -250,6 +250,13 @@ class AvatarCameraBadge extends StatelessWidget {
     );
   }
 }
+
+/// Placeholder fill: the tint at 22% over white.
+///
+/// The circle stays opaque. A translucent tint would show the page, or an
+/// account halo, through the letter.
+Color avatarFill(Color colour) =>
+    Color.alphaBlend(colour.withValues(alpha: 0.22), Colors.white);
 
 /// A stable colour for [jid], derived from the JID itself.
 ///

@@ -60,6 +60,10 @@ class InboundMessage {
     this.originId,
     this.reactions,
     this.retracts,
+    this.retractionTombstone = false,
+    this.retractedStamp,
+    this.moderatedBy,
+    this.roomStanzaId,
     this.corrects,
     this.reply,
     this.mediaUrl = '',
@@ -122,7 +126,21 @@ class InboundMessage {
   final ReplyInfo? reply;
 
   /// The id of an earlier message this stanza retracts (XEP-0424).
+  ///
+  /// Null on a tombstone: that stanza *is* the retracted message.
   final String? retracts;
+
+  /// True when the archive replaced this message with a `<retracted/>` tombstone.
+  final bool retractionTombstone;
+
+  /// When the retraction happened, from a tombstone's `stamp`.
+  final DateTime? retractedStamp;
+
+  /// Moderator nick when this retraction is XEP-0425. Null for a self-retract.
+  final String? moderatedBy;
+
+  /// Stanza-id assigned by the room (XEP-0359), when [type] is `groupchat`.
+  final String? roomStanzaId;
 
   /// The id of an earlier message this stanza corrects (XEP-0308).
   ///
@@ -580,37 +598,31 @@ class XmppService {
 
   /// Retracts a message for everyone (XEP-0424).
   ///
-  /// Sent in the clear, with the fallback body XEP-0424 specifies: the
-  /// recipient's client has to be able to act on the retraction whether or not
-  /// it can decrypt anything, and a client that shows nothing at all is worse
-  /// than one that shows "this message was deleted".
+  /// Sent in the clear. The fallback body is for clients that do not
+  /// understand retraction; a supporting client must not show it.
+  ///
+  /// [groupchat] selects `type='groupchat'` and expects [targetId] to be the
+  /// room's stanza-id. A 1:1 retraction uses the message `id`.
   ///
   /// Built here rather than through MessageManager for the same reason as
   /// reactions: it must not be wrapped by the A track, and its stanza id is
   /// minted locally so an echoed retraction cannot land in the transcript as an
   /// empty bubble.
-  Future<bool> retractMessage(JID to, {required String targetId}) async {
+  Future<bool> retractMessage(
+    JID to, {
+    required String targetId,
+    bool groupchat = false,
+  }) async {
     final connection = _connection;
-    if (connection == null) return false;
+    if (connection == null || targetId.isEmpty) return false;
     try {
       await connection.sendStanza(
         StanzaDetails(
           Stanza.message(
             to: to.toString(),
             id: _nextStanzaId(),
-            type: 'chat',
-            children: [
-              XMLNode.xmlns(
-                tag: 'apply-to',
-                xmlns: fasteningXmlns,
-                attributes: <String, String>{'id': targetId},
-                children: [
-                  XMLNode.xmlns(tag: 'retract', xmlns: messageRetractionXmlns),
-                ],
-              ),
-              XMLNode(tag: 'body', text: 'This message has been deleted'),
-              XMLNode.xmlns(tag: 'fallback', xmlns: fallbackIndicationXmlns),
-            ],
+            type: groupchat ? 'groupchat' : 'chat',
+            children: messageRetractionNodes(targetId),
           ),
           awaitable: false,
           shouldEncrypt: false,
@@ -619,6 +631,23 @@ class XmppService {
       return true;
     } catch (e) {
       _log.warning('could not retract $targetId for $to: $e');
+      return false;
+    }
+  }
+
+  /// Asks [room] to retract someone else's message (XEP-0425).
+  ///
+  /// [stanzaId] is the room's stanza-id. The room applies it and broadcasts
+  /// the retraction; this returns true only when the IQ result is `result`.
+  Future<bool> moderateMessage(JID room, {required String stanzaId}) async {
+    final manager = _connection?.getManagerById<MessageModerationManager>(
+      messageModerationManager,
+    );
+    if (manager == null || stanzaId.isEmpty) return false;
+    try {
+      return await manager.moderate(room: room.toBare(), stanzaId: stanzaId);
+    } catch (e) {
+      _log.warning('could not moderate $stanzaId in $room: $e');
       return false;
     }
   }
@@ -810,6 +839,16 @@ class XmppService {
     if (state == null || !state.joined) return false;
     if (state.role == Role.moderator) return true;
     return _participantsCanChangeSubject[bare] ?? false;
+  }
+
+  /// True when we are a moderator in [roomJid] and the room advertises
+  /// XEP-0425, so we can retract other people's messages.
+  Future<bool> canModerate(String roomJid) async {
+    final bare = JID.fromString(roomJid).toBare().toString();
+    final state = await groupChatState(bare);
+    if (state == null || !state.joined) return false;
+    if (state.role != Role.moderator) return false;
+    return _roomModeration[bare] ?? false;
   }
 
   /// Snapshot of what the self occupant may do in [roomJid].
@@ -1387,6 +1426,7 @@ class XmppService {
 
   void _cacheRoomPolicy(String bare, RoomInformation info) {
     _membersOnly[bare] = info.features.contains('muc_membersonly');
+    _roomModeration[bare] = info.features.contains(messageModerateXmlns);
     final form = info.roomInfo;
     if (form == null) {
       _participantsCanChangeSubject[bare] = false;
@@ -1810,6 +1850,7 @@ class XmppService {
     _allowInvites.remove(bare);
     _allowPmRaw.remove(bare);
     _membersOnly.remove(bare);
+    _roomModeration.remove(bare);
   }
 
   /// The room's occupants, updated as presence arrives.
@@ -2233,6 +2274,10 @@ class XmppService {
       // XEP-0424 and XEP-0308. Both address an earlier message by its
       // origin-id, which is why they sit next to the stable-id manager.
       MessageRetractionManager(),
+      // XEP-0425: a moderator retracts someone else's group message. The
+      // feature is advertised by the room, so this manager does not add it
+      // to our own disco.
+      MessageModerationManager(),
       LastMessageCorrectionManager(),
       // XEP-0191: refuse a blocked contact's messages before anything opens
       // them. Ahead of the OMEMO handler by priority; registered here because
@@ -3322,6 +3367,9 @@ class XmppService {
   final _membersOnly = <String, bool>{};
   final _allowPmRaw = <String, String?>{};
 
+  /// Room disco advertises XEP-0425 (`urn:xmpp:message-moderate:1`).
+  final _roomModeration = <String, bool>{};
+
   Future<void> _publishRoomState(XmppEvent event) async {
     final roomJid = switch (event) {
       MemberJoinedEvent e => e.roomJid,
@@ -3477,6 +3525,9 @@ class XmppService {
       final stable = event.get<StableIdData>();
       final replyData = event.get<ReplyData>();
       final retraction = event.get<MessageRetractionData>();
+      final moderation = event.get<MessageModerationData>();
+      // An occupant spoofing a moderation retract is discarded whole.
+      if (moderation?.spoofed ?? false) return;
       final correction = event.get<LastMessageCorrectionData>();
       final body = error != null
           ? ''
@@ -3526,11 +3577,26 @@ class XmppService {
 
       if (!hasContent) return;
 
+      final tombstone = retraction?.tombstone ?? false;
+      String? roomStanzaId;
+      if (event.type == 'groupchat') {
+        final room = event.from.toBare();
+        for (final stanza in stable?.stanzaIds ?? const <StanzaId>[]) {
+          final by = stanza.by.toBare();
+          if (by.local == room.local &&
+              by.domain.toLowerCase() == room.domain.toLowerCase()) {
+            roomStanzaId = stanza.id;
+            break;
+          }
+        }
+      }
       final inbound = InboundMessage(
         from: event.from,
         to: event.to,
         type: event.type,
-        body: body.isNotEmpty ? body : mediaUrl,
+        // A tombstone's <body> is the fallback. Supporting clients must not
+        // show it, and must not keep the original payload either.
+        body: tombstone ? '' : (body.isNotEmpty ? body : mediaUrl),
         stanzaId: event.id,
         encryptionError: error,
         isCarbonCopy: isCarbon,
@@ -3540,9 +3606,15 @@ class XmppService {
         markable: event.get<MarkableData>()?.isMarkable ?? false,
         track: foreign ? null : Track.fromEme(eme),
         originId: stable?.originId,
-        retracts: retraction?.id,
+        retracts: tombstone ? null : retraction?.id,
+        retractionTombstone: tombstone,
+        retractedStamp: retraction?.stamp,
+        moderatedBy: (moderation?.nick?.isNotEmpty ?? false)
+            ? moderation!.nick
+            : null,
+        roomStanzaId: roomStanzaId,
         corrects: correction?.id,
-        mediaUrl: mediaUrl,
+        mediaUrl: tombstone ? '' : mediaUrl,
         reply: replyData == null
             ? null
             : ReplyInfo.from(

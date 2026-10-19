@@ -320,8 +320,18 @@
   "forwardSeparately": "逐条转发",
   "forwardSeparatelySummary": "每条选中的消息各自转发一条。",
   "edit": "编辑",
-  "deleteForEveryone": "为所有人删除",
-  "deleteUnencryptedWarning": "此消息以明文发送。在此删除只会移除你这边的副本，已经读过的人仍保留内容。",
+  "retractMessage": "撤回",
+  "retractConfirmTitle": "撤回这条消息？",
+  "retractConfirmBody": "撤回不能保证服务器或对方的设备会把它去掉。",
+  "retractUnencryptedWarning": "此消息以明文发送。撤回只会请求其他人不再显示它，已经读过的人仍保留内容。",
+  "youRetractedMessage": "你撤回了一条消息",
+  "peerRetractedMessage": "{name} 撤回了一条消息",
+  "@peerRetractedMessage": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "viewRetractedMessage": "查看已撤回的消息",
   "selectMessages": "选择消息",
   "selectedCount": "已选 {count} 条",
   "selectionLimitReached": "最多只能选择 {count} 条消息。",
@@ -331,7 +341,7 @@
     }
   },
   "nothingToCopy": "没有可复制的内容。",
-  "deleteMine": "删除我的",
+  "retractMine": "撤回我的",
   "replyingTo": "回复 {author}",
   "cancelReply": "取消回复",
   "editMessageHint": "编辑消息",
@@ -651,7 +661,7 @@
     }
   },
   "reactionSendFailed": "表情回应未能发送。",
-  "couldNotDeleteUnsent": "无法删除：消息尚未发送。",
+  "couldNotRetractUnsent": "无法撤回：消息尚未发送。",
   "unblockBeforeForward": "转发前请先取消屏蔽 {contact}。",
   "@unblockBeforeForward": {
     "placeholders": {
@@ -679,9 +689,9 @@
     }
   },
   "nothingToForward": "没有可转发的内容。",
-  "onlyOwnMessagesDeletable": "只能删除自己发送的消息。",
-  "deletedPartial": "已删除 {deleted}/{mine} 条；其余未能发送删除请求。",
-  "@deletedPartial": {
+  "onlyOwnMessagesRetractable": "只能撤回自己发送的消息。",
+  "retractedPartial": "已撤回 {deleted}/{mine} 条；其余未能发送撤回请求。",
+  "@retractedPartial": {
     "placeholders": {
       "deleted": { "type": "int" },
       "mine": { "type": "int" }

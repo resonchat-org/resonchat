@@ -37,7 +37,7 @@ class AccountChat {
 
   ChatRef get ref => ChatRef(accountId: account.id, jid: chat.jid);
 
-  /// Accent for list chrome (stripe / avatar ring), not for contact text.
+  /// Accent for list chrome (avatar halo), not for contact text.
   Color get accent => accountAccent(account.bareJid);
 }
 

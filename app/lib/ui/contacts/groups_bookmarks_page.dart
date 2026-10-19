@@ -128,7 +128,10 @@ class _GroupsBookmarksPageState extends ConsumerState<GroupsBookmarksPage>
                       child: Divider(height: 0.5, color: tg.separator),
                     ),
                     itemBuilder: (context, i) {
-                      return _BookmarkTile(row: filtered[i]);
+                      return _BookmarkTile(
+                        row: filtered[i],
+                        colorAccounts: _accountId == null,
+                      );
                     },
                   );
                 },
@@ -144,15 +147,17 @@ class _GroupsBookmarksPageState extends ConsumerState<GroupsBookmarksPage>
 }
 
 class _BookmarkTile extends ConsumerWidget {
-  const _BookmarkTile({required this.row});
+  const _BookmarkTile({required this.row, required this.colorAccounts});
 
   final AccountBookmark row;
+  final bool colorAccounts;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tg = context.tg;
     final l10n = context.l10n;
-    final multi = ref.watch(accountHubProvider).accounts.length > 1;
+    final multi =
+        colorAccounts && ref.watch(accountHubProvider).accounts.length > 1;
     final accent = row.accent;
     final b = row.bookmark;
     final detail = b.autoJoin ? '${b.jid} · ${l10n.bookmarkAutoJoin}' : b.jid;
@@ -162,7 +167,6 @@ class _BookmarkTile extends ConsumerWidget {
       height: 1.15,
     );
     return DialogCell(
-      stripe: multi ? accent : null,
       onTap: () async {
         final session = accountHub.session(row.account.id);
         if (session != null) {

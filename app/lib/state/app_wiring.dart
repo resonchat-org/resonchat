@@ -491,12 +491,12 @@ Future<bool> storeInbound(
   // A carbon duplicates a message we already hold locally.
   if (msg.isCarbonCopy) return false;
 
-  // A stanza carrying an apply-to is an instruction about an earlier message,
-  // not a message. Storing it would put a duplicate bubble next to the one it
-  // refers to, and for a retraction the bubble would contain the fallback text
-  // as though the sender had written it.
+  // A retraction request is an instruction about an earlier message, not a
+  // message. Storing it would put a duplicate bubble next to the one it
+  // refers to, and the bubble would contain the fallback text as though the
+  // sender had written it.
   if (msg.retracts != null) {
-    await applyRetraction(db, msg.retracts!);
+    await applyRetraction(db, msg.retracts!, by: msg.moderatedBy);
     return false;
   }
   if (msg.corrects != null) {
@@ -525,13 +525,48 @@ Future<bool> storeInbound(
   final ownMuc = _isOwnMucReflection(msg, chat?.mucNick);
   final remoteId = msg.originId ?? msg.stanzaId ?? '';
 
+  // Group retraction (XEP-0424) names the room's stanza-id, not our origin-id.
+  // Record it on the row we already stored, including when the delivery flag
+  // is already final. Missing this is why other clients show a retraction
+  // they cannot attach to a message.
+  final roomId = msg.roomStanzaId;
+  if (isGroupchat &&
+      roomId != null &&
+      roomId.isNotEmpty &&
+      remoteId.isNotEmpty) {
+    await db.setRoomStanzaId(chatJid, remoteId, roomId);
+  }
+
   // Conversations MessageParser for MUC self: markMessage(STATUS_SEND_RECEIVED)
   // on the local UNSEND row and return — never a second bubble.
   if (ownMuc && remoteId.isNotEmpty) {
-    if (await db.markDelivered(chatJid, remoteId) > 0) return false;
+    if (await db.markDelivered(chatJid, remoteId) > 0) {
+      return false;
+    }
   }
 
   final stanzaId = msg.stanzaId ?? '';
+  final storedId = msg.originId ?? stanzaId;
+  if (msg.retractionTombstone && storedId.isNotEmpty) {
+    final known =
+        await db.findByStanzaId(chatJid, storedId) ??
+        (stanzaId.isEmpty ? null : await db.findByStanzaId(chatJid, stanzaId));
+    if (known != null) {
+      await db.markRetracted(
+        storedId,
+        at: msg.retractedStamp,
+        by: msg.moderatedBy,
+      );
+      return false;
+    }
+  }
+  // The room reflection of something we already stored (same origin-id). The
+  // stanza-id was written above; another row would be a second copy of it.
+  if (msg.originId != null &&
+      msg.originId!.isNotEmpty &&
+      await db.findByStanzaId(chatJid, msg.originId!) != null) {
+    return false;
+  }
   if (await db.findByStanzaId(chatJid, stanzaId) != null) return false;
   // A room message is identified by its sender's full JID, not just the room:
   // two people in the same room can, and frequently do, send stanzas with the
@@ -563,6 +598,10 @@ Future<bool> storeInbound(
       // id is a fallback and it changes across an archive round trip, so a
       // message keyed on it becomes unaddressable after a MAM import.
       stanzaId: Value(msg.originId ?? stanzaId),
+      roomStanzaId: Value(msg.roomStanzaId ?? ''),
+      retracted: Value(msg.retractionTombstone),
+      retractedAt: Value(msg.retractedStamp),
+      retractedBy: Value(msg.moderatedBy ?? ''),
       // The reply body is the *stripped* one: [ReplyInfo.body] has the `> `
       // quote already removed when the sender supplied the offsets, so storing
       // it keeps the bubble free of a duplicated quote.

@@ -49,6 +49,8 @@ class ChatMessageList extends StatelessWidget {
     required this.isGroup,
     required this.room,
     required this.highlightNicks,
+    required this.peerName,
+    required this.selfNick,
   });
 
   final String chatKey;
@@ -118,6 +120,12 @@ class ChatMessageList extends StatelessWidget {
   /// Our nick / localpart for bolding @-highlights in body text.
   final List<String> highlightNicks;
 
+  /// 1:1 display name, used when they retract a message.
+  final String peerName;
+
+  /// Our room nick, so a moderation we issued reads as "you".
+  final String selfNick;
+
   @override
   Widget build(BuildContext context) {
     if (messages.isEmpty) {
@@ -159,6 +167,28 @@ class ChatMessageList extends StatelessWidget {
         rows.add(UnreadDivider(key: unreadDividerKey));
         unreadMarked = true;
         brokeMerge = true;
+      }
+      if (m.retracted) {
+        final moderated = m.retractedBy.isNotEmpty;
+        final actor = moderated
+            ? m.retractedBy
+            : (isGroup ? (occupantNick(m.sender) ?? m.sender) : peerName);
+        final mine = moderated
+            ? (selfNick.isNotEmpty && m.retractedBy == selfNick)
+            : !m.incoming;
+        Widget line = RetractedNotice(
+          message: m,
+          chatKey: chatKey,
+          actor: actor,
+          mine: mine,
+        );
+        if (matchesUnreadAnchor(m, focusMessageAnchor)) {
+          line = KeyedSubtree(key: focusMessageKey, child: line);
+        }
+        rows.add(line);
+        previousBubble = null;
+        brokeMerge = true;
+        continue;
       }
       if (EncModeToken.parse(m.encMode) == EncModeToken.error) {
         Widget errorRow = ListTile(
@@ -402,7 +432,7 @@ class _BubbleOccupantAvatar extends StatelessWidget {
     final colour = tintFor(colorKey, tg.accent);
     return CircleAvatar(
       radius: radius,
-      backgroundColor: colour.withValues(alpha: 0.22),
+      backgroundColor: avatarFill(colour),
       child: Text(
         avatarInitial(nick, colorKey),
         style: TextStyle(

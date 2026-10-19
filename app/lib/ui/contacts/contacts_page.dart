@@ -283,6 +283,7 @@ class _ContactsPageState extends ConsumerState<ContactsPage>
                       showJoinRoomSheet(context, initialRoomJid: jid),
                     ),
                     onOpenBookmark: (row) => unawaited(_openBookmark(row)),
+                    showAccountColor: _accountId == null,
                   );
                 },
                 loading: () => const Center(child: CircularProgressIndicator()),
@@ -309,6 +310,7 @@ class _SearchResults extends StatelessWidget {
     required this.onAddJid,
     required this.onAddGroup,
     required this.onOpenBookmark,
+    required this.showAccountColor,
   });
 
   final List<AccountContact> contacts;
@@ -322,6 +324,7 @@ class _SearchResults extends StatelessWidget {
   final ValueChanged<String> onAddJid;
   final ValueChanged<String> onAddGroup;
   final ValueChanged<AccountBookmark> onOpenBookmark;
+  final bool showAccountColor;
 
   @override
   Widget build(BuildContext context) {
@@ -383,7 +386,10 @@ class _SearchResults extends StatelessWidget {
           contactHits,
           expanded: contactsExpanded,
           limit: previewLimit,
-        ).map((e) => ContactRosterTile(entry: e)),
+        ).map(
+          (e) =>
+              ContactRosterTile(entry: e, showAccountColor: showAccountColor),
+        ),
         if (contactHits.length > previewLimit)
           SearchExpandToggle(
             expanded: contactsExpanded,
@@ -400,7 +406,13 @@ class _SearchResults extends StatelessWidget {
           groupHits,
           expanded: groupsExpanded,
           limit: previewLimit,
-        ).map((g) => GroupBookmarkTile(row: g, onTap: () => onOpenBookmark(g))),
+        ).map(
+          (g) => GroupBookmarkTile(
+            row: g,
+            showAccountColor: showAccountColor,
+            onTap: () => onOpenBookmark(g),
+          ),
+        ),
         if (groupHits.length > previewLimit)
           SearchExpandToggle(
             expanded: groupsExpanded,

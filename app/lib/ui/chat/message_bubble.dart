@@ -13,7 +13,6 @@ import '../../crypto/omemo/track.dart';
 import '../../store/database.dart';
 import '../../store/message_send_status.dart';
 import '../../xmpp/reactions.dart';
-import '../../xmpp/retraction.dart';
 import '../../utils/appearance.dart';
 import 'linkified_text.dart';
 import 'media_attachment.dart';
@@ -204,8 +203,7 @@ class MessageBubble extends StatelessWidget {
   /// True once this message was corrected (XEP-0308).
   final bool edited;
 
-  /// Whether we sent it. Decides the wording of the retracted placeholder: the
-  /// person who hit "delete" is the only one who can tell that it worked.
+  /// Whether we sent it.
   final bool mine;
 
   /// This message is part of the current selection.
@@ -337,17 +335,7 @@ class MessageBubble extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Flexible(
-                  child: retracted
-                      ? Text(
-                          mine ? kRetractedNoticeMine : kRetractedNotice,
-                          style: TextStyle(
-                            fontSize: TgDimens.messageFontSize,
-                            fontStyle: FontStyle.italic,
-                            color: tg.textSecondary,
-                            height: 1.3,
-                          ),
-                        )
-                      : _shouldHideUrlBody(message, text)
+                  child: _shouldHideUrlBody(message, text)
                       ? const SizedBox.shrink()
                       : textSelecting
                       ? _SelectingMessageText(
@@ -900,6 +888,104 @@ class DateSeparator extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// One centred line for a retracted message. The row stays in the database;
+/// the eye opens what was sent.
+class RetractedNotice extends StatelessWidget {
+  const RetractedNotice({
+    super.key,
+    required this.message,
+    required this.chatKey,
+    required this.actor,
+    required this.mine,
+  });
+
+  final Message message;
+  final String chatKey;
+
+  /// Display name of the person who sent it. Unused when [mine].
+  final String actor;
+  final bool mine;
+
+  @override
+  Widget build(BuildContext context) {
+    final tg = context.tg;
+    final l10n = context.l10n;
+    final label = mine
+        ? l10n.youRetractedMessage
+        : l10n.peerRetractedMessage(actor);
+    final style = TextStyle(
+      fontSize: TgDimens.timeFontSize,
+      color: tg.textSecondary,
+    );
+    final maxText = MediaQuery.sizeOf(context).width - 80;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Center(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: maxText),
+              child: Text(
+                label,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: style,
+              ),
+            ),
+            Tooltip(
+              message: l10n.viewRetractedMessage,
+              child: InkWell(
+                onTap: () => _showOriginal(context),
+                customBorder: const CircleBorder(),
+                child: Padding(
+                  padding: const EdgeInsets.all(2),
+                  child: Icon(
+                    Icons.visibility_outlined,
+                    size: 12,
+                    color: tg.textSecondary,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showOriginal(BuildContext context) {
+    final l10n = context.l10n;
+    final body = message.body.trim();
+    final hideUrl = _shouldHideUrlBody(message, message.body);
+    final failed = message.encMode == 'error';
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (!failed && message.mediaUrl.isNotEmpty)
+              MediaAttachment(message: message, chatKey: chatKey),
+            if (failed)
+              Text(l10n.unableToDecrypt)
+            else if (!hideUrl && body.isNotEmpty)
+              SelectableText(message.body),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(l10n.close),
+          ),
+        ],
       ),
     );
   }
