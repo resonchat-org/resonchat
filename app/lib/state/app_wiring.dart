@@ -21,6 +21,7 @@ import '../store/database.dart';
 import '../store/message_send_status.dart';
 import '../account/chat_ref.dart';
 import '../xmpp/capabilities.dart';
+import '../xmpp/auto_reply.dart';
 import '../xmpp/blocking.dart';
 import '../xmpp/connection.dart';
 import '../xmpp/message_expiry.dart';
@@ -346,6 +347,15 @@ Future<void> _acceptInbound(
       ),
     );
   }
+  unawaited(
+    maybeSendAutoReply(
+      session: session,
+      msg: msg,
+      chatJid: chatJid,
+      isGroup: isGroup,
+      ownBare: ownBare,
+    ),
+  );
 }
 
 /// True when [nick] is on this group's Still notify list.

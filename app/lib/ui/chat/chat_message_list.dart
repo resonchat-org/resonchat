@@ -32,6 +32,8 @@ class ChatMessageList extends StatelessWidget {
     required this.onReact,
     required this.onMenu,
     required this.onToggleSelected,
+    required this.selectingMessageId,
+    required this.onTextSelectionChanged,
     required this.onMentionNick,
     required this.onOccupantAvatarLongPress,
     required this.selectionMode,
@@ -58,10 +60,15 @@ class ChatMessageList extends StatelessWidget {
   /// is what a reaction refers to.
   final void Function(String targetId, String emoji) onReact;
 
-  /// Long-press on one message. Gets the row so the page can read the stored
-  /// track, which decides both the plaintext notice and whether editing is
-  /// offered.
-  final void Function(Message message, String body) onMenu;
+  /// Long-press on one message. [anchor] is the row in global coordinates.
+  final void Function(Message message, String body, Rect anchor) onMenu;
+
+  /// Database id of the text message whose body is a live selection, or null.
+  final int? selectingMessageId;
+
+  /// Current selected slice of [selectingMessageId], including the full body
+  /// when the selection first appears.
+  final ValueChanged<String> onTextSelectionChanged;
 
   /// Toggling a message in the selection.
   final void Function(Message message) onToggleSelected;
@@ -201,7 +208,11 @@ class ChatMessageList extends StatelessWidget {
         translation: translations[cacheKey],
         translating: translatingIds.contains(cacheKey),
         onReact: (emoji) => onReact(m.stanzaId, emoji),
-        onMenu: (body) => onMenu(m, body),
+        onMenu: (body, anchor) => onMenu(m, body, anchor),
+        textSelecting: selectingMessageId == m.id,
+        onTextSelectionChanged: selectingMessageId == m.id
+            ? onTextSelectionChanged
+            : null,
         onToggleSelected: () => onToggleSelected(m),
         onMentionNick: onMentionNick,
         onOccupantAvatarLongPress: onOccupantAvatarLongPress,
@@ -241,6 +252,8 @@ class _ChatReactionBubble extends ConsumerWidget {
     required this.onReact,
     required this.onMenu,
     required this.onToggleSelected,
+    required this.textSelecting,
+    this.onTextSelectionChanged,
     required this.onMentionNick,
     required this.onOccupantAvatarLongPress,
   });
@@ -260,7 +273,9 @@ class _ChatReactionBubble extends ConsumerWidget {
   final String? translation;
   final bool translating;
   final void Function(String emoji) onReact;
-  final void Function(String body) onMenu;
+  final void Function(String body, Rect anchor) onMenu;
+  final bool textSelecting;
+  final ValueChanged<String>? onTextSelectionChanged;
   final void Function() onToggleSelected;
   final void Function(String nick) onMentionNick;
   final void Function(String nick) onOccupantAvatarLongPress;
@@ -338,13 +353,15 @@ class _ChatReactionBubble extends ConsumerWidget {
           ? null
           : () => onOccupantAvatarLongPress(chromeNick),
       onReact: onReact,
+      textSelecting: textSelecting,
+      onTextSelectionChanged: onTextSelectionChanged,
       // Long-press → context menu (incl. Select). Tap toggles only while
       // already in multi-select — Select from the menu is what enters it.
       onLongPress: message.retracted
           ? null
           : selectionMode
-          ? (message.stanzaId.isEmpty ? null : onToggleSelected)
-          : () => onMenu(message.body),
+          ? (message.stanzaId.isEmpty ? null : (_) => onToggleSelected())
+          : (anchor) => onMenu(message.body, anchor),
       onTap: message.retracted || !selectionMode || message.stanzaId.isEmpty
           ? null
           : onToggleSelected,

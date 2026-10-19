@@ -1,13 +1,15 @@
 // Copyright (C) 2026 ResonChat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// External message translation (LibreTranslate / DeepL). Prefs in [appPrefs].
+// External message translation (LibreTranslate / DeepL / Offline Translator).
+// Prefs in [appPrefs]. Offline Translator is the Android app's binder API.
 
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 
 import '../../l10n/l10n.dart';
+import '../../translate/offline_translator_engine.dart';
 import '../../translate/translation_engine.dart';
 import '../../translate/translation_prefs.dart';
 import '../../translate/translation_service.dart';
@@ -143,6 +145,17 @@ class _TranslationSettingsSheetState extends State<_TranslationSettingsSheet> {
                 subtitle: Text(_engineLabel(l10n, _engine)),
                 onTap: () => unawaited(_pickEngine()),
               ),
+              if (_engine == TranslationEngineId.offlineTranslator)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: Text(
+                    l10n.translationOfflineTranslatorSummary,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
               if (_engine == TranslationEngineId.libreTranslate)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -165,21 +178,22 @@ class _TranslationSettingsSheetState extends State<_TranslationSettingsSheet> {
                   value: _deepLPro,
                   onChanged: (v) => setState(() => _deepLPro = v),
                 ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: TextField(
-                  controller: _apiKey,
-                  obscureText: true,
-                  autocorrect: false,
-                  enableSuggestions: false,
-                  decoration: InputDecoration(
-                    labelText: l10n.translationApiKey,
-                    helperText: _engine == TranslationEngineId.deepL
-                        ? l10n.translationApiKeyRequired
-                        : l10n.translationApiKeyOptional,
+              if (_engine != TranslationEngineId.offlineTranslator)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: TextField(
+                    controller: _apiKey,
+                    obscureText: true,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    decoration: InputDecoration(
+                      labelText: l10n.translationApiKey,
+                      helperText: _engine == TranslationEngineId.deepL
+                          ? l10n.translationApiKeyRequired
+                          : l10n.translationApiKeyOptional,
+                    ),
                   ),
                 ),
-              ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                 child: FilledButton.tonal(
@@ -211,6 +225,8 @@ class _TranslationSettingsSheetState extends State<_TranslationSettingsSheet> {
     return switch (id) {
       TranslationEngineId.libreTranslate => l10n.translationLibreTranslate,
       TranslationEngineId.deepL => l10n.translationDeepL,
+      TranslationEngineId.offlineTranslator =>
+        l10n.translationOfflineTranslator,
     };
   }
 
@@ -224,16 +240,18 @@ class _TranslationSettingsSheetState extends State<_TranslationSettingsSheet> {
           mainAxisSize: MainAxisSize.min,
           children: [
             for (final id in TranslationEngineId.values)
-              ListTile(
-                title: Text(_engineLabel(l10n, id)),
-                trailing: id == _engine
-                    ? Icon(
-                        Icons.check,
-                        color: Theme.of(ctx).colorScheme.primary,
-                      )
-                    : null,
-                onTap: () => Navigator.of(ctx).pop(id),
-              ),
+              if (id != TranslationEngineId.offlineTranslator ||
+                  offlineTranslatorSupported)
+                ListTile(
+                  title: Text(_engineLabel(l10n, id)),
+                  trailing: id == _engine
+                      ? Icon(
+                          Icons.check,
+                          color: Theme.of(ctx).colorScheme.primary,
+                        )
+                      : null,
+                  onTap: () => Navigator.of(ctx).pop(id),
+                ),
           ],
         ),
       ),

@@ -1,7 +1,7 @@
 // Copyright (C) 2026 ResonChat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// LibreTranslate-compatible HTTP API (self-host / Offline Translator).
+// LibreTranslate-compatible HTTP API (self-hosted).
 
 import 'dart:convert';
 

@@ -33,13 +33,15 @@
   "socks5ProxyInvalidPort": "请输入 1–65535 之间的端口",
   "socks5ProxyInvalidHost": "请输入代理地址（IP 或主机名）",
   "translation": "消息翻译",
-  "translationSummary": "通过 LibreTranslate 或 DeepL 翻译聊天消息（目标语言跟随界面语言）",
+  "translationSummary": "通过 LibreTranslate、DeepL，或 Android 上的 Offline Translator 翻译聊天消息（目标语言跟随界面语言）",
   "translationEngine": "引擎",
   "translationLibreTranslate": "LibreTranslate",
   "translationDeepL": "DeepL",
+  "translationOfflineTranslator": "Offline Translator",
+  "translationOfflineTranslatorSummary": "使用本机已安装的 Offline Translator，源语言由它自动检测。",
   "translationBaseUrl": "服务地址",
   "translationBaseUrlHint": "http://127.0.0.1:5000",
-  "translationBaseUrlHelper": "兼容 LibreTranslate 的 HTTP 接口（自建或离线翻译器）",
+  "translationBaseUrlHelper": "兼容 LibreTranslate 的 HTTP 接口（可自建）",
   "translationApiKey": "API 密钥",
   "translationApiKeyOptional": "多数 LibreTranslate 服务可选",
   "translationApiKeyRequired": "DeepL 必填",
@@ -310,6 +312,7 @@
   "reply": "回复",
   "react": "回应",
   "copyText": "复制文本",
+  "copySelection": "复制所选",
   "forward": "转发",
   "forwardSubtitle": "再次发送给其他人，并对他们加密。",
   "forwardMerged": "合并转发",
@@ -733,5 +736,31 @@
   "devLogExportSummary": "把最新的日志文件复制到 Download/resonchat",
   "devLogExported": "已保存到 {path}",
   "devLogExportEmpty": "还没有日志文件——请先打开该模式，再复现问题。",
-  "devLogExportFailed": "导出日志失败：{reason}"
+  "devLogExportFailed": "导出日志失败：{reason}",
+  "messageSettings": "消息",
+  "autoReply": "自动回复",
+  "autoReplyOff": "已关闭",
+  "autoReplyRuleCount": "{count} 条规则",
+  "@autoReplyRuleCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "autoReplyEnabled": "启用自动回复",
+  "autoReplyEnabledSummary": "一对一消息从上到下匹配，命中第一条就回复。",
+  "autoReplyNone": "还没有规则",
+  "autoReplyAdd": "添加规则",
+  "autoReplyEdit": "编辑规则",
+  "autoReplyPattern": "匹配规则（支持正则表达式）",
+  "autoReplyPatternInvalid": "不是有效的正则表达式",
+  "autoReplyReply": "回复",
+  "autoReplyReplyEmpty": "请填写回复",
+  "autoReplyReplyTooLong": "最多 {limit} 个字符，汉字按 2 个计算",
+  "@autoReplyReplyTooLong": {
+    "placeholders": {
+      "limit": { "type": "int" }
+    }
+  },
+  "autoReplyDelete": "删除",
+  "autoReplyDeleteConfirm": "删除这条规则？"
 }

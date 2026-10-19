@@ -146,6 +146,8 @@ class MessageBubble extends StatelessWidget {
     this.translating = false,
     this.onReact,
     this.onLongPress,
+    this.textSelecting = false,
+    this.onTextSelectionChanged,
     this.onTap,
     this.leadingAvatar,
     this.onAvatarTap,
@@ -247,7 +249,15 @@ class MessageBubble extends StatelessWidget {
 
   final bool failed;
 
-  final VoidCallback? onLongPress;
+  /// Long-press on the row. [Rect] is the bubble in global coordinates.
+  final void Function(Rect anchor)? onLongPress;
+
+  /// While the anchored menu is open on a text message, the body is a
+  /// selection the user can shrink. [onTextSelectionChanged] reports the
+  /// current slice, including the initial full body.
+  final bool textSelecting;
+  final ValueChanged<String>? onTextSelectionChanged;
+
   final VoidCallback? onTap;
 
   /// Occupant avatar to the left of an incoming group bubble (Conversations
@@ -339,6 +349,12 @@ class MessageBubble extends StatelessWidget {
                         )
                       : _shouldHideUrlBody(message, text)
                       ? const SizedBox.shrink()
+                      : textSelecting
+                      ? _SelectingMessageText(
+                          text: text,
+                          style: bodyStyle,
+                          onChanged: onTextSelectionChanged,
+                        )
                       : LinkifiedText(
                           text: text,
                           style: bodyStyle,
@@ -355,6 +371,11 @@ class MessageBubble extends StatelessWidget {
                           quoteColor: tg.textSecondary,
                         ),
                 ),
+                if (!textSelecting &&
+                    !retracted &&
+                    !_shouldHideUrlBody(message, text) &&
+                    text.isNotEmpty)
+                  const SizedBox(width: 3),
                 if (edited && !retracted)
                   Padding(
                     padding: const EdgeInsets.only(left: 6, bottom: 2),
@@ -522,12 +543,90 @@ class MessageBubble extends StatelessWidget {
                 .withValues(alpha: 0.5)
           : null,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
-      child: GestureDetector(
-        onTap: onTap,
-        onLongPress: onLongPress,
-        behavior: HitTestBehavior.opaque,
-        child: row,
+      child: Builder(
+        builder: (rowContext) {
+          return GestureDetector(
+            onTap: onTap,
+            // While the body is a live selection, this detector must not take
+            // the pointer or the handles cannot move.
+            onLongPress: textSelecting || onLongPress == null
+                ? null
+                : () {
+                    final box = rowContext.findRenderObject() as RenderBox?;
+                    if (box == null || !box.hasSize) return;
+                    onLongPress!(box.localToGlobal(Offset.zero) & box.size);
+                  },
+            behavior: HitTestBehavior.opaque,
+            child: row,
+          );
+        },
       ),
+    );
+  }
+}
+
+/// Body text with a live selection while the message menu is open.
+///
+/// Starts with the whole body selected. The platform toolbar is suppressed
+/// because Copy selection lives on the menu beside the bubble.
+class _SelectingMessageText extends StatefulWidget {
+  const _SelectingMessageText({
+    required this.text,
+    required this.style,
+    required this.onChanged,
+  });
+
+  final String text;
+  final TextStyle style;
+  final ValueChanged<String>? onChanged;
+
+  @override
+  State<_SelectingMessageText> createState() => _SelectingMessageTextState();
+}
+
+class _SelectingMessageTextState extends State<_SelectingMessageText> {
+  @override
+  void initState() {
+    super.initState();
+    widget.onChanged?.call(widget.text);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _selectAll());
+  }
+
+  void _selectAll() {
+    if (!mounted) return;
+    void visit(Element element) {
+      if (element is StatefulElement && element.state is EditableTextState) {
+        final state = element.state as EditableTextState;
+        final value = state.textEditingValue;
+        state.userUpdateTextEditingValue(
+          value.copyWith(
+            selection: TextSelection(
+              baseOffset: 0,
+              extentOffset: value.text.length,
+            ),
+          ),
+          SelectionChangedCause.longPress,
+        );
+        state.widget.focusNode.requestFocus();
+        return;
+      }
+      element.visitChildren(visit);
+    }
+
+    (context as Element).visitChildren(visit);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SelectableText(
+      widget.text,
+      style: widget.style,
+      showCursor: false,
+      contextMenuBuilder: (context, editableTextState) =>
+          const SizedBox.shrink(),
+      onSelectionChanged: (selection, _) {
+        widget.onChanged?.call(selection.textInside(widget.text));
+      },
     );
   }
 }

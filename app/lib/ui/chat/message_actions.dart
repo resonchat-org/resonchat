@@ -1,7 +1,7 @@
 // Copyright (C) 2026 ResonChat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// The long-press menu on a message (Telegram's `ChatActivity` context menu).
+// The long-press menu on a message: a grid beside the bubble, not a sheet.
 //
 // What is on offer depends on who wrote the message, and getting that wrong is
 // not a cosmetic problem. Offering "delete for everyone" on somebody else's
@@ -9,7 +9,11 @@
 // to the recipient's own client, so it only ever affects copies of *our*
 // messages. Offering "edit" on somebody else's message is the same mistake.
 
+import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 
 import '../../l10n/l10n.dart';
 import '../../crypto/omemo/track.dart';
@@ -22,6 +26,7 @@ class MessageActions {
     required this.canForward,
     required this.canReact,
     required this.canCopy,
+    required this.canCopySelection,
     required this.canTranslate,
     required this.canSelect,
     required this.canEdit,
@@ -48,6 +53,12 @@ class MessageActions {
   final bool canReact;
 
   final bool canCopy;
+
+  /// Copy only the range the user has selected in a text message.
+  ///
+  /// Separate from [canCopy], which copies the whole body. Images and other
+  /// files do not offer it.
+  final bool canCopySelection;
 
   /// External HTTP translation for translatable plaintext (not files / emoji).
   final bool canTranslate;
@@ -87,12 +98,14 @@ class MessageActions {
     bool canSaveFile = false,
     bool canSaveSticker = false,
     bool canTranslate = false,
+    bool canCopySelection = false,
   }) {
     return MessageActions(
       canReply: !retracted && addressable,
       canForward: !retracted && decrypted,
       canReact: !retracted,
       canCopy: decrypted && !retracted,
+      canCopySelection: decrypted && !retracted && canCopySelection,
       canTranslate: canTranslate,
       canSelect: !retracted && addressable,
       canEdit: mine && !retracted && decrypted,
@@ -107,6 +120,7 @@ class MessageActions {
       !canReply &&
       !canReact &&
       !canCopy &&
+      !canCopySelection &&
       !canTranslate &&
       !canSelect &&
       !canEdit &&
@@ -121,6 +135,7 @@ enum MessageAction {
   reply,
   react,
   copy,
+  copySelection,
   translate,
   select,
   edit,
@@ -131,121 +146,311 @@ enum MessageAction {
   saveSticker,
 }
 
-/// Shows the menu and returns what the user picked, or null.
+/// One cell in the grid beside a long-pressed message.
+class _MenuItem {
+  const _MenuItem({
+    required this.icon,
+    required this.label,
+    required this.action,
+    this.danger = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final MessageAction action;
+  final bool danger;
+}
+
+/// Shows the menu beside [anchor] and returns what the user picked, or null.
+///
+/// [anchor] is the bubble in global coordinates. Taps outside the bubble and
+/// the menu dismiss it; taps on the bubble pass through so a text selection
+/// can be adjusted.
 Future<MessageAction?> showMessageMenu(
   BuildContext context, {
   required MessageActions actions,
   required bool trackIsPlaintext,
+  required Rect anchor,
 }) {
-  final l10n = context.l10n;
-  return showModalBottomSheet<MessageAction>(
-    context: context,
-    showDragHandle: true,
-    builder: (context) => SafeArea(
-      // Scrollable, and shrink-wrapped so a short menu still hugs its content.
-      //
-      // A Column here does not scroll, it overflows: the menu offers up to ten
-      // rows and a modal sheet is capped at 9/16 of the screen, which on a
-      // normal phone is under the height of a message that can be replied to,
-      // reacted to, copied, translated, selected, forwarded, saved, edited,
-      // pinned and retracted. The rows that fell off the bottom — "delete for
-      // everyone" among them — were drawn outside the sheet and could not be
-      // tapped at all.
-      child: ListView(
-        shrinkWrap: true,
-        padding: EdgeInsets.zero,
-        children: [
-          if (actions.canReply)
-            ListTile(
-              leading: const Icon(Icons.reply),
-              title: Text(l10n.reply),
-              onTap: () => Navigator.of(context).pop(MessageAction.reply),
-            ),
-          if (actions.canReact)
-            ListTile(
-              leading: const Icon(Icons.add_reaction_outlined),
-              title: Text(l10n.react),
-              onTap: () => Navigator.of(context).pop(MessageAction.react),
-            ),
-          if (actions.canCopy)
-            ListTile(
-              leading: const Icon(Icons.copy),
-              title: Text(l10n.copyText),
-              onTap: () => Navigator.of(context).pop(MessageAction.copy),
-            ),
-          if (actions.canTranslate)
-            ListTile(
-              leading: const Icon(Icons.translate),
-              title: Text(l10n.translate),
-              onTap: () => Navigator.of(context).pop(MessageAction.translate),
-            ),
-          if (actions.canSelect)
-            ListTile(
-              leading: const Icon(Icons.checklist),
-              title: Text(l10n.selectMessages),
-              onTap: () => Navigator.of(context).pop(MessageAction.select),
-            ),
-          if (actions.canForward)
-            ListTile(
-              leading: const Icon(Icons.forward),
-              title: Text(l10n.forward),
-              onTap: () => Navigator.of(context).pop(MessageAction.forward),
-            ),
-          if (actions.canSaveFile)
-            ListTile(
-              leading: const Icon(Icons.save_alt),
-              title: Text(l10n.saveFile),
-              onTap: () => Navigator.of(context).pop(MessageAction.saveFile),
-            ),
-          if (actions.canSaveSticker)
-            ListTile(
-              leading: const Icon(Icons.emoji_emotions_outlined),
-              title: Text(l10n.saveSticker),
-              onTap: () => Navigator.of(context).pop(MessageAction.saveSticker),
-            ),
-          if (actions.canEdit)
-            ListTile(
-              leading: const Icon(Icons.edit_outlined),
-              title: Text(l10n.edit),
-              onTap: () => Navigator.of(context).pop(MessageAction.edit),
-            ),
-          if (actions.canEdit)
-            ListTile(
-              leading: const Icon(Icons.push_pin_outlined),
-              title: Text(actions.isPinned ? l10n.unpin : l10n.pin),
-              onTap: () => Navigator.of(context).pop(MessageAction.pin),
-            ),
-          if (actions.canRetract)
-            ListTile(
-              leading: Icon(
-                Icons.delete_outline,
-                color: Theme.of(context).colorScheme.error,
-              ),
-              title: Text(
-                l10n.deleteForEveryone,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-              onTap: () => Navigator.of(context).pop(MessageAction.retract),
-            ),
-          // Says so plainly rather than hiding the option: a message on NO is
-          // readable by anyone with server access, and a user who assumes
-          // "delete" reaches those copies is wrong about something that cannot
-          // be fixed afterwards.
-          if (actions.canRetract && trackIsPlaintext)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-              child: Text(
-                l10n.deleteUnencryptedWarning,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ),
-        ],
-      ),
+  final overlay = Overlay.of(context);
+  final overlayBox = overlay.context.findRenderObject() as RenderBox?;
+  final localAnchor = overlayBox == null
+      ? anchor
+      : Rect.fromPoints(
+          overlayBox.globalToLocal(anchor.topLeft),
+          overlayBox.globalToLocal(anchor.bottomRight),
+        );
+  final completer = Completer<MessageAction?>();
+  late OverlayEntry entry;
+  void finish(MessageAction? action) {
+    if (completer.isCompleted) return;
+    entry.remove();
+    completer.complete(action);
+  }
+
+  entry = OverlayEntry(
+    builder: (context) => _AnchoredMessageMenu(
+      anchor: localAnchor,
+      actions: actions,
+      trackIsPlaintext: trackIsPlaintext,
+      onPick: finish,
     ),
   );
+  overlay.insert(entry);
+  return completer.future;
+}
+
+class _AnchoredMessageMenu extends StatelessWidget {
+  const _AnchoredMessageMenu({
+    required this.anchor,
+    required this.actions,
+    required this.trackIsPlaintext,
+    required this.onPick,
+  });
+
+  final Rect anchor;
+  final MessageActions actions;
+  final bool trackIsPlaintext;
+  final void Function(MessageAction? action) onPick;
+
+  static const double _cellW = 76;
+  static const double _cellH = 64;
+
+  List<_MenuItem> _items(AppLocalizations l10n) {
+    return [
+      if (actions.canReply)
+        _MenuItem(
+          icon: Icons.reply,
+          label: l10n.reply,
+          action: MessageAction.reply,
+        ),
+      if (actions.canReact)
+        _MenuItem(
+          icon: Icons.add_reaction_outlined,
+          label: l10n.react,
+          action: MessageAction.react,
+        ),
+      if (actions.canCopy)
+        _MenuItem(
+          icon: Icons.copy,
+          label: l10n.copyText,
+          action: MessageAction.copy,
+        ),
+      if (actions.canCopySelection)
+        _MenuItem(
+          icon: Icons.highlight_alt,
+          label: l10n.copySelection,
+          action: MessageAction.copySelection,
+        ),
+      if (actions.canTranslate)
+        _MenuItem(
+          icon: Icons.translate,
+          label: l10n.translate,
+          action: MessageAction.translate,
+        ),
+      if (actions.canSelect)
+        _MenuItem(
+          icon: Icons.checklist,
+          label: l10n.selectMessages,
+          action: MessageAction.select,
+        ),
+      if (actions.canForward)
+        _MenuItem(
+          icon: Icons.forward,
+          label: l10n.forward,
+          action: MessageAction.forward,
+        ),
+      if (actions.canSaveFile)
+        _MenuItem(
+          icon: Icons.save_alt,
+          label: l10n.saveFile,
+          action: MessageAction.saveFile,
+        ),
+      if (actions.canSaveSticker)
+        _MenuItem(
+          icon: Icons.emoji_emotions_outlined,
+          label: l10n.saveSticker,
+          action: MessageAction.saveSticker,
+        ),
+      if (actions.canEdit)
+        _MenuItem(
+          icon: Icons.edit_outlined,
+          label: l10n.edit,
+          action: MessageAction.edit,
+        ),
+      if (actions.canEdit)
+        _MenuItem(
+          icon: Icons.push_pin_outlined,
+          label: actions.isPinned ? l10n.unpin : l10n.pin,
+          action: MessageAction.pin,
+        ),
+      if (actions.canRetract)
+        _MenuItem(
+          icon: Icons.delete_outline,
+          label: l10n.deleteForEveryone,
+          action: MessageAction.retract,
+          danger: true,
+        ),
+    ];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final items = _items(l10n);
+    final cols = math.min(4, math.max(1, items.length));
+    final rows = (items.length / cols).ceil();
+    final menuW = cols * _cellW;
+    final warn = actions.canRetract && trackIsPlaintext;
+    final menuH = rows * _cellH + (warn ? 44 : 0) + 8;
+    final size = MediaQuery.sizeOf(context);
+    final pad = MediaQuery.paddingOf(context);
+    var top = anchor.top - menuH - 8;
+    if (top < pad.top + 8) top = anchor.bottom + 8;
+    if (top + menuH > size.height - pad.bottom - 8) {
+      top = math.max(pad.top + 8, size.height - pad.bottom - menuH - 8);
+    }
+    var left = anchor.center.dx - menuW / 2;
+    left = left.clamp(8.0, math.max(8.0, size.width - menuW - 8));
+    final theme = Theme.of(context);
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: _MenuBarrier(
+            hole: anchor.inflate(28),
+            onDismiss: () => onPick(null),
+          ),
+        ),
+        Positioned(
+          left: left,
+          top: top,
+          width: menuW,
+          child: Material(
+            elevation: 8,
+            color: theme.colorScheme.surfaceContainerHigh,
+            borderRadius: BorderRadius.circular(12),
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                GridView.count(
+                  crossAxisCount: cols,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  childAspectRatio: _cellW / _cellH,
+                  children: [
+                    for (final item in items)
+                      InkWell(
+                        onTap: () => onPick(item.action),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 4,
+                            vertical: 8,
+                          ),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                item.icon,
+                                size: 22,
+                                color: item.danger
+                                    ? theme.colorScheme.error
+                                    : theme.colorScheme.onSurface,
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                item.label,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  height: 1.1,
+                                  color: item.danger
+                                      ? theme.colorScheme.error
+                                      : theme.colorScheme.onSurface,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                if (warn)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+                    child: Text(
+                      l10n.deleteUnencryptedWarning,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Full-screen tap target with a hole over the bubble.
+class _MenuBarrier extends LeafRenderObjectWidget {
+  const _MenuBarrier({required this.hole, required this.onDismiss});
+
+  final Rect hole;
+  final VoidCallback onDismiss;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) {
+    return _MenuBarrierBox(hole: hole, onDismiss: onDismiss);
+  }
+
+  @override
+  void updateRenderObject(BuildContext context, _MenuBarrierBox renderObject) {
+    renderObject
+      ..hole = hole
+      ..onDismiss = onDismiss;
+  }
+}
+
+class _MenuBarrierBox extends RenderBox {
+  _MenuBarrierBox({required this._hole, required this._onDismiss});
+
+  Rect _hole;
+  VoidCallback _onDismiss;
+
+  set hole(Rect value) {
+    if (_hole == value) return;
+    _hole = value;
+    markNeedsPaint();
+  }
+
+  set onDismiss(VoidCallback value) => _onDismiss = value;
+
+  @override
+  bool get sizedByParent => true;
+
+  @override
+  Size computeDryLayout(BoxConstraints constraints) => constraints.biggest;
+
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) {
+    if (_hole.contains(position)) return false;
+    result.add(BoxHitTestEntry(this, position));
+    return true;
+  }
+
+  @override
+  void handleEvent(PointerEvent event, BoxHitTestEntry entry) {
+    if (event is PointerDownEvent) _onDismiss();
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {}
 }
 
 /// The action bar shown while messages are selected.

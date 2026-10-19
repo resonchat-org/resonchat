@@ -1,21 +1,12 @@
 // Copyright (C) 2026 ResonChat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// Multi-account list chrome (stripe / via / avatar ring) — same language as
-// [ChatRow], reused by Contacts and Groups.
+// Multi-account list chrome (stripe / via / avatar ring) for [DialogCell].
 
 import 'package:flutter/material.dart';
 
 import '../account/account_color.dart';
 import 'theme.dart';
-
-/// Left accent stripe when more than one account is configured.
-BoxDecoration? accountStripeDecoration(Color accent, {required bool show}) {
-  if (!show) return null;
-  return BoxDecoration(
-    border: Border(left: BorderSide(color: accent, width: 3)),
-  );
-}
 
 /// Avatar wrapped in an account-colored ring.
 Widget accountAvatarRing({

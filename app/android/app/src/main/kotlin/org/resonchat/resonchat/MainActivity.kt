@@ -24,6 +24,28 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+        val offlineTranslator = OfflineTranslator(this)
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "org.resonchat.resonchat/offline_translator",
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "translate" -> {
+                    val text = call.argument<String>("text")
+                    if (text.isNullOrEmpty()) {
+                        result.error("bad_args", "text is required", null)
+                    } else {
+                        offlineTranslator.translate(
+                            text,
+                            call.argument<String>("from") ?: "",
+                            call.argument<String>("to") ?: "",
+                            result,
+                        )
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             "org.resonchat.resonchat/logs",

@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:resonchat/l10n/l10n.dart';
 import 'package:resonchat/ui/contacts/contacts_tiles.dart';
+import 'package:resonchat/ui/dialog_cell.dart';
 import 'package:resonchat/ui/theme.dart';
 
 Widget wrap(Widget child) => MaterialApp(
@@ -42,7 +43,7 @@ void main() {
     await tester.pumpAndSettle();
 
     final heights = tester
-        .renderObjectList<RenderBox>(find.byType(ListTile))
+        .renderObjectList<RenderBox>(find.byType(DialogCell))
         .map((box) => box.size.height)
         .toList();
     expect(heights, hasLength(4));

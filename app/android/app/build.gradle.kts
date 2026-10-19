@@ -23,6 +23,10 @@ android {
     compileSdk = maxOf(flutter.compileSdkVersion, 36)
     ndkVersion = flutter.ndkVersion
 
+    buildFeatures {
+        aidl = true
+    }
+
     compileOptions {
         // flutter_local_notifications needs desugaring for java.time APIs
         // on older Android (even without scheduled notifications).

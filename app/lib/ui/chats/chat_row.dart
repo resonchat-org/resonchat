@@ -1,12 +1,10 @@
 // Copyright (C) 2026 ResonChat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// One row of the chat list.
+// One row of the chat list. The shared layout lives in [DialogCell]; this
+// file adds the conversation's encryption track, unread count, and flags.
 //
-// Its own file because the row has grown past "a title, a preview and a
-// timestamp": it now carries the conversation's encryption track, its unread
-// count, and four user-set flags, and inlining all of that into the list page
-// made the list unreadable.
+// Inlining all of that into the list page made the list unreadable.
 //
 // Pin / mute are local. Archive follows Conversations: local flag plus, for
 // groups, leave + bookmark autoJoin=false (see conversation_archive.dart).
@@ -29,6 +27,7 @@ import '../../store/database.dart';
 import '../../xmpp/conversation_archive.dart';
 import '../../xmpp/local_nickname.dart';
 import '../contact_avatar.dart';
+import '../dialog_cell.dart';
 import '../theme.dart';
 import 'notify_mode_sheet.dart';
 
@@ -81,122 +80,92 @@ class ChatRow extends ConsumerWidget {
 
     // Open restores from archive (Conversations findOrCreate), so archived
     // rows are not slidable. Main list: reveal pin / mute / archive.
-    final row = InkWell(
+    final row = DialogCell(
       onTap: onOpen,
-      child: Container(
-        height: TgDimens.chatsRowHeight,
-        decoration: BoxDecoration(
-          color: selected ? tg.accent.withValues(alpha: 0.12) : null,
-          border: multi && showAccountChrome
-              ? Border(left: BorderSide(color: accent, width: 3))
-              : null,
-        ),
-        padding: const EdgeInsets.symmetric(
-          horizontal: TgDimens.chatsHorizontalPadding,
-        ),
-        child: Row(
-          children: [
-            _AccountAvatar(
-              chat: chat,
-              chatKey: chatKey,
-              title: title,
-              accent: accent,
-              ring: multi && showAccountChrome,
+      selected: selected,
+      stripe: multi && showAccountChrome ? accent : null,
+      leading: _AccountAvatar(
+        chat: chat,
+        chatKey: chatKey,
+        title: title,
+        accent: accent,
+        ring: multi && showAccountChrome,
+      ),
+      title: title,
+      titleWeight: chat.unreadCount > 0 && !silenced
+          ? FontWeight.w700
+          : FontWeight.w500,
+      titleLeading: [
+        if (chat.pinned) _Flag(icon: Icons.push_pin, color: tg.textSecondary),
+        if (silenced)
+          _Flag(icon: notifyModeIcon(notifyMode), color: tg.textSecondary),
+        if (locked) _Flag(icon: Icons.lock, color: tg.accent),
+      ],
+      // Before the time, as Telegram draws it: the badge is what the user
+      // is acting on and the time is context. Mention `@` sits beside the
+      // count (DialogCell drawMention + drawCount).
+      titleTrailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (chat.unreadMentions > 0) ...[
+            MentionBadge(muted: silenced),
+            const SizedBox(width: 4),
+          ],
+          if (chat.unreadCount > 0) ...[
+            UnreadBadge(count: chat.unreadCount, muted: silenced),
+            const SizedBox(width: 6),
+          ],
+          Text(
+            _timeOf(chat.lastActivity),
+            style: TextStyle(
+              fontSize: TgDimens.timeFontSize,
+              color: chat.unreadCount > 0 && !silenced
+                  ? tg.accent
+                  : tg.textSecondary,
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      if (chat.pinned)
-                        _Flag(icon: Icons.push_pin, color: tg.textSecondary),
-                      if (silenced)
-                        _Flag(
-                          icon: notifyModeIcon(notifyMode),
-                          color: tg.textSecondary,
-                        ),
-                      if (locked) _Flag(icon: Icons.lock, color: tg.accent),
-                      Expanded(
-                        child: Text(
-                          title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: TgDimens.chatTitleFontSize,
-                            fontWeight: chat.unreadCount > 0 && !silenced
-                                ? FontWeight.w700
-                                : FontWeight.w500,
-                            color: tg.textPrimary,
-                          ),
-                        ),
-                      ),
-                      // Before the time, as Telegram draws it: the badge is
-                      // what the user is acting on and the time is context.
-                      // Mention `@` sits beside the count (DialogCell
-                      // drawMention + drawCount).
-                      if (chat.unreadMentions > 0) ...[
-                        MentionBadge(muted: silenced),
-                        const SizedBox(width: 4),
-                      ],
-                      if (chat.unreadCount > 0) ...[
-                        UnreadBadge(count: chat.unreadCount, muted: silenced),
-                        const SizedBox(width: 6),
-                      ],
-                      Text(
-                        _timeOf(chat.lastActivity),
-                        style: TextStyle(
-                          fontSize: TgDimens.timeFontSize,
-                          color: chat.unreadCount > 0 && !silenced
-                              ? tg.accent
-                              : tg.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: TgDimens.chatsTitleGap),
-                  if (multi && showAccountChrome)
-                    Text(
-                      accountViaLabel(entry.account.bareJid),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: TgDimens.timeFontSize,
-                        color: accent,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          preview.value ?? '',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: TgDimens.chatSubtitleFontSize,
-                            color: tg.textSecondary,
-                          ),
-                        ),
-                      ),
-                      if (locked)
-                        Text(
-                          track.label,
-                          style: TextStyle(
-                            fontSize: TgDimens.timeFontSize,
-                            color: tg.accent,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                    ],
-                  ),
-                ],
+          ),
+        ],
+      ),
+      subtitle: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (multi && showAccountChrome)
+            Text(
+              accountViaLabel(entry.account.bareJid),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: TgDimens.timeFontSize,
+                color: accent,
+                fontWeight: FontWeight.w600,
               ),
             ),
-          ],
-        ),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  preview.value ?? '',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: TgDimens.chatSubtitleFontSize,
+                    color: tg.textSecondary,
+                  ),
+                ),
+              ),
+              if (locked)
+                Text(
+                  track.label,
+                  style: TextStyle(
+                    fontSize: TgDimens.timeFontSize,
+                    color: tg.accent,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+            ],
+          ),
+        ],
       ),
     );
 

@@ -15,6 +15,7 @@ import '../../state/providers.dart';
 import '../account_filter_overlay.dart';
 import '../account_list_chrome.dart';
 import '../contact_avatar.dart';
+import '../dialog_cell.dart';
 import '../home/open_chat.dart';
 import '../theme.dart';
 
@@ -160,56 +161,49 @@ class _BookmarkTile extends ConsumerWidget {
       fontSize: TgDimens.timeFontSize,
       height: 1.15,
     );
-    return Container(
-      decoration: accountStripeDecoration(accent, show: multi),
-      child: ListTile(
-        minTileHeight: TgDimens.chatsRowHeight,
-        leading: accountAvatarRing(
-          show: multi,
-          accent: accent,
-          child: ContactAvatar(jid: b.jid, title: b.displayName, radius: 22),
-        ),
-        title: Text(
-          b.displayName,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        subtitle: Row(
-          children: [
-            if (multi) ...[
-              Flexible(child: accountViaText(row.account.bareJid, accent)),
-              const SizedBox(width: 8),
-            ],
-            Flexible(
-              child: Text(
-                detail,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: detailStyle,
-              ),
-            ),
+    return DialogCell(
+      stripe: multi ? accent : null,
+      onTap: () async {
+        final session = accountHub.session(row.account.id);
+        if (session != null) {
+          final nick = (b.nick != null && b.nick!.trim().isNotEmpty)
+              ? b.nick!.trim()
+              : row.account.bareJid.split('@').first;
+          final bookmarkName = b.name?.trim();
+          await session.db.upsertChat(
+            b.jid,
+            title: (bookmarkName != null && bookmarkName.isNotEmpty)
+                ? bookmarkName
+                : null,
+            isGroup: true,
+            mucNick: nick,
+          );
+        }
+        if (!context.mounted) return;
+        openChat(context, row.ref.key);
+      },
+      onLongPress: () => _confirmRemove(context, ref),
+      leading: accountAvatarRing(
+        show: multi,
+        accent: accent,
+        child: ContactAvatar(jid: b.jid, title: b.displayName),
+      ),
+      title: b.displayName,
+      subtitle: Row(
+        children: [
+          if (multi) ...[
+            Flexible(child: accountViaText(row.account.bareJid, accent)),
+            const SizedBox(width: 8),
           ],
-        ),
-        onTap: () async {
-          final session = accountHub.session(row.account.id);
-          if (session != null) {
-            final nick = (b.nick != null && b.nick!.trim().isNotEmpty)
-                ? b.nick!.trim()
-                : row.account.bareJid.split('@').first;
-            final bookmarkName = b.name?.trim();
-            await session.db.upsertChat(
-              b.jid,
-              title: (bookmarkName != null && bookmarkName.isNotEmpty)
-                  ? bookmarkName
-                  : null,
-              isGroup: true,
-              mucNick: nick,
-            );
-          }
-          if (!context.mounted) return;
-          openChat(context, row.ref.key);
-        },
-        onLongPress: () => _confirmRemove(context, ref),
+          Flexible(
+            child: Text(
+              detail,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: detailStyle,
+            ),
+          ),
+        ],
       ),
     );
   }

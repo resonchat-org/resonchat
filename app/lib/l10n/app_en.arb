@@ -33,13 +33,15 @@
   "socks5ProxyInvalidPort": "Enter a port between 1 and 65535",
   "socks5ProxyInvalidHost": "Enter a proxy host (IP or hostname)",
   "translation": "Message translation",
-  "translationSummary": "Translate chat messages via LibreTranslate or DeepL (target follows UI language)",
+  "translationSummary": "Translate chat messages via LibreTranslate, DeepL, or Offline Translator on Android (target follows UI language)",
   "translationEngine": "Engine",
   "translationLibreTranslate": "LibreTranslate",
   "translationDeepL": "DeepL",
+  "translationOfflineTranslator": "Offline Translator",
+  "translationOfflineTranslatorSummary": "Uses the Offline Translator app installed on this device. It detects the source language.",
   "translationBaseUrl": "Base URL",
   "translationBaseUrlHint": "http://127.0.0.1:5000",
-  "translationBaseUrlHelper": "LibreTranslate-compatible HTTP endpoint (self-host or Offline Translator)",
+  "translationBaseUrlHelper": "LibreTranslate-compatible HTTP endpoint (self-hosted)",
   "translationApiKey": "API key",
   "translationApiKeyOptional": "Optional for many LibreTranslate servers",
   "translationApiKeyRequired": "Required for DeepL",
@@ -320,6 +322,7 @@
   "reply": "Reply",
   "react": "React",
   "copyText": "Copy text",
+  "copySelection": "Copy selection",
   "forward": "Forward",
   "forwardSubtitle": "Sent again to someone else, encrypted for them.",
   "forwardMerged": "Forward as one message",
@@ -855,5 +858,31 @@
     "placeholders": {
       "reason": { "type": "String" }
     }
-  }
+  },
+  "messageSettings": "Messages",
+  "autoReply": "Auto-reply",
+  "autoReplyOff": "Off",
+  "autoReplyRuleCount": "{count} rules",
+  "@autoReplyRuleCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "autoReplyEnabled": "Enable auto-reply",
+  "autoReplyEnabledSummary": "Direct messages are checked from top to bottom. The first match is sent.",
+  "autoReplyNone": "No rules yet",
+  "autoReplyAdd": "Add rule",
+  "autoReplyEdit": "Edit rule",
+  "autoReplyPattern": "Match rule (regular expressions supported)",
+  "autoReplyPatternInvalid": "Not a valid regular expression",
+  "autoReplyReply": "Reply",
+  "autoReplyReplyEmpty": "Enter the reply",
+  "autoReplyReplyTooLong": "At most {limit} characters; a Chinese character counts as 2",
+  "@autoReplyReplyTooLong": {
+    "placeholders": {
+      "limit": { "type": "int" }
+    }
+  },
+  "autoReplyDelete": "Delete",
+  "autoReplyDeleteConfirm": "Delete this rule?"
 }

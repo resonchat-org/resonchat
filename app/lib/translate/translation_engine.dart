@@ -1,13 +1,14 @@
 // Copyright (C) 2026 ResonChat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-/// Which external HTTP engine to use (no in-app MT).
-enum TranslationEngineId { libreTranslate, deepL }
+/// Which translation backend to use (no in-app MT).
+enum TranslationEngineId { libreTranslate, deepL, offlineTranslator }
 
 extension TranslationEngineIdX on TranslationEngineId {
   String get stored => switch (this) {
     TranslationEngineId.libreTranslate => 'libretranslate',
     TranslationEngineId.deepL => 'deepl',
+    TranslationEngineId.offlineTranslator => 'offline_translator',
   };
 
   static TranslationEngineId? tryParse(String? raw) {
@@ -16,6 +17,8 @@ extension TranslationEngineIdX on TranslationEngineId {
         return TranslationEngineId.libreTranslate;
       case 'deepl':
         return TranslationEngineId.deepL;
+      case 'offline_translator':
+        return TranslationEngineId.offlineTranslator;
       default:
         return null;
     }

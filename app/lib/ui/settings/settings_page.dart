@@ -22,11 +22,13 @@ import '../accent_theme.dart';
 import '../archive/archive_page.dart';
 import '../theme.dart';
 import 'app_lock_pin_sheet.dart';
+import 'auto_reply_page.dart';
 import 'settings_viewmodel.dart';
 import 'socks5_proxy_sheet.dart';
 import 'translation_settings_sheet.dart';
 import '../../translate/translation_engine.dart';
 import '../../translate/translation_prefs.dart';
+import '../../xmpp/auto_reply.dart';
 import '../../xmpp/channel_discovery.dart';
 import '../../xmpp/file_preview.dart';
 
@@ -45,6 +47,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   bool _removeTrackingEnabled = false;
   int _previewMaxBytes = kDefaultPreviewMaxFileSize;
   bool _devLogEnabled = false;
+  AutoReplyConfig _autoReply = AutoReplyConfig.empty;
 
   @override
   void initState() {
@@ -54,6 +57,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     unawaited(_reloadRemoveTracking());
     unawaited(_reloadPreviewMax());
     unawaited(_reloadDevLog());
+    unawaited(_reloadAutoReply());
   }
 
   Future<void> _reloadTranslationPrefs() async {
@@ -78,6 +82,12 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final bytes = await loadPreviewMaxFileSize();
     if (!mounted) return;
     setState(() => _previewMaxBytes = bytes);
+  }
+
+  Future<void> _reloadAutoReply() async {
+    final config = await loadAutoReply();
+    if (!mounted) return;
+    setState(() => _autoReply = config);
   }
 
   Future<void> _reloadDevLog() async {
@@ -195,6 +205,31 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               );
             },
           ),
+          Consumer(
+            builder: (context, ref, _) {
+              final current =
+                  ref.watch(globalTrackProvider).value ?? Track.standard;
+              return ListTile(
+                leading: Icon(
+                  Icons.lock_outline,
+                  color: current == Track.none ? tg.danger : null,
+                ),
+                title: Text(l10n.defaultEncryption),
+                subtitle: Text(current.localizedShortLabel(l10n)),
+                onTap: () =>
+                    unawaited(_pickDefaultEncryption(context, current, vm)),
+              );
+            },
+          ),
+          SwitchListTile(
+            secondary: const Icon(Icons.link_off_outlined),
+            title: Text(l10n.removeTracking),
+            subtitle: Text(l10n.removeTrackingSummary),
+            value: _removeTrackingEnabled,
+            onChanged: (v) => unawaited(_setRemoveTracking(v)),
+          ),
+
+          _header(tg, l10n.messageSettings),
           SwitchListTile(
             secondary: const Icon(Icons.done),
             title: Text(l10n.deliveryReceipts),
@@ -227,22 +262,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               _pickAutomaticDeletion(context, settings.automaticDeletion, vm),
             ),
           ),
-          Consumer(
-            builder: (context, ref, _) {
-              final current =
-                  ref.watch(globalTrackProvider).value ?? Track.standard;
-              return ListTile(
-                leading: Icon(
-                  Icons.lock_outline,
-                  color: current == Track.none ? tg.danger : null,
-                ),
-                title: Text(l10n.defaultEncryption),
-                subtitle: Text(current.localizedShortLabel(l10n)),
-                onTap: () =>
-                    unawaited(_pickDefaultEncryption(context, current, vm)),
-              );
-            },
-          ),
           ListTile(
             leading: const Icon(Icons.download_outlined),
             title: Text(l10n.previewMaxFileSize),
@@ -252,12 +271,21 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             ),
             onTap: () => unawaited(_pickPreviewMax(context)),
           ),
-          SwitchListTile(
-            secondary: const Icon(Icons.link_off_outlined),
-            title: Text(l10n.removeTracking),
-            subtitle: Text(l10n.removeTrackingSummary),
-            value: _removeTrackingEnabled,
-            onChanged: (v) => unawaited(_setRemoveTracking(v)),
+          ListTile(
+            leading: const Icon(Icons.quickreply_outlined),
+            title: Text(l10n.autoReply),
+            subtitle: Text(
+              _autoReply.enabled
+                  ? l10n.autoReplyRuleCount(_autoReply.rules.length)
+                  : l10n.autoReplyOff,
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () async {
+              await Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => const AutoReplyPage()),
+              );
+              await _reloadAutoReply();
+            },
           ),
 
           _header(tg, l10n.connection),
@@ -283,15 +311,19 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           Builder(
             builder: (context) {
               final prefs = _translationPrefs;
-              final subtitle = prefs == null
-                  ? l10n.translationSummary
-                  : prefs.engine == TranslationEngineId.deepL
-                  ? (prefs.apiKey.trim().isEmpty
-                        ? l10n.translationSummary
-                        : l10n.translationDeepL)
-                  : (prefs.baseUrl.trim().isEmpty
-                        ? l10n.translationSummary
-                        : prefs.baseUrl.trim());
+              final subtitle = switch (prefs?.engine) {
+                null => l10n.translationSummary,
+                TranslationEngineId.offlineTranslator =>
+                  l10n.translationOfflineTranslator,
+                TranslationEngineId.deepL =>
+                  prefs!.apiKey.trim().isEmpty
+                      ? l10n.translationSummary
+                      : l10n.translationDeepL,
+                TranslationEngineId.libreTranslate =>
+                  prefs!.baseUrl.trim().isEmpty
+                      ? l10n.translationSummary
+                      : prefs.baseUrl.trim(),
+              };
               return ListTile(
                 leading: const Icon(Icons.translate),
                 title: Text(l10n.translation),

@@ -80,5 +80,10 @@
             <action android:name="android.intent.action.VIEW"/>
             <data android:scheme="http"/>
         </intent>
+        <!-- Offline Translator's exported translation service (Android 11+). -->
+        <package android:name="dev.davidv.translator" />
+        <intent>
+            <action android:name="dev.davidv.translator.ITranslationService" />
+        </intent>
     </queries>
 </manifest>

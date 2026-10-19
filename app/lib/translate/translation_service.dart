@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../net/app_network.dart';
 import 'deepl_engine.dart';
 import 'libretranslate_engine.dart';
+import 'offline_translator_engine.dart';
 import 'translation_engine.dart';
 import 'translation_prefs.dart';
 
@@ -21,6 +22,7 @@ class TranslationService {
     return switch (prefs.engine) {
       TranslationEngineId.libreTranslate => prefs.baseUrl.trim().isNotEmpty,
       TranslationEngineId.deepL => prefs.apiKey.trim().isNotEmpty,
+      TranslationEngineId.offlineTranslator => offlineTranslatorSupported,
     };
   }
 
@@ -39,26 +41,25 @@ class TranslationService {
     if (!isConfigured(prefs)) {
       throw StateError('translation_not_configured');
     }
-    final client = _clientFactory();
+    final target = targetCode(prefs, uiLanguageCode);
+    http.Client? client;
     try {
       final engine = switch (prefs.engine) {
+        TranslationEngineId.offlineTranslator => OfflineTranslatorEngine(),
         TranslationEngineId.libreTranslate => LibreTranslateEngine(
           baseUrl: prefs.baseUrl,
           apiKey: prefs.apiKey,
-          client: client,
+          client: client = _clientFactory(),
         ),
         TranslationEngineId.deepL => DeepLEngine(
           apiKey: prefs.apiKey,
           pro: prefs.deepLPro,
-          client: client,
+          client: client = _clientFactory(),
         ),
       };
-      return await engine.translate(
-        text: text,
-        targetLang: targetCode(prefs, uiLanguageCode),
-      );
+      return await engine.translate(text: text, targetLang: target);
     } finally {
-      client.close();
+      client?.close();
     }
   }
 

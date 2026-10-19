@@ -216,6 +216,12 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   /// Id of the message whose quick-reaction strip is open, or null.
   String? _reactingToId;
 
+  /// Database id of the text message showing a live selection, or null.
+  int? _selectingMessageId;
+
+  /// The slice Copy selection should copy. Updated without rebuilding.
+  String _selectedSlice = '';
+
   /// The message being replied to: its id, its text, and who wrote it.
   ///
   /// Held as three values rather than a row because the transcript rebuilds
@@ -1042,7 +1048,11 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   }
 
   /// Long-press on a message: the context menu, then whatever it leads to.
-  Future<void> _showMessageMenu(Message message, String body) async {
+  Future<void> _showMessageMenu(
+    Message message,
+    String body,
+    Rect anchor,
+  ) async {
     if (!mounted) return;
     // Read before the dialog opens: an await here would leave a frame where a
     // tap lands on nothing, and the dialog is modal so the menu's own action
@@ -1065,6 +1075,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       canSaveFile:
           !kIsWeb && isFileMessage && mediaStore.existsSync(message.localPath),
       canSaveSticker: _canSaveSticker(message),
+      canCopySelection: !isFileMessage && body.trim().isNotEmpty && decrypted,
       canTranslate: canOfferTranslate(
         body: body,
         decrypted: decrypted,
@@ -1074,11 +1085,20 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     );
     if (actions.isEmpty) return;
 
+    if (actions.canCopySelection) {
+      _selectedSlice = body;
+      setState(() => _selectingMessageId = message.id);
+    }
     final choice = await showMessageMenu(
       context,
       actions: actions,
       trackIsPlaintext: track == Track.none,
+      anchor: anchor,
     );
+    final slice = _selectedSlice;
+    if (mounted && _selectingMessageId != null) {
+      setState(() => _selectingMessageId = null);
+    }
     if (!mounted || choice == null) return;
 
     switch (choice) {
@@ -1098,13 +1118,15 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       case MessageAction.react:
         setState(() => _reactingToId = message.stanzaId);
       case MessageAction.copy:
-        unawaited(
-          Clipboard.setData(ClipboardData(text: body)).then((_) {
-            if (!mounted) return;
-            ScaffoldMessenger.of(context)
-                .showSnackBar(SnackBar(content: Text(context.l10n.copied)));
-          }),
-        );
+        unawaited(_copyToClipboard(body));
+      case MessageAction.copySelection:
+        if (slice.isEmpty) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(context.l10n.nothingToCopy)));
+          break;
+        }
+        unawaited(_copyToClipboard(slice));
       case MessageAction.translate:
         unawaited(_translateMessage(message, body));
       case MessageAction.select:
@@ -1164,6 +1186,13 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(l10n.translationFailed('$e'))));
     }
+  }
+
+  Future<void> _copyToClipboard(String text) async {
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(context.l10n.copied)));
   }
 
   /// Copies a downloaded attachment out of the private media store.
@@ -1734,6 +1763,10 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                                     onReact: _toggleReaction,
                                     onMenu: _showMessageMenu,
                                     onToggleSelected: _toggleSelected,
+                                    selectingMessageId: _selectingMessageId,
+                                    onTextSelectionChanged: (slice) {
+                                      _selectedSlice = slice;
+                                    },
                                     onMentionNick: _mentionOccupant,
                                     onOccupantAvatarLongPress: (nick) =>
                                         unawaited(

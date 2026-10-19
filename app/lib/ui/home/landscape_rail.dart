@@ -106,28 +106,32 @@ class LandscapeNavRail extends ConsumerWidget {
       ),
       unselectedLabelTextStyle: TextStyle(color: tg.textPrimary, fontSize: 13),
       trailingAtBottom: true,
-      trailing: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            tooltip: l10n.pendingRequests,
-            icon: const Icon(Icons.person_add_alt),
-            color: tg.textPrimary,
-            onPressed: () {
-              final nav = navigatorKey.currentState;
-              if (nav != null) openPendingRequests(nav);
-            },
-          ),
-          IconButton(
-            tooltip: l10n.settings,
-            icon: const Icon(Icons.settings),
-            color: tg.textPrimary,
-            onPressed: () {
-              final nav = navigatorKey.currentState;
-              if (nav != null) openSettings(nav);
-            },
-          ),
-        ],
+      trailing: Padding(
+        // Same 9dp the chat composer keeps under its island.
+        padding: const EdgeInsets.only(bottom: 9),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              tooltip: l10n.pendingRequests,
+              icon: const Icon(Icons.person_add_alt),
+              color: tg.textPrimary,
+              onPressed: () {
+                final nav = navigatorKey.currentState;
+                if (nav != null) openPendingRequests(nav);
+              },
+            ),
+            IconButton(
+              tooltip: l10n.settings,
+              icon: const Icon(Icons.settings),
+              color: tg.textPrimary,
+              onPressed: () {
+                final nav = navigatorKey.currentState;
+                if (nav != null) openSettings(nav);
+              },
+            ),
+          ],
+        ),
       ),
       destinations: [
         NavigationRailDestination(
