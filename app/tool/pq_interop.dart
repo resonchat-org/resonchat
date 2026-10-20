@@ -19,21 +19,17 @@ import 'dart:typed_data';
 import 'package:logging/logging.dart';
 import 'package:moxxmpp/moxxmpp.dart';
 import 'package:moxxmpp_socket_tcp/moxxmpp_socket_tcp.dart';
-import 'package:omemo_dart/omemo_dart_omemo2.dart'
-    hide serializeMlKem1024PublicKey, parseMlKem1024PublicKey;
+import 'package:omemo_dart/omemo_dart_omemo2.dart';
 import 'package:pqcrypto/pqcrypto.dart';
 import 'package:xml/xml.dart';
-import 'package:resonchat/crypto/libsignal_bootstrap.dart';
-import 'package:resonchat/crypto/omemo/bundle_codec.dart';
-import 'package:resonchat/crypto/omemo/dual_track_manager.dart';
-import 'package:resonchat/crypto/omemo/message_codec.dart';
-import 'package:resonchat/crypto/omemo/omemo2_transcript.dart';
-import 'package:resonchat/crypto/omemo/pq_message_layer.dart';
-import 'package:resonchat/crypto/omemo/pq_session.dart';
-import 'package:resonchat/crypto/omemo/protocol.dart';
-import 'package:resonchat/crypto/pq/kem_wire.dart';
-import 'package:resonchat/crypto/pq/mlkem_provider.dart';
-import 'package:resonchat/crypto/pq/mlkem.dart';
+
+import 'package:resonchat/crypto/dual/dual_track_manager.dart';
+import 'package:resonchat/crypto/omemo2/bundle_codec.dart';
+import 'package:resonchat/crypto/omemo2/message_codec.dart';
+import 'package:resonchat/crypto/omemo2/mlkem.dart';
+import 'package:resonchat/crypto/omemo2/pq_message_layer.dart';
+import 'package:resonchat/crypto/omemo2/pq_session.dart';
+import 'package:resonchat/crypto/omemo2/protocol.dart';
 
 /// Number of failed checks; module-level so [finish] can report it from
 /// the `finally` block.
@@ -75,10 +71,9 @@ Future<void> main(List<String> args) async {
     }
   });
 
-  await ensureLibSignal();
-  final kem = MlKem1024Provider.instance.kem;
+  await omemo2EnsureLibSignal();
   // ignore: avoid_print
-  print('KEM backend: pqcrypto ML-KEM-1024 (libsignal Kyber for sessions)');
+  print('KEM backend: libsignal ML-KEM-1024');
 
   void check(String name, bool ok, [String detail = '']) {
     // ignore: avoid_print
@@ -116,8 +111,8 @@ Future<void> main(List<String> args) async {
     if (!seen.contains(b.device.id)) return finish();
 
     // --- the PQ round-trip --------------------------------------------
-    final sessionsA = PqSessionManager(kem: kem);
-    final sessionsB = PqSessionManager(kem: kem);
+    final sessionsA = PqSessionManager();
+    final sessionsB = PqSessionManager();
 
     final bIk = await b.device.ikDh.pk.getBytes();
     final aIk = await a.device.ikDh.pk.getBytes();
@@ -260,26 +255,13 @@ Future<PqBundle> publish(Peer peer) async {
   final kemSpkTagged = serializeMlKem1024PublicKey(device.pqSpk);
   final kemPrekeys = <int, String>{};
   final kemSigs = <int, String>{};
-  final opkWire = <KemOpkWire>[];
   for (final e in device.pqOpks.entries) {
     final tagged = serializeMlKem1024PublicKey(e.value.publicRaw);
     kemPrekeys[e.key] = _b64(tagged);
     kemSigs[e.key] = _b64(e.value.signature);
-    opkWire.add(KemOpkWire(id: e.key, publicKey: tagged));
   }
 
-  final binding = kemBinding(
-    kemSpkId: device.pqSpkId,
-    kemSpk: kemSpkTagged,
-    oneTimeKeys: opkWire,
-  );
-  final transcript = pqBundleTranscript(
-    ik: Uint8List.fromList([0x05, ...ikRaw]),
-    pqIk: peer.pqIk,
-    signedPreKeyId: device.spkId,
-    spk: Uint8List.fromList([0x05, ...spkRaw]),
-    kemBindingDigest: binding,
-  );
+  final transcript = await device.identityTranscript(peer.pqIk);
   final pqSig = MlDsa.sign(
     peer.pqSk,
     transcript,
@@ -312,14 +294,14 @@ Future<PqBundle> publish(Peer peer) async {
   // Device list first, then the bundle item.
   final listNode = XMLNode.xmlns(
     tag: 'devices',
-    xmlns: pomemoDevicesXmlns,
+    xmlns: omemo2DevicesXmlns,
     children: [
       XMLNode(tag: 'device', attributes: {'id': '${device.id}'}),
     ],
   );
   await peer.pubsub.publish(
     bare,
-    pomemoDevicesXmlns,
+    omemo2DevicesXmlns,
     listNode,
     id: 'current',
     options: const PubSubPublishOptions(accessModel: 'open'),
@@ -327,7 +309,7 @@ Future<PqBundle> publish(Peer peer) async {
 
   await peer.pubsub.publish(
     bare,
-    pomemoBundlesXmlns,
+    omemo2BundlesXmlns,
     XMLNode.fromString(bundle.toXml().toXmlString()),
     id: '${device.id}',
     options: const PubSubPublishOptions(accessModel: 'open', maxItems: 'max'),
@@ -336,7 +318,7 @@ Future<PqBundle> publish(Peer peer) async {
   // Read it back so we prove the server stored what we think it did.
   final item = await peer.pubsub.getItem(
     bare,
-    pomemoBundlesXmlns,
+    omemo2BundlesXmlns,
     '${device.id}',
   );
   if (!item.isType<PubSubItem>()) {

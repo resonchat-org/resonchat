@@ -13,9 +13,9 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
-import '../../l10n/l10n.dart';
-import '../../crypto/omemo/track.dart';
-import '../theme.dart';
+import 'package:resonchat/crypto/dual/track.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/ui/theme.dart';
 
 /// The actions available on one message.
 class MessageActions {

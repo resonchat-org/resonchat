@@ -16,9 +16,9 @@ import 'package:mime/mime.dart';
 import 'package:moxxmpp/moxxmpp.dart';
 import 'package:path/path.dart' as p;
 
-import '../net/app_network.dart';
-import '../platform/media_store.dart';
-import 'aesgcm_url.dart';
+import 'package:resonchat/net/app_network.dart';
+import 'package:resonchat/persistence/media_store.dart';
+import 'package:resonchat/xmpp/aesgcm_url.dart';
 
 final _log = Logger('HttpFiles');
 

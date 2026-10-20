@@ -8,8 +8,8 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 
-import 'linux_cli_io.dart';
-import 'linux_cli_types.dart';
+import 'package:resonchat/platform/linux_cli_io.dart';
+import 'package:resonchat/platform/linux_cli_types.dart';
 
 const _audioChannel = MethodChannel('org.resonchat.resonchat/audio');
 

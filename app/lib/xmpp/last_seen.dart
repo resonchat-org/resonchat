@@ -6,7 +6,7 @@
 
 import 'package:moxxmpp/moxxmpp.dart' show PresenceShow;
 
-import '../l10n/l10n.dart';
+import 'package:resonchat/l10n/l10n.dart';
 
 /// Clock (and date, when not today) for [idle].
 String formatLastSeenWhen(DateTime idle, {DateTime? now}) {

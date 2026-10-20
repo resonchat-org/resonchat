@@ -17,9 +17,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:logging/logging.dart';
 import 'package:moxxmpp/moxxmpp.dart' show JID;
-import 'package:resonchat/crypto/omemo/dual_track_manager.dart';
-import 'package:resonchat/store/database.dart';
-import 'package:resonchat/store/roster_state.dart';
+
+import 'package:resonchat/crypto/dual/dual_track_manager.dart';
+import 'package:resonchat/persistence/database.dart';
+import 'package:resonchat/persistence/roster_state.dart';
 import 'package:resonchat/xmpp/connection.dart';
 
 void main() {

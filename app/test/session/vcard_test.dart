@@ -23,6 +23,7 @@
 
 import 'package:test/test.dart';
 import 'package:xml/xml.dart';
+
 import 'package:resonchat/xmpp/vcard.dart';
 
 /// Parses a card body exactly as a server would have sent it inside the

@@ -7,7 +7,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
-import 'translation_engine.dart';
+import 'package:resonchat/translate/translation_engine.dart';
 
 class LibreTranslateEngine implements TranslationEngine {
   LibreTranslateEngine({required this.baseUrl, this.apiKey = '', this.client});

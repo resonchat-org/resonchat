@@ -13,8 +13,9 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omemo_dart/omemo_dart_axolotl.dart' show AxolotlBundle;
-import 'package:resonchat/crypto/omemo/defacto.dart';
 import 'package:xml/xml.dart';
+
+import 'package:resonchat/crypto/axolotl/defacto.dart';
 
 const String _k32 = 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=';
 const String _k64 =

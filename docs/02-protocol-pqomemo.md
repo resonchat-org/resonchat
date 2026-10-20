@@ -18,7 +18,7 @@
 | Bundle 节点 | `eu.siacs.conversations.axolotl.bundles:<id>` | `urn:monocles:omemo-pq:1:bundles` |
 | EME 声明 | `eu.siacs.conversations.axolotl` | `urn:monocles:omemo-pq:1` |
 
-> B 轨使用独立节点，避免污染 A 轨设备列表。刻意**不是** `urn:xmpp:omemo:2`。
+> B 轨使用独立节点，避免污染 A 轨设备列表。刻意**不是** `urn:xmpp:omemo:2`。这套 XML 还不是 XEP，留在应用里；成为 XEP 后再进 moxxmpp。外形接近 0.9.1 的 `header`/`spk` 标签和 PQ 字段在同一个元素里，经典钥又是 32 字节裸钥而不是规范的 33 字节 `0x05` 序列化，拆不进 moxxmpp 现有的 `urn:xmpp:omemo:2` 解析。
 
 ## 2. 密钥体系
 

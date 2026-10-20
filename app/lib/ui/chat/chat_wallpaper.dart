@@ -7,8 +7,8 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
-import '../../utils/appearance.dart';
-import '../../utils/chat_background.dart';
+import 'package:resonchat/persistence/chat_background.dart';
+import 'package:resonchat/ui/chat/appearance.dart';
 
 /// Fills the transcript area with [appearance]'s wallpaper.
 class ChatWallpaper extends StatefulWidget {

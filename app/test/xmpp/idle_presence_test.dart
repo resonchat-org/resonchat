@@ -3,6 +3,7 @@
 
 import 'package:moxxmpp/moxxmpp.dart';
 import 'package:test/test.dart';
+
 import 'package:resonchat/xmpp/last_seen.dart';
 import 'package:resonchat/xmpp/presence_store.dart';
 

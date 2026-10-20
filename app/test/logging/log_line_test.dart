@@ -7,6 +7,7 @@
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:logging/logging.dart';
+
 import 'package:resonchat/logging/log_line.dart';
 
 void main() {

@@ -4,8 +4,8 @@
 // Built-in rules translated from Untracker BuiltinRuleList.kt (enabled rules
 // only). No user-editable rule set — fixed list like Copinc.
 
-import 'rule.dart';
-import 'url.dart';
+import 'package:resonchat/untracker/rule.dart';
+import 'package:resonchat/untracker/url.dart';
 
 /// Untracker built-in rules (enabled entries from BuiltinRuleList).
 List<UntrackRule> builtinUntrackRules() => [

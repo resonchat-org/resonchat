@@ -5,8 +5,8 @@
 
 import 'package:flutter/material.dart';
 
-import '../l10n/l10n.dart';
-import 'theme.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/ui/theme.dart';
 
 class EmptyChatPane extends StatelessWidget {
   const EmptyChatPane({super.key});

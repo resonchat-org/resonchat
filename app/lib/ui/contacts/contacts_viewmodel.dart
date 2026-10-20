@@ -6,8 +6,8 @@
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../account/account_hub.dart';
-import '../chats/chats_viewmodel.dart';
+import 'package:resonchat/account/account_hub.dart';
+import 'package:resonchat/ui/chats/chats_viewmodel.dart';
 
 /// Contacts-tab side effects (add contact / open group bookmark).
 class ContactsViewModel extends Notifier<void> {

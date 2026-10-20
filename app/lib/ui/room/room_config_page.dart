@@ -8,13 +8,14 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:moxxmpp/moxxmpp.dart';
 
-import '../../l10n/l10n.dart';
-import '../../xmpp/room_config_translator.dart';
-import '../theme.dart';
-import 'room_config_viewmodel.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/ui/room/room_config_viewmodel.dart';
+import 'package:resonchat/ui/theme.dart';
+import 'package:resonchat/xmpp/room_config_translator.dart';
 
 /// Full-screen room configuration editor (owners only).
 class RoomConfigPage extends ConsumerStatefulWidget {

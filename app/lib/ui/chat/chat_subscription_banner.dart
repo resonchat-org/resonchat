@@ -3,13 +3,14 @@
 // Banner when the contact is not a mutual subscription.
 
 import 'package:flutter/material.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:moxxmpp/moxxmpp.dart' show JID;
 
-import '../../account/resolve.dart';
-import '../../l10n/l10n.dart';
-import '../../state/providers.dart';
-import '../theme.dart';
+import 'package:resonchat/account/resolve.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/state/providers.dart';
+import 'package:resonchat/ui/theme.dart';
 
 /// Warns when the contact is not a mutual subscription.
 ///

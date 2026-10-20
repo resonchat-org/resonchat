@@ -4,22 +4,23 @@
 // List rows for the Contacts tab (idle roster, search hits, section chrome).
 
 import 'package:flutter/material.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../account/account_hub.dart';
-import '../../l10n/l10n.dart';
-import '../../state/providers.dart';
-import '../../xmpp/last_seen.dart';
-import '../account_list_chrome.dart';
-import '../contact_avatar.dart';
-import '../dialog_cell.dart';
-import '../home/open_chat.dart';
-import '../room/channel_discovery_sheet.dart';
-import '../room/create_group_sheet.dart';
-import '../room/room_sheet.dart';
-import '../theme.dart';
-import 'contacts_viewmodel.dart';
-import 'groups_bookmarks_page.dart';
+import 'package:resonchat/account/account_hub.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/state/providers.dart';
+import 'package:resonchat/ui/account_list_chrome.dart';
+import 'package:resonchat/ui/contact_avatar.dart';
+import 'package:resonchat/ui/contacts/contacts_viewmodel.dart';
+import 'package:resonchat/ui/contacts/groups_bookmarks_page.dart';
+import 'package:resonchat/ui/dialog_cell.dart';
+import 'package:resonchat/ui/home/open_chat.dart';
+import 'package:resonchat/ui/room/channel_discovery_sheet.dart';
+import 'package:resonchat/ui/room/create_group_sheet.dart';
+import 'package:resonchat/ui/room/room_sheet.dart';
+import 'package:resonchat/ui/theme.dart';
+import 'package:resonchat/xmpp/last_seen.dart';
 
 TextStyle _detailStyle(Color color) {
   return TextStyle(color: color, fontSize: TgDimens.timeFontSize, height: 1.15);

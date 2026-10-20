@@ -5,8 +5,10 @@
 // verification checklist must require both sides (docs/09 §1.1).
 
 import 'package:flutter/material.dart';
+
 import 'package:flutter_test/flutter_test.dart';
-import 'package:resonchat/crypto/omemo/protocol.dart';
+
+import 'package:resonchat/crypto/dual/negotiation.dart';
 import 'package:resonchat/ui/theme.dart';
 
 Widget wrap(Widget child) => MaterialApp(

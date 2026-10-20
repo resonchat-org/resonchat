@@ -11,26 +11,19 @@
 import 'dart:convert';
 import 'dart:math';
 
-import 'package:libsignal/libsignal.dart';
 import 'package:logging/logging.dart';
 import 'package:moxxmpp/moxxmpp.dart';
-import 'package:omemo_dart/omemo_dart_omemo2.dart'
-    hide serializeMlKem1024PublicKey;
+import 'package:omemo_dart/omemo_dart_omemo2.dart';
 
-import 'dart:typed_data';
-
-import '../crypto/fingerprint.dart';
-import '../crypto/omemo/bundle_codec.dart';
-import '../crypto/omemo/dual_track_manager.dart';
-import '../crypto/omemo/fingerprint_trust.dart';
-import '../crypto/omemo/message_codec.dart';
-import '../crypto/omemo/pq_message_layer.dart';
-import '../crypto/omemo/pq_session.dart';
-import '../crypto/omemo/protocol.dart';
-import '../crypto/pq/kem_wire.dart';
-import '../crypto/pq/mlkem_provider.dart';
-import '../crypto/pq_identity_store.dart';
-import '../store/omemo2_device_store.dart';
+import 'package:resonchat/crypto/dual/dual_track_manager.dart';
+import 'package:resonchat/crypto/dual/fingerprint_trust.dart';
+import 'package:resonchat/crypto/omemo2/bundle_codec.dart';
+import 'package:resonchat/crypto/omemo2/message_codec.dart';
+import 'package:resonchat/crypto/omemo2/pq_message_layer.dart';
+import 'package:resonchat/crypto/omemo2/pq_session.dart';
+import 'package:resonchat/crypto/omemo2/protocol.dart';
+import 'package:resonchat/persistence/omemo2_device_store.dart';
+import 'package:resonchat/persistence/pq_identity_store.dart';
 
 /// The local B-track device plus its session and message layer.
 class BTrackSession {
@@ -114,7 +107,7 @@ class BTrackManager {
     await device.ensureStores();
     // Ensure ML-DSA-87 identity exists before first publish.
     await pqIdentity.publicKey();
-    final sessions = PqSessionManager(kem: MlKem1024Provider.instance.kem);
+    final sessions = PqSessionManager();
     // Identity keys come from the sender's published bundle.
     final layer = PqMessageLayer(
       ownDevice: device,
@@ -355,19 +348,11 @@ class BTrackManager {
     if (session == null) return 0;
 
     var added = 0;
-    await omemo2EnsureLibSignal();
     final existing = session.device.pqOpks.keys.toSet();
     while (existing.length < target) {
       final id = _freshId(existing);
       existing.add(id);
-      final pair = KyberKeyPair.generate();
-      final pubTagged = pair.getPublicKey().serialize();
-      final skTagged = pair.getSecretKey().serialize();
-      session.device.pqOpks[id] = Omemo2KyberPreKey(
-        publicRaw: pubTagged.sublist(1),
-        secretRaw: skTagged.sublist(1),
-        signature: await session.device.sign(pubTagged),
-      );
+      await session.device.generateSignedPqOpk(id);
       added++;
     }
     if (added == 0) return 0;
@@ -411,29 +396,14 @@ class BTrackManager {
 
     final kemPrekeys = <int, String>{};
     final kemSigs = <int, String>{};
-    final oneTime = <KemOneTimeKey>[];
     for (final e in device.pqOpks.entries) {
       final tagged = serializeMlKem1024PublicKey(e.value.publicRaw);
       kemPrekeys[e.key] = base64Encode(tagged);
       kemSigs[e.key] = base64Encode(e.value.signature);
-      oneTime.add(KemOneTimeKey(id: e.key, publicKey: tagged));
     }
 
-    // Same Rust helpers monocles / process_prekey_bundle use for verify.
-    final binding = pqKemBinding(
-      kemSignedPreKeyId: device.pqSpkId,
-      kemSignedPreKeyPublic: kemSpkTagged,
-      oneTime: oneTime,
-    );
     final pqIk = await pqIdentity.publicKey();
-    final spkSerialized = Uint8List.fromList([0x05, ...spkRaw]);
-    final transcript = pqBundleTranscript(
-      identityKey: ikSerialized,
-      pqIdentityKey: pqIk,
-      signedPreKeyId: device.spkId,
-      signedPreKeyPublic: spkSerialized,
-      kemBinding: binding,
-    );
+    final transcript = await device.identityTranscript(pqIk);
     final pqSig = await pqIdentity.sign(transcript);
     // monocles: classical IK also signs the transcript (`<ik-sig>`). Without
     // this, peers refuse the bundle and never show our fingerprint.

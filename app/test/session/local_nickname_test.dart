@@ -15,6 +15,7 @@
 // nickname but must never cost a conversation.
 
 import 'package:test/test.dart';
+
 import 'package:resonchat/xmpp/local_nickname.dart';
 
 void main() {

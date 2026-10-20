@@ -8,7 +8,9 @@
 // circle.
 
 import 'package:flutter/material.dart';
+
 import 'package:flutter_test/flutter_test.dart';
+
 import 'package:resonchat/l10n/l10n.dart';
 import 'package:resonchat/ui/chat/chat_input_bar.dart';
 import 'package:resonchat/ui/chat/glass_panel.dart';

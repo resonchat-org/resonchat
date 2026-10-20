@@ -3,7 +3,7 @@
 //
 // Web: no reliable system-mic mute API — skip.
 
-import 'linux_cli_types.dart';
+import 'package:resonchat/platform/linux_cli_types.dart';
 
 Future<MicMuteProbe> probeDefaultMicMute() async => const MicMuteProbe();
 

@@ -10,7 +10,8 @@
 // lists staying genuinely different from each other.
 
 import 'package:test/test.dart';
-import 'package:resonchat/utils/emoji_data.dart';
+
+import 'package:resonchat/ui/chat/emoji_data.dart';
 
 void main() {
   group('every tab has something in it', () {

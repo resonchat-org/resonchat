@@ -5,10 +5,10 @@
 // Tracking detection always compares against [normalizeUrlString]'d URLs so
 // mere `//` → `/` path regularization is not treated as tracking removal.
 
-import 'fetch.dart';
-import 'rule.dart';
-import 'rules.dart';
-import 'url.dart';
+import 'package:resonchat/net/fetch.dart';
+import 'package:resonchat/untracker/rule.dart';
+import 'package:resonchat/untracker/rules.dart';
+import 'package:resonchat/untracker/url.dart';
 
 final _ignoredScheme = RegExp(r'^(rtsp|ftp)://', caseSensitive: false);
 final _hasScheme = RegExp(r'^https?://', caseSensitive: false);

@@ -6,7 +6,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../l10n/l10n.dart';
+import 'package:resonchat/l10n/l10n.dart';
 
 /// Monospace code card (Gajim conversation `CodeWidget`, no syntax highlight).
 class CodeSnippet extends StatelessWidget {

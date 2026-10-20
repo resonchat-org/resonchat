@@ -13,9 +13,8 @@ import 'dart:async';
 import 'package:logging/logging.dart';
 import 'package:moxxmpp/moxxmpp.dart';
 
-import '../crypto/omemo/dual_track_manager.dart';
-import '../crypto/omemo/negotiation.dart';
-import '../crypto/omemo/protocol.dart';
+import 'package:resonchat/crypto/dual/dual_track_manager.dart';
+import 'package:resonchat/crypto/dual/negotiation.dart';
 
 /// Capability snapshot for one conversation.
 class ChatCapabilities {

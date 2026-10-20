@@ -7,7 +7,7 @@
 import 'package:http/http.dart' as http;
 import 'package:logging/logging.dart';
 
-import 'socks5_config.dart';
+import 'package:resonchat/net/socks5_config.dart';
 
 /// Web [AppNetwork]: SOCKS prefs are kept for UI/sync, but TCP is unsupported.
 class AppNetwork {

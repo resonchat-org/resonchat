@@ -5,14 +5,16 @@
 
 import 'dart:convert';
 
+import 'package:omemo_dart/omemo_dart_omemo2.dart'
+    show serializeMlKem1024PublicKey;
 import 'package:test/test.dart';
 import 'package:xml/xml.dart';
-import 'package:resonchat/crypto/omemo/bundle_codec.dart';
-import 'package:resonchat/crypto/omemo/message_codec.dart';
-import 'package:resonchat/crypto/omemo/negotiation.dart';
-import 'package:resonchat/crypto/omemo/protocol.dart';
-import 'package:resonchat/crypto/pq/kem_wire.dart';
-import 'package:resonchat/crypto/pq/mlkem.dart';
+
+import 'package:resonchat/crypto/dual/negotiation.dart';
+import 'package:resonchat/crypto/omemo2/bundle_codec.dart';
+import 'package:resonchat/crypto/omemo2/message_codec.dart';
+import 'package:resonchat/crypto/omemo2/mlkem.dart';
+import 'package:resonchat/crypto/omemo2/protocol.dart';
 
 XmlElement _rootOf(String fragment) => XmlDocument.parse(fragment).rootElement;
 

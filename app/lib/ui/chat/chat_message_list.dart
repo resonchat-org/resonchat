@@ -3,23 +3,24 @@
 // Transcript list for an open chat: day separators, unread divider, bubbles.
 
 import 'package:flutter/material.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../crypto/omemo/track.dart';
-import '../../l10n/l10n.dart';
-import '../../state/providers.dart';
-import '../../store/database.dart';
-import '../../store/message_send_status.dart';
-import '../../utils/appearance.dart';
-import '../../xmpp/avatar.dart';
-import '../../xmpp/muc.dart';
-import '../../xmpp/reactions.dart';
-import '../contact_avatar.dart';
-import '../theme.dart';
-import '../chats/unread.dart';
-import 'chat_nicks.dart';
-import 'message_bubble.dart';
-import 'message_merge.dart';
+import 'package:resonchat/crypto/dual/track.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/persistence/database.dart';
+import 'package:resonchat/state/providers.dart';
+import 'package:resonchat/ui/chat/appearance.dart';
+import 'package:resonchat/ui/chat/chat_nicks.dart';
+import 'package:resonchat/ui/chat/message_bubble.dart';
+import 'package:resonchat/ui/chat/message_merge.dart';
+import 'package:resonchat/ui/chats/unread.dart';
+import 'package:resonchat/ui/contact_avatar.dart';
+import 'package:resonchat/ui/theme.dart';
+import 'package:resonchat/xmpp/avatar.dart';
+import 'package:resonchat/xmpp/message_send_status.dart';
+import 'package:resonchat/xmpp/muc.dart';
+import 'package:resonchat/xmpp/reactions.dart';
 
 /// Message list with day separators and an unread marker.
 class ChatMessageList extends StatelessWidget {

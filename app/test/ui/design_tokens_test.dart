@@ -16,7 +16,9 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+
 import 'package:flutter_test/flutter_test.dart';
+
 import 'package:resonchat/ui/design_tokens.dart';
 
 /// Relative luminance per WCAG 2.1.

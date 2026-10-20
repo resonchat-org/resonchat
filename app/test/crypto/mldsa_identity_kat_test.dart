@@ -20,15 +20,14 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-// `pqBundleTranscript` also exists in the libsignal bindings (a different
-// helper); we test the ResonChat one from omemo2_transcript.dart.
-import 'package:libsignal/libsignal.dart' hide pqBundleTranscript;
-import 'package:omemo_dart/omemo_dart_omemo2.dart' show omemo2EnsureLibSignal;
+import 'package:omemo_dart/omemo_dart_omemo2.dart'
+    show omemo2EnsureLibSignal, omemo2PqIdContext;
+import 'package:omemo_dart/src/omemo2/bundle_transcript.dart'
+    show omemo2BundleTranscript, omemo2GenerateMlDsa, omemo2VerifyMlDsa;
 import 'package:pqcrypto/pqcrypto.dart';
-import 'package:resonchat/crypto/omemo/omemo2_transcript.dart';
-import 'package:resonchat/crypto/omemo/protocol.dart';
-import 'package:resonchat/crypto/pq_identity_store.dart';
 import 'package:test/test.dart';
+
+import 'package:resonchat/persistence/pq_identity_store.dart';
 
 /// FIPS 204 domain-separation context used by production signing
 /// (`PqIdentityStore.sign` / native `pqid.rs`). Must round-trip unchanged.
@@ -39,7 +38,7 @@ final _ctx = Uint8List.fromList(utf8.encode(omemo2PqIdContext));
 final _seed = Uint8List.fromList(List<int>.generate(32, (i) => i));
 
 /// A production-shaped signed transcript: fixed identity keys + KEM binding,
-/// run through the same `pqBundleTranscript` the bundle codec uses.
+/// via libsignal (same helper production uses when publishing bundles).
 Uint8List _transcript(Uint8List pqIk) {
   final ik = Uint8List.fromList([
     0x05,
@@ -49,13 +48,13 @@ Uint8List _transcript(Uint8List pqIk) {
     0x05,
     ...List<int>.generate(32, (i) => 0x80 + i),
   ]);
-  final kemBindingDigest = Uint8List.fromList(List<int>.generate(64, (i) => i));
-  return pqBundleTranscript(
-    ik: ik,
-    pqIk: pqIk,
+  final kemBinding = Uint8List.fromList(List<int>.generate(64, (i) => i));
+  return omemo2BundleTranscript(
+    identityKey: ik,
+    pqIdentityKey: pqIk,
     signedPreKeyId: 7,
-    spk: spk,
-    kemBindingDigest: kemBindingDigest,
+    signedPreKeyPublic: spk,
+    kemBinding: kemBinding,
   );
 }
 
@@ -82,31 +81,23 @@ void main() {
       expect(pk.length, 2592);
       expect(sig.length, 4627);
 
-      final nativeKey = PqIdentityKey.deserialize(bytes: pk);
       expect(
-        nativeKey.verify(
-          message: message,
-          signature: PqSignature.deserialize(bytes: sig),
-        ),
+        omemo2VerifyMlDsa(publicKey: pk, message: message, signature: sig),
         isTrue,
         reason: 'libsignal must accept a pqcrypto ML-DSA-87 signature',
       );
 
-      // A tampered transcript must not verify.
       final tampered = Uint8List.fromList(message)..[0] ^= 0xFF;
       expect(
-        nativeKey.verify(
-          message: tampered,
-          signature: PqSignature.deserialize(bytes: sig),
-        ),
+        omemo2VerifyMlDsa(publicKey: pk, message: tampered, signature: sig),
         isFalse,
       );
     });
 
     test('native sign -> pure-Dart verify', () {
-      final native = PqIdentityKeyPair.generate();
-      final pk = native.publicKey().serialize();
-      final sig = native.sign(message: message).serialize();
+      final native = omemo2GenerateMlDsa();
+      final pk = native.publicKey;
+      final sig = native.sign(message);
 
       expect(
         MlDsa.verify(pk, message, sig, DilithiumParams.mlDsa87, ctx: _ctx),

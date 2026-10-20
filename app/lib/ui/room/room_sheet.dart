@@ -9,16 +9,17 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:moxxmpp/moxxmpp.dart';
 
-import '../../account/account_hub.dart';
-import '../../account/chat_ref.dart';
-import '../../l10n/l10n.dart';
-import '../../state/providers.dart';
-import '../../xmpp/muc.dart';
-import '../home/open_chat.dart';
-import '../theme.dart';
+import 'package:resonchat/account/account_hub.dart';
+import 'package:resonchat/account/chat_ref.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/state/providers.dart';
+import 'package:resonchat/ui/home/open_chat.dart';
+import 'package:resonchat/ui/theme.dart';
+import 'package:resonchat/xmpp/muc.dart';
 
 /// Asks for a room JID and a nickname, then joins.
 /// Shows the join-room sheet, optionally prefilled from an `xmpp:?join` URI.

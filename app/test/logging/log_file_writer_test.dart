@@ -9,6 +9,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
+
 import 'package:resonchat/logging/log_file_writer.dart';
 
 void main() {

@@ -6,21 +6,22 @@
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:moxxmpp/moxxmpp.dart' show XmppUri, XmppUriQuerytype;
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../account/account_hub.dart';
-import '../../account/chat_ref.dart';
-import '../../l10n/l10n.dart';
-import '../../state/providers.dart';
-import '../../xmpp/notify_policy.dart';
-import '../chats/chats_viewmodel.dart';
-import '../home/open_chat.dart';
-import '../room/room_sheet.dart';
-import 'code_snippet.dart';
-import 'emoji_body.dart';
-import 'message_styling.dart';
+import 'package:resonchat/account/account_hub.dart';
+import 'package:resonchat/account/chat_ref.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/state/providers.dart';
+import 'package:resonchat/ui/chat/code_snippet.dart';
+import 'package:resonchat/ui/chat/emoji_body.dart';
+import 'package:resonchat/ui/chat/message_styling.dart';
+import 'package:resonchat/ui/chats/chats_viewmodel.dart';
+import 'package:resonchat/ui/home/open_chat.dart';
+import 'package:resonchat/ui/room/room_sheet.dart';
+import 'package:resonchat/xmpp/notify_policy.dart';
 
 /// Message body with Gajim-unified styling.
 class LinkifiedText extends StatefulWidget {

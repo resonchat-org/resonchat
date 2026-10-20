@@ -2,13 +2,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import 'package:flutter/material.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../l10n/l10n.dart';
-import '../../state/providers.dart';
-import '../chats/chat_row.dart';
-import '../home/open_chat.dart';
-import '../theme.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/state/providers.dart';
+import 'package:resonchat/ui/chats/chat_row.dart';
+import 'package:resonchat/ui/home/open_chat.dart';
+import 'package:resonchat/ui/theme.dart';
 
 class ArchivePage extends ConsumerWidget {
   const ArchivePage({super.key});

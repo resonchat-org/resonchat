@@ -7,8 +7,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import '../account/account_color.dart';
-import 'theme.dart';
+import 'package:resonchat/account/account_color.dart';
+import 'package:resonchat/ui/theme.dart';
 
 /// How far the account halo extends past the chat-list avatar.
 ///

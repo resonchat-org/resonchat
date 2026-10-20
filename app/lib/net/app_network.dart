@@ -3,5 +3,5 @@
 //
 // Platform-swapped network connector (TCP+SOCKS on IO, browser HTTP on web).
 
-export 'app_network_io.dart'
-    if (dart.library.js_interop) 'app_network_web.dart';
+export 'package:resonchat/net/app_network_io.dart'
+    if (dart.library.js_interop) 'package:resonchat/net/app_network_web.dart';

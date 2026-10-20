@@ -8,11 +8,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../l10n/l10n.dart';
-import '../../translate/offline_translator_engine.dart';
-import '../../translate/translation_engine.dart';
-import '../../translate/translation_prefs.dart';
-import '../../translate/translation_service.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/translate/offline_translator_engine.dart';
+import 'package:resonchat/translate/translation_engine.dart';
+import 'package:resonchat/translate/translation_prefs.dart';
+import 'package:resonchat/translate/translation_service.dart';
 
 /// Bottom sheet: engine, base URL, API key, DeepL Pro host, test connection.
 Future<void> showTranslationSettingsSheet(BuildContext context) {

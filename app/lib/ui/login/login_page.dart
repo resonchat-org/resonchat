@@ -6,14 +6,15 @@
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../l10n/l10n.dart';
-import '../../l10n/connect_failure_label.dart';
-import '../../net/app_network.dart';
-import '../theme.dart';
-import '../settings/socks5_proxy_sheet.dart';
-import 'login_viewmodel.dart';
+import 'package:resonchat/l10n/connect_failure_label.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/net/app_network.dart';
+import 'package:resonchat/ui/login/login_viewmodel.dart';
+import 'package:resonchat/ui/settings/socks5_proxy_sheet.dart';
+import 'package:resonchat/ui/theme.dart';
 
 /// Parsed `--dart-define` credentials, or null when unset.
 ({String jid, String password})? smokeCredentials() {

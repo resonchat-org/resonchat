@@ -3,40 +3,41 @@
 
 import 'dart:async';
 
-import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+
+import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logging/logging.dart';
+import 'package:omemo_dart/omemo_dart_omemo2.dart' show omemo2EnsureLibSignal;
 
-import 'account/account_hub.dart';
-import 'account/chat_ref.dart';
-import 'crypto/libsignal_bootstrap.dart';
-import 'l10n/l10n.dart';
-import 'l10n/locale_controller.dart';
-import 'logging/dev_log.dart';
-import 'logging/dev_log_prefs.dart';
-import 'net/app_network.dart';
-import 'net/socks5_config.dart';
-import 'platform/app_notifications.dart';
-import 'state/app_wiring.dart';
-import 'security/app_lock.dart';
-import 'store/prefs_database.dart';
-import 'ui/accent_theme.dart';
-import 'ui/disguise/disguise_2048_page.dart';
-import 'ui/home/home_shell.dart';
-import 'ui/home/landscape_rail.dart';
-import 'ui/home/shell_chrome.dart';
-import 'ui/column_mode_sync.dart';
-import 'ui/login/login_page.dart';
-import 'ui/login/register_page.dart';
-import 'ui/chat/chat_page.dart';
-import 'ui/accounts/manage_accounts_page.dart';
-import 'ui/security/security_page.dart';
-import 'ui/profile/profile_page.dart';
-import 'ui/room/room_profile_page.dart';
-import 'ui/settings/settings_page.dart';
+import 'package:resonchat/account/account_hub.dart';
+import 'package:resonchat/account/chat_ref.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/l10n/locale_controller.dart';
+import 'package:resonchat/logging/dev_log.dart';
+import 'package:resonchat/logging/dev_log_prefs.dart';
+import 'package:resonchat/net/app_network.dart';
+import 'package:resonchat/net/socks5_config.dart';
+import 'package:resonchat/persistence/prefs_database.dart';
+import 'package:resonchat/platform/app_notifications.dart';
+import 'package:resonchat/security/app_lock.dart';
+import 'package:resonchat/state/app_wiring.dart';
+import 'package:resonchat/ui/accent_theme.dart';
+import 'package:resonchat/ui/accounts/manage_accounts_page.dart';
+import 'package:resonchat/ui/chat/chat_page.dart';
+import 'package:resonchat/ui/column_mode_sync.dart';
+import 'package:resonchat/ui/disguise/disguise_2048_page.dart';
+import 'package:resonchat/ui/home/home_shell.dart';
+import 'package:resonchat/ui/home/landscape_rail.dart';
+import 'package:resonchat/ui/home/shell_chrome.dart';
+import 'package:resonchat/ui/login/login_page.dart';
+import 'package:resonchat/ui/login/register_page.dart';
+import 'package:resonchat/ui/profile/profile_page.dart';
+import 'package:resonchat/ui/room/room_profile_page.dart';
+import 'package:resonchat/ui/security/security_page.dart';
+import 'package:resonchat/ui/settings/settings_page.dart';
 
 /// Root navigator — used to remap `/chat` ↔ column pane across resizes.
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
@@ -92,7 +93,7 @@ class StartupResult {
 /// `flutter test`. Tests drive the gate with their own function instead.
 Future<StartupResult> bootApp() async {
   // Native libsignal (PQXDH + SPQR) before any B-track crypto.
-  await ensureLibSignal();
+  await omemo2EnsureLibSignal();
 
   // Shared prefs DB first (SOCKS / locale), before any account session.
   final prefs = await openAppPrefs();

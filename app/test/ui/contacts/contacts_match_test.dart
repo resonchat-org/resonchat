@@ -1,8 +1,9 @@
 // Copyright (C) 2026 ResonChat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import 'package:resonchat/ui/contacts/contacts_match.dart';
 import 'package:test/test.dart';
+
+import 'package:resonchat/ui/contacts/contacts_match.dart';
 
 void main() {
   test('a jid suggestion needs a dot in the domain', () {

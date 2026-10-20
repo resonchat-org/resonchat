@@ -1,10 +1,10 @@
 // Copyright (C) 2026 ResonChat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import '../store/database.dart';
-import '../xmpp/connection.dart';
-import 'account_hub.dart';
-import 'chat_ref.dart';
+import 'package:resonchat/account/account_hub.dart';
+import 'package:resonchat/account/chat_ref.dart';
+import 'package:resonchat/persistence/database.dart';
+import 'package:resonchat/xmpp/connection.dart';
 
 /// Resolves a provider/route key to the owning session and bare chat JID.
 ({AccountSession session, String jid}) resolveChatKey(String key) {

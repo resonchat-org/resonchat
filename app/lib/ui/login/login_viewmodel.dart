@@ -4,11 +4,11 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logging/logging.dart';
 
-import '../../account/account_hub.dart';
-import '../../net/app_network.dart';
-import '../../state/providers.dart';
-import '../../xmpp/connect_failure.dart';
-import '../../xmpp/connection.dart';
+import 'package:resonchat/account/account_hub.dart';
+import 'package:resonchat/net/app_network.dart';
+import 'package:resonchat/state/providers.dart';
+import 'package:resonchat/xmpp/connect_failure.dart';
+import 'package:resonchat/xmpp/connection.dart';
 
 /// Result of [LoginViewModel.connect] (navigation stays in the view).
 class LoginResult {

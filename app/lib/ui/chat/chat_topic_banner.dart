@@ -6,11 +6,12 @@
 // brings the banner back.
 
 import 'package:flutter/material.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../l10n/l10n.dart';
-import '../../state/providers.dart';
-import '../theme.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/state/providers.dart';
+import 'package:resonchat/ui/theme.dart';
 
 /// Hover-style topic strip for group chats when the subject is non-empty and
 /// not yet marked read for the current text.

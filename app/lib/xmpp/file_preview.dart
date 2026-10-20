@@ -4,7 +4,7 @@
 // Gajim `preview_max_file_size`: one cap for automatic preview downloads of
 // images and other files. 0 turns automatic download off.
 
-import '../store/prefs_database.dart';
+import 'package:resonchat/persistence/prefs_database.dart';
 
 const previewMaxFileSizeKey = 'pref_preview_max_file_size';
 

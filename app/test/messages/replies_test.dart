@@ -10,9 +10,10 @@
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
-import 'package:test/test.dart';
-import 'package:resonchat/store/database.dart';
 import 'package:moxxmpp/moxxmpp.dart' show ReplyData;
+import 'package:test/test.dart';
+
+import 'package:resonchat/persistence/database.dart';
 import 'package:resonchat/xmpp/replies.dart';
 
 void main() {

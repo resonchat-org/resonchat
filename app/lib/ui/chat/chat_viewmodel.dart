@@ -13,23 +13,23 @@ import 'package:drift/drift.dart' show Value;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:moxxmpp/moxxmpp.dart' show JID;
 
-import '../../account/resolve.dart';
-import '../../crypto/omemo/track.dart';
-import '../../crypto/omemo/track_advice.dart';
-import '../../crypto/omemo/track_resolver.dart';
-import '../../l10n/generated/app_localizations.dart';
-import '../../state/app_wiring.dart';
-import '../../state/providers.dart';
-import '../../store/database.dart';
-import '../../store/message_send_status.dart';
-import '../../store/sticker_link.dart';
-import '../../xmpp/connection.dart';
-import '../../xmpp/conversation_archive.dart';
-import '../../xmpp/forwarding.dart';
-import '../../xmpp/muc.dart';
-import '../../xmpp/reactions.dart';
-import '../../xmpp/replies.dart';
-import '../../xmpp/retraction.dart' as retraction;
+import 'package:resonchat/account/resolve.dart';
+import 'package:resonchat/crypto/dual/track.dart';
+import 'package:resonchat/crypto/dual/track_advice.dart';
+import 'package:resonchat/crypto/dual/track_resolver.dart';
+import 'package:resonchat/l10n/generated/app_localizations.dart';
+import 'package:resonchat/persistence/database.dart';
+import 'package:resonchat/state/app_wiring.dart';
+import 'package:resonchat/state/providers.dart';
+import 'package:resonchat/xmpp/connection.dart';
+import 'package:resonchat/xmpp/conversation_archive.dart';
+import 'package:resonchat/xmpp/forwarding.dart';
+import 'package:resonchat/xmpp/message_send_status.dart';
+import 'package:resonchat/xmpp/muc.dart';
+import 'package:resonchat/xmpp/reactions.dart';
+import 'package:resonchat/xmpp/replies.dart';
+import 'package:resonchat/xmpp/retraction.dart' as retraction;
+import 'package:resonchat/xmpp/sticker_link.dart';
 
 /// Asks the user whether to send in the clear. Implemented by the page with
 /// `confirmPlaintext` from track_dialogs.dart.

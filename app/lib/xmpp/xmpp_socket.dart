@@ -5,5 +5,5 @@
 //   native → TCP (+ SOCKS5)
 //   web    → RFC 7395 WebSocket (+ XEP-0156 host-meta)
 
-export 'xmpp_socket_io.dart'
-    if (dart.library.js_interop) 'xmpp_socket_web.dart';
+export 'package:resonchat/xmpp/xmpp_socket_io.dart'
+    if (dart.library.js_interop) 'package:resonchat/xmpp/xmpp_socket_web.dart';

@@ -9,24 +9,25 @@ import 'dart:convert';
 import 'dart:ui' show Color;
 
 import 'package:flutter/foundation.dart';
+
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:logging/logging.dart';
 import 'package:moxxmpp/moxxmpp.dart' show ConferenceBookmark, PresenceShow;
 
-import '../net/app_network.dart';
-import '../xmpp/connect_failure.dart';
-import '../crypto/omemo/dual_track_manager.dart';
-import '../crypto/omemo/fingerprint_trust.dart';
-import '../store/account_store.dart';
-import '../store/database.dart';
-import '../store/omemo_device_store.dart';
-import '../store/omemo2_device_store.dart';
-import '../store/roster_state.dart';
-import '../xmpp/b_track_manager.dart';
-import '../xmpp/connection.dart';
-import '../xmpp/conversation_archive.dart';
-import 'account_color.dart';
-import 'chat_ref.dart';
+import 'package:resonchat/account/account_color.dart';
+import 'package:resonchat/account/chat_ref.dart';
+import 'package:resonchat/crypto/dual/dual_track_manager.dart';
+import 'package:resonchat/crypto/dual/fingerprint_trust.dart';
+import 'package:resonchat/net/app_network.dart';
+import 'package:resonchat/persistence/account_store.dart';
+import 'package:resonchat/persistence/database.dart';
+import 'package:resonchat/persistence/omemo2_device_store.dart';
+import 'package:resonchat/persistence/omemo_device_store.dart';
+import 'package:resonchat/persistence/roster_state.dart';
+import 'package:resonchat/xmpp/b_track_manager.dart';
+import 'package:resonchat/xmpp/connect_failure.dart';
+import 'package:resonchat/xmpp/connection.dart';
+import 'package:resonchat/xmpp/conversation_archive.dart';
 
 /// One chat row in the unified inbox.
 class AccountChat {

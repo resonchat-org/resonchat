@@ -17,6 +17,7 @@
 //     we threw something away.
 
 import 'package:test/test.dart';
+
 import 'package:resonchat/xmpp/edit_history.dart';
 
 void main() {

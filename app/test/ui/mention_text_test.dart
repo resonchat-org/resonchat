@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import 'package:flutter/painting.dart';
+
 import 'package:flutter_test/flutter_test.dart';
+
 import 'package:resonchat/ui/chat/mention_text.dart';
 
 void main() {

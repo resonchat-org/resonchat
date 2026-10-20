@@ -8,15 +8,15 @@
 
 import 'package:flutter/material.dart';
 
-import '../../l10n/l10n.dart';
-import '../../crypto/omemo/track.dart';
-import '../../store/database.dart';
-import '../../store/message_send_status.dart';
-import '../../xmpp/reactions.dart';
-import '../../utils/appearance.dart';
-import 'linkified_text.dart';
-import 'media_attachment.dart';
-import '../theme.dart';
+import 'package:resonchat/crypto/dual/track.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/persistence/database.dart';
+import 'package:resonchat/ui/chat/appearance.dart';
+import 'package:resonchat/ui/chat/linkified_text.dart';
+import 'package:resonchat/ui/chat/media_attachment.dart';
+import 'package:resonchat/ui/theme.dart';
+import 'package:resonchat/xmpp/message_send_status.dart';
+import 'package:resonchat/xmpp/reactions.dart';
 
 enum BubbleSide { incoming, outgoing }
 

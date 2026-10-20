@@ -6,8 +6,8 @@
 
 import 'package:flutter/material.dart';
 
-import '../../l10n/l10n.dart';
-import 'navigation_dock.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/ui/home/navigation_dock.dart';
 
 class PortraitHome extends StatelessWidget {
   const PortraitHome({

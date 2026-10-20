@@ -9,7 +9,8 @@
 // messages — the failure this is written to make impossible.
 
 import 'package:test/test.dart';
-import 'package:resonchat/crypto/omemo/device_pruning.dart';
+
+import 'package:resonchat/crypto/dual/device_pruning.dart';
 
 void main() {
   /// A `bundleAbsent` answering true exactly for [absent].

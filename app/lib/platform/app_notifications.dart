@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import 'package:flutter/foundation.dart';
+
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:logging/logging.dart';
 
-import '../account/chat_ref.dart';
-import '../xmpp/notify_policy.dart';
+import 'package:resonchat/account/chat_ref.dart';
+import 'package:resonchat/xmpp/notify_policy.dart';
 
 /// Posts [NotifyRequest]s into the system shade.
 ///

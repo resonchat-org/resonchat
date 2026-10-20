@@ -15,12 +15,13 @@
 // which is the actual job the placeholder is doing.
 
 import 'package:flutter/material.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:moxxmpp/moxxmpp.dart' show PresenceShow;
 
-import '../state/providers.dart';
-import '../xmpp/avatar.dart';
-import 'theme.dart';
+import 'package:resonchat/state/providers.dart';
+import 'package:resonchat/ui/theme.dart';
+import 'package:resonchat/xmpp/avatar.dart';
 
 class ContactAvatar extends ConsumerWidget {
   const ContactAvatar({

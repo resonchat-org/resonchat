@@ -12,7 +12,8 @@
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:moxxmpp/moxxmpp.dart' show ExplicitEncryptionType;
-import 'package:resonchat/crypto/omemo/track.dart';
+
+import 'package:resonchat/crypto/dual/track.dart';
 import 'package:resonchat/xmpp/eme.dart';
 
 void main() {

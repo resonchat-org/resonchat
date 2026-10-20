@@ -9,7 +9,7 @@
 
 import 'package:flutter/material.dart';
 
-import 'theme.dart';
+import 'package:resonchat/ui/theme.dart';
 
 class DialogCell extends StatelessWidget {
   const DialogCell({

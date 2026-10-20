@@ -5,16 +5,17 @@
 // (Chats / Contacts keep settings in the top-right).
 
 import 'package:flutter/material.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../account/account_hub.dart';
-import '../../l10n/l10n.dart';
-import '../../state/providers.dart';
-import '../../store/account_store.dart';
-import '../../xmpp/connection.dart';
-import '../accounts/account_profile_page.dart';
-import '../contact_avatar.dart';
-import '../theme.dart';
+import 'package:resonchat/account/account_hub.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/persistence/account_store.dart';
+import 'package:resonchat/state/providers.dart';
+import 'package:resonchat/ui/accounts/account_profile_page.dart';
+import 'package:resonchat/ui/contact_avatar.dart';
+import 'package:resonchat/ui/theme.dart';
+import 'package:resonchat/xmpp/connection.dart';
 
 class MePage extends ConsumerWidget {
   const MePage({super.key});

@@ -3,6 +3,7 @@
 
 import 'package:moxxmpp/moxxmpp.dart';
 import 'package:test/test.dart';
+
 import 'package:resonchat/xmpp/room_invite.dart';
 
 void main() {

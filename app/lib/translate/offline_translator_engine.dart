@@ -8,7 +8,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-import 'translation_engine.dart';
+import 'package:resonchat/translate/translation_engine.dart';
 
 const offlineTranslatorChannel = MethodChannel(
   'org.resonchat.resonchat/offline_translator',

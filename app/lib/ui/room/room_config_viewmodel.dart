@@ -4,7 +4,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:moxxmpp/moxxmpp.dart';
 
-import '../../account/resolve.dart';
+import 'package:resonchat/account/resolve.dart';
 
 /// MUC owner config form I/O (field editing stays in the view).
 class RoomConfigViewModel extends Notifier<void> {

@@ -8,20 +8,21 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 
-import '../../account/account_hub.dart';
-import '../../l10n/l10n.dart';
-import '../../state/providers.dart';
-import '../chat/chat_page.dart';
-import '../home/open_chat.dart';
-import '../home/shell_actions.dart';
-import '../theme.dart';
-import 'chat_row.dart';
-import 'chats_filter_bar.dart';
-import 'search.dart';
-import 'unread.dart';
+import 'package:resonchat/account/account_hub.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/state/providers.dart';
+import 'package:resonchat/ui/chat/chat_page.dart';
+import 'package:resonchat/ui/chats/chat_row.dart';
+import 'package:resonchat/ui/chats/chats_filter_bar.dart';
+import 'package:resonchat/ui/chats/search.dart';
+import 'package:resonchat/ui/chats/unread.dart';
+import 'package:resonchat/ui/home/open_chat.dart';
+import 'package:resonchat/ui/home/shell_actions.dart';
+import 'package:resonchat/ui/theme.dart';
 
 class ChatsPage extends ConsumerStatefulWidget {
   const ChatsPage({super.key, this.activeChatKey});

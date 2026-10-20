@@ -22,9 +22,8 @@
 import 'package:moxxmpp/moxxmpp.dart'
     show JID, ReplyData, XMLNode, replyXmlns, fallbackIndicationXmlns;
 
-import '../crypto/omemo/track.dart';
-
-import 'connection.dart';
+import 'package:resonchat/crypto/dual/track.dart';
+import 'package:resonchat/xmpp/connection.dart';
 
 /// The quoted text plus the offsets that say where the quote ends.
 ///

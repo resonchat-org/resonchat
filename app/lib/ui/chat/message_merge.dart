@@ -5,9 +5,9 @@
 // rows share chrome (avatar / nick). Bubbles stay separate — only the header
 // chrome is suppressed.
 
-import '../../store/database.dart';
-import 'chat_nicks.dart';
-import 'quoted_transcript.dart';
+import 'package:resonchat/persistence/database.dart';
+import 'package:resonchat/ui/chat/chat_nicks.dart';
+import 'package:resonchat/ui/chat/quoted_transcript.dart';
 
 /// Whether [later] may hide its avatar/nick because it continues [earlier].
 ///

@@ -1,8 +1,8 @@
 // Copyright (C) 2026 ResonChat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import '../xmpp/connect_failure.dart';
-import 'generated/app_localizations.dart';
+import 'package:resonchat/l10n/generated/app_localizations.dart';
+import 'package:resonchat/xmpp/connect_failure.dart';
 
 /// The sentence shown when a connection attempt fails with [failure].
 ///

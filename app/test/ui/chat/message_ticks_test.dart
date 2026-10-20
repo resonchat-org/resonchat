@@ -5,9 +5,11 @@
 // nothing once the stanza is on the socket, one tick on delivery, two on read.
 
 import 'package:flutter/material.dart' show IconData, Icons;
+
 import 'package:flutter_test/flutter_test.dart';
-import 'package:resonchat/store/message_send_status.dart';
+
 import 'package:resonchat/ui/chat/message_bubble.dart';
+import 'package:resonchat/xmpp/message_send_status.dart';
 
 /// The mapping as the bubble applies it.
 IconData? ticksForStatus(int status) => receiptTicks(

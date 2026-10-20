@@ -16,7 +16,7 @@
 
 import 'package:moxxmpp/moxxmpp.dart';
 
-import '../crypto/omemo/protocol.dart';
+import 'package:resonchat/crypto/omemo2/protocol.dart';
 
 /// Turns a stanza's B-track payload into plaintext, or null when the message
 /// is not ours to open.

@@ -6,9 +6,9 @@
 
 import 'package:flutter/material.dart';
 
-import '../crypto/fingerprint.dart';
-import '../l10n/l10n.dart';
-import 'theme.dart';
+import 'package:resonchat/crypto/fingerprint.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/ui/theme.dart';
 
 /// Displays a formatted fingerprint with [copyFingerprint] inside the frame.
 class FingerprintBox extends StatelessWidget {

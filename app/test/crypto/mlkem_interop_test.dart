@@ -9,8 +9,9 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pqcrypto/pqcrypto.dart';
-import 'package:resonchat/crypto/pq/mlkem.dart';
-import 'package:resonchat/crypto/pq/pqcrypto_mlkem.dart';
+
+import 'package:resonchat/crypto/omemo2/mlkem.dart';
+import 'package:resonchat/crypto/omemo2/pqcrypto_mlkem.dart';
 
 final _keySeed = List<int>.generate(64, (i) => i);
 final _encSeed = List<int>.generate(32, (i) => 0xFF - i);

@@ -10,7 +10,8 @@ import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:omemo_dart/omemo_dart_axolotl.dart';
 import 'package:test/test.dart';
-import 'package:resonchat/store/omemo_device_store.dart';
+
+import 'package:resonchat/persistence/omemo_device_store.dart';
 
 void main() {
   late Map<String, String> blob;

@@ -4,12 +4,19 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:omemo_dart/omemo_dart_omemo2.dart'
+    show
+        Omemo2KemException,
+        omemo2Kyber1024Round3Tag,
+        parseMlKem1024PublicKey,
+        serializeMlKem1024PublicKey;
 import 'package:test/test.dart';
 import 'package:xml/xml.dart';
-import 'package:resonchat/crypto/omemo/bundle_codec.dart';
-import 'package:resonchat/crypto/omemo/protocol.dart';
-import 'package:resonchat/crypto/pq/kem_wire.dart';
-import 'package:resonchat/crypto/pq/mlkem.dart';
+
+import 'package:resonchat/crypto/omemo2/bundle_codec.dart';
+import 'package:resonchat/crypto/omemo2/kem_wire.dart';
+import 'package:resonchat/crypto/omemo2/mlkem.dart';
+import 'package:resonchat/crypto/omemo2/protocol.dart';
 
 Omemo2Bundle _sample() {
   final rawPk = List<int>.filled(MlKem1024.publicKeyLength, 7);
@@ -91,11 +98,14 @@ void main() {
     );
   });
 
-  test('kem_wire refuses Round-3 Kyber tag', () {
+  test('parseMlKem1024PublicKey refuses Round-3 Kyber tag', () {
     final bad = Uint8List.fromList([
-      kyber1024Round3Tag,
+      omemo2Kyber1024Round3Tag,
       ...List<int>.filled(MlKem1024.publicKeyLength, 0),
     ]);
-    expect(() => parseMlKem1024PublicKey(bad), throwsFormatException);
+    expect(
+      () => parseMlKem1024PublicKey(bad),
+      throwsA(isA<Omemo2KemException>()),
+    );
   });
 }

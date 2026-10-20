@@ -1,8 +1,8 @@
 // Copyright (C) 2026 ResonChat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import '../store/prefs_database.dart';
-import 'translation_engine.dart';
+import 'package:resonchat/persistence/prefs_database.dart';
+import 'package:resonchat/translate/translation_engine.dart';
 
 const prefTranslationEngineKey = 'pref_translation_engine';
 const prefTranslationBaseUrlKey = 'pref_translation_base_url';

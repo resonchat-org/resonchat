@@ -5,12 +5,13 @@
 // pushed page replaces the tab body and leaves the rail in place.
 
 import 'package:flutter/material.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../l10n/l10n.dart';
-import '../../state/providers.dart';
-import '../theme.dart';
-import 'shell_actions.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/state/providers.dart';
+import 'package:resonchat/ui/home/shell_actions.dart';
+import 'package:resonchat/ui/theme.dart';
 
 /// Rail plus the navigator's current page.
 class LandscapeFrame extends ConsumerWidget {

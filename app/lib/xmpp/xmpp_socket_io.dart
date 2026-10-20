@@ -4,8 +4,8 @@
 import 'package:moxxmpp/moxxmpp.dart';
 import 'package:moxxmpp_socket_tcp/moxxmpp_socket_tcp.dart';
 
-import '../net/app_network.dart';
-import 'srv_resolver.dart';
+import 'package:resonchat/net/app_network.dart';
+import 'package:resonchat/xmpp/srv_resolver.dart';
 
 /// TCP (+ optional SOCKS5) for native platforms.
 ///

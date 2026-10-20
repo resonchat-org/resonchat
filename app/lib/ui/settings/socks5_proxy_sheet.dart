@@ -6,12 +6,13 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../l10n/l10n.dart';
-import '../../net/app_network.dart';
-import '../../net/socks5_config.dart';
-import '../../store/prefs_database.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/net/app_network.dart';
+import 'package:resonchat/net/socks5_config.dart';
+import 'package:resonchat/persistence/prefs_database.dart';
 
 /// Bottom sheet: enable SOCKS5 + host + port.
 Future<void> showSocks5ProxySheet(BuildContext context, WidgetRef ref) {

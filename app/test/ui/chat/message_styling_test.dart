@@ -4,6 +4,7 @@
 // Gajim-aligned message styling (blocks / spans / URIs).
 
 import 'package:flutter_test/flutter_test.dart';
+
 import 'package:resonchat/ui/chat/emoji_body.dart';
 import 'package:resonchat/ui/chat/message_styling.dart';
 

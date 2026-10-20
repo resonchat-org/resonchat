@@ -3,8 +3,9 @@
 
 import 'package:drift/native.dart';
 import 'package:test/test.dart';
-import 'package:resonchat/crypto/omemo/fingerprint_trust.dart';
-import 'package:resonchat/store/database.dart';
+
+import 'package:resonchat/crypto/dual/fingerprint_trust.dart';
+import 'package:resonchat/persistence/database.dart';
 
 void main() {
   late AppDatabase db;

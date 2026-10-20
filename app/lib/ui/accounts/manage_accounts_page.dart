@@ -4,15 +4,16 @@
 // Conversations ManageAccountActivity: list accounts, enable/disable, add.
 
 import 'package:flutter/material.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../account/account_hub.dart';
-import '../../l10n/l10n.dart';
-import '../../state/providers.dart';
-import '../../xmpp/connection.dart';
-import '../contact_avatar.dart';
-import '../theme.dart';
-import 'account_profile_page.dart';
+import 'package:resonchat/account/account_hub.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/state/providers.dart';
+import 'package:resonchat/ui/accounts/account_profile_page.dart';
+import 'package:resonchat/ui/contact_avatar.dart';
+import 'package:resonchat/ui/theme.dart';
+import 'package:resonchat/xmpp/connection.dart';
 
 class ManageAccountsPage extends ConsumerWidget {
   const ManageAccountsPage({super.key});

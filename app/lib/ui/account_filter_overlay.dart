@@ -6,10 +6,10 @@
 
 import 'package:flutter/material.dart';
 
-import '../l10n/l10n.dart';
-import '../store/account_store.dart';
-import 'chats/chats_filter_bar.dart';
-import 'theme.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/persistence/account_store.dart';
+import 'package:resonchat/ui/chats/chats_filter_bar.dart';
+import 'package:resonchat/ui/theme.dart';
 
 /// Round hamburger that opens the account filter drawer.
 class AccountFilterMenuButton extends StatelessWidget {

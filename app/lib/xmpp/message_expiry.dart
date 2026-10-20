@@ -11,9 +11,9 @@ import 'dart:async';
 
 import 'package:logging/logging.dart';
 
-import '../account/account_hub.dart';
-import '../platform/media_store.dart';
-import '../store/prefs_database.dart';
+import 'package:resonchat/account/account_hub.dart';
+import 'package:resonchat/persistence/media_store.dart';
+import 'package:resonchat/persistence/prefs_database.dart';
 
 final _log = Logger('MessageExpiry');
 

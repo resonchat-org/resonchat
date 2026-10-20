@@ -12,16 +12,17 @@
 // values is worse than one that shows nothing.
 
 import 'package:flutter/material.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:moxxmpp/moxxmpp.dart' show JID;
 
-import '../../account/resolve.dart';
-import '../../l10n/l10n.dart';
-import '../../state/providers.dart';
-import '../../xmpp/connection.dart';
-import '../../xmpp/last_seen.dart';
-import '../chat/chat_profile_sections.dart';
-import '../theme.dart';
+import 'package:resonchat/account/resolve.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/state/providers.dart';
+import 'package:resonchat/ui/chat/chat_profile_sections.dart';
+import 'package:resonchat/ui/theme.dart';
+import 'package:resonchat/xmpp/connection.dart';
+import 'package:resonchat/xmpp/last_seen.dart';
 
 class ProfilePage extends ConsumerWidget {
   const ProfilePage({super.key, required this.chatJid});

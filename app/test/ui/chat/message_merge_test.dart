@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:resonchat/store/database.dart';
+
+import 'package:resonchat/persistence/database.dart';
 import 'package:resonchat/ui/chat/message_merge.dart';
 import 'package:resonchat/ui/chat/quoted_transcript.dart';
 
@@ -17,6 +18,7 @@ Message _msg({
     chatJid: 'room@muc.example',
     sender: sender,
     stanzaId: 's-${time.millisecondsSinceEpoch}',
+    roomStanzaId: '',
     body: 'hi',
     timestamp: time,
     encMode: 'none',
@@ -28,6 +30,7 @@ Message _msg({
     isCarbon: false,
     deliveryError: '',
     retracted: retracted,
+    retractedBy: '',
     replyTo: '',
     replyBody: '',
     replyAuthor: '',

@@ -10,12 +10,12 @@ import 'package:drift/drift.dart' show Value;
 import 'package:logging/logging.dart';
 import 'package:moxxmpp/moxxmpp.dart' show JID;
 
-import '../account/account_hub.dart';
-import '../crypto/omemo/track.dart';
-import '../store/database.dart';
-import '../store/message_send_status.dart';
-import '../store/prefs_database.dart';
-import 'connection.dart';
+import 'package:resonchat/account/account_hub.dart';
+import 'package:resonchat/crypto/dual/track.dart';
+import 'package:resonchat/persistence/database.dart';
+import 'package:resonchat/persistence/prefs_database.dart';
+import 'package:resonchat/xmpp/connection.dart';
+import 'package:resonchat/xmpp/message_send_status.dart';
 
 const autoReplyPrefKey = 'pref_auto_reply';
 

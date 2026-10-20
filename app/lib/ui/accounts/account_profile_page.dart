@@ -7,23 +7,20 @@
 
 import 'dart:async';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:moxxmpp/moxxmpp.dart' show PresenceShow;
 
-import '../../account/account_hub.dart';
-import '../../crypto/omemo/fingerprint_trust.dart';
-import '../../crypto/own_fingerprints.dart';
-import '../../l10n/l10n.dart';
-import '../../state/providers.dart';
-import '../../store/account_store.dart';
-import '../../xmpp/avatar.dart';
-import '../../xmpp/connection.dart';
-import '../contact_avatar.dart';
-import '../fingerprint_box.dart';
-import '../theme.dart';
+import 'package:resonchat/account/account_hub.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/persistence/account_store.dart';
+import 'package:resonchat/ui/accounts/account_profile_viewmodel.dart';
+import 'package:resonchat/ui/contact_avatar.dart';
+import 'package:resonchat/ui/fingerprint_box.dart';
+import 'package:resonchat/ui/theme.dart';
 
 class AccountProfilePage extends ConsumerStatefulWidget {
   const AccountProfilePage({super.key, required this.accountId});
@@ -36,12 +33,6 @@ class AccountProfilePage extends ConsumerStatefulWidget {
 
 class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
   late final TextEditingController _nick;
-  bool _busy = false;
-  Uint8List? _preview;
-  String? _hybridFingerprint;
-  String? _legacyFingerprint;
-  int? _deviceId;
-  List<PeerFingerprintRow> _otherDevices = const [];
 
   StoredAccount? get _account {
     for (final a in accountHub.accounts) {
@@ -50,64 +41,19 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
     return null;
   }
 
+  AccountProfileViewModel get _model =>
+      ref.read(accountProfileViewModelProvider(widget.accountId).notifier);
+
   @override
   void initState() {
     super.initState();
     _nick = TextEditingController(text: _account?.displayName ?? '');
-    unawaited(_loadOmemo());
   }
 
   @override
   void dispose() {
     _nick.dispose();
     super.dispose();
-  }
-
-  Future<void> _loadOmemo() async {
-    final session = accountHub.session(widget.accountId);
-    if (session == null) return;
-    final store = session.xmpp.deviceStore;
-    if (store == null) return;
-    try {
-      final om = session.xmpp.omemo;
-      final device = om != null ? await om.getDevice() : await store.load();
-      if (device == null) return;
-      final id = await device.deviceId;
-      final hybridFromTrack = await session.xmpp.bTrack?.hybridFingerprint();
-      List<int>? omemo2Ik;
-      final bDev = session.xmpp.bTrack?.device;
-      if (bDev != null) {
-        omemo2Ik = await bDev.identityPublicSerialized();
-      }
-      final fps = await loadOwnFingerprints(
-        legacyDevice: device,
-        pqStore: store.pqIdentity,
-        omemo2IkSerialized: omemo2Ik,
-      );
-      List<PeerFingerprintRow> others = const [];
-      try {
-        others = await session.xmpp.ownOtherDeviceFingerprintRows();
-      } catch (_) {
-        // Device list / bundles may be unavailable offline.
-      }
-      if (!mounted) return;
-      setState(() {
-        _deviceId = id;
-        _hybridFingerprint = (hybridFromTrack?.isNotEmpty ?? false)
-            ? hybridFromTrack
-            : (fps.hybrid.isEmpty ? null : fps.hybrid);
-        _legacyFingerprint = fps.legacy;
-        _otherDevices = others;
-      });
-    } catch (_) {
-      // No device yet.
-    }
-  }
-
-  bool get _omemoConnected {
-    final session = accountHub.session(widget.accountId);
-    return session != null &&
-        session.xmpp.state == XmppConnectionState.connected;
   }
 
   Future<void> _copyFingerprint(String? fp) async {
@@ -123,7 +69,7 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
 
   Future<void> _confirmRegenerate({required bool pq}) async {
     final l10n = context.l10n;
-    if (!_omemoConnected) {
+    if (!_model.omemoConnected) {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(l10n.omemoConnectRequired)));
       return;
@@ -150,20 +96,24 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
       ),
     );
     if (ok != true || !mounted) return;
-    await _runOmemoAction(
-      action: (xmpp) =>
-          pq ? xmpp.regenerateOmemo2Keys() : xmpp.regenerateOmemoKeys(),
-      okMessage: pq ? l10n.omemo2KeyRegenerated : l10n.omemoKeyRegenerated,
-      failMessage: pq
-          ? l10n.omemo2KeyRegenerateFailed
-          : l10n.omemoKeyRegenerateFailed,
-      successWhen: pq ? (r) => r == true : null,
+    final saved = await _model.regenerateKeys(pq: pq);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          saved
+              ? (pq ? l10n.omemo2KeyRegenerated : l10n.omemoKeyRegenerated)
+              : (pq
+                    ? l10n.omemo2KeyRegenerateFailed
+                    : l10n.omemoKeyRegenerateFailed),
+        ),
+      ),
     );
   }
 
   Future<void> _confirmClearDevices({required bool pq}) async {
     final l10n = context.l10n;
-    if (!_omemoConnected) {
+    if (!_model.omemoConnected) {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(l10n.omemoConnectRequired)));
       return;
@@ -192,40 +142,19 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
       ),
     );
     if (ok != true || !mounted) return;
-    await _runOmemoAction(
-      action: (xmpp) =>
-          pq ? xmpp.wipeOtherOmemo2Devices() : xmpp.wipeOtherOmemoDevices(),
-      okMessage: pq ? l10n.omemo2DevicesCleared : l10n.omemoDevicesCleared,
-      failMessage: pq
-          ? l10n.omemo2DevicesClearFailed
-          : l10n.omemoDevicesClearFailed,
-      successWhen: (r) => r == true,
+    final saved = await _model.wipeOtherDevices(pq: pq);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          saved
+              ? (pq ? l10n.omemo2DevicesCleared : l10n.omemoDevicesCleared)
+              : (pq
+                    ? l10n.omemo2DevicesClearFailed
+                    : l10n.omemoDevicesClearFailed),
+        ),
+      ),
     );
-  }
-
-  Future<void> _runOmemoAction({
-    required Future<Object?> Function(XmppService xmpp) action,
-    required String okMessage,
-    required String failMessage,
-    bool Function(Object? result)? successWhen,
-  }) async {
-    final session = accountHub.session(widget.accountId);
-    if (session == null) return;
-    setState(() => _busy = true);
-    try {
-      final result = await action(session.xmpp);
-      final ok = successWhen?.call(result) ?? true;
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(ok ? okMessage : failMessage)));
-      if (ok) await _loadOmemo();
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(failMessage)));
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
   }
 
   Future<void> _pickAvatar() async {
@@ -239,43 +168,19 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
           .showSnackBar(SnackBar(content: Text(l10n.couldNotOpenFile)));
       return;
     }
-    setState(() {
-      _busy = true;
-      _preview = bytes;
-    });
-    final session = accountHub.session(widget.accountId);
-    final ok = session == null
-        ? false
-        : await session.xmpp.publishOwnAvatarBytes(bytes);
+    final ok = await _model.publishAvatar(bytes);
     if (!mounted) return;
-    setState(() => _busy = false);
-    if (ok) {
-      final prepared = await prepareAvatarImage(bytes);
-      if (!mounted) return;
-      final jid = _account?.bareJid;
-      if (prepared != null && jid != null) {
-        seedAvatarCache(jid, prepared.bytes);
-        final hash = await prepared.hash;
-        if (!mounted) return;
-        final db = accountHub.session(widget.accountId)?.db;
-        if (db != null) await noteAvatarChanged(db, jid, hash);
-        if (!mounted) return;
-      }
-      ref.read(avatarRevisionProvider.notifier).state++;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(l10n.avatarPublished)));
-    } else {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(l10n.avatarPublishFailed)));
-    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(ok ? l10n.avatarPublished : l10n.avatarPublishFailed),
+      ),
+    );
   }
 
   Future<void> _saveNick() async {
     final l10n = context.l10n;
-    setState(() => _busy = true);
-    final ok = await accountHub.setDisplayName(widget.accountId, _nick.text);
+    final ok = await _model.saveDisplayName(_nick.text);
     if (!mounted) return;
-    setState(() => _busy = false);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(ok ? l10n.displayNameSaved : l10n.displayNameSaveFailed),
@@ -287,6 +192,7 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final tg = context.tg;
+    final ui = ref.watch(accountProfileViewModelProvider(widget.accountId));
     return ListenableBuilder(
       listenable: accountHub,
       builder: (context, _) {
@@ -308,10 +214,10 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
                   child: Stack(
                     clipBehavior: Clip.none,
                     children: [
-                      if (_preview != null)
+                      if (ui.avatarPreview != null)
                         ClipOval(
                           child: Image.memory(
-                            _preview!,
+                            ui.avatarPreview!,
                             width: 96,
                             height: 96,
                             fit: BoxFit.cover,
@@ -326,7 +232,7 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
                       AvatarCameraBadge(
                         avatarRadius: 48,
                         tooltip: l10n.changeAvatar,
-                        onPressed: _busy
+                        onPressed: ui.busy
                             ? null
                             : () => unawaited(_pickAvatar()),
                       ),
@@ -344,15 +250,15 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
               const SizedBox(height: 24),
               TextField(
                 controller: _nick,
-                enabled: !_busy,
+                enabled: !ui.busy,
                 decoration: InputDecoration(labelText: l10n.displayName),
                 textInputAction: TextInputAction.done,
                 onSubmitted: (_) => unawaited(_saveNick()),
               ),
               const SizedBox(height: 16),
               FilledButton(
-                onPressed: _busy ? null : () => unawaited(_saveNick()),
-                child: _busy
+                onPressed: ui.busy ? null : () => unawaited(_saveNick()),
+                child: ui.busy
                     ? const SizedBox(
                         width: 20,
                         height: 20,
@@ -370,7 +276,11 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
                 ),
               ),
               const SizedBox(height: 8),
-              _PresencePicker(accountId: widget.accountId, enabled: !_busy),
+              _PresencePicker(
+                accountId: widget.accountId,
+                enabled: !ui.busy,
+                onSelected: _model.setPresence,
+              ),
               const SizedBox(height: 28),
               Text(
                 l10n.omemoEncryption,
@@ -384,23 +294,24 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(Icons.smartphone),
-                title: Text(l10n.thisDeviceId('${_deviceId ?? '—'}')),
+                title: Text(l10n.thisDeviceId('${ui.deviceId ?? '—'}')),
               ),
               // monocles EditAccount: both stacks shown side-by-side, never merged.
-              if (_hybridFingerprint != null) ...[
+              if (ui.hybridFingerprint != null) ...[
                 Text(
                   l10n.omemo2Fingerprint,
                   style: TextStyle(fontSize: 12, color: tg.textSecondary),
                 ),
                 const SizedBox(height: 6),
                 FingerprintBox(
-                  fingerprint: _hybridFingerprint!,
+                  fingerprint: ui.hybridFingerprint!,
                   margin: EdgeInsets.zero,
-                  enabled: !_busy,
-                  onCopy: () => unawaited(_copyFingerprint(_hybridFingerprint)),
+                  enabled: !ui.busy,
+                  onCopy: () =>
+                      unawaited(_copyFingerprint(ui.hybridFingerprint)),
                 ),
               ],
-              if (_legacyFingerprint != null) ...[
+              if (ui.legacyFingerprint != null) ...[
                 const SizedBox(height: 12),
                 Text(
                   l10n.omemoLegacyFingerprint,
@@ -408,10 +319,11 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
                 ),
                 const SizedBox(height: 6),
                 FingerprintBox(
-                  fingerprint: _legacyFingerprint!,
+                  fingerprint: ui.legacyFingerprint!,
                   margin: EdgeInsets.zero,
-                  enabled: !_busy,
-                  onCopy: () => unawaited(_copyFingerprint(_legacyFingerprint)),
+                  enabled: !ui.busy,
+                  onCopy: () =>
+                      unawaited(_copyFingerprint(ui.legacyFingerprint)),
                 ),
               ],
               const SizedBox(height: 20),
@@ -429,13 +341,13 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
                 style: TextStyle(fontSize: 12, color: tg.textSecondary),
               ),
               const SizedBox(height: 8),
-              if (_otherDevices.isEmpty)
+              if (ui.otherDevices.isEmpty)
                 Text(
                   l10n.noOtherOwnDevices,
                   style: TextStyle(fontSize: 13, color: tg.textSecondary),
                 )
               else
-                ..._otherDevices.expand((row) {
+                ...ui.otherDevices.expand((row) {
                   final label = l10n.ownOtherDeviceLabel(
                     row.deviceId,
                     row.omemo2
@@ -451,7 +363,7 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
                     FingerprintBox(
                       fingerprint: row.fingerprint,
                       margin: EdgeInsets.zero,
-                      enabled: !_busy,
+                      enabled: !ui.busy,
                       onCopy: () =>
                           unawaited(_copyFingerprint(row.fingerprint)),
                     ),
@@ -462,28 +374,28 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
                 contentPadding: EdgeInsets.zero,
                 leading: Icon(Icons.refresh, color: tg.accent),
                 title: Text(l10n.regenerateOmemoKey),
-                enabled: !_busy,
+                enabled: !ui.busy,
                 onTap: () => unawaited(_confirmRegenerate(pq: false)),
               ),
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: Icon(Icons.refresh, color: tg.accent),
                 title: Text(l10n.regenerateOmemo2Key),
-                enabled: !_busy,
+                enabled: !ui.busy,
                 onTap: () => unawaited(_confirmRegenerate(pq: true)),
               ),
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: Icon(Icons.devices_other, color: tg.accent),
                 title: Text(l10n.clearOtherOmemoDevices),
-                enabled: !_busy,
+                enabled: !ui.busy,
                 onTap: () => unawaited(_confirmClearDevices(pq: false)),
               ),
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: Icon(Icons.devices_other, color: tg.accent),
                 title: Text(l10n.clearOtherOmemo2Devices),
-                enabled: !_busy,
+                enabled: !ui.busy,
                 onTap: () => unawaited(_confirmClearDevices(pq: true)),
               ),
             ],
@@ -494,12 +406,17 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
   }
 }
 
-/// RFC 6121 `<show/>` picker — broadcasts via [XmppService.setOwnPresence].
+/// RFC 6121 `<show/>` picker. The selected show is published by the view model.
 class _PresencePicker extends StatefulWidget {
-  const _PresencePicker({required this.accountId, required this.enabled});
+  const _PresencePicker({
+    required this.accountId,
+    required this.enabled,
+    required this.onSelected,
+  });
 
   final String accountId;
   final bool enabled;
+  final Future<void> Function(PresenceShow show) onSelected;
 
   @override
   State<_PresencePicker> createState() => _PresencePickerState();
@@ -556,15 +473,14 @@ class _PresencePickerState extends State<_PresencePicker> {
                 : null,
             onTap: !widget.enabled || session == null
                 ? null
-                : () => unawaited(_set(session, show)),
+                : () => unawaited(_set(show)),
           ),
       ],
     );
   }
 
-  Future<void> _set(AccountSession session, PresenceShow show) async {
-    await session.xmpp.setOwnPresence(show);
-    await session.db.setOwnPresenceShowWire(show.wire ?? 'online');
+  Future<void> _set(PresenceShow show) async {
+    await widget.onSelected(show);
     if (mounted) setState(() => _current = show);
   }
 }

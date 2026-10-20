@@ -10,8 +10,9 @@
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:test/test.dart';
-import 'package:resonchat/crypto/omemo/track.dart';
-import 'package:resonchat/store/database.dart';
+
+import 'package:resonchat/crypto/dual/track.dart';
+import 'package:resonchat/persistence/database.dart';
 
 /// Mirrors what the settings UI does when the track changes.
 Future<void> setTrackForTest(

@@ -24,6 +24,7 @@
 //     split impossible to get wrong by reaching for the wrong getter.
 
 import 'package:test/test.dart';
+
 import 'package:resonchat/xmpp/stickers.dart';
 
 /// The XEP's own example file hash, which is also a well-formed sha-256 value.

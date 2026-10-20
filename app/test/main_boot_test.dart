@@ -10,7 +10,9 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+
 import 'package:flutter_test/flutter_test.dart';
+
 import 'package:resonchat/main.dart';
 
 /// A boot that fails, standing in for the platform-touching real one — which

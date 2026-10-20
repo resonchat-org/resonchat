@@ -23,7 +23,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:logging/logging.dart';
 import 'package:moxxmpp/moxxmpp.dart';
-import 'package:resonchat/crypto/omemo/track.dart';
+
+import 'package:resonchat/crypto/dual/track.dart';
 import 'package:resonchat/xmpp/connection.dart';
 
 final results = <String, bool>{};

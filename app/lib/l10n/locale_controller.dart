@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import 'package:flutter/material.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../store/prefs_database.dart';
+import 'package:resonchat/persistence/prefs_database.dart';
 
 /// Meta key for the user's language override.
 ///

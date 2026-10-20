@@ -4,9 +4,6 @@
 [submodule "vendor/moxxmpp"]
 	path = vendor/moxxmpp
 	url = https://github.com/resonchat-org/moxxmpp
-[submodule "vendor/libsignal_dart"]
-	path = vendor/libsignal_dart
-	url = https://github.com/resonchat-org/libsignal_dart
 [submodule "vendor/moxlib"]
 	path = vendor/moxlib
 	url = https://github.com/resonchat-org/moxlib

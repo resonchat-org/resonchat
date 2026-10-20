@@ -3,12 +3,12 @@
 
 import 'package:http/http.dart' as http;
 
-import '../net/app_network.dart';
-import 'deepl_engine.dart';
-import 'libretranslate_engine.dart';
-import 'offline_translator_engine.dart';
-import 'translation_engine.dart';
-import 'translation_prefs.dart';
+import 'package:resonchat/net/app_network.dart';
+import 'package:resonchat/translate/deepl_engine.dart';
+import 'package:resonchat/translate/libretranslate_engine.dart';
+import 'package:resonchat/translate/offline_translator_engine.dart';
+import 'package:resonchat/translate/translation_engine.dart';
+import 'package:resonchat/translate/translation_prefs.dart';
 
 /// Builds an engine from prefs and runs translate / test.
 class TranslationService {

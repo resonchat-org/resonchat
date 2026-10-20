@@ -44,6 +44,7 @@
 //      conversation any more than an empty one does.
 
 import 'package:test/test.dart';
+
 import 'package:resonchat/xmpp/mam_prefs.dart';
 
 void main() {

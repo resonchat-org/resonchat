@@ -24,7 +24,7 @@
 | Q1 | 是否默认携带 ML-DSA-87 签名？ | 携带（体积大）/ 不携带 | **已定：携带**。`pq-ik`/`pq-sig` 为建会话的强制条件（never-downgrade） |
 | Q2 | PQXDH 是否双封装（kem-spk + kem-prekey 各一次）？ | 单/双 | 单封装起步，安全裕度可后续增强 |
 | Q3 | 群聊（MUC）何时支持完整 fan-out？ | 一期/二期 | MUC 成员与收发已接线；成员设备发现频率与策略继续打磨 |
-| Q4 | 是否支持 OMEMO 0.3 旧命名空间？ | 支持/不支持 | **已决定：支持**。A 轨完整走 Conversations/0.3.0（axolotl）；B 轨底层经典栈对齐 0.9.1 |
+| Q4 | 是否支持 OMEMO 0.3 旧命名空间？ | 支持/不支持 | **已决定：支持**。A 轨完整走 Conversations/0.3.0（axolotl）。B 轨会话栈对齐 0.9.1 的棘轮，XML 仍是 monocles 命名空间，不拆进 moxxmpp |
 | Q5 | 消息明文是否本地保存？ | 全保存/不保存/可选 | 当前一律落库（库已加密）；「不保存明文」开关待做 |
 | Q6 | 推送方案（无 FCM 时） | 前台服务常驻 / FCM / 两者 | Android 优先用前台服务 + 长连接；FCM 需服务端配合，暂缓 |
 | Q7 | 应用命名与包名 | — | **ResonChat** / `org.resonchat.resonchat` |
@@ -36,7 +36,7 @@
 2. **首条 PQ 消息体积大**——每设备约 +1.6 KB（ML-KEM-1024 密文 1568B + 握手开销）。
 3. **没有服务端背书**——PEP 数据由用户账号自行发布，无服务器验证，与标准 OMEMO 相同的信任假设。
 4. **终端安全边界**——设备被入侵则加密无效，与所有 E2EE 一致。
-5. **Web / 桌面 / Android PQ**——统一走 native `libsignal`（KEM/棘轮）+ 纯 Dart `pqcrypto`（ML-DSA/摘要）。
+5. **Web / 桌面 / Android PQ**——统一走 `omemo_dart` 里的 native `libsignal`（KEM/棘轮）+ 应用侧 `pqcrypto`（ML-DSA）。
 6. **换机**——设备密钥仅存本机 Keystore，无密钥备份时会话需重建。
 7. **录音前静音探测非整平台**——Linux / Android / Windows 已接；Web / iOS / macOS 当前跳过（见 [05-ui-telegram.md](05-ui-telegram.md) §3.1）。
 

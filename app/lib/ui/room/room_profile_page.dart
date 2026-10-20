@@ -10,25 +10,25 @@
 // to open.
 
 import 'dart:async';
-import 'dart:typed_data';
+
+import 'package:flutter/material.dart';
 
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../account/resolve.dart';
-import '../../l10n/l10n.dart';
-import '../../state/providers.dart';
-import '../../xmpp/avatar.dart';
-import '../../xmpp/connection.dart';
-import '../../xmpp/local_nickname.dart';
-import '../../xmpp/muc.dart';
-import '../chat/chat_profile_sections.dart';
-import '../contact_avatar.dart';
-import '../theme.dart';
-import 'invite_member_sheet.dart';
-import 'occupant_actions.dart';
-import 'room_config_page.dart';
+import 'package:resonchat/account/resolve.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/state/providers.dart';
+import 'package:resonchat/ui/chat/chat_profile_sections.dart';
+import 'package:resonchat/ui/contact_avatar.dart';
+import 'package:resonchat/ui/room/invite_member_sheet.dart';
+import 'package:resonchat/ui/room/occupant_actions.dart';
+import 'package:resonchat/ui/room/room_config_page.dart';
+import 'package:resonchat/ui/room/room_profile_viewmodel.dart';
+import 'package:resonchat/ui/theme.dart';
+import 'package:resonchat/xmpp/connection.dart';
+import 'package:resonchat/xmpp/local_nickname.dart';
+import 'package:resonchat/xmpp/muc.dart';
 
 /// What [RoomProfilePage] produced for the chat page.
 class RoomProfileResult {
@@ -77,51 +77,12 @@ class RoomProfilePage extends ConsumerStatefulWidget {
 }
 
 class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
-  RoomSelfCapabilities? _caps;
-  bool _loadingCaps = true;
-  String? _roomTitle;
-  String? _description;
-  String? _editedSubject;
-  Uint8List? _avatarPreview;
-  bool _avatarBusy = false;
-
   String get _roomJid => resolveChatKey(widget.chatJid).jid;
 
   XmppService get _xmpp => resolveChatKey(widget.chatJid).session.xmpp;
 
-  @override
-  void initState() {
-    super.initState();
-    unawaited(_loadCaps());
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(_loadTitle());
-      unawaited(_loadDescription());
-    });
-  }
-
-  Future<void> _loadCaps() async {
-    final caps = await _xmpp.roomSelfCapabilities(_roomJid);
-    if (!mounted) return;
-    setState(() {
-      _caps = caps;
-      _loadingCaps = false;
-    });
-  }
-
-  Future<void> _loadTitle() async {
-    final chat = ref.read(chatProvider(widget.chatJid)).value;
-    if (!mounted) return;
-    final t = chat?.title.trim();
-    if (t != null && t.isNotEmpty && t != _roomJid) {
-      setState(() => _roomTitle = t);
-    }
-  }
-
-  Future<void> _loadDescription() async {
-    final desc = await _xmpp.queryRoomDescription(_roomJid);
-    if (!mounted) return;
-    setState(() => _description = desc);
-  }
+  RoomProfileViewModel get _model =>
+      ref.read(roomProfileViewModelProvider(widget.chatJid).notifier);
 
   void _popResult(RoomProfileResult result) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -131,7 +92,7 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
   }
 
   Future<void> _confirmDestroy() async {
-    final caps = _caps;
+    final caps = ref.read(roomProfileViewModelProvider(widget.chatJid)).caps;
     if (caps == null || !caps.canConfigureRoom) return;
     final l10n = context.l10n;
     final tg = context.tg;
@@ -158,10 +119,11 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
   }
 
   Future<void> _editRoomName() async {
-    final caps = _caps;
+    final ui = ref.read(roomProfileViewModelProvider(widget.chatJid));
+    final caps = ui.caps;
     if (caps == null || !caps.canConfigureRoom) return;
     final l10n = context.l10n;
-    final controller = TextEditingController(text: _roomTitle ?? '');
+    final controller = TextEditingController(text: ui.roomTitle ?? '');
     final next = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
@@ -187,61 +149,38 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
     controller.dispose();
     if (next == null || !mounted) return;
     final trimmed = next.trim();
-    final ok = await _xmpp.setRoomName(_roomJid, trimmed);
+    final ok = await _model.saveRoomName(trimmed);
     if (!mounted) return;
-    if (!ok) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(l10n.roomNameSaveFailed)));
-      return;
-    }
-    final db = resolveChatKey(widget.chatJid).session.db;
-    await db.upsertChat(
-      _roomJid,
-      isGroup: true,
-      title: trimmed.isEmpty ? _roomJid : trimmed,
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(ok ? l10n.roomNameSaved : l10n.roomNameSaveFailed),
+      ),
     );
-    if (!mounted) return;
-    setState(() => _roomTitle = trimmed.isEmpty ? null : trimmed);
-    ref.invalidate(chatProvider(widget.chatJid));
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(l10n.roomNameSaved)));
   }
 
   Future<void> _pickRoomAvatar() async {
-    final caps = _caps;
+    final caps = ref.read(roomProfileViewModelProvider(widget.chatJid)).caps;
     if (caps == null || !caps.canConfigureRoom) return;
     final l10n = context.l10n;
     final picked = await FilePicker.pickFile(type: FileType.image);
     if (picked == null) return;
     final bytes = await picked.readAsBytes();
     if (bytes.isEmpty) return;
-    setState(() {
-      _avatarBusy = true;
-      _avatarPreview = bytes;
-    });
-    final ok = await _xmpp.publishMucAvatar(_roomJid, bytes);
+    final ok = await _model.publishAvatar(bytes);
     if (!mounted) return;
-    setState(() => _avatarBusy = false);
-    if (ok) {
-      final prepared = await prepareAvatarImage(bytes);
-      if (!mounted) return;
-      if (prepared != null) {
-        seedAvatarCache(_roomJid, prepared.bytes);
-        ref.read(avatarRevisionProvider.notifier).state++;
-      }
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(l10n.avatarPublished)));
-    } else {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(l10n.avatarPublishFailed)));
-    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(ok ? l10n.avatarPublished : l10n.avatarPublishFailed),
+      ),
+    );
   }
 
   Future<void> _editDescription() async {
-    final caps = _caps;
+    final ui = ref.read(roomProfileViewModelProvider(widget.chatJid));
+    final caps = ui.caps;
     if (caps == null || !caps.canConfigureRoom) return;
     final l10n = context.l10n;
-    final controller = TextEditingController(text: _description ?? '');
+    final controller = TextEditingController(text: ui.description ?? '');
     final next = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
@@ -268,22 +207,23 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
     controller.dispose();
     if (next == null || !mounted) return;
     final trimmed = next.trim();
-    if (trimmed == (_description ?? '').trim()) return;
-    final ok = await _xmpp.setRoomDescription(_roomJid, trimmed);
+    final current = ref
+        .read(roomProfileViewModelProvider(widget.chatJid))
+        .description;
+    if (trimmed == (current ?? '').trim()) return;
+    final ok = await _model.saveDescription(trimmed);
     if (!mounted) return;
-    if (!ok) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(l10n.roomDescriptionSaveFailed)));
-      return;
-    }
-    setState(() => _description = trimmed.isEmpty ? null : trimmed);
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(l10n.roomDescriptionSaved)));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          ok ? l10n.roomDescriptionSaved : l10n.roomDescriptionSaveFailed,
+        ),
+      ),
+    );
   }
 
   Future<void> _editSubject(String? current) async {
-    final caps = _caps;
+    final caps = ref.read(roomProfileViewModelProvider(widget.chatJid)).caps;
     if (caps == null || !caps.canChangeSubject) return;
     final l10n = context.l10n;
     final controller = TextEditingController(text: current ?? '');
@@ -314,13 +254,11 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
     if (next == null || !mounted) return;
     final trimmed = next.trim();
     if (trimmed == (current ?? '').trim()) return;
-    await _xmpp.setGroupChatSubject(_roomJid, trimmed);
-    if (!mounted) return;
-    setState(() => _editedSubject = trimmed);
+    await _model.saveSubject(trimmed);
   }
 
   Future<void> _invite() async {
-    final caps = _caps;
+    final caps = ref.read(roomProfileViewModelProvider(widget.chatJid)).caps;
     if (caps == null || !caps.canInvite) return;
     final l10n = context.l10n;
     final ok = await showInviteMemberSheet(context, chatJid: widget.chatJid);
@@ -331,7 +269,7 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
   }
 
   Future<void> _onOccupantTap(GroupChat room, Occupant occupant) async {
-    final caps = _caps;
+    final caps = ref.read(roomProfileViewModelProvider(widget.chatJid)).caps;
     if (caps == null) return;
     final nav = await runOccupantActions(
       context: context,
@@ -358,22 +296,23 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
   Widget build(BuildContext context) {
     final tg = context.tg;
     final l10n = context.l10n;
+    final ui = ref.watch(roomProfileViewModelProvider(widget.chatJid));
     final chatRow = ref.watch(chatProvider(widget.chatJid)).value;
     final roomAsync = ref.watch(roomStateProvider(widget.chatJid));
     final room = roomAsync.value;
-    final caps = _caps;
+    final caps = ui.caps;
 
     final storedTitle = chatRow?.title ?? '';
     final title = displayName(
       localNickname: null,
       rosterTitle: storedTitle,
-      roomTitle: storedTitle.isNotEmpty ? storedTitle : (_roomTitle ?? ''),
+      roomTitle: storedTitle.isNotEmpty ? storedTitle : (ui.roomTitle ?? ''),
       jid: _roomJid,
       isRoom: true,
     );
-    final desc = _description?.trim();
+    final desc = ui.description?.trim();
     final canEditDescription = caps?.canConfigureRoom ?? false;
-    final subject = (_editedSubject ?? room?.subject)?.trim();
+    final subject = (ui.editedSubject ?? room?.subject)?.trim();
     final hasSubject = subject != null && subject.isNotEmpty;
     final canChangeSubject = caps?.canChangeSubject ?? false;
 
@@ -396,10 +335,10 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
                         child: Stack(
                           clipBehavior: Clip.none,
                           children: [
-                            _avatarPreview != null
+                            ui.avatarPreview != null
                                 ? ClipOval(
                                     child: Image.memory(
-                                      _avatarPreview!,
+                                      ui.avatarPreview!,
                                       width: 88,
                                       height: 88,
                                       fit: BoxFit.cover,
@@ -411,7 +350,7 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
                                     radius: 44,
                                   ),
                             if ((caps?.canConfigureRoom ?? false) &&
-                                !_avatarBusy)
+                                !ui.avatarBusy)
                               AvatarCameraBadge(
                                 avatarRadius: 44,
                                 tooltip: l10n.changeAvatar,
@@ -507,7 +446,7 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
 
                 _section(
                   tg,
-                  _loadingCaps || room == null
+                  ui.loadingCaps || room == null
                       ? l10n.members
                       : (room.canSeeMemberJids
                             ? l10n.membersAndOnlineCount(

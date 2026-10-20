@@ -17,7 +17,9 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+
 import 'package:test/test.dart';
+
 import 'package:resonchat/ui/contact_avatar.dart';
 import 'package:resonchat/xmpp/avatar.dart';
 

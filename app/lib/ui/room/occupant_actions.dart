@@ -9,15 +9,16 @@
 // - In-room PM needs a live occupant; direct 1:1 needs a visible real JID.
 
 import 'package:flutter/material.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../account/resolve.dart';
-import '../../l10n/l10n.dart';
-import '../../state/providers.dart';
-import '../../xmpp/connection.dart';
-import '../../xmpp/muc.dart';
-import '../chats/chats_viewmodel.dart';
-import '../theme.dart';
+import 'package:resonchat/account/resolve.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/state/providers.dart';
+import 'package:resonchat/ui/chats/chats_viewmodel.dart';
+import 'package:resonchat/ui/theme.dart';
+import 'package:resonchat/xmpp/connection.dart';
+import 'package:resonchat/xmpp/muc.dart';
 
 enum OccupantSheetAction {
   privateChat,

@@ -11,9 +11,9 @@ import 'package:http/http.dart' as http;
 import 'package:logging/logging.dart';
 import 'package:moxxmpp/moxxmpp.dart';
 
-import '../net/app_network.dart';
-import '../store/prefs_database.dart';
-import 'connection.dart';
+import 'package:resonchat/net/app_network.dart';
+import 'package:resonchat/persistence/prefs_database.dart';
+import 'package:resonchat/xmpp/connection.dart';
 
 const prefChannelDiscoveryMethodKey = 'pref_channel_discovery_method';
 const prefChannelDiscoveryOptInKey = 'pref_channel_discovery_opt_in';

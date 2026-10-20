@@ -10,8 +10,9 @@
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:moxxmpp/moxxmpp.dart';
-import 'package:resonchat/crypto/omemo/message_codec.dart';
-import 'package:resonchat/crypto/omemo/protocol.dart';
+
+import 'package:resonchat/crypto/omemo2/message_codec.dart';
+import 'package:resonchat/crypto/omemo2/protocol.dart';
 import 'package:resonchat/xmpp/pq_incoming.dart';
 import 'package:resonchat/xmpp/pq_stanza.dart';
 

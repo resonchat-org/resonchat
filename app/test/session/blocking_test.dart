@@ -15,7 +15,8 @@
 import 'package:drift/native.dart';
 import 'package:moxxmpp/moxxmpp.dart';
 import 'package:test/test.dart';
-import 'package:resonchat/store/database.dart';
+
+import 'package:resonchat/persistence/database.dart';
 import 'package:resonchat/xmpp/blocked_inbound.dart';
 import 'package:resonchat/xmpp/blocking.dart';
 

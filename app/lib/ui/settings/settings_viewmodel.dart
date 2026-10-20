@@ -3,10 +3,10 @@
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../account/account_hub.dart';
-import '../../crypto/omemo/track.dart';
-import '../../state/providers.dart';
-import '../../xmpp/message_expiry.dart';
+import 'package:resonchat/account/account_hub.dart';
+import 'package:resonchat/crypto/dual/track.dart';
+import 'package:resonchat/state/providers.dart';
+import 'package:resonchat/xmpp/message_expiry.dart';
 
 /// Privacy preference toggles for Settings.
 class SettingsUiState {

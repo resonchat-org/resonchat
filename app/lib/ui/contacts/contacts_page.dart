@@ -7,19 +7,20 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../account/account_hub.dart';
-import '../../l10n/l10n.dart';
-import '../../state/providers.dart';
-import '../account_filter_overlay.dart';
-import '../home/open_chat.dart';
-import '../home/shell_actions.dart';
-import '../room/room_sheet.dart';
-import '../theme.dart';
-import 'contacts_match.dart';
-import 'contacts_tiles.dart';
-import 'contacts_viewmodel.dart';
+import 'package:resonchat/account/account_hub.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/state/providers.dart';
+import 'package:resonchat/ui/account_filter_overlay.dart';
+import 'package:resonchat/ui/contacts/contacts_match.dart';
+import 'package:resonchat/ui/contacts/contacts_tiles.dart';
+import 'package:resonchat/ui/contacts/contacts_viewmodel.dart';
+import 'package:resonchat/ui/home/open_chat.dart';
+import 'package:resonchat/ui/home/shell_actions.dart';
+import 'package:resonchat/ui/room/room_sheet.dart';
+import 'package:resonchat/ui/theme.dart';
 
 class ContactsPage extends ConsumerStatefulWidget {
   const ContactsPage({super.key});

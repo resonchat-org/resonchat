@@ -5,7 +5,7 @@
 
 import 'package:flutter/material.dart';
 
-import 'column_mode.dart';
+import 'package:resonchat/ui/column_mode.dart';
 
 class TwoColumnLayout extends StatelessWidget {
   const TwoColumnLayout({

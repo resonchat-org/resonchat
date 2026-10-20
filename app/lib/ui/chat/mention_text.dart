@@ -5,7 +5,7 @@
 
 import 'package:flutter/painting.dart';
 
-import '../../xmpp/notify_policy.dart';
+import 'package:resonchat/xmpp/notify_policy.dart';
 
 /// Builds a [TextSpan] that bolds every nick highlight in [text].
 ///

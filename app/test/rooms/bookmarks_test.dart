@@ -11,6 +11,7 @@
 // both look like somebody else's bug, so both are pinned down here.
 
 import 'package:test/test.dart';
+
 import 'package:resonchat/xmpp/bookmarks.dart';
 
 void main() {

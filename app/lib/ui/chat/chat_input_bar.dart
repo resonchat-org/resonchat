@@ -53,11 +53,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../l10n/l10n.dart';
-import '../../platform/linux_cli_types.dart';
-import '../../platform/voice_recorder.dart';
-import '../theme.dart';
-import 'glass_panel.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/platform/linux_cli_types.dart';
+import 'package:resonchat/platform/voice_recorder.dart';
+import 'package:resonchat/ui/chat/glass_panel.dart';
+import 'package:resonchat/ui/theme.dart';
 
 /// Metrics read off the reference (`ChatActivityEnterView.java`).
 class _EnterView {

@@ -7,8 +7,8 @@
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:moxxmpp/moxxmpp.dart';
-import 'package:resonchat/crypto/omemo/negotiation.dart';
-import 'package:resonchat/crypto/omemo/protocol.dart';
+
+import 'package:resonchat/crypto/dual/negotiation.dart';
 
 void main() {
   group('decideEncMode invariants', () {

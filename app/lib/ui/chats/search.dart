@@ -10,15 +10,16 @@
 // a search and never as a JID.
 
 import 'package:flutter/material.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../account/account_hub.dart';
-import '../../l10n/l10n.dart';
-import '../../state/providers.dart';
-import '../../xmpp/forwarding.dart';
-import '../chat/chat_page.dart';
-import '../theme.dart';
-import 'unread.dart';
+import 'package:resonchat/account/account_hub.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/state/providers.dart';
+import 'package:resonchat/ui/chat/chat_page.dart';
+import 'package:resonchat/ui/chats/unread.dart';
+import 'package:resonchat/ui/theme.dart';
+import 'package:resonchat/xmpp/forwarding.dart';
 
 /// One hit in a search result list.
 class SearchHit {

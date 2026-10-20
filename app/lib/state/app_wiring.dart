@@ -3,32 +3,33 @@
 
 import 'dart:async';
 
+import 'package:flutter/widgets.dart';
+
 import 'package:drift/drift.dart' show Value;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logging/logging.dart';
 import 'package:moxxmpp/moxxmpp.dart' show JID;
-import 'package:flutter/widgets.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../account/account_hub.dart';
-import 'providers.dart';
-import '../crypto/omemo/dual_track_manager.dart';
-import '../crypto/omemo/track.dart';
-import '../crypto/omemo/track_advice.dart';
-import '../platform/app_notifications.dart';
-import '../security/app_lock.dart';
-import '../store/chat_notify_mode.dart';
-import '../store/database.dart';
-import '../store/message_send_status.dart';
-import '../account/chat_ref.dart';
-import '../xmpp/capabilities.dart';
-import '../xmpp/auto_reply.dart';
-import '../xmpp/blocking.dart';
-import '../xmpp/connection.dart';
-import '../xmpp/message_expiry.dart';
-import '../xmpp/notify_policy.dart';
-import '../xmpp/reactions.dart';
-import '../xmpp/retraction.dart';
-import '../store/prefs_database.dart';
+import 'package:resonchat/account/account_hub.dart';
+import 'package:resonchat/account/chat_ref.dart';
+import 'package:resonchat/crypto/dual/dual_track_manager.dart';
+import 'package:resonchat/crypto/dual/track.dart';
+import 'package:resonchat/crypto/dual/track_advice.dart';
+import 'package:resonchat/persistence/database.dart';
+import 'package:resonchat/persistence/prefs_database.dart';
+import 'package:resonchat/platform/app_notifications.dart';
+import 'package:resonchat/security/app_lock.dart';
+import 'package:resonchat/state/providers.dart';
+import 'package:resonchat/xmpp/auto_reply.dart';
+import 'package:resonchat/xmpp/blocking.dart';
+import 'package:resonchat/xmpp/capabilities.dart';
+import 'package:resonchat/xmpp/chat_notify_mode.dart';
+import 'package:resonchat/xmpp/connection.dart';
+import 'package:resonchat/xmpp/message_expiry.dart';
+import 'package:resonchat/xmpp/message_send_status.dart';
+import 'package:resonchat/xmpp/notify_policy.dart';
+import 'package:resonchat/xmpp/reactions.dart';
+import 'package:resonchat/xmpp/retraction.dart';
 
 /// Connects the connection's streams to persistent state for the app's
 /// lifetime: delivery receipts, delivery failures and capability

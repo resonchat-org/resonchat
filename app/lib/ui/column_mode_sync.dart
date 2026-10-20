@@ -5,11 +5,12 @@
 // sync when the window crosses the wide-layout breakpoint.
 
 import 'package:flutter/material.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../account/chat_ref.dart';
-import '../state/providers.dart';
-import 'column_mode.dart';
+import 'package:resonchat/account/chat_ref.dart';
+import 'package:resonchat/state/providers.dart';
+import 'package:resonchat/ui/column_mode.dart';
 
 /// Watches viewport width and remaps navigation when entering/leaving column
 /// mode (narrow push `/chat` ↔ wide side pane).

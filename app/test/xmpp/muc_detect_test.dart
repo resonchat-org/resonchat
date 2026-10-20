@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import 'package:test/test.dart';
+
 import 'package:resonchat/xmpp/muc_detect.dart';
 
 void main() {

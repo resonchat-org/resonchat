@@ -27,8 +27,8 @@
 
 import 'package:moxxmpp/moxxmpp.dart';
 
-import '../crypto/omemo/track.dart';
-import '../crypto/omemo/track_resolver.dart';
+import 'package:resonchat/crypto/dual/track.dart';
+import 'package:resonchat/crypto/dual/track_resolver.dart';
 
 /// A MUC service that did not answer a join at all.
 ///

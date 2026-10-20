@@ -14,7 +14,7 @@
 | 哈希 | SHA-256 | `cryptography` (Dart) |
 | 随机数 | `Random.secure()` / 平台 CSPRNG | — |
 
-历史入口 `MlKem1024Provider`（`app/lib/crypto/pq/mlkem_provider.dart`，纯 Dart `pqcrypto`）现仅供测试/诊断；生产 KEM 走 native `libsignal`。
+历史入口 `MlKem1024Provider`（`app/lib/crypto/omemo2/mlkem_provider.dart`，纯 Dart `pqcrypto`）现仅供测试/诊断；生产 KEM 走 native `libsignal`。
 
 ## 2. Android 构建
 
@@ -41,7 +41,7 @@ ndk {
 
 ## 3. 纯 Dart 路径（`pqcrypto`）
 
-`pqcrypto` 在生产路径上只负责 **ML-DSA-87 身份签名**（`PqIdentityStore`）与 **SHA3-512 摘要**。设备密钥与会话 KEM 均由 native `libsignal` 生成消费；`PqcryptoMlKem1024` / `PqcryptoMlKem768` 仅供测试与诊断（768 为诊断路径）。
+`pqcrypto` 在生产路径上只负责 **ML-DSA-87 身份签名**（`PqIdentityStore`）。Hybrid 指纹的 SHA3-512 在 `omemo_dart`。设备密钥与会话 KEM 均由 `omemo_dart` 里的 native `libsignal` 生成消费；`PqcryptoMlKem1024` / `PqcryptoMlKem768` 仅供测试与诊断（768 为诊断路径）。
 
 ## 4. 密钥存储与生命周期
 
@@ -74,9 +74,8 @@ ndk {
 | 包 | 用途 |
 |---|---|
 | `moxxmpp` / `moxxmpp_socket_tcp` / `moxlib` / `omemo_dart` | XMPP + OMEMO（path） |
-| `libsignal` | PQXDH / SessionCipher / SPQR（path → `libsignal_dart`） |
 | `cryptography` | 经典密码学 |
-| `pqcrypto` | 纯 Dart ML-DSA-87 / SHA3-512（KEM 走 libsignal） |
+| `pqcrypto` | 纯 Dart ML-DSA-87（KEM 与 SHA3 指纹在 omemo_dart） |
 | `drift` + `sqlite3`（hooks → sqlcipher） | 加密数据库 |
 | `flutter_secure_storage` | Keystore 侧口令 |
 | `flutter_riverpod` / `riverpod` | 状态 |

@@ -8,8 +8,9 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:resonchat/crypto/pq/mlkem.dart';
-import 'package:resonchat/crypto/pq/mlkem_provider.dart';
+
+import 'package:resonchat/crypto/omemo2/mlkem.dart';
+import 'package:resonchat/crypto/omemo2/mlkem_provider.dart';
 
 void main() {
   test('pqcrypto ML-KEM-768 backend is available and functional', () {

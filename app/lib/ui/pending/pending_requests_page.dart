@@ -7,21 +7,17 @@
 // automatically would mean anyone can subscribe or pull you into a room with
 // no say in it.
 
-import 'dart:async';
-
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:moxxmpp/moxxmpp.dart' show JID;
 
-import '../../account/account_hub.dart';
-import '../../account/chat_ref.dart';
-import '../../l10n/l10n.dart';
-import '../../state/providers.dart';
-import '../../store/database.dart';
-import '../../xmpp/muc.dart';
-import '../contact_avatar.dart';
-import '../home/open_chat.dart';
-import '../theme.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/persistence/database.dart';
+import 'package:resonchat/state/providers.dart';
+import 'package:resonchat/ui/contact_avatar.dart';
+import 'package:resonchat/ui/home/open_chat.dart';
+import 'package:resonchat/ui/pending/pending_requests_viewmodel.dart';
+import 'package:resonchat/ui/theme.dart';
 
 class PendingRequestsPage extends ConsumerWidget {
   const PendingRequestsPage({super.key});
@@ -81,14 +77,9 @@ class PendingRequestsPage extends ConsumerWidget {
               title: Text(r.jid),
               subtitle: Text(l10n.theyHaveNotAnswered),
               trailing: TextButton(
-                onPressed: () {
-                  ref
-                      .read(xmppServiceProvider)
-                      .resolveOutgoingRequest(JID.fromString(r.jid));
-                  ref
-                      .read(databaseProvider)
-                      .resolveRequest(r.jid, outgoing: true);
-                },
+                onPressed: () => ref
+                    .read(pendingRequestsViewModelProvider.notifier)
+                    .cancelOutgoing(r.jid),
                 child: Text(l10n.cancel),
               ),
             ),
@@ -130,17 +121,9 @@ class _IncomingContactRowState extends ConsumerState<_IncomingContactRow> {
   Future<void> _answer(bool accept) async {
     if (_busy) return;
     setState(() => _busy = true);
-    final jid = JID.fromString(widget.request.jid);
-    final xmpp = ref.read(xmppServiceProvider);
-    if (accept) {
-      await xmpp.acceptSubscription(jid);
-    } else {
-      await xmpp.rejectSubscription(jid);
-    }
-    xmpp.resolveIncomingRequest(jid);
     await ref
-        .read(databaseProvider)
-        .resolveRequest(widget.request.jid, outgoing: false);
+        .read(pendingRequestsViewModelProvider.notifier)
+        .answerSubscription(widget.request.jid, accept: accept);
     if (!mounted) return;
     setState(() => _busy = false);
   }
@@ -201,11 +184,9 @@ class _RoomInviteRowState extends ConsumerState<_RoomInviteRow> {
   Future<void> _decline() async {
     if (_busy) return;
     setState(() => _busy = true);
-    final inv = widget.invite;
     await ref
-        .read(xmppServiceProvider)
-        .declineRoomInvite(roomJid: inv.roomJid, toInviter: inv.fromJid);
-    await ref.read(databaseProvider).removeRoomInvitation(inv.roomJid);
+        .read(pendingRequestsViewModelProvider.notifier)
+        .declineInvite(widget.invite);
     if (!mounted) return;
     setState(() => _busy = false);
   }
@@ -213,8 +194,8 @@ class _RoomInviteRowState extends ConsumerState<_RoomInviteRow> {
   Future<void> _accept() async {
     if (_busy) return;
     final l10n = context.l10n;
-    final xmpp = ref.read(xmppServiceProvider);
-    final defaultNick = xmpp.myJid?.split('@').first ?? '';
+    final defaultNick =
+        ref.read(xmppServiceProvider).myJid?.split('@').first ?? '';
     final nickController = TextEditingController(text: defaultNick);
     final nick = await showDialog<String>(
       context: context,
@@ -245,40 +226,18 @@ class _RoomInviteRowState extends ConsumerState<_RoomInviteRow> {
     if (nick == null || nick.isEmpty || !mounted) return;
 
     setState(() => _busy = true);
-    final inv = widget.invite;
-    final failure = await xmpp.joinGroupChat(inv.roomJid, nick);
-    if (!mounted) return;
-    if (failure != null) {
-      setState(() => _busy = false);
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(l10n.couldNotJoin('$failure'))));
-      return;
-    }
-    final db = ref.read(databaseProvider);
-    final features = await xmpp.queryRoomFeatures(inv.roomJid);
-    final encryptable = isPrivateAndNonAnonymous(features);
-    await xmpp.refreshRoomMembership(
-      inv.roomJid,
-      privateNonAnonymous: encryptable,
-      nonAnonymous: isNonAnonymousRoom(features),
-    );
-    await db.upsertChat(
-      inv.roomJid,
-      isGroup: true,
-      mucNick: nick,
-      title: inv.roomJid,
-      mucPrivateNonAnonymous: encryptable,
-    );
-    await xmpp.removeFromRosterIfPresent(inv.roomJid);
-    unawaited(xmpp.publishConferenceBookmark(roomJid: inv.roomJid, nick: nick));
-    await db.removeRoomInvitation(inv.roomJid);
+    final result = await ref
+        .read(pendingRequestsViewModelProvider.notifier)
+        .acceptInvite(widget.invite, nick: nick);
     if (!mounted) return;
     setState(() => _busy = false);
-    final accountId = accountHub.primarySession?.account.id;
-    final chatKey = accountId == null
-        ? inv.roomJid
-        : ChatRef(accountId: accountId, jid: inv.roomJid).key;
-    openChat(context, chatKey);
+    final reason = result.reason;
+    if (reason != null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(l10n.couldNotJoin(reason))));
+      return;
+    }
+    openChat(context, result.chatKey!);
   }
 
   @override

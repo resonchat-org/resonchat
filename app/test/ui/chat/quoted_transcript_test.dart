@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import 'package:flutter_test/flutter_test.dart';
+
 import 'package:resonchat/ui/chat/quoted_transcript.dart';
 
 QuotedTranscriptItem _item({

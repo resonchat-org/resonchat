@@ -19,8 +19,9 @@ import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:moxxmpp/moxxmpp.dart';
+
+import 'package:resonchat/persistence/database.dart';
 import 'package:resonchat/state/providers.dart';
-import 'package:resonchat/store/database.dart';
 import 'package:resonchat/xmpp/connection.dart';
 
 void main() {

@@ -7,13 +7,14 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../account/resolve.dart';
-import '../../l10n/l10n.dart';
-import '../../state/providers.dart';
-import '../contacts/contacts_match.dart';
-import '../theme.dart';
+import 'package:resonchat/account/resolve.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/state/providers.dart';
+import 'package:resonchat/ui/contacts/contacts_match.dart';
+import 'package:resonchat/ui/theme.dart';
 
 /// `true` when every invite was accepted by the server, `false` when any
 /// failed, `null` when the sheet was dismissed.

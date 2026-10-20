@@ -5,7 +5,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
-import 'translation_engine.dart';
+import 'package:resonchat/translate/translation_engine.dart';
 
 class DeepLEngine implements TranslationEngine {
   DeepLEngine({required this.apiKey, this.pro = false, this.client});

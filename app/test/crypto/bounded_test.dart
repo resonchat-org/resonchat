@@ -14,7 +14,8 @@
 import 'dart:async';
 
 import 'package:test/test.dart';
-import 'package:resonchat/crypto/omemo/bounded.dart';
+
+import 'package:resonchat/crypto/dual/bounded.dart';
 
 void main() {
   group('every element runs exactly once', () {

@@ -22,9 +22,9 @@
 
 import 'package:moxxmpp/moxxmpp.dart' show JID;
 
-import '../crypto/omemo/track.dart';
-import '../store/database.dart';
-import 'connection.dart';
+import 'package:resonchat/crypto/dual/track.dart';
+import 'package:resonchat/persistence/database.dart';
+import 'package:resonchat/xmpp/connection.dart';
 
 /// Retracts the message addressed by [targetId] for everyone in [chatJid].
 ///

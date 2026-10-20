@@ -10,15 +10,16 @@
 // message will simply send it.
 
 import 'package:flutter/material.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../account/resolve.dart';
-import '../../l10n/l10n.dart';
-import '../../crypto/omemo/track.dart';
-import '../../crypto/omemo/track_advice.dart';
-import '../../crypto/omemo/track_resolver.dart';
-import '../../state/providers.dart';
-import '../../xmpp/capabilities.dart';
+import 'package:resonchat/account/resolve.dart';
+import 'package:resonchat/crypto/dual/track.dart';
+import 'package:resonchat/crypto/dual/track_advice.dart';
+import 'package:resonchat/crypto/dual/track_resolver.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/state/providers.dart';
+import 'package:resonchat/xmpp/capabilities.dart';
 
 /// The banner shown when a contact's capabilities changed (docs/10 §8).
 ///

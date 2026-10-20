@@ -8,21 +8,22 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mime/mime.dart';
 import 'package:open_filex/open_filex.dart';
 
-import '../../account/account_hub.dart';
-import '../../account/resolve.dart';
-import '../../l10n/l10n.dart';
-import '../../platform/linux_cli_types.dart';
-import '../../platform/linux_cli_io.dart'
-    if (dart.library.js_interop) '../../platform/linux_cli_stub.dart';
-import '../../platform/media_store.dart';
-import '../../store/database.dart';
-import '../../xmpp/file_preview.dart';
-import '../../xmpp/http_files.dart';
-import '../theme.dart';
+import 'package:resonchat/account/account_hub.dart';
+import 'package:resonchat/account/resolve.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/persistence/database.dart';
+import 'package:resonchat/persistence/media_store.dart';
+import 'package:resonchat/platform/linux_cli_io.dart'
+    if (dart.library.js_interop) 'package:resonchat/platform/linux_cli_stub.dart';
+import 'package:resonchat/platform/linux_cli_types.dart';
+import 'package:resonchat/ui/theme.dart';
+import 'package:resonchat/xmpp/file_preview.dart';
+import 'package:resonchat/xmpp/http_files.dart';
 
 bool isImageMime(String mime, String pathOrName) {
   if (mime.toLowerCase().startsWith('image/')) return true;

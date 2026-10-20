@@ -8,16 +8,17 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:moxxmpp/moxxmpp.dart' show ExtendedRegistration;
 
-import '../../l10n/l10n.dart';
-import '../../l10n/connect_failure_label.dart';
-import '../../net/app_network.dart';
-import '../../xmpp/registration.dart';
-import '../settings/socks5_proxy_sheet.dart';
-import '../theme.dart';
-import 'login_viewmodel.dart';
+import 'package:resonchat/l10n/connect_failure_label.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/net/app_network.dart';
+import 'package:resonchat/ui/login/login_viewmodel.dart';
+import 'package:resonchat/ui/settings/socks5_proxy_sheet.dart';
+import 'package:resonchat/ui/theme.dart';
+import 'package:resonchat/xmpp/registration.dart';
 
 class RegisterPage extends ConsumerStatefulWidget {
   const RegisterPage({super.key, this.addAccountMode = false});

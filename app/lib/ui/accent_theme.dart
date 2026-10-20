@@ -9,12 +9,13 @@
 // `dynamic_color` package (same wallpaper / system accent source on Android
 // S+, plus platform accents on Linux/macOS/Windows).
 
-import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
+
+import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../store/prefs_database.dart';
-import 'theme.dart';
+import 'package:resonchat/persistence/prefs_database.dart';
+import 'package:resonchat/ui/theme.dart';
 
 const prefAccentKey = 'pref_accent_color';
 

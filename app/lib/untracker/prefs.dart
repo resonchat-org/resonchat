@@ -3,7 +3,7 @@
 //
 // Pre-send tracking check preference (warn before replace; no silent mode).
 
-import '../store/prefs_database.dart';
+import 'package:resonchat/persistence/prefs_database.dart';
 
 const prefRemoveTrackingEnabledKey = 'pref_remove_tracking_enabled';
 

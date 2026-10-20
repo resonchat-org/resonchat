@@ -22,14 +22,6 @@ dependencies:
   omemo_dart:
     path: ../vendor/omemo_dart
 
-  # Native libsignal (PQXDH + SPQR) via Flutter Rust Bridge. AGPL-3.0 —
-  # combined with this GPLv3 app the effective terms are AGPL for the binary.
-  # Path fork: vendor/libsignal_dart patched for ML-KEM-1024 (0x0A).
-  # Classic A-track Curve/X3DH lives in omemo_dart → transitive
-  # libsignal_protocol_dart only (no direct / test dep in this app).
-  libsignal:
-    path: ../vendor/libsignal_dart
-
   cryptography: ^2.9.0
   pqcrypto: ^0.4.2
   xml: ^6.5.0
@@ -69,6 +61,10 @@ dev_dependencies:
   test: ^1.25.8
   drift_dev: ^2.20.0
   build_runner: ^2.4.12
+  import_sorter: ^4.6.0
+
+import_sorter:
+  comments: false
 
 flutter:
   generate: true

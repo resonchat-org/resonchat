@@ -22,8 +22,8 @@
 //     types must be allowed to, because refusing silently is its own kind of
 //     lie.
 
-import '../store/database.dart';
-import 'connection.dart';
+import 'package:resonchat/persistence/database.dart';
+import 'package:resonchat/xmpp/connection.dart';
 
 /// Why an inbound message from a blocked contact was not handled normally.
 ///

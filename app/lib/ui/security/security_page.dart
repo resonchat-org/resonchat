@@ -7,16 +7,15 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../account/resolve.dart';
-import '../../crypto/fingerprint.dart';
-import '../../crypto/omemo/fingerprint_trust.dart';
-import '../../crypto/own_fingerprints.dart';
-import '../../l10n/l10n.dart';
-import '../../state/providers.dart';
-import '../fingerprint_box.dart';
-import '../theme.dart';
+import 'package:resonchat/crypto/dual/fingerprint_trust.dart';
+import 'package:resonchat/crypto/fingerprint.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/ui/fingerprint_box.dart';
+import 'package:resonchat/ui/security/security_viewmodel.dart';
+import 'package:resonchat/ui/theme.dart';
 
 class SecurityPage extends ConsumerStatefulWidget {
   const SecurityPage({super.key, required this.chatJid});
@@ -28,79 +27,6 @@ class SecurityPage extends ConsumerStatefulWidget {
 }
 
 class _SecurityPageState extends ConsumerState<SecurityPage> {
-  String? _hybridFingerprint;
-  String? _legacyFingerprint;
-  int? _deviceId;
-  List<PeerFingerprintRow>? _peerRows;
-  bool _peerLoading = true;
-  String? _peerError;
-  bool _isGroup = false;
-
-  String get _peerBare => resolveChatKey(widget.chatJid).jid;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    final session = resolveChatKey(widget.chatJid).session;
-    final store = session.xmpp.deviceStore;
-    final om = session.xmpp.omemo;
-    if (store == null || om == null) {
-      if (mounted) setState(() => _peerLoading = false);
-      return;
-    }
-    final device = await om.getDevice();
-    final id = await device.deviceId;
-    final hybridFromTrack = await session.xmpp.bTrack?.hybridFingerprint();
-    List<int>? omemo2Ik;
-    final bDev = session.xmpp.bTrack?.device;
-    if (bDev != null) {
-      omemo2Ik = await bDev.identityPublicSerialized();
-    }
-    final fps = await loadOwnFingerprints(
-      legacyDevice: device,
-      pqStore: store.pqIdentity,
-      omemo2IkSerialized: omemo2Ik,
-    );
-    final chat = await session.db.getChat(_peerBare);
-    final isGroup = chat?.isGroup ?? false;
-    List<PeerFingerprintRow> peers = const [];
-    Object? peerErr;
-    try {
-      if (isGroup) {
-        final room = await ref.read(roomStateProvider(widget.chatJid).future);
-        final ownBare = session.xmpp.myJid?.toLowerCase();
-        final members = <String>{
-          for (final o in room?.occupants ?? const [])
-            if (o.realJid != null &&
-                o.realJid!.isNotEmpty &&
-                o.realJid!.toLowerCase() != ownBare)
-              o.realJid!,
-        };
-        peers = await session.xmpp.groupFingerprintRows(members);
-      } else {
-        peers = await session.xmpp.peerFingerprintRows(_peerBare);
-      }
-    } catch (e) {
-      peerErr = e;
-    }
-    if (!mounted) return;
-    setState(() {
-      _deviceId = id;
-      _isGroup = isGroup;
-      _hybridFingerprint = (hybridFromTrack?.isNotEmpty ?? false)
-          ? hybridFromTrack
-          : (fps.hybrid.isEmpty ? null : fps.hybrid);
-      _legacyFingerprint = fps.legacy;
-      _peerRows = peers;
-      _peerError = peerErr?.toString();
-      _peerLoading = false;
-    });
-  }
-
   Future<void> _copyFingerprint(String? fp) async {
     if (fp == null || fp.isEmpty) return;
     await Clipboard.setData(
@@ -111,38 +37,11 @@ class _SecurityPageState extends ConsumerState<SecurityPage> {
         .showSnackBar(SnackBar(content: Text(context.l10n.fingerprintCopied)));
   }
 
-  Future<void> _setPeerTrust(PeerFingerprintRow row, bool trusted) async {
-    final xmpp = resolveChatKey(widget.chatJid).session.xmpp;
-    await xmpp.setPeerFingerprintTrust(
-      bareJid: row.peerJid,
-      fingerprint: row.fingerprint,
-      trusted: trusted,
-    );
-    if (!mounted) return;
-    setState(() {
-      _peerRows = [
-        for (final r in _peerRows ?? const <PeerFingerprintRow>[])
-          if (r.fingerprint == row.fingerprint &&
-              r.omemo2 == row.omemo2 &&
-              r.peerJid == row.peerJid)
-            PeerFingerprintRow(
-              peerJid: r.peerJid,
-              deviceId: r.deviceId,
-              fingerprint: r.fingerprint,
-              omemo2: r.omemo2,
-              trusted: trusted,
-              active: r.active,
-            )
-          else
-            r,
-      ];
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     final tg = context.tg;
     final l10n = context.l10n;
+    final ui = ref.watch(securityViewModelProvider(widget.chatJid));
 
     return Scaffold(
       appBar: AppBar(title: Text(l10n.encryption)),
@@ -151,7 +50,7 @@ class _SecurityPageState extends ConsumerState<SecurityPage> {
           _section(tg, l10n.devices),
           ListTile(
             leading: const Icon(Icons.smartphone),
-            title: Text(l10n.thisDeviceId('${_deviceId ?? '—'}')),
+            title: Text(l10n.thisDeviceId('${ui.deviceId ?? '—'}')),
             subtitle: Text(l10n.deviceCountedForCarbons),
           ),
 
@@ -163,7 +62,7 @@ class _SecurityPageState extends ConsumerState<SecurityPage> {
               style: TextStyle(fontSize: 13, color: tg.textSecondary),
             ),
           ),
-          if (_hybridFingerprint != null) ...[
+          if (ui.hybridFingerprint != null) ...[
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Text(
@@ -173,12 +72,12 @@ class _SecurityPageState extends ConsumerState<SecurityPage> {
             ),
             const SizedBox(height: 6),
             FingerprintBox(
-              fingerprint: _hybridFingerprint!,
-              onCopy: () => _copyFingerprint(_hybridFingerprint),
+              fingerprint: ui.hybridFingerprint!,
+              onCopy: () => _copyFingerprint(ui.hybridFingerprint),
             ),
             const SizedBox(height: 12),
           ],
-          if (_legacyFingerprint != null) ...[
+          if (ui.legacyFingerprint != null) ...[
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Text(
@@ -188,8 +87,8 @@ class _SecurityPageState extends ConsumerState<SecurityPage> {
             ),
             const SizedBox(height: 6),
             FingerprintBox(
-              fingerprint: _legacyFingerprint!,
-              onCopy: () => _copyFingerprint(_legacyFingerprint),
+              fingerprint: ui.legacyFingerprint!,
+              onCopy: () => _copyFingerprint(ui.legacyFingerprint),
             ),
           ],
 
@@ -201,12 +100,12 @@ class _SecurityPageState extends ConsumerState<SecurityPage> {
               style: TextStyle(fontSize: 13, color: tg.textSecondary),
             ),
           ),
-          if (_peerLoading)
+          if (ui.peerLoading)
             const Padding(
               padding: EdgeInsets.all(24),
               child: Center(child: CircularProgressIndicator()),
             )
-          else if (_peerError != null)
+          else if (ui.peerError != null)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
               child: Text(
@@ -214,7 +113,7 @@ class _SecurityPageState extends ConsumerState<SecurityPage> {
                 style: TextStyle(color: tg.danger),
               ),
             )
-          else if ((_peerRows ?? const []).isEmpty)
+          else if ((ui.peerRows ?? const []).isEmpty)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
               child: Text(
@@ -223,12 +122,14 @@ class _SecurityPageState extends ConsumerState<SecurityPage> {
               ),
             )
           else
-            for (final row in _peerRows!)
+            for (final row in ui.peerRows!)
               _PeerFingerprintTile(
                 row: row,
-                showPeerJid: _isGroup,
+                showPeerJid: ui.isGroup,
                 onCopy: () => _copyFingerprint(row.fingerprint),
-                onTrustChanged: (v) => _setPeerTrust(row, v),
+                onTrustChanged: (v) => ref
+                    .read(securityViewModelProvider(widget.chatJid).notifier)
+                    .setPeerTrust(row, v),
               ),
 
           const SizedBox(height: 24),

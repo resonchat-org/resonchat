@@ -15,6 +15,7 @@
 //     entry another of our own devices had just written.
 
 import 'package:test/test.dart';
+
 import 'package:resonchat/xmpp/priority.dart';
 
 void main() {

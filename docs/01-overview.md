@@ -55,7 +55,7 @@
   - moxlib 上游：`codeberg.org/moxxy/moxlib`（GPL-3.0）。
   - MAM（XEP-0313）已从上游 `feat/mam` 并入 moxxmpp fork。
   - `moxxmpp_socket_tcp` 的 SDK 约束提升到 Dart 3。
-  - OMEMO 密码学由 `omemo_dart` 提供，moxxmpp 做 stanza 编解码/传输；app 侧保留 PEP/XML、KMAC 载荷与 ML-DSA 身份（`lib/crypto/`）。ML-KEM（设备密钥与会话 KEM）由 native `libsignal` 生成消费；`lib/crypto/pq/` 的纯 Dart `pqcrypto` 路径仅供测试/诊断。
+  - 两轨会话密码学都在 `omemo_dart`（axolotl 与 OMEMO2 同一形状：设备、会话、bundle 模型、指纹、KMAC 密封）。moxxmpp 做 A 轨 stanza 与规范 `urn:xmpp:omemo:2` PEP。B 轨 XML 还不是 XEP，留在应用；成为 XEP 后再进 moxxmpp。应用保留 ML-DSA 身份（`pqcrypto`，因为主库仍要直接依赖它）和双轨策略。ML-KEM 由 `omemo_dart` 里的 native `libsignal` 生成消费；纯 Dart KEM 仅供测试/诊断。
 - **后果**：需跟进上游变更；A 轨保持与上游最小差异，便于合并。
 
 ### ADR-005：UI 移植 Telegram Android（Kotlin → Dart），整体 GPLv3
@@ -64,9 +64,9 @@
 - **后果**：需逐文件标注来源与修改；商标问题需人工审查。
 
 ### ADR-006：ML-KEM 走 native `libsignal`，`pqcrypto` 只管 ML-DSA
-- **决定**：OMEMO2 设备密钥与 PQXDH 会话 KEM 一律由 native `libsignal`（ML-KEM-1024，wire tag `0x0A`）生成与消费；纯 Dart `pqcrypto` 只承担 ML-DSA-87 身份签名与 SHA3-512 摘要（以及测试/诊断）。
+- **决定**：OMEMO2 设备密钥与 PQXDH 会话 KEM 一律由 native `libsignal`（ML-KEM-1024，wire tag `0x0A`，依赖在 `omemo_dart`）生成与消费；纯 Dart `pqcrypto` 只承担 ML-DSA-87 身份签名。Hybrid 指纹的 SHA3-512 在 `omemo_dart`（`pointycastle`），与 A 轨指纹放在同一层。
 - **理由**：monocles 对齐 ML-KEM-1024；libsignal 已随 Flutter 插件打包，`flutter build apk` 无需额外 NDK/CMake 步骤；KEM 复用上游实现，缩小自定义密码学面。
-- **后果**：`lib/crypto/pq/` 的纯 Dart KEM provider 在生产路径上不再被调用（仅为测试/诊断保留）。
+- **后果**：`lib/crypto/omemo2/` 的纯 Dart KEM provider 在生产路径上不再被调用（仅为测试/诊断保留）。
 - **已定**：Q1 结论为「默认携带 ML-DSA-87」——`pq-ik`/`pq-sig` 是 OMEMO2 会话的强制条件，缺失即拒绝建会话（never-downgrade），不做「只签经典部分」的降级。
 
 ## 5. 架构总览
@@ -113,10 +113,8 @@ resonchat/
 │     ├─ main.dart
 │     ├─ account/               # 多账号枢纽（AccountHub）
 │     ├─ xmpp/                  # 连接、收发、MAM prefs、MUC 等
-│     ├─ omemo/                 # 双轨常量、编解码、能力、TrackResolver
-│     ├─ crypto/                # 指纹、KMAC 载荷、双轨编排
-│     ├─ pq/                    # MlKem1024Provider、pqcrypto
-│     ├─ store/                 # drift、备份格式、平台条件导入的 DB 连接
+│     ├─ crypto/                # axolotl 方言 XML、OMEMO2 XML、ML-DSA、双轨策略
+│     ├─ persistence/                 # drift、备份格式、平台条件导入的 DB 连接
 │     ├─ state/                 # Riverpod providers
 │     ├─ net/ / platform/ / l10n/
 │     └─ ui/                    # 登录、会话、聊天、设置、账号管理等

@@ -3,7 +3,7 @@
 //
 // Copinc Rule.java — inspect without network; untrack may fetch.
 
-import 'url.dart';
+import 'package:resonchat/untracker/url.dart';
 
 typedef UntrackFetch =
     Future<({int status, Map<String, String> headers, String body, String url})>

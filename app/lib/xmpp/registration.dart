@@ -8,8 +8,8 @@
 import 'package:logging/logging.dart';
 import 'package:moxxmpp/moxxmpp.dart';
 
-import '../net/app_network.dart';
-import 'xmpp_socket.dart';
+import 'package:resonchat/net/app_network.dart';
+import 'package:resonchat/xmpp/xmpp_socket.dart';
 
 /// No automatic reconnect — registration is a one-shot socket.
 class _NoReconnectPolicy extends ReconnectionPolicy {

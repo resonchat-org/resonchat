@@ -13,7 +13,7 @@
 
 import 'package:moxxmpp/moxxmpp.dart';
 
-import '../crypto/omemo/track.dart';
+import 'package:resonchat/crypto/dual/track.dart';
 
 /// Declares the encryption used on an outgoing message.
 ///

@@ -9,17 +9,18 @@
 // pushed page. Wide windows keep master/detail on the Chats tab either way.
 
 import 'package:flutter/material.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../state/providers.dart';
-import '../chat/chat_page.dart';
-import '../chats/chats_page.dart';
-import '../column_mode.dart';
-import '../contacts/contacts_page.dart';
-import '../empty_chat_pane.dart';
-import '../me/me_page.dart';
-import '../two_column_layout.dart';
-import 'portrait_home.dart';
+import 'package:resonchat/state/providers.dart';
+import 'package:resonchat/ui/chat/chat_page.dart';
+import 'package:resonchat/ui/chats/chats_page.dart';
+import 'package:resonchat/ui/column_mode.dart';
+import 'package:resonchat/ui/contacts/contacts_page.dart';
+import 'package:resonchat/ui/empty_chat_pane.dart';
+import 'package:resonchat/ui/home/portrait_home.dart';
+import 'package:resonchat/ui/me/me_page.dart';
+import 'package:resonchat/ui/two_column_layout.dart';
 
 /// Route `/chats`.
 class HomeShell extends ConsumerWidget {

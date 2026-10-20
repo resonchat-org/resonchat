@@ -65,7 +65,7 @@
 
 ## 6. `TrackResolver`：唯一判定入口
 
-实现：`app/lib/crypto/omemo/track_resolver.dart` 的 `resolveTrack`。
+实现：`app/lib/crypto/dual/track_resolver.dart` 的 `resolveTrack`。
 
 ```
 resolveTrack(requested, capabilities) -> TrackResolution {

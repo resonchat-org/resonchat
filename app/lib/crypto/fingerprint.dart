@@ -1,22 +1,12 @@
 // Copyright (C) 2026 ResonChat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// Identity-key fingerprints. Stacks are separate (monocles):
-//   • Hybrid — SHA3-512 of OMEMO2 classical IK (0x05‖32) + ML-DSA-87 PQ IK
-//   • Legacy — A-track Conversations IdentityKey.serialize() (strip leading 05)
-
-import 'dart:convert';
-import 'dart:typed_data';
+// Shared fingerprint *display* helpers (both tracks). Digests themselves live
+// in omemo_dart: legacy → `axolotlFingerprint` / `AxolotlDevice.fingerprint`;
+// hybrid → `hybridOmemo2Fingerprint` (`omemo_dart_omemo2`).
 
 import 'package:cryptography/cryptography.dart';
 import 'package:hex/hex.dart';
-import 'package:pqcrypto/pqcrypto.dart';
-
-/// Domain-separation label used by monocles
-/// `CryptoHelper.hybridOmemo2Fingerprint`.
-final Uint8List kHybridOmemo2FpLabel = Uint8List.fromList(
-  ascii.encode('monocles:omemo2:ik:v2'),
-);
 
 /// SHA-256 of raw key bytes, lowercase hex.
 Future<String> sha256Hex(List<int> bytes) async {
@@ -43,21 +33,4 @@ String formatFingerprint(String hexDigest) {
     groups.add(clean.substring(i, end));
   }
   return groups.join(' ');
-}
-
-/// monocles `CryptoHelper.hybridOmemo2Fingerprint`: SHA3-512 over
-/// `monocles:omemo2:ik:v2` ‖ len32(classical IK) ‖ classical IK ‖
-/// len32(pq IK) ‖ pq IK. Returns lowercase hex (128 chars).
-String hybridOmemo2Fingerprint(Uint8List identityKey, Uint8List pqIdentityKey) {
-  final buf = BytesBuilder(copy: false);
-  buf.add(kHybridOmemo2FpLabel);
-  _appendLengthPrefixed(buf, identityKey);
-  _appendLengthPrefixed(buf, pqIdentityKey);
-  return HEX.encode(sha3512(buf.toBytes()));
-}
-
-void _appendLengthPrefixed(BytesBuilder buf, Uint8List value) {
-  final len = ByteData(4)..setInt32(0, value.length, Endian.big);
-  buf.add(len.buffer.asUint8List());
-  buf.add(value);
 }

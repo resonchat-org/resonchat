@@ -3,34 +3,35 @@
 
 import 'dart:async';
 
-import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+
+import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../l10n/l10n.dart';
-import '../../l10n/locale_controller.dart';
-import '../../logging/dev_log.dart';
-import '../../logging/dev_log_prefs.dart';
-import '../../net/app_network.dart';
-import '../../untracker/prefs.dart';
-import '../../crypto/omemo/track.dart';
-import '../../security/app_lock.dart';
-import '../../state/providers.dart';
-import '../../xmpp/message_expiry.dart';
-import '../accent_theme.dart';
-import '../archive/archive_page.dart';
-import '../theme.dart';
-import 'app_lock_pin_sheet.dart';
-import 'auto_reply_page.dart';
-import 'settings_viewmodel.dart';
-import 'socks5_proxy_sheet.dart';
-import 'translation_settings_sheet.dart';
-import '../../translate/translation_engine.dart';
-import '../../translate/translation_prefs.dart';
-import '../../xmpp/auto_reply.dart';
-import '../../xmpp/channel_discovery.dart';
-import '../../xmpp/file_preview.dart';
+import 'package:resonchat/crypto/dual/track.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/l10n/locale_controller.dart';
+import 'package:resonchat/logging/dev_log.dart';
+import 'package:resonchat/logging/dev_log_prefs.dart';
+import 'package:resonchat/net/app_network.dart';
+import 'package:resonchat/security/app_lock.dart';
+import 'package:resonchat/state/providers.dart';
+import 'package:resonchat/translate/translation_engine.dart';
+import 'package:resonchat/translate/translation_prefs.dart';
+import 'package:resonchat/ui/accent_theme.dart';
+import 'package:resonchat/ui/archive/archive_page.dart';
+import 'package:resonchat/ui/settings/app_lock_pin_sheet.dart';
+import 'package:resonchat/ui/settings/auto_reply_page.dart';
+import 'package:resonchat/ui/settings/settings_viewmodel.dart';
+import 'package:resonchat/ui/settings/socks5_proxy_sheet.dart';
+import 'package:resonchat/ui/settings/translation_settings_sheet.dart';
+import 'package:resonchat/ui/theme.dart';
+import 'package:resonchat/untracker/prefs.dart';
+import 'package:resonchat/xmpp/auto_reply.dart';
+import 'package:resonchat/xmpp/channel_discovery.dart';
+import 'package:resonchat/xmpp/file_preview.dart';
+import 'package:resonchat/xmpp/message_expiry.dart';
 
 /// App settings. Deliberately free of branding that would suggest any
 /// affiliation with other messengers (docs/05 §6).

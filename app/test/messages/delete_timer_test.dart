@@ -12,6 +12,7 @@
 // where the answer must be *no*.
 
 import 'package:test/test.dart';
+
 import 'package:resonchat/xmpp/delete_timer.dart';
 
 void main() {

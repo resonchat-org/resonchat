@@ -5,8 +5,8 @@
 
 import 'package:flutter/material.dart';
 
-import '../../l10n/l10n.dart';
-import '../../security/app_lock.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/security/app_lock.dart';
 
 /// Returns the confirmed PIN, or null if cancelled.
 Future<String?> showAppLockPinSheet(BuildContext context) {

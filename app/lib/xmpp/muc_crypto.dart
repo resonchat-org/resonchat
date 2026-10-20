@@ -28,9 +28,9 @@
 // device list blocks for 1:1. PQ is offered for private non-anonymous rooms
 // when every member is fully PQ-capable (checked at send time).
 
-import '../crypto/omemo/track.dart';
-import '../crypto/omemo/track_resolver.dart';
-import 'muc.dart';
+import 'package:resonchat/crypto/dual/track.dart';
+import 'package:resonchat/crypto/dual/track_resolver.dart';
+import 'package:resonchat/xmpp/muc.dart';
 
 /// One occupant of a room, as far as encryption is concerned.
 ///

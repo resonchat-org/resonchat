@@ -13,9 +13,10 @@
 // worse than one that refuses.
 
 import 'package:test/test.dart';
-import 'package:resonchat/crypto/omemo/protocol.dart';
-import 'package:resonchat/crypto/omemo/track.dart';
-import 'package:resonchat/crypto/omemo/track_resolver.dart';
+
+import 'package:resonchat/crypto/dual/negotiation.dart';
+import 'package:resonchat/crypto/dual/track.dart';
+import 'package:resonchat/crypto/dual/track_resolver.dart';
 import 'package:resonchat/xmpp/capabilities.dart';
 
 ChatCapabilities caps({

@@ -12,7 +12,8 @@
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:test/test.dart';
-import 'package:resonchat/store/database.dart';
+
+import 'package:resonchat/persistence/database.dart';
 
 void main() {
   late AppDatabase db;

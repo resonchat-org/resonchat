@@ -6,11 +6,12 @@
 
 import 'dart:convert';
 
-import 'package:cryptography/cryptography.dart';
 import 'package:flutter/foundation.dart';
+
+import 'package:cryptography/cryptography.dart';
 import 'package:hex/hex.dart';
 
-import '../store/prefs_database.dart';
+import 'package:resonchat/persistence/prefs_database.dart';
 
 /// Symbols for the 16 board cells, top-left → bottom-right (indices 0–15).
 const kAppLockPinSymbols = '0123456789ABCDEF';

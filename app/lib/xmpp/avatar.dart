@@ -16,11 +16,10 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:cryptography/cryptography.dart';
-
 import 'package:moxlib/moxlib.dart';
 import 'package:moxxmpp/moxxmpp.dart';
 
-import '../store/database.dart';
+import 'package:resonchat/persistence/database.dart';
 
 /// The shared SHA-1 used for XEP-0084 item ids.
 ///

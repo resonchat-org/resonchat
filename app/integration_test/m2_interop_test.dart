@@ -27,13 +27,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:logging/logging.dart';
 import 'package:moxxmpp/moxxmpp.dart' show JID, RosterManager, rosterManager;
-import 'package:resonchat/crypto/omemo/defacto.dart';
-import 'package:resonchat/crypto/omemo/track.dart';
-import 'package:resonchat/crypto/omemo/dual_track_manager.dart';
-import 'package:resonchat/crypto/omemo/protocol.dart';
+
+import 'package:resonchat/crypto/axolotl/defacto.dart';
+import 'package:resonchat/crypto/dual/dual_track_manager.dart';
+import 'package:resonchat/crypto/dual/negotiation.dart';
+import 'package:resonchat/crypto/dual/track.dart';
+import 'package:resonchat/persistence/database.dart';
+import 'package:resonchat/persistence/roster_state.dart';
 import 'package:resonchat/xmpp/capabilities.dart';
-import 'package:resonchat/store/database.dart';
-import 'package:resonchat/store/roster_state.dart';
 import 'package:resonchat/xmpp/connection.dart';
 
 /// Strings shared between steps, so a failure can be reported by name.

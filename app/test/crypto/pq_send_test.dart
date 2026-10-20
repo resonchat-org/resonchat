@@ -16,9 +16,10 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:moxxmpp/moxxmpp.dart';
-import 'package:resonchat/crypto/omemo/message_codec.dart';
-import 'package:resonchat/crypto/omemo/protocol.dart';
-import 'package:resonchat/crypto/omemo/track.dart';
+
+import 'package:resonchat/crypto/dual/track.dart';
+import 'package:resonchat/crypto/omemo2/message_codec.dart';
+import 'package:resonchat/crypto/omemo2/protocol.dart';
 import 'package:resonchat/xmpp/eme.dart';
 import 'package:resonchat/xmpp/pq_stanza.dart';
 
@@ -50,7 +51,9 @@ void main() {
 
       final xml = nodes.map((n) => n.toXml()).join();
       expect(xml, contains(pomemoXmlns));
-      expect(xml, contains('<payload>'));
+      // XMLNode copies the parent's xmlns onto each child, so the open tag is
+      // `<payload xmlns='...'>`, not a bare `<payload>`.
+      expect(xml, contains('>Y2lwaGVydGV4dA==</payload>'));
       // The declaration travels with it: without it a receiver has no way to
       // tell which track the blob belongs to.
       expect(xml, contains(emePomemo0));

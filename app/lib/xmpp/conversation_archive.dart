@@ -6,10 +6,10 @@
 
 import 'package:moxxmpp/moxxmpp.dart' show ConferenceBookmark, JID;
 
-import '../account/account_hub.dart';
-import '../account/resolve.dart';
-import '../platform/app_notifications.dart';
-import 'connection.dart';
+import 'package:resonchat/account/account_hub.dart';
+import 'package:resonchat/account/resolve.dart';
+import 'package:resonchat/platform/app_notifications.dart';
+import 'package:resonchat/xmpp/connection.dart';
 
 /// Archives [chatKey] like Conversations overview / menu archive.
 ///

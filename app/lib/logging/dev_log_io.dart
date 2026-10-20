@@ -19,13 +19,14 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+
 import 'package:logging/logging.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
-import 'dev_log_prefs.dart';
-import 'log_file_writer.dart';
-import 'log_line.dart';
+import 'package:resonchat/logging/dev_log_prefs.dart';
+import 'package:resonchat/logging/log_file_writer.dart';
+import 'package:resonchat/logging/log_line.dart';
 
 /// Owns the log file and the [Logger.root] subscription for a native build.
 class DevLog {

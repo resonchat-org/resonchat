@@ -14,9 +14,10 @@
 // be rediscovered as a missing feature.
 
 import 'package:test/test.dart';
-import 'package:resonchat/crypto/omemo/track.dart';
+
+import 'package:resonchat/crypto/dual/track.dart';
+import 'package:resonchat/crypto/dual/track_resolver.dart';
 import 'package:resonchat/xmpp/connection.dart';
-import 'package:resonchat/crypto/omemo/track_resolver.dart';
 import 'package:resonchat/xmpp/forwarding.dart';
 
 /// A sender that records what it was asked to send.

@@ -7,22 +7,21 @@ import 'dart:typed_data';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:moxxmpp/moxxmpp.dart' show JID;
 
-import '../account/account_hub.dart';
-import '../account/resolve.dart';
-import '../crypto/omemo/dual_track_manager.dart';
-import '../crypto/omemo/protocol.dart';
-import '../crypto/omemo/track.dart';
-import '../store/database.dart';
-import '../store/prefs_database.dart';
-import '../xmpp/avatar.dart';
-import '../xmpp/blocking.dart';
-import '../xmpp/muc.dart';
-import '../xmpp/reactions.dart';
-import '../utils/appearance.dart';
-import '../xmpp/b_track_manager.dart';
-import '../xmpp/capabilities.dart';
-import '../xmpp/connection.dart';
-import '../xmpp/presence_store.dart';
+import 'package:resonchat/account/account_hub.dart';
+import 'package:resonchat/account/resolve.dart';
+import 'package:resonchat/crypto/dual/dual_track_manager.dart';
+import 'package:resonchat/crypto/dual/track.dart';
+import 'package:resonchat/persistence/database.dart';
+import 'package:resonchat/persistence/prefs_database.dart';
+import 'package:resonchat/ui/chat/appearance.dart';
+import 'package:resonchat/xmpp/avatar.dart';
+import 'package:resonchat/xmpp/b_track_manager.dart';
+import 'package:resonchat/xmpp/blocking.dart';
+import 'package:resonchat/xmpp/capabilities.dart';
+import 'package:resonchat/xmpp/connection.dart';
+import 'package:resonchat/xmpp/muc.dart';
+import 'package:resonchat/xmpp/presence_store.dart';
+import 'package:resonchat/xmpp/reactions.dart';
 
 /// Multi-account hub (installed in `main()`).
 ///
@@ -258,7 +257,7 @@ final chatCapabilitiesProvider =
       return caps;
     });
 
-/// Encryption mode for a chat, or [EncMode.none] while resolving.
+/// Outbound [Track] for a chat, or [Track.standard] while resolving.
 ///
 /// The track messages in [chatJid] go out on: the per-conversation override
 /// if the user set one, otherwise the global default.

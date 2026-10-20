@@ -5,19 +5,20 @@
 // entry, notification mode, and local history actions.
 
 import 'package:flutter/material.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:moxxmpp/moxxmpp.dart' show JID;
 
-import '../../account/resolve.dart';
-import '../../crypto/omemo/track.dart';
-import '../../crypto/omemo/track_resolver.dart';
-import '../../l10n/l10n.dart';
-import '../../platform/media_store.dart';
-import '../../state/providers.dart';
-import '../../store/chat_notify_mode.dart';
-import '../../xmpp/capabilities.dart';
-import '../chats/notify_mode_sheet.dart';
-import '../theme.dart';
+import 'package:resonchat/account/resolve.dart';
+import 'package:resonchat/crypto/dual/track.dart';
+import 'package:resonchat/crypto/dual/track_resolver.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/persistence/media_store.dart';
+import 'package:resonchat/state/providers.dart';
+import 'package:resonchat/ui/chats/notify_mode_sheet.dart';
+import 'package:resonchat/ui/theme.dart';
+import 'package:resonchat/xmpp/capabilities.dart';
+import 'package:resonchat/xmpp/chat_notify_mode.dart';
 
 /// Section title used on chat detail / profile lists.
 class ChatProfileSectionTitle extends StatelessWidget {

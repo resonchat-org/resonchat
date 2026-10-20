@@ -11,11 +11,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../account/resolve.dart';
-import '../../l10n/l10n.dart';
-import '../../store/chat_notify_mode.dart';
-import '../../store/database.dart';
-import '../theme.dart';
+import 'package:resonchat/account/resolve.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/persistence/database.dart';
+import 'package:resonchat/ui/theme.dart';
+import 'package:resonchat/xmpp/chat_notify_mode.dart';
 
 /// Icon for the current [ChatNotifyMode] (list row / settings tile).
 IconData notifyModeIcon(ChatNotifyMode mode) => switch (mode) {

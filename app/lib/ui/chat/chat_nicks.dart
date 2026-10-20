@@ -5,8 +5,8 @@
 
 import 'package:flutter/material.dart';
 
-import '../../account/resolve.dart';
-import '../../xmpp/muc.dart';
+import 'package:resonchat/account/resolve.dart';
+import 'package:resonchat/xmpp/muc.dart';
 
 /// Occupant nick from a stored sender (`room@server/nick` or bare nick).
 String? occupantNick(String sender) {

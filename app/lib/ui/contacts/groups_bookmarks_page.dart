@@ -7,17 +7,18 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../account/account_hub.dart';
-import '../../l10n/l10n.dart';
-import '../../state/providers.dart';
-import '../account_filter_overlay.dart';
-import '../account_list_chrome.dart';
-import '../contact_avatar.dart';
-import '../dialog_cell.dart';
-import '../home/open_chat.dart';
-import '../theme.dart';
+import 'package:resonchat/account/account_hub.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/state/providers.dart';
+import 'package:resonchat/ui/account_filter_overlay.dart';
+import 'package:resonchat/ui/account_list_chrome.dart';
+import 'package:resonchat/ui/contact_avatar.dart';
+import 'package:resonchat/ui/dialog_cell.dart';
+import 'package:resonchat/ui/home/open_chat.dart';
+import 'package:resonchat/ui/theme.dart';
 
 class GroupsBookmarksPage extends ConsumerStatefulWidget {
   const GroupsBookmarksPage({super.key, this.initialAccountId});

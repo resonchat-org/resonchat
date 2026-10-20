@@ -18,8 +18,8 @@
 
 import 'package:moxxmpp/moxxmpp.dart' show JID;
 
-import '../store/database.dart';
-import 'connection.dart';
+import 'package:resonchat/persistence/database.dart';
+import 'package:resonchat/xmpp/connection.dart';
 
 /// The emoji offered without opening a picker.
 ///

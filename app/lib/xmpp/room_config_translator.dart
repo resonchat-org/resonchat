@@ -7,7 +7,7 @@
 //
 // Switch arms match Prosody's English strings literally (they say "room").
 
-import '../l10n/generated/app_localizations.dart';
+import 'package:resonchat/l10n/generated/app_localizations.dart';
 
 /// Translates room-config form title / labels / option labels when the server
 /// did not localize them.

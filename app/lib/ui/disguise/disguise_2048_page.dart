@@ -9,10 +9,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../l10n/l10n.dart';
-import '../../security/app_lock.dart';
-import '../../store/prefs_database.dart';
-import 'game_2048.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/persistence/prefs_database.dart';
+import 'package:resonchat/security/app_lock.dart';
+import 'package:resonchat/ui/disguise/game_2048.dart';
 
 /// App-wide best score for the disguise board ([PrefsDatabase]).
 const prefDisguise2048BestKey = 'pref_disguise_2048_best';

@@ -6,16 +6,15 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:libsignal/libsignal.dart';
-import 'package:omemo_dart/omemo_dart_omemo2.dart'
-    hide serializeMlKem1024PublicKey;
+import 'package:omemo_dart/omemo_dart_omemo2.dart';
+import 'package:pqcrypto/pqcrypto.dart';
 import 'package:test/test.dart';
 import 'package:xml/xml.dart';
-import 'package:resonchat/crypto/omemo/bundle_codec.dart';
-import 'package:resonchat/crypto/omemo/dual_track_manager.dart';
-import 'package:resonchat/crypto/omemo/protocol.dart';
-import 'package:resonchat/crypto/pq/kem_wire.dart';
-import 'package:resonchat/crypto/pq/mlkem.dart';
+
+import 'package:resonchat/crypto/dual/dual_track_manager.dart';
+import 'package:resonchat/crypto/omemo2/bundle_codec.dart';
+import 'package:resonchat/crypto/omemo2/mlkem.dart';
+import 'package:resonchat/crypto/omemo2/protocol.dart';
 
 /// Publish-shaped bundle with real pq-sig + ik-sig (monocles v4).
 Future<Omemo2Bundle> _signedPublish(Omemo2Device device) async {
@@ -30,29 +29,19 @@ Future<Omemo2Bundle> _signedPublish(Omemo2Device device) async {
   final kemSpkTagged = serializeMlKem1024PublicKey(device.pqSpk);
   final kemPrekeys = <int, String>{};
   final kemSigs = <int, String>{};
-  final oneTime = <KemOneTimeKey>[];
   for (final e in device.pqOpks.entries) {
     final tagged = serializeMlKem1024PublicKey(e.value.publicRaw);
     kemPrekeys[e.key] = base64Encode(tagged);
     kemSigs[e.key] = base64Encode(e.value.signature);
-    oneTime.add(KemOneTimeKey(id: e.key, publicKey: tagged));
   }
-  final binding = pqKemBinding(
-    kemSignedPreKeyId: device.pqSpkId,
-    kemSignedPreKeyPublic: kemSpkTagged,
-    oneTime: oneTime,
+  final (pqIk, pqSk) = MlDsa.generateKeyPair(DilithiumParams.mlDsa87);
+  final transcript = await device.identityTranscript(pqIk);
+  final pqSig = MlDsa.sign(
+    pqSk,
+    transcript,
+    DilithiumParams.mlDsa87,
+    ctx: Uint8List.fromList(utf8.encode(omemo2PqIdContext)),
   );
-  final pq = PqIdentityKeyPair.generate();
-  final pqIk = pq.publicKey().serialize();
-  final spkSerialized = Uint8List.fromList([0x05, ...spkRaw]);
-  final transcript = pqBundleTranscript(
-    identityKey: ikSerialized,
-    pqIdentityKey: pqIk,
-    signedPreKeyId: device.spkId,
-    signedPreKeyPublic: spkSerialized,
-    kemBinding: binding,
-  );
-  final pqSig = pq.sign(message: transcript).serialize();
   final ikSig = await device.sign(transcript);
   return Omemo2Bundle(
     deviceId: device.id,
@@ -227,7 +216,7 @@ void main() {
       prekeys: bad.prekeys,
       kemSpkId: bad.kemSpkId,
       kemSpk: base64Encode([
-        kyber1024Round3Tag,
+        omemo2Kyber1024Round3Tag,
         ...List<int>.filled(MlKem1024.publicKeyLength, 0),
       ]),
       kemSpkSignature: bad.kemSpkSignature,

@@ -27,12 +27,11 @@ resonchat/
 │  ├─ lib/
 │  │  ├─ account/            多账号枢纽
 │  │  ├─ crypto/             加密：PQXDH / 指纹；omemo/ 双轨；pq/ ML-KEM
-│  │  ├─ store/              drift + 备份格式 + 平台 DB 连接
+│  │  ├─ persistence/       数据库、密钥、备份、聊天文件与背景
 │  │  ├─ state/              跨 feature Riverpod 读模型
 │  │  ├─ ui/                 feature 页面 + 主题/壳层小组件
-│  │  ├─ utils/              外观编解码、emoji 目录等非 UI 数据
 │  │  └─ xmpp/               连接生命周期与事件分发
-│  ├─ test/                  按关注点：crypto / rooms / store / messages / session / ui
+│  ├─ test/                  按关注点：crypto / rooms / persistence / messages / session / ui
 │  └─ tool/                  Flutter 构建前置（web assets 等）+ Dart 探针
 └─ vendor/                 上游 fork（git 子模块，path 依赖）
    ├─ moxxmpp/packages/moxxmpp
@@ -67,20 +66,20 @@ flutter build apk
 | **View** | `ui/<feature>/*_page.dart` 等 | 渲染、滚动、对话框；不写协议/DB |
 | **ViewModel** | 同目录 `*_viewmodel.dart`（Riverpod `Notifier`，按需） | UI 状态与命令 |
 | **读模型** | `state/providers.dart` | 跨页面 Stream/Future providers |
-| **Data** | `account/`、`store/`、`xmpp/`、`crypto/` | 经 `AccountHub` / `resolveChatKey` / providers 访问 |
+| **Data** | `account/`、`persistence/`、`xmpp/`、`crypto/` | 经 `AccountHub` / `resolveChatKey` / providers 访问 |
 
 ```
 ui/
   theme.dart, design_tokens.dart   主题 / tokens
   contact_avatar.dart              跨 feature 小组件
   column_mode*.dart, …             宽屏双栏壳层
-  chat/  chats/  login/  settings/  room/  …
-utils/
-  appearance.dart                  会话外观编解码与壁纸绘制
-  emoji_data.dart                  emoji 目录（纯数据）
+  chat/
+    appearance.dart                会话外观与壁纸
+    emoji_data.dart                emoji 目录
+  chats/  login/  settings/  room/  …
 ```
 
-类名：`ChatViewModel` + `ChatPage`。有状态/命令的 feature 才加 ViewModel；View 只绑回调与导航。非 UI 的数据/设置类放 `utils/`。
+类名：`ChatViewModel` + `ChatPage`。有状态/命令的 feature 才加 ViewModel；View 只绑回调与导航。
 
 ## 常用命令
 
@@ -148,7 +147,7 @@ hicolor；Windows 用 `app_icon.ico`（`Runner.rc` / Inno Setup）。Android mip
 | 原生 | `database_connection_io.dart` → SQLCipher / SQLite 文件 | 本地文件 |
 | Web | `database_connection_web.dart` → `WasmDatabase.open` | OPFS，否则 IndexedDB |
 
-条件导入入口：`lib/store/database_connection.dart`（与 matrix-dart-sdk 的 box 切换同思路）。
+条件导入入口：`lib/persistence/database_connection.dart`（与 matrix-dart-sdk 的 box 切换同思路）。
 
 `sqlite3.wasm` / `drift_worker.js` **不进仓库**，由 `./scripts/build_web.sh` 按
 `pubspec.lock` 拉取。本地 `flutter run -d chrome` 前可先
@@ -183,7 +182,7 @@ RFC 7395 framing / `WebSocketXmppSocket` 与 XEP-0156 在 `vendor/moxxmpp`（`rf
 | `calloc.asTypedList()` | 返回的视图在 `free` 后仍被使用（use-after-free，不崩只静默出错） | 先 `Uint8List.fromList` 复制再释放 |
 | C 符号导出 | `-fvisibility=hidden` 下 `.so` 能加载但符号全找不到 | 导出函数加 `__attribute__((visibility("default")))` |
 | adb 输入法 | 中文 TTS IME 会吞掉 `@` 和 `.`，把 `xmpprev@jabber.fr` 变成「下面品牌Rev@就ABB而.」 | `adb shell ime disable` 禁用全部输入法后 `input text` 原样注入 |
-| XEP-0384 线格式 | 规范节点名 `urn:xmpp:omemo:2:*` 没有任何客户端实现；真实世界是 `eu.siacs.conversations.axolotl.*` | 出入站都同时支持两种方言（`lib/crypto/omemo/defacto.dart`） |
+| XEP-0384 线格式 | 规范节点名 `urn:xmpp:omemo:2:*` 没有任何客户端实现；真实世界是 `eu.siacs.conversations.axolotl.*` | 出入站都同时支持两种方言（`lib/crypto/axolotl/defacto.dart`） |
 | Signal 公钥序列化 | 公钥是「1 字节类型前缀 0x05 + 32 字节密钥」= 33 字节；omemo_dart 用裸 32 字节 | 读时剥前缀、写时加前缀（`stripKeyTypeByte`/`addKeyTypeByte`） |
 | PubSub item id | 真实客户端把 bundle 挂在 `current` 上，moxxmpp 用设备号 | 取整节点，谁的 item 能解析就用谁 |
 | `ShouldEncrypt` 回调 | moxxmpp 对**每个**出站 stanza 都问一次「要不要加密」 | 只对 `message` 回答；否则能力解析会为每个 PubSub IQ 再发 IQ，形成无界级联把登录饿死 |

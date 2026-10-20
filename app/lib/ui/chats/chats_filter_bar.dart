@@ -6,10 +6,10 @@
 
 import 'package:flutter/material.dart';
 
-import '../../account/account_color.dart';
-import '../../l10n/l10n.dart';
-import '../../store/account_store.dart';
-import '../theme.dart';
+import 'package:resonchat/account/account_color.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/persistence/account_store.dart';
+import 'package:resonchat/ui/theme.dart';
 
 /// Which conversations the chats list should show.
 enum ChatsListScope {

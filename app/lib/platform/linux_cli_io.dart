@@ -6,7 +6,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'linux_cli_types.dart';
+import 'package:resonchat/platform/linux_cli_types.dart';
 
 const _parecordShimMarker = 'resonchat-parecord-shim';
 

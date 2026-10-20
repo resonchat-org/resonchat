@@ -7,9 +7,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../l10n/l10n.dart';
-import '../../xmpp/auto_reply.dart';
-import '../theme.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/ui/theme.dart';
+import 'package:resonchat/xmpp/auto_reply.dart';
 
 class AutoReplyPage extends StatefulWidget {
   const AutoReplyPage({super.key});

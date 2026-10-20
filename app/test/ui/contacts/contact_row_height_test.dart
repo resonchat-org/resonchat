@@ -5,7 +5,9 @@
 // (title plus a single second line) both use the chat-list row height.
 
 import 'package:flutter/material.dart';
+
 import 'package:flutter_test/flutter_test.dart';
+
 import 'package:resonchat/l10n/l10n.dart';
 import 'package:resonchat/ui/contacts/contacts_tiles.dart';
 import 'package:resonchat/ui/dialog_cell.dart';

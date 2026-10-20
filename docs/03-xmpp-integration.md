@@ -20,8 +20,10 @@
 | PEP | XEP-0163 | 发布/订阅设备与 bundle |
 | PubSub | XEP-0060 | PEP 底层 |
 | 加密标记 | XEP-0380 (EME) | 加密方式声明（`EmeManager` 已注册） |
-| 加密 | XEP-0384 / Conversations axolotl | A 轨 |
+| 加密 | XEP-0384 / Conversations axolotl | A 轨 stanza 与规范 PEP |
 | MUC | XEP-0045 | 群聊 |
+
+B 轨 `urn:monocles:omemo-pq:1` 还不是 XEP，stanza / PEP XML 留在应用里（`lib/crypto/omemo2/` 的 codec）。等 PQ OMEMO2 成为 XEP 后再迁进 moxxmpp。元素里的 `header`/`keys`/`key` 和 `spk`/`ik`/`prekeys` 外形接近 XEP-0384 0.9.1，但 xmlns 不是 `urn:xmpp:omemo:2`，经典公钥是 32 字节裸钥，并且同一元素里还有强制的 `<commit>` 与 `kem-*` / `pq-ik` / `pq-sig` / `ik-sig`。拆出半个解析器对不齐 moxxmpp 里现有的 0.9.1 / axolotl helper，所以整段 XML 先留在应用。moxxmpp 只认这个 xmlns，避免把已经是 OMEMO2 的 stanza 再按 axolotl 加密一次。
 
 应用侧另有 **MAM 保留策略**（`urn:xmpp:mam:prefs:0`，`app/lib/xmpp/mam_prefs.dart`）与**多账号枢纽**（`app/lib/account/`）。
 

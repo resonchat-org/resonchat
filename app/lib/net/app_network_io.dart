@@ -11,8 +11,8 @@ import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import 'package:logging/logging.dart';
 
-import 'socks5.dart';
-import 'socks5_config.dart';
+import 'package:resonchat/net/socks5.dart';
+import 'package:resonchat/net/socks5_config.dart';
 
 /// App-wide connector: XMPP TCP and HTTP file PUT/GET both call [openTcp].
 class AppNetwork {

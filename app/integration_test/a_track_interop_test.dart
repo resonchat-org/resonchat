@@ -18,11 +18,12 @@ import 'package:integration_test/integration_test.dart';
 import 'package:logging/logging.dart';
 import 'package:moxxmpp/moxxmpp.dart';
 import 'package:omemo_dart/omemo_dart_axolotl.dart' show AxolotlBundle;
-import 'package:resonchat/crypto/omemo/track.dart';
-import 'package:resonchat/xmpp/capabilities.dart';
-import 'package:resonchat/crypto/omemo/defacto.dart';
-import 'package:resonchat/crypto/omemo/dual_track_manager.dart';
 import 'package:xml/xml.dart';
+
+import 'package:resonchat/crypto/axolotl/defacto.dart';
+import 'package:resonchat/crypto/dual/dual_track_manager.dart';
+import 'package:resonchat/crypto/dual/track.dart';
+import 'package:resonchat/xmpp/capabilities.dart';
 import 'package:resonchat/xmpp/connection.dart';
 
 final results = <String, bool>{};

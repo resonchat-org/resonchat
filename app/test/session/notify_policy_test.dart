@@ -16,6 +16,7 @@
 // examples misses.
 
 import 'package:test/test.dart';
+
 import 'package:resonchat/xmpp/notify_policy.dart';
 
 void main() {

@@ -5,10 +5,10 @@
 
 import 'package:flutter/material.dart';
 
-import '../../l10n/l10n.dart';
-import '../../store/database.dart';
-import '../../utils/emoji_data.dart';
-import '../theme.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/persistence/database.dart';
+import 'package:resonchat/ui/chat/emoji_data.dart';
+import 'package:resonchat/ui/theme.dart';
 
 /// Kaomoji offered next to the emoji catalogue. Text, not images.
 const List<String> kKaomoji = [

@@ -7,8 +7,8 @@
 
 import 'package:flutter/material.dart';
 
-import '../../l10n/l10n.dart';
-import '../pending/pending_requests_page.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/ui/pending/pending_requests_page.dart';
 
 void openPendingRequests(NavigatorState nav) {
   nav.push(

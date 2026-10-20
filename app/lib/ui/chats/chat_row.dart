@@ -13,24 +13,25 @@
 // action pane (flutter_slidable), then tap — never fire on release alone.
 
 import 'package:flutter/material.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 
-import '../../account/account_color.dart';
-import '../../account/account_hub.dart';
-import '../../account/resolve.dart';
-import '../../l10n/l10n.dart';
-import '../../crypto/omemo/track.dart';
-import '../../state/providers.dart';
-import '../../store/chat_notify_mode.dart';
-import '../../store/database.dart';
-import '../../xmpp/conversation_archive.dart';
-import '../../xmpp/local_nickname.dart';
-import '../account_list_chrome.dart';
-import '../contact_avatar.dart';
-import '../dialog_cell.dart';
-import '../theme.dart';
-import 'notify_mode_sheet.dart';
+import 'package:resonchat/account/account_color.dart';
+import 'package:resonchat/account/account_hub.dart';
+import 'package:resonchat/account/resolve.dart';
+import 'package:resonchat/crypto/dual/track.dart';
+import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/persistence/database.dart';
+import 'package:resonchat/state/providers.dart';
+import 'package:resonchat/ui/account_list_chrome.dart';
+import 'package:resonchat/ui/chats/notify_mode_sheet.dart';
+import 'package:resonchat/ui/contact_avatar.dart';
+import 'package:resonchat/ui/dialog_cell.dart';
+import 'package:resonchat/ui/theme.dart';
+import 'package:resonchat/xmpp/chat_notify_mode.dart';
+import 'package:resonchat/xmpp/conversation_archive.dart';
+import 'package:resonchat/xmpp/local_nickname.dart';
 
 class ChatRow extends ConsumerWidget {
   const ChatRow({
