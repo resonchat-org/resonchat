@@ -264,8 +264,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       if (!mounted) return;
       ref.read(openChatKeyProvider.notifier).state = widget.chatJid;
       _clearShadeForOpenChat();
-      // Groupchat does not use 1:1 displayed markers the same way.
-      if (!_ui.isGroup) unawaited(_vm.sendDisplayedForLatest());
+      unawaited(_vm.sendDisplayedForLatest());
     });
   }
 
@@ -1821,6 +1820,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                                     focusMessageKey: _focusMessageKey,
                                     bubbleStyle: appearance.bubble,
                                     isGroup: ui.isGroup,
+                                    groupReads: ui.isGroup && ui.mucEncryptable,
                                     room: ui.room,
                                     highlightNicks: highlightNicksFor(
                                       mucNick: ui.mucNick,

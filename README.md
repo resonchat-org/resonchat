@@ -206,5 +206,3 @@ The interface under `app/lib/ui/` follows the layout and interaction patterns of
 ## Disclaimer
 
 The encryption protocol is a custom post-quantum extension to OMEMO and **has not been audited by a third party**. Until an independent audit is done, do not use it for high-sensitivity material and do not claim that it is secure.
-
-This project is **not** an official Telegram client and is not affiliated with Telegram; the Telegram name and logo are trademarks of their respective owners.

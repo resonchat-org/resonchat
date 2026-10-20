@@ -75,6 +75,27 @@
       "jid": { "type": "String" }
     }
   },
+  "unregisterAccountOnServer": "Also unregister this account on the server",
+  "unregisterAccountNeedsConnection": "The account has to be connected",
+  "couldNotUnregisterAccount": "Could not unregister the account on the server",
+  "deleteContact": "Delete from roster",
+  "deleteContactSummary": "Removes the contact. The chat stays on this device.",
+  "deleteContactConfirm": "Remove {jid} from your contact list? The chat with this contact will not be removed.",
+  "@deleteContactConfirm": {
+    "placeholders": {
+      "jid": { "type": "String" }
+    }
+  },
+  "couldNotDeleteContact": "Could not remove this contact",
+  "changePassword": "Change password",
+  "changePasswordSummary": "Change the password stored on the server",
+  "currentPassword": "Current password",
+  "newPassword": "New password",
+  "passwordChanged": "Password changed",
+  "couldNotChangePassword": "Could not change password",
+  "passwordShouldNotBeEmpty": "Password can’t be empty",
+  "currentPasswordWrong": "Current password is wrong",
+  "notConnectedTryAgain": "You are not connected. Try again later",
   "about": "About",
   "defaultEncryption": "Default encryption",
   "archivedConversations": "Archived conversations",
@@ -83,6 +104,8 @@
   "noArchivedConversations": "No archived conversations",
   "deliveryReceipts": "Delivery receipts",
   "deliveryReceiptsSummary": "When enabled, contacts see when their messages have been delivered to this device",
+  "messageReaders": "Read",
+  "messageUnreaders": "Unread",
   "readReceipts": "Read receipts",
   "readReceiptsSummary": "When enabled, contacts see when you have read their messages",
   "typingNotifications": "Typing notifications",
@@ -338,6 +361,25 @@
   "peerRetractedMessage": "{name} retracted a message",
   "@peerRetractedMessage": {
     "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "youRetractedTheirs": "You retracted {name}'s message",
+  "@youRetractedTheirs": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "peerRetractedYours": "{name} retracted your message",
+  "@peerRetractedYours": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "peerRetractedTheirs": "{actor} retracted {name}'s message",
+  "@peerRetractedTheirs": {
+    "placeholders": {
+      "actor": { "type": "String" },
       "name": { "type": "String" }
     }
   },

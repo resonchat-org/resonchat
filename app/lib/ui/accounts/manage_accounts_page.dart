@@ -7,10 +7,10 @@ import 'package:flutter/material.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:resonchat/account/account_hub.dart';
 import 'package:resonchat/l10n/l10n.dart';
 import 'package:resonchat/state/providers.dart';
 import 'package:resonchat/ui/accounts/account_profile_page.dart';
+import 'package:resonchat/ui/accounts/remove_account_dialog.dart';
 import 'package:resonchat/ui/contact_avatar.dart';
 import 'package:resonchat/ui/theme.dart';
 import 'package:resonchat/xmpp/connection.dart';
@@ -57,8 +57,11 @@ class ManageAccountsPage extends ConsumerWidget {
                           builder: (_) => AccountProfilePage(accountId: a.id),
                         ),
                       ),
-                      onLongPress: () =>
-                          _confirmRemove(context, hub, a.id, a.bareJid),
+                      onLongPress: () => confirmRemoveAccount(
+                        context,
+                        accountId: a.id,
+                        jid: a.bareJid,
+                      ),
                       leading: ContactAvatar(
                         jid: a.bareJid,
                         title: a.label,
@@ -101,32 +104,5 @@ class ManageAccountsPage extends ConsumerWidget {
       XmppConnectionState.connecting => l10n.statusConnecting,
       XmppConnectionState.disconnected => l10n.statusDisconnected,
     };
-  }
-
-  Future<void> _confirmRemove(
-    BuildContext context,
-    AccountHub hub,
-    String id,
-    String jid,
-  ) async {
-    final l10n = context.l10n;
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(l10n.removeAccount),
-        content: Text(l10n.removeAccountConfirm(jid)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(l10n.cancel),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(l10n.removeAccount),
-          ),
-        ],
-      ),
-    );
-    if (ok == true) await hub.removeAccount(id);
   }
 }

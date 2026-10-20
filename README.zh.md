@@ -206,5 +206,3 @@ Web（Drift `sqlite3.wasm` + Dart→Wasm；产物在 `app/build/web/`）：
 ## 免责声明
 
 加密协议为自定义的 OMEMO 后量子扩展，**尚未经过第三方安全审计**。在完成独立审计之前，请勿用于高敏感场景，也不应对外宣称其安全性。
-
-本项目**不是** Telegram 官方客户端，与 Telegram 无关；Telegram 名称与 Logo 为其各自所有者的商标。

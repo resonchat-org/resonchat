@@ -113,9 +113,59 @@ class ProfilePage extends ConsumerWidget {
           ChatNotifySection(chatJid: chatJid),
 
           ChatProfileSectionTitle(l10n.actions),
+          if (contact?.inRoster == true && chat?.isGroup != true)
+            ListTile(
+              leading: Icon(Icons.person_remove, color: tg.danger),
+              title: Text(
+                l10n.deleteContact,
+                style: TextStyle(color: tg.danger),
+              ),
+              subtitle: Text(l10n.deleteContactSummary),
+              onTap: connected
+                  ? () => confirmDeleteContact(context, chatJid, peer)
+                  : () => ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(l10n.notConnectedTryAgain)),
+                    ),
+            ),
           ChatHistoryActions(chatJid: chatJid),
         ],
       ),
     );
   }
+}
+
+/// Conversations contact-details "Delete from roster". The transcript stays.
+Future<void> confirmDeleteContact(
+  BuildContext context,
+  String chatJid,
+  String peer,
+) async {
+  final l10n = context.l10n;
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text(l10n.deleteContact),
+      content: Text(l10n.deleteContactConfirm(peer)),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: Text(l10n.cancel),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, true),
+          child: Text(l10n.deleteContact),
+        ),
+      ],
+    ),
+  );
+  if (confirmed != true || !context.mounted) return;
+  final xmpp = resolveChatKey(chatJid).session.xmpp;
+  final ok = await xmpp.removeContact(peer);
+  if (!context.mounted) return;
+  if (!ok) {
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(l10n.couldNotDeleteContact)));
+    return;
+  }
+  Navigator.of(context).pop();
 }

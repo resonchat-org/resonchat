@@ -210,23 +210,32 @@ final contactStateProvider = FutureProvider.family<ContactState, String>((
   chatKey,
 ) async {
   ref.watch(connectionStateProvider);
+  ref.watch(rosterProvider);
   final r = resolveChatKey(chatKey);
   final row = await r.session.db.rosterEntry(r.jid);
   return ContactState(
     subscription: row?.subscription ?? 'none',
     asked: (row?.ask ?? '').isNotEmpty,
+    inRoster: row != null,
   );
 });
 
 /// The subset of RFC 6121 subscription state the UI acts on.
 class ContactState {
-  const ContactState({required this.subscription, required this.asked});
+  const ContactState({
+    required this.subscription,
+    required this.asked,
+    this.inRoster = false,
+  });
 
   /// `none`, `to`, `from` or `both`.
   final String subscription;
 
   /// True when we have asked them and are waiting.
   final bool asked;
+
+  /// A roster row exists. Subscription `none` can still be a contact.
+  final bool inRoster;
 
   bool get isMutual => subscription == 'both';
 

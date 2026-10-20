@@ -13,6 +13,7 @@ import 'package:moxxmpp/moxxmpp.dart' show ConferenceBookmark, XmppRosterItem;
 import 'package:resonchat/crypto/dual/track.dart';
 import 'package:resonchat/persistence/database_connection.dart';
 import 'package:resonchat/xmpp/chat_notify_mode.dart';
+import 'package:resonchat/xmpp/group_read.dart';
 import 'package:resonchat/xmpp/message_send_status.dart';
 import 'package:resonchat/xmpp/sticker_link.dart';
 
@@ -149,7 +150,15 @@ class Messages extends Table {
   /// True once a chat marker `<displayed/>` arrives (XEP-0333) — read.
   ///
   /// Kept in sync with [sendStatus] for older call sites; prefer [sendStatus].
+  /// One-to-one only. A private non-anonymous room records each reader in
+  /// [readBy] instead of flipping this for the first person who reads.
   BoolColumn get displayed => boolean().withDefault(const Constant(false))();
+
+  /// Bare real JIDs that sent `<displayed/>` for this message, JSON array.
+  ///
+  /// Used in private non-anonymous rooms (Conversations `ReadByMarker`).
+  /// Empty for 1:1, where [displayed] is the whole answer.
+  TextColumn get readBy => text().withDefault(const Constant('[]'))();
 
   /// Conversations `Message.status` ([MessageSendStatus]).
   ///
@@ -488,8 +497,8 @@ class AppDatabase extends _$AppDatabase {
   @override
   // Keep in sync with [kAccountSchemaVersion] in database_connection_io.dart.
   // Version 2 adds [Messages.roomStanzaId]. Version 3 adds
-  // [Messages.retractedBy].
-  int get schemaVersion => 3;
+  // [Messages.retractedBy]. Version 4 adds [Messages.readBy].
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -500,6 +509,9 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 3) {
         await m.addColumn(messages, messages.retractedBy);
+      }
+      if (from < 4) {
+        await m.addColumn(messages, messages.readBy);
       }
     },
   );
@@ -1688,6 +1700,66 @@ class AppDatabase extends _$AppDatabase {
             sendStatus: Value(MessageSendStatus.sendDisplayed),
           ),
         );
+  }
+
+  /// Records that [readerJid] has displayed the message addressed by [markerId]
+  /// and every earlier outgoing message in the chat.
+  ///
+  /// A displayed marker names the latest message the reader has seen, so the
+  /// ones before it are read as well. The chat transcript is otherwise left
+  /// as it was: this does not flip [Messages.displayed], which stays the 1:1
+  /// signal.
+  Future<void> noteGroupRead({
+    required String chatJid,
+    required String markerId,
+    required String readerJid,
+  }) async {
+    final reader = readerJid.trim().toLowerCase();
+    if (markerId.isEmpty || reader.isEmpty) return;
+    final target =
+        await (select(messages)
+              ..where(
+                (m) =>
+                    m.chatJid.equals(chatJid) &
+                    (m.roomStanzaId.equals(markerId) |
+                        m.stanzaId.equals(markerId)),
+              )
+              ..limit(1))
+            .getSingleOrNull();
+    if (target == null) return;
+    final rows =
+        await (select(messages)..where(
+              (m) =>
+                  m.chatJid.equals(chatJid) &
+                  m.incoming.equals(false) &
+                  m.timestamp.isSmallerOrEqualValue(target.timestamp),
+            ))
+            .get();
+    for (final row in rows) {
+      final readers = decodeReadBy(row.readBy);
+      if (!readers.add(reader)) continue;
+      await (update(messages)..where((m) => m.id.equals(row.id))).write(
+        MessagesCompanion(readBy: Value(encodeReadBy(readers))),
+      );
+    }
+  }
+
+  /// Newest incoming room message that has a stanza-id, for a group
+  /// `<displayed/>`.
+  Future<Message?> lastIncomingWithRoomStanza(String chatJid) {
+    return (select(messages)
+          ..where(
+            (m) =>
+                m.chatJid.equals(chatJid) &
+                m.incoming.equals(true) &
+                m.roomStanzaId.isNotValue(''),
+          )
+          ..orderBy([
+            (m) => OrderingTerm.desc(m.timestamp),
+            (m) => OrderingTerm.desc(m.id),
+          ])
+          ..limit(1))
+        .getSingleOrNull();
   }
 
   /// Newest incoming markable message in [chatJid], for sending `<displayed/>`.

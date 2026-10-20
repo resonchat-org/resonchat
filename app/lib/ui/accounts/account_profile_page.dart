@@ -21,6 +21,7 @@ import 'package:resonchat/ui/accounts/account_profile_viewmodel.dart';
 import 'package:resonchat/ui/contact_avatar.dart';
 import 'package:resonchat/ui/fingerprint_box.dart';
 import 'package:resonchat/ui/theme.dart';
+import 'package:resonchat/xmpp/connection.dart';
 
 class AccountProfilePage extends ConsumerStatefulWidget {
   const AccountProfilePage({super.key, required this.accountId});
@@ -54,6 +55,35 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
   void dispose() {
     _nick.dispose();
     super.dispose();
+  }
+
+  Future<void> _changePassword() async {
+    final l10n = context.l10n;
+    final account = _account;
+    final session = accountHub.session(widget.accountId);
+    if (account == null ||
+        session == null ||
+        session.xmpp.state != XmppConnectionState.connected) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(l10n.notConnectedTryAgain)));
+      return;
+    }
+    final submitted = await showDialog<({String current, String next})>(
+      context: context,
+      builder: (ctx) =>
+          _ChangePasswordDialog(currentPassword: account.password),
+    );
+    if (submitted == null || !mounted) return;
+    final ok = await accountHub.changeAccountPassword(
+      widget.accountId,
+      submitted.next,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(ok ? l10n.passwordChanged : l10n.couldNotChangePassword),
+      ),
+    );
   }
 
   Future<void> _copyFingerprint(String? fp) async {
@@ -265,6 +295,15 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : Text(l10n.save),
+              ),
+              const SizedBox(height: 8),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.key),
+                title: Text(l10n.changePassword),
+                subtitle: Text(l10n.changePasswordSummary),
+                enabled: !ui.busy,
+                onTap: () => unawaited(_changePassword()),
               ),
               const SizedBox(height: 28),
               Text(
@@ -482,5 +521,91 @@ class _PresencePickerState extends State<_PresencePicker> {
   Future<void> _set(PresenceShow show) async {
     await widget.onSelected(show);
     if (mounted) setState(() => _current = show);
+  }
+}
+
+/// Conversations `ChangePasswordActivity`: current password must match the
+/// one stored for this account, and the new one must not be empty.
+class _ChangePasswordDialog extends StatefulWidget {
+  const _ChangePasswordDialog({required this.currentPassword});
+
+  final String currentPassword;
+
+  @override
+  State<_ChangePasswordDialog> createState() => _ChangePasswordDialogState();
+}
+
+class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
+  final _current = TextEditingController();
+  final _next = TextEditingController();
+  String? _currentError;
+  String? _nextError;
+
+  @override
+  void dispose() {
+    _current.dispose();
+    _next.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final l10n = context.l10n;
+    final current = _current.text;
+    final next = _next.text;
+    String? currentError;
+    String? nextError;
+    if (current != widget.currentPassword) {
+      currentError = l10n.currentPasswordWrong;
+    }
+    if (next.trim().isEmpty) {
+      nextError = l10n.passwordShouldNotBeEmpty;
+    }
+    if (currentError != null || nextError != null) {
+      setState(() {
+        _currentError = currentError;
+        _nextError = nextError;
+      });
+      return;
+    }
+    Navigator.pop(context, (current: current, next: next));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    return AlertDialog(
+      title: Text(l10n.changePassword),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _current,
+            obscureText: true,
+            autofocus: true,
+            decoration: InputDecoration(
+              labelText: l10n.currentPassword,
+              errorText: _currentError,
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _next,
+            obscureText: true,
+            decoration: InputDecoration(
+              labelText: l10n.newPassword,
+              errorText: _nextError,
+            ),
+            onSubmitted: (_) => _submit(),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(l10n.cancel),
+        ),
+        TextButton(onPressed: _submit, child: Text(l10n.changePassword)),
+      ],
+    );
   }
 }

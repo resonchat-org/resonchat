@@ -533,7 +533,49 @@ class AccountHub extends ChangeNotifier {
     return true;
   }
 
-  Future<void> removeAccount(String accountId) async {
+  /// Changes the password on the server, stores it, and reconnects with it.
+  ///
+  /// A live session keeps the old password inside its connection settings, so
+  /// the next automatic reconnect would be rejected. [connect] builds a new
+  /// session from [StoredAccount.password].
+  Future<bool> changeAccountPassword(
+    String accountId,
+    String newPassword,
+  ) async {
+    final session = _sessions[accountId];
+    if (session == null) return false;
+    if (session.xmpp.state != XmppConnectionState.connected) return false;
+    final ok = await session.xmpp.changePassword(newPassword);
+    if (!ok) return false;
+    final i = _accounts.indexWhere((a) => a.id == accountId);
+    if (i < 0) return false;
+    final updated = _accounts[i].copyWith(password: newPassword);
+    await _store.upsert(updated);
+    _accounts = await _store.loadAll();
+    final stored = _accounts.where((a) => a.id == accountId).firstOrNull;
+    session.account = stored ?? updated;
+    notifyListeners();
+    await _connectSession(accountId);
+    return true;
+  }
+
+  /// Removes the account from this device.
+  ///
+  /// When [unregisterOnServer] is set, the server must accept XEP-0077
+  /// `<remove/>` first. A refusal leaves the local account in place.
+  Future<bool> removeAccount(
+    String accountId, {
+    bool unregisterOnServer = false,
+  }) async {
+    if (unregisterOnServer) {
+      final session = _sessions[accountId];
+      if (session == null ||
+          session.xmpp.state != XmppConnectionState.connected) {
+        return false;
+      }
+      final ok = await session.xmpp.unregisterAccount();
+      if (!ok) return false;
+    }
     final s = _sessions.remove(accountId);
     await s?.dispose();
     await _store.remove(accountId);
@@ -541,6 +583,7 @@ class AccountHub extends ChangeNotifier {
     notifyListeners();
     _sessionChanges.add(null);
     _chatsTick.add(null);
+    return true;
   }
 
   /// Sessions that may contribute to the unified inbox (enabled accounts only).

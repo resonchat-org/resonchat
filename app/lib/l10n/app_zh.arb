@@ -75,6 +75,27 @@
       "jid": { "type": "String" }
     }
   },
+  "unregisterAccountOnServer": "同时在服务器上注销此账号",
+  "unregisterAccountNeedsConnection": "需要先连接",
+  "couldNotUnregisterAccount": "无法在服务器上注销此账号",
+  "deleteContact": "从联系人中删除",
+  "deleteContactSummary": "删除联系人。本机上的聊天记录保留。",
+  "deleteContactConfirm": "从联系人列表中移除 {jid}？与此联系人的聊天不会被删除。",
+  "@deleteContactConfirm": {
+    "placeholders": {
+      "jid": { "type": "String" }
+    }
+  },
+  "couldNotDeleteContact": "无法删除此联系人",
+  "changePassword": "修改密码",
+  "changePasswordSummary": "修改保存在服务器上的密码",
+  "currentPassword": "当前密码",
+  "newPassword": "新密码",
+  "passwordChanged": "密码已修改",
+  "couldNotChangePassword": "无法修改密码",
+  "passwordShouldNotBeEmpty": "密码不能为空",
+  "currentPasswordWrong": "当前密码不正确",
+  "notConnectedTryAgain": "当前未连接，请稍后再试",
   "about": "关于",
   "defaultEncryption": "默认加密方式",
   "archivedConversations": "已归档会话",
@@ -83,6 +104,8 @@
   "noArchivedConversations": "没有已归档的会话",
   "deliveryReceipts": "送达回执",
   "deliveryReceiptsSummary": "开启后，联系人可以看到消息已送达本机",
+  "messageReaders": "已读",
+  "messageUnreaders": "未读",
   "readReceipts": "已读回执",
   "readReceiptsSummary": "开启后，联系人可以看到你已阅读他们的消息",
   "typingNotifications": "输入状态",
@@ -328,6 +351,25 @@
   "peerRetractedMessage": "{name} 撤回了一条消息",
   "@peerRetractedMessage": {
     "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "youRetractedTheirs": "你撤回了 {name} 的消息",
+  "@youRetractedTheirs": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "peerRetractedYours": "{name} 撤回了你的消息",
+  "@peerRetractedYours": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "peerRetractedTheirs": "{actor} 撤回了 {name} 的消息",
+  "@peerRetractedTheirs": {
+    "placeholders": {
+      "actor": { "type": "String" },
       "name": { "type": "String" }
     }
   },

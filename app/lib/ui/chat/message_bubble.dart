@@ -14,6 +14,7 @@ import 'package:resonchat/persistence/database.dart';
 import 'package:resonchat/ui/chat/appearance.dart';
 import 'package:resonchat/ui/chat/linkified_text.dart';
 import 'package:resonchat/ui/chat/media_attachment.dart';
+import 'package:resonchat/ui/chat/read_ring.dart';
 import 'package:resonchat/ui/theme.dart';
 import 'package:resonchat/xmpp/message_send_status.dart';
 import 'package:resonchat/xmpp/reactions.dart';
@@ -134,6 +135,8 @@ class MessageBubble extends StatelessWidget {
     this.selectionMode = false,
     this.bubbleStyle = BubbleStyle.rounded,
     this.mine = false,
+    this.readFraction,
+    this.onReadRing,
     this.replyTo = '',
     this.replyBody = '',
     this.replyAuthor = '',
@@ -205,6 +208,16 @@ class MessageBubble extends StatelessWidget {
 
   /// Whether we sent it.
   final bool mine;
+
+  /// Share of the conversation that has read this outgoing message.
+  ///
+  /// Null hides the ring. A 1:1 chat is only 0 or 1. A private non-anonymous
+  /// room can sit in between. The ticks beside the time are send and delivery,
+  /// not this.
+  final double? readFraction;
+
+  /// Opens who has and has not read. Null leaves the ring untappable.
+  final VoidCallback? onReadRing;
 
   /// This message is part of the current selection.
   final bool selected;
@@ -427,7 +440,17 @@ class MessageBubble extends StatelessWidget {
           _ReplyQuote(body: replyBody, author: replyAuthor),
         Align(
           alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
-          child: bubble,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              if (mine && readFraction != null) ...[
+                ReadRing(fraction: readFraction!, onTap: onReadRing),
+                const SizedBox(width: 4),
+              ],
+              bubble,
+            ],
+          ),
         ),
         if (!retracted &&
             (translating ||
@@ -734,9 +757,9 @@ class ReactionChip extends StatelessWidget {
 
 /// Receipt ticks for one message, or null when there is nothing to draw.
 ///
-/// Clock while the stanza is still local or mid-flight, nothing once it is on
-/// the socket ([MessageSendStatus.send]), one tick on a delivery receipt, two
-/// on a read marker. Incoming messages carry no ticks at all.
+/// Clock while the stanza is still local or mid-flight, one tick once it is
+/// on the socket ([MessageSendStatus.send]), two on a delivery receipt.
+/// Read is the ring, not a tick. Incoming messages carry no ticks at all.
 ///
 /// A plain function so the mapping can be checked without building the bubble.
 IconData? receiptTicks({
@@ -744,13 +767,13 @@ IconData? receiptTicks({
   required bool failed,
   required bool pending,
   required bool delivered,
-  required bool read,
+  required bool sent,
 }) {
   if (!mine) return null;
   if (failed) return Icons.error_outline;
   if (pending) return Icons.schedule;
-  if (read) return Icons.done_all;
-  if (delivered) return Icons.done;
+  if (delivered) return Icons.done_all;
+  if (sent) return Icons.done;
   return null;
 }
 
@@ -797,22 +820,19 @@ class _MetaRow extends StatelessWidget {
             deliveryError: failed ? 'err' : '',
           );
     final isFailed = failed || status == MessageSendStatus.sendFailed;
-    // Read outranks delivery: only-read, or both → double tick.
-    final isDisplayed = status == MessageSendStatus.sendDisplayed || displayed;
-    final isDeliveredOnly =
-        !isDisplayed && (status == MessageSendStatus.sendReceived || delivered);
+    // A read marker implies the message was delivered. The ring shows read.
+    final isDelivered =
+        status == MessageSendStatus.sendReceived ||
+        status == MessageSendStatus.sendDisplayed ||
+        delivered;
     final ticks = receiptTicks(
       mine: mine,
       failed: isFailed,
       pending: MessageSendStatus.isPending(status),
-      delivered: isDeliveredOnly,
-      read: isDisplayed,
+      delivered: isDelivered,
+      sent: status == MessageSendStatus.send,
     );
-    final tickColor = isFailed
-        ? tg.danger
-        : isDisplayed
-        ? tg.accent
-        : tg.textSecondary;
+    final tickColor = isFailed ? tg.danger : tg.textSecondary;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -900,24 +920,17 @@ class RetractedNotice extends StatelessWidget {
     super.key,
     required this.message,
     required this.chatKey,
-    required this.actor,
-    required this.mine,
+    required this.label,
   });
 
   final Message message;
   final String chatKey;
-
-  /// Display name of the person who sent it. Unused when [mine].
-  final String actor;
-  final bool mine;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
     final tg = context.tg;
     final l10n = context.l10n;
-    final label = mine
-        ? l10n.youRetractedMessage
-        : l10n.peerRetractedMessage(actor);
     final style = TextStyle(
       fontSize: TgDimens.timeFontSize,
       color: tg.textSecondary,

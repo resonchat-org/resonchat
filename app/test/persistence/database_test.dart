@@ -390,4 +390,41 @@ void main() {
       'nick:bob',
     ]);
   });
+
+  test(
+    'a group displayed marker covers that message and earlier ones',
+    () async {
+      await db.upsertChat('room@conference.example', isGroup: true);
+      Future<void> outgoing(String id, int seconds) {
+        return db.insertMessage(
+          MessagesCompanion(
+            chatJid: const Value('room@conference.example'),
+            sender: const Value('me'),
+            stanzaId: Value(id),
+            roomStanzaId: Value('room-$id'),
+            body: Value(id),
+            timestamp: Value(clock(seconds)),
+            incoming: const Value(false),
+          ),
+        );
+      }
+
+      await outgoing('early', 10);
+      await outgoing('marked', 20);
+      await outgoing('later', 30);
+      await db.noteGroupRead(
+        chatJid: 'room@conference.example',
+        markerId: 'room-marked',
+        readerJid: 'Ada@Example.org',
+      );
+      final rows = await (db.select(
+        db.messages,
+      )..orderBy([(m) => OrderingTerm.asc(m.timestamp)])).get();
+      expect(rows.map((m) => m.readBy).toList(), [
+        '["ada@example.org"]',
+        '["ada@example.org"]',
+        '[]',
+      ]);
+    },
+  );
 }

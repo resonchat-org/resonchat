@@ -23,6 +23,7 @@ import 'package:resonchat/ui/chat/chat_profile_sections.dart';
 import 'package:resonchat/ui/contact_avatar.dart';
 import 'package:resonchat/ui/room/invite_member_sheet.dart';
 import 'package:resonchat/ui/room/occupant_actions.dart';
+import 'package:resonchat/ui/room/occupant_matrix.dart';
 import 'package:resonchat/ui/room/room_config_page.dart';
 import 'package:resonchat/ui/room/room_profile_viewmodel.dart';
 import 'package:resonchat/ui/theme.dart';
@@ -471,17 +472,18 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
                   ),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-                    child: Wrap(
-                      alignment: WrapAlignment.start,
-                      children: [
-                        for (final occupant in entry.value)
-                          _occupantCell(
-                            tg: tg,
-                            l10n: l10n,
-                            room: room,
-                            occupant: occupant,
-                          ),
-                      ],
+                    child: OccupantMatrix(
+                      roomJid: _roomJid,
+                      occupants: entry.value,
+                      selfNick: room?.nick,
+                      onTap: room == null
+                          ? null
+                          : (occupant) =>
+                                unawaited(_onOccupantTap(room, occupant)),
+                      onLongPress: room == null
+                          ? null
+                          : (occupant) =>
+                                unawaited(_onOccupantTap(room, occupant)),
                     ),
                   ),
                 ],
@@ -563,64 +565,5 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
       default:
         return key;
     }
-  }
-
-  /// Avatar + nick cell (matrix roster). Tap opens the same member sheet as
-  /// the old list row.
-  Widget _occupantCell({
-    required TgColors tg,
-    required AppLocalizations l10n,
-    required GroupChat? room,
-    required Occupant occupant,
-  }) {
-    final isSelf = occupant.nick == room?.nick;
-    final avatarJid = (occupant.realJid != null && occupant.realJid!.isNotEmpty)
-        ? occupant.realJid!
-        : '$_roomJid/${occupant.nick}';
-    return SizedBox(
-      width: 76,
-      child: InkWell(
-        onTap: isSelf || room == null
-            ? null
-            : () => unawaited(_onOccupantTap(room, occupant)),
-        onLongPress: isSelf || room == null
-            ? null
-            : () => unawaited(_onOccupantTap(room, occupant)),
-        borderRadius: BorderRadius.circular(8),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ContactAvatar(
-                // Real bare JID → PEP; else room/nick → occupant vCard
-                // (Gajim GroupchatParticipant — never bare the room).
-                jid: avatarJid,
-                title: occupant.nick,
-                radius: 28,
-                showPresence: true,
-                presence: occupant.presenceForDot,
-              ),
-              const SizedBox(height: 6),
-              Text(
-                occupant.nick,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: isSelf ? FontWeight.w700 : FontWeight.w400,
-                ),
-              ),
-              if (isSelf)
-                Text(
-                  l10n.you,
-                  style: TextStyle(fontSize: 11, color: tg.textSecondary),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 }

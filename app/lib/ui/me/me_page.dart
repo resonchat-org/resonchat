@@ -13,6 +13,7 @@ import 'package:resonchat/l10n/l10n.dart';
 import 'package:resonchat/persistence/account_store.dart';
 import 'package:resonchat/state/providers.dart';
 import 'package:resonchat/ui/accounts/account_profile_page.dart';
+import 'package:resonchat/ui/accounts/remove_account_dialog.dart';
 import 'package:resonchat/ui/contact_avatar.dart';
 import 'package:resonchat/ui/theme.dart';
 import 'package:resonchat/xmpp/connection.dart';
@@ -95,7 +96,11 @@ class _AccountTile extends StatelessWidget {
           builder: (_) => AccountProfilePage(accountId: account.id),
         ),
       ),
-      onLongPress: () => _confirmRemove(context),
+      onLongPress: () => confirmRemoveAccount(
+        context,
+        accountId: account.id,
+        jid: account.bareJid,
+      ),
       leading: ContactAvatar(
         jid: account.bareJid,
         title: account.label,
@@ -124,27 +129,5 @@ class _AccountTile extends StatelessWidget {
       XmppConnectionState.connecting => l10n.statusConnecting,
       XmppConnectionState.disconnected => l10n.statusDisconnected,
     };
-  }
-
-  Future<void> _confirmRemove(BuildContext context) async {
-    final l10n = context.l10n;
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(l10n.removeAccount),
-        content: Text(l10n.removeAccountConfirm(account.bareJid)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(l10n.cancel),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(l10n.removeAccount),
-          ),
-        ],
-      ),
-    );
-    if (ok == true) await hub.removeAccount(account.id);
   }
 }

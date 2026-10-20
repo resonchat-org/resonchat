@@ -44,8 +44,8 @@ abstract final class MessageSendStatus {
   /// True while queued locally or still mid-flight (`unsend`).
   ///
   /// [send] is not pending: the stanza is already on the socket. The bubble
-  /// draws a clock for this set, nothing for [send], one tick for a delivery
-  /// receipt, and two for a read marker.
+  /// draws a clock for this set, one tick for [send], and two for a delivery
+  /// receipt. Read is the ring.
   static bool isPending(int status) => status == waiting || status == unsend;
 
   /// Delivery or read confirmed ([sendDisplayed] implies delivered).

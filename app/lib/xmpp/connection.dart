@@ -820,6 +820,39 @@ class XmppService {
     }
   }
 
+  /// XEP-0077 password change. The caller stores the new password and reconnects.
+  Future<bool> changePassword(String password) async {
+    final manager = _connection?.getManagerById<InBandRegistrationManager>(
+      inBandRegistrationManager,
+    );
+    if (manager == null) return false;
+    final result = await manager.setPassword(password);
+    return result.isType<bool>() && result.get<bool>();
+  }
+
+  /// XEP-0077 `<remove/>`. Local account data stays until the caller deletes it.
+  Future<bool> unregisterAccount() async {
+    final manager = _connection?.getManagerById<InBandRegistrationManager>(
+      inBandRegistrationManager,
+    );
+    if (manager == null) return false;
+    final result = await manager.unregister();
+    return result.isType<bool>() && result.get<bool>();
+  }
+
+  /// Removes [jid] from the roster (Conversations `deleteContactOnServer`).
+  ///
+  /// The chat transcript is left in place. [RosterRemovalResult.itemNotFound]
+  /// counts as success: the contact is already gone.
+  Future<bool> removeContact(String jid) async {
+    final roster = _connection?.getManagerById<RosterManager>(rosterManager);
+    if (roster == null) return false;
+    final bare = JID.fromString(jid).toBare().toString();
+    final result = await roster.removeFromRoster(bare);
+    return result == RosterRemovalResult.okay ||
+        result == RosterRemovalResult.itemNotFound;
+  }
+
   /// Drops [jid] from the roster if present (rooms are not contacts).
   Future<void> removeFromRosterIfPresent(String jid) async {
     final roster = _connection?.getManagerById<RosterManager>(rosterManager);
@@ -1750,6 +1783,9 @@ class XmppService {
           ),
         const EmeData(Track.pq, name: 'OMEMO-PQ'),
         PqEncryptedData(encrypted),
+        if (sendReadReceipts &&
+            (_privateNonAnonymous[roomBare.toBare().toString()] ?? false))
+          const MarkableData(true),
       ]),
       type: 'groupchat',
       shouldEncrypt: false,
@@ -1780,6 +1816,9 @@ class XmppService {
           quote: quoteBody ?? '',
           fallback: replyFallback,
         ),
+      if (sendReadReceipts &&
+          (_privateNonAnonymous[roomBare.toBare().toString()] ?? false))
+        const MarkableData(true).toXML(),
     ];
     try {
       await connection.sendStanza(
@@ -2228,6 +2267,8 @@ class XmppService {
         rosterState ??
             (_rosterState = TestingRosterStateManager(null, const [])),
       ),
+      // XEP-0077 after login: change password and unregister the account.
+      InBandRegistrationManager(),
       DiscoManager(const []),
       _pubsub!,
       // XEP-0402 PEP Native Bookmarks (+ XEP-0048 PEP-conversion fallback).
@@ -3253,11 +3294,14 @@ class XmppService {
           fallback: replyFallback,
         ),
       if (oobUrl != null && oobUrl.isNotEmpty) OOBData(oobUrl, null).toXML(),
-      // Receipts / markable are 1:1 (and private MUC) affordances; groupchat
-      // reflections do not answer XEP-0184 the same way (Conversations).
+      // XEP-0184 receipts are 1:1. A private non-anonymous room does take
+      // XEP-0333 `<markable/>` so members can answer with `<displayed/>`
+      // (Conversations `isPrivateAndNonAnonymous`).
       if (requestReceipt && sendDeliveryReceipts && !isGroup)
         MessageDeliveryReceiptData(true).toXML(),
-      if (sendReadReceipts && !isGroup) const MarkableData(true).toXML(),
+      if (sendReadReceipts &&
+          (!isGroup || (_privateNonAnonymous[to.toBare().toString()] ?? false)))
+        const MarkableData(true).toXML(),
     ];
     await connection.sendStanza(
       StanzaDetails(
@@ -3308,7 +3352,13 @@ class XmppService {
   /// Sends XEP-0333 `<displayed id='…'/>` for a message we have read.
   ///
   /// Conversations `DisplayedManager.displayed` — gated by [sendReadReceipts].
-  Future<void> sendDisplayedMarker(JID to, String messageId) async {
+  /// A room marker is `type='groupchat'` and [messageId] is the room's
+  /// stanza-id, not the sender's origin-id.
+  Future<void> sendDisplayedMarker(
+    JID to,
+    String messageId, {
+    bool groupchat = false,
+  }) async {
     if (!sendReadReceipts) return;
     final mm = _connection?.getManagerById<MessageManager>(messageManager);
     if (mm == null || messageId.isEmpty) return;
@@ -3318,7 +3368,7 @@ class XmppService {
         ChatMarkerData(ChatMarker.displayed, messageId),
         const MessageProcessingHintData([MessageProcessingHint.store]),
       ]),
-      type: 'chat',
+      type: groupchat ? 'groupchat' : 'chat',
     );
   }
 

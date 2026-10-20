@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // Receipt ticks. Outgoing only: a clock while queued or still in flight,
-// nothing once the stanza is on the socket, one tick on delivery, two on read.
+// one tick once the stanza is on the socket, two on delivery. Read is the ring.
 
 import 'package:flutter/material.dart' show IconData, Icons;
 
@@ -16,8 +16,10 @@ IconData? ticksForStatus(int status) => receiptTicks(
   mine: true,
   failed: status == MessageSendStatus.sendFailed,
   pending: MessageSendStatus.isPending(status),
-  delivered: status == MessageSendStatus.sendReceived,
-  read: status == MessageSendStatus.sendDisplayed,
+  delivered:
+      status == MessageSendStatus.sendReceived ||
+      status == MessageSendStatus.sendDisplayed,
+  sent: status == MessageSendStatus.send,
 );
 
 void main() {
@@ -28,7 +30,7 @@ void main() {
         failed: false,
         pending: false,
         delivered: true,
-        read: true,
+        sent: true,
       ),
       isNull,
     );
@@ -39,12 +41,12 @@ void main() {
     expect(ticksForStatus(MessageSendStatus.unsend), Icons.schedule);
   });
 
-  test('on the socket with no receipt draws nothing', () {
-    expect(ticksForStatus(MessageSendStatus.send), isNull);
+  test('on the socket with no receipt is one tick', () {
+    expect(ticksForStatus(MessageSendStatus.send), Icons.done);
   });
 
-  test('delivery receipt is one tick and a read marker is two', () {
-    expect(ticksForStatus(MessageSendStatus.sendReceived), Icons.done);
+  test('delivery and a later read marker are both two ticks', () {
+    expect(ticksForStatus(MessageSendStatus.sendReceived), Icons.done_all);
     expect(ticksForStatus(MessageSendStatus.sendDisplayed), Icons.done_all);
   });
 
@@ -55,7 +57,7 @@ void main() {
         failed: true,
         pending: true,
         delivered: true,
-        read: true,
+        sent: true,
       ),
       Icons.error_outline,
     );

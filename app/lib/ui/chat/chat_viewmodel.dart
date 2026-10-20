@@ -519,9 +519,26 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
 
   // --- Read markers / chat states ------------------------------------------
 
-  /// Sends XEP-0333 displayed for the newest markable inbound message.
+  /// Sends XEP-0333 displayed for the newest inbound message we can mark.
+  ///
+  /// A private non-anonymous room uses the room stanza-id (Conversations
+  /// `DisplayedManager.displayedMessage`). Other rooms send nothing. 1:1 uses
+  /// the origin id of the newest markable message.
   Future<void> sendDisplayedForLatest() async {
     final r = resolveChatKey(arg);
+    final chat = await r.session.db.getChat(r.jid);
+    if (chat?.isGroup == true) {
+      if (chat?.mucPrivateNonAnonymous != true) return;
+      final last = await r.session.db.lastIncomingWithRoomStanza(r.jid);
+      final id = last?.roomStanzaId ?? '';
+      if (id.isEmpty) return;
+      await r.session.xmpp.sendDisplayedMarker(
+        JID.fromString(r.jid),
+        id,
+        groupchat: true,
+      );
+      return;
+    }
     final last = await r.session.db.lastIncomingMarkable(r.jid);
     if (last == null || last.stanzaId.isEmpty) return;
     await r.session.xmpp.sendDisplayedMarker(

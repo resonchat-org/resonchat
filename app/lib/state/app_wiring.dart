@@ -119,6 +119,41 @@ class _AppWiringState extends ConsumerState<AppWiring>
     });
   }
 
+  /// 1:1 markers name the peer's bare JID. A room marker's `from` is
+  /// `room/nick`; only a private non-anonymous room records that nick's real
+  /// JID, and only when the occupant list publishes one.
+  Future<void> _noteReadReceipt(
+    AccountSession session,
+    ReadReceipt receipt,
+  ) async {
+    final bare = receipt.from.toBare().toString();
+    final nick = receipt.from.resource;
+    if (nick.isEmpty) {
+      await session.db.markDisplayed(bare, receipt.stanzaId);
+      return;
+    }
+    final chat = await session.db.getChat(bare);
+    if (chat == null || !chat.isGroup || !chat.mucPrivateNonAnonymous) return;
+    if (nick == chat.mucNick) return;
+    final members = await session.xmpp.roomDisplayMembers(bare);
+    String? real;
+    for (final occupant in members) {
+      final jid = occupant.realJid?.trim() ?? '';
+      if (occupant.nick == nick && jid.isNotEmpty) {
+        real = jid;
+        break;
+      }
+    }
+    if (real == null) return;
+    final mine = session.xmpp.myJid;
+    if (mine != null && real.toLowerCase() == mine.toLowerCase()) return;
+    await session.db.noteGroupRead(
+      chatJid: bare,
+      markerId: receipt.stanzaId,
+      readerJid: real,
+    );
+  }
+
   void _wireSession(AccountSession session) {
     final xmpp = session.xmpp;
     final db = session.db;
@@ -163,9 +198,7 @@ class _AppWiringState extends ConsumerState<AppWiring>
     );
     _subs.add(
       xmpp.readReceipts.listen((receipt) {
-        unawaited(
-          db.markDisplayed(receipt.from.toBare().toString(), receipt.stanzaId),
-        );
+        unawaited(_noteReadReceipt(session, receipt));
       }),
     );
     unawaited(_syncPendingRequests(session));

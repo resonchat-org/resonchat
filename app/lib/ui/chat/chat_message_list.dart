@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Transcript list for an open chat: day separators, unread divider, bubbles.
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,10 +16,12 @@ import 'package:resonchat/ui/chat/appearance.dart';
 import 'package:resonchat/ui/chat/chat_nicks.dart';
 import 'package:resonchat/ui/chat/message_bubble.dart';
 import 'package:resonchat/ui/chat/message_merge.dart';
+import 'package:resonchat/ui/chat/read_ring.dart';
 import 'package:resonchat/ui/chats/unread.dart';
 import 'package:resonchat/ui/contact_avatar.dart';
 import 'package:resonchat/ui/theme.dart';
 import 'package:resonchat/xmpp/avatar.dart';
+import 'package:resonchat/xmpp/group_read.dart';
 import 'package:resonchat/xmpp/message_send_status.dart';
 import 'package:resonchat/xmpp/muc.dart';
 import 'package:resonchat/xmpp/reactions.dart';
@@ -48,6 +52,7 @@ class ChatMessageList extends StatelessWidget {
     required this.focusMessageKey,
     required this.bubbleStyle,
     required this.isGroup,
+    required this.groupReads,
     required this.room,
     required this.highlightNicks,
     required this.peerName,
@@ -115,6 +120,9 @@ class ChatMessageList extends StatelessWidget {
   /// MODE_MULTI: show occupant nicks above incoming bubbles.
   final bool isGroup;
 
+  /// Private and non-anonymous: draw the read ring and record readers.
+  final bool groupReads;
+
   /// Live room roster (avatar real JID + nick validity for mentions).
   final GroupChat? room;
 
@@ -170,18 +178,16 @@ class ChatMessageList extends StatelessWidget {
         brokeMerge = true;
       }
       if (m.retracted) {
-        final moderated = m.retractedBy.isNotEmpty;
-        final actor = moderated
-            ? m.retractedBy
-            : (isGroup ? (occupantNick(m.sender) ?? m.sender) : peerName);
-        final mine = moderated
-            ? (selfNick.isNotEmpty && m.retractedBy == selfNick)
-            : !m.incoming;
         Widget line = RetractedNotice(
           message: m,
           chatKey: chatKey,
-          actor: actor,
-          mine: mine,
+          label: _retractionLabel(
+            context.l10n,
+            message: m,
+            isGroup: isGroup,
+            peerName: peerName,
+            selfNick: selfNick,
+          ),
         );
         if (matchesUnreadAnchor(m, focusMessageAnchor)) {
           line = KeyedSubtree(key: focusMessageKey, child: line);
@@ -233,6 +239,7 @@ class ChatMessageList extends StatelessWidget {
         selected: selectedIds.contains(m.stanzaId),
         bubbleStyle: bubbleStyle,
         isGroup: isGroup,
+        groupReads: groupReads,
         room: room,
         highlightNicks: highlightNicks,
         showSenderChrome: !mergeChrome,
@@ -275,6 +282,7 @@ class _ChatReactionBubble extends ConsumerWidget {
     required this.selected,
     required this.bubbleStyle,
     required this.isGroup,
+    required this.groupReads,
     required this.room,
     required this.highlightNicks,
     required this.showSenderChrome,
@@ -295,6 +303,7 @@ class _ChatReactionBubble extends ConsumerWidget {
   final bool selected;
   final BubbleStyle bubbleStyle;
   final bool isGroup;
+  final bool groupReads;
   final GroupChat? room;
   final List<String> highlightNicks;
 
@@ -328,6 +337,42 @@ class _ChatReactionBubble extends ConsumerWidget {
                   )
                   .value ??
               const [];
+    final onWire =
+        !message.incoming &&
+        !message.retracted &&
+        (message.sendStatus == MessageSendStatus.send ||
+            message.sendStatus == MessageSendStatus.sendReceived ||
+            message.sendStatus == MessageSendStatus.sendDisplayed);
+    double? readFraction;
+    VoidCallback? onReadRing;
+    if (onWire && !isGroup) {
+      readFraction =
+          message.displayed ||
+              message.sendStatus == MessageSendStatus.sendDisplayed
+          ? 1
+          : 0;
+    } else if (onWire && groupReads) {
+      final readers = decodeReadBy(message.readBy);
+      final selfBare = ref.watch(myBareJidProvider).value;
+      final split = splitGroupReads(
+        occupants: room?.occupants ?? const [],
+        selfNick: room?.nick ?? '',
+        selfBareJid: selfBare,
+        readJids: readers,
+      );
+      final total = split.read.length + split.unread.length;
+      readFraction = total == 0 ? 0 : split.read.length / total;
+      onReadRing = () {
+        unawaited(
+          showGroupReadSheet(
+            context,
+            roomJid: room?.roomJid ?? '',
+            read: split.read,
+            unread: split.unread,
+          ),
+        );
+      };
+    }
     final nick = isGroup && message.incoming
         ? occupantNick(message.sender)
         : null;
@@ -353,6 +398,8 @@ class _ChatReactionBubble extends ConsumerWidget {
       senderColor: chromeNick == null ? null : nickColor(chromeNick),
       delivered: message.delivered,
       displayed: message.displayed,
+      readFraction: readFraction,
+      onReadRing: onReadRing,
       failed:
           message.sendStatus == MessageSendStatus.sendFailed ||
           message.deliveryError.isNotEmpty,
@@ -444,4 +491,36 @@ class _BubbleOccupantAvatar extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Self-retraction stays "you / they retracted a message". A moderator
+/// retracting someone else names both people.
+String _retractionLabel(
+  AppLocalizations l10n, {
+  required Message message,
+  required bool isGroup,
+  required String peerName,
+  required String selfNick,
+}) {
+  final authorIsMe = !message.incoming;
+  final author = authorIsMe
+      ? ''
+      : (isGroup ? (occupantNick(message.sender) ?? message.sender) : peerName);
+  final moderated = message.retractedBy.isNotEmpty;
+  if (!moderated) {
+    return authorIsMe
+        ? l10n.youRetractedMessage
+        : l10n.peerRetractedMessage(author);
+  }
+  final actor = message.retractedBy;
+  final actorIsMe = selfNick.isNotEmpty && actor == selfNick;
+  final samePerson = authorIsMe ? actorIsMe : actor == author;
+  if (samePerson) {
+    return actorIsMe
+        ? l10n.youRetractedMessage
+        : l10n.peerRetractedMessage(actor);
+  }
+  if (actorIsMe) return l10n.youRetractedTheirs(author);
+  if (authorIsMe) return l10n.peerRetractedYours(actor);
+  return l10n.peerRetractedTheirs(actor, author);
 }
