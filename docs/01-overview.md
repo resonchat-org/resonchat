@@ -54,7 +54,7 @@
   - omemo_dart 上游：`github.com/PapaTutuWawa/omemo_dart`（MIT）；A 轨走 axolotl（`omemo_dart_axolotl`）；B 轨 PQXDH/SessionCipher 走 `omemo_dart_omemo2`。
   - moxlib 上游：`codeberg.org/moxxy/moxlib`（GPL-3.0）。
   - MAM（XEP-0313）已从上游 `feat/mam` 并入 moxxmpp fork。
-  - `moxxmpp_socket_tcp` 的 SDK 约束提升到 Dart 3。
+  - TCP 传输在 `package:moxxmpp/socket_tcp.dart`（`dart:io`，不进主库导出）。
   - 两轨会话密码学都在 `omemo_dart`（axolotl 与 OMEMO2 同一形状：设备、会话、bundle 模型、指纹、KMAC 密封）。moxxmpp 做 A 轨 stanza 与规范 `urn:xmpp:omemo:2` PEP。B 轨 XML 还不是 XEP，留在应用；成为 XEP 后再进 moxxmpp。应用保留 ML-DSA 身份（`pqcrypto`，因为主库仍要直接依赖它）和双轨策略。ML-KEM 由 `omemo_dart` 里的 native `libsignal` 生成消费；纯 Dart KEM 仅供测试/诊断。
 - **后果**：需跟进上游变更；A 轨保持与上游最小差异，便于合并。
 
@@ -119,7 +119,7 @@ resonchat/
 │     ├─ net/ / platform/ / l10n/
 │     └─ ui/                    # 登录、会话、聊天、设置、账号管理等
 └─ vendor/                    # git 子模块（path 依赖）
-   ├─ moxxmpp/                  # monorepo：moxxmpp + moxxmpp_socket_tcp（MIT）
+   ├─ moxxmpp/                  # XMPP 库（含 TCP socket，MIT）
    ├─ omemo_dart/               # MIT；axolotl + omemo2（PQXDH/SessionCipher）
    └─ moxlib/                   # GPL-3.0
 ```

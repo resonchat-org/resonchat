@@ -206,6 +206,12 @@ class Messages extends Table {
   /// (XEP-0425) when someone else retracted the message.
   TextColumn get retractedBy => text().withDefault(const Constant(''))();
 
+  /// Why a moderator retracted it (XEP-0425).
+  ///
+  /// Empty when they gave no reason, and empty for a self-retraction. The
+  /// transcript omits the reason clause in that case.
+  TextColumn get retractedReason => text().withDefault(const Constant(''))();
+
   /// Origin-id of the message this one replies to (XEP-0461), or empty.
   TextColumn get replyTo => text().withDefault(const Constant(''))();
 
@@ -497,8 +503,9 @@ class AppDatabase extends _$AppDatabase {
   @override
   // Keep in sync with [kAccountSchemaVersion] in database_connection_io.dart.
   // Version 2 adds [Messages.roomStanzaId]. Version 3 adds
-  // [Messages.retractedBy]. Version 4 adds [Messages.readBy].
-  int get schemaVersion => 4;
+  // [Messages.retractedBy]. Version 4 adds [Messages.readBy]. Version 5 adds
+  // [Messages.retractedReason].
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -512,6 +519,9 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 4) {
         await m.addColumn(messages, messages.readBy);
+      }
+      if (from < 5) {
+        await m.addColumn(messages, messages.retractedReason);
       }
     },
   );
@@ -541,21 +551,26 @@ class AppDatabase extends _$AppDatabase {
     String targetId, {
     DateTime? at,
     String? by,
+    String? reason,
   }) async {
     if (targetId.isEmpty) return false;
     // Never un-retract: a second retraction for the same message is a replay,
     // and honouring it would flip the marker back off.
     //
-    // A group retraction names the room's stanza-id. A 1:1 retraction names
-    // the message id, which we store in [Messages.stanzaId]. [by] is the
-    // moderator's nick for XEP-0425; a self-retraction leaves it empty.
+    // A group retraction names the room's stanza-id, which is not the
+    // origin-id stored in [Messages.stanzaId]. A 1:1 retraction names the
+    // message id, which is that column. [by] is the moderator's nick for
+    // XEP-0425; a self-retraction leaves it empty. [reason] is omitted when
+    // the moderator gave none.
     final stamp = at ?? DateTime.now();
+    final nick = (by != null && by.isNotEmpty) ? by : null;
+    final why = reason?.trim();
+    final text = (why != null && why.isNotEmpty) ? why : null;
     final mark = MessagesCompanion(
       retracted: const Value(true),
       retractedAt: Value(stamp),
-      retractedBy: (by != null && by.isNotEmpty)
-          ? Value(by)
-          : const Value.absent(),
+      retractedBy: nick != null ? Value(nick) : const Value.absent(),
+      retractedReason: text != null ? Value(text) : const Value.absent(),
     );
     final byMessageId =
         await (update(messages)..where(
@@ -569,7 +584,49 @@ class AppDatabase extends _$AppDatabase {
                   m.roomStanzaId.equals(targetId) & m.retracted.equals(false),
             ))
             .write(mark);
-    return byRoomId > 0;
+    if (byRoomId > 0) return true;
+
+    // A plain retract can land before the moderation notice. Fill the
+    // moderator and the reason without moving the timestamp or replacing a
+    // nick we already have.
+    final addressed =
+        messages.stanzaId.equals(targetId) |
+        messages.roomStanzaId.equals(targetId);
+    var filled = false;
+    if (nick != null) {
+      final n =
+          await (update(messages)
+                ..where((m) => addressed & m.retractedBy.equals('')))
+              .write(MessagesCompanion(retractedBy: Value(nick)));
+      if (n > 0) filled = true;
+    }
+    if (text != null) {
+      final n =
+          await (update(messages)
+                ..where((m) => addressed & m.retractedReason.equals('')))
+              .write(MessagesCompanion(retractedReason: Value(text)));
+      if (n > 0) filled = true;
+    }
+    return filled;
+  }
+
+  /// True when [chatJid] holds a message addressed by [targetId].
+  ///
+  /// [targetId] may be the origin-id stored in [Messages.stanzaId] or the
+  /// room stanza-id. Those two are different ids.
+  Future<bool> messageAddressedBy(String chatJid, String targetId) async {
+    if (targetId.isEmpty) return false;
+    final row =
+        await (select(messages)
+              ..where(
+                (m) =>
+                    m.chatJid.equals(chatJid) &
+                    (m.stanzaId.equals(targetId) |
+                        m.roomStanzaId.equals(targetId)),
+              )
+              ..limit(1))
+            .getSingleOrNull();
+    return row != null;
   }
 
   /// Applies a correction (XEP-0308) to the message addressed by [targetId],
@@ -1899,7 +1956,10 @@ class AppDatabase extends _$AppDatabase {
         .getSingleOrNull();
   }
 
-  /// Records the room's stanza-id on a message we already stored by origin-id.
+  /// Fills the room's stanza-id on a message we already stored.
+  ///
+  /// Conversations `markMessage` / duplicate handling only writes `serverMsgId`
+  /// when the row does not have one yet. A later copy must not replace it.
   Future<void> setRoomStanzaId(
     String chatJid,
     String stanzaId,
@@ -1907,7 +1967,10 @@ class AppDatabase extends _$AppDatabase {
   ) async {
     if (stanzaId.isEmpty || roomStanzaId.isEmpty) return;
     await (update(messages)..where(
-          (m) => m.chatJid.equals(chatJid) & m.stanzaId.equals(stanzaId),
+          (m) =>
+              m.chatJid.equals(chatJid) &
+              m.stanzaId.equals(stanzaId) &
+              m.roomStanzaId.equals(''),
         ))
         .write(MessagesCompanion(roomStanzaId: Value(roomStanzaId)));
   }

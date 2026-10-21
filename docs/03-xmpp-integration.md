@@ -1,6 +1,6 @@
 # 03 — XMPP 集成层
 
-基础库：**moxxmpp**（MIT，git 子模块 `vendor/moxxmpp`，path 依赖 `vendor/moxxmpp/packages/moxxmpp`）。
+基础库：**moxxmpp**（MIT，git 子模块 `vendor/moxxmpp`，path 依赖 `vendor/moxxmpp`）。
 
 ## 1. 依赖能力（moxxmpp 已具备）
 

@@ -530,7 +530,12 @@ Future<bool> storeInbound(
   // refers to, and the bubble would contain the fallback text as though the
   // sender had written it.
   if (msg.retracts != null) {
-    await applyRetraction(db, msg.retracts!, by: msg.moderatedBy);
+    await applyRetraction(
+      db,
+      msg.retracts!,
+      by: msg.moderatedBy,
+      reason: msg.moderationReason,
+    );
     return false;
   }
   if (msg.corrects != null) {
@@ -560,15 +565,17 @@ Future<bool> storeInbound(
   final remoteId = msg.originId ?? msg.stanzaId ?? '';
 
   // Group retraction (XEP-0424) names the room's stanza-id, not our origin-id.
-  // Record it on the row we already stored, including when the delivery flag
-  // is already final. Missing this is why other clients show a retraction
-  // they cannot attach to a message.
+  // A MAM replay of a message we already stored still has to fill that id
+  // (Conversations updates serverMsgId on the duplicate, then skips the copy).
   final roomId = msg.roomStanzaId;
-  if (isGroupchat &&
-      roomId != null &&
-      roomId.isNotEmpty &&
-      remoteId.isNotEmpty) {
-    await db.setRoomStanzaId(chatJid, remoteId, roomId);
+  if (isGroupchat && roomId != null && roomId.isNotEmpty) {
+    final keys = <String>{
+      if ((msg.originId ?? '').isNotEmpty) msg.originId!,
+      if ((msg.stanzaId ?? '').isNotEmpty) msg.stanzaId!,
+    };
+    for (final key in keys) {
+      await db.setRoomStanzaId(chatJid, key, roomId);
+    }
   }
 
   // Conversations MessageParser for MUC self: markMessage(STATUS_SEND_RECEIVED)
@@ -581,18 +588,29 @@ Future<bool> storeInbound(
 
   final stanzaId = msg.stanzaId ?? '';
   final storedId = msg.originId ?? stanzaId;
-  if (msg.retractionTombstone && storedId.isNotEmpty) {
-    final known =
-        await db.findByStanzaId(chatJid, storedId) ??
-        (stanzaId.isEmpty ? null : await db.findByStanzaId(chatJid, stanzaId));
-    if (known != null) {
-      await db.markRetracted(
-        storedId,
+  if (msg.retractionTombstone) {
+    // The archive result id is the room stanza-id of the message that was
+    // replaced. That is not the origin-id, and a tombstone's own message id
+    // is not that either. Try each id we actually have.
+    final targets = <String>[
+      if (roomId != null && roomId.isNotEmpty) roomId,
+      if (storedId.isNotEmpty) storedId,
+      if (stanzaId.isNotEmpty && stanzaId != storedId) stanzaId,
+    ];
+    var matched = false;
+    for (final id in targets) {
+      if (await db.markRetracted(
+        id,
         at: msg.retractedStamp,
         by: msg.moderatedBy,
-      );
-      return false;
+        reason: msg.moderationReason,
+      )) {
+        matched = true;
+      } else if (await db.messageAddressedBy(chatJid, id)) {
+        matched = true;
+      }
     }
+    if (matched) return false;
   }
   // The room reflection of something we already stored (same origin-id). The
   // stanza-id was written above; another row would be a second copy of it.
@@ -636,6 +654,7 @@ Future<bool> storeInbound(
       retracted: Value(msg.retractionTombstone),
       retractedAt: Value(msg.retractedStamp),
       retractedBy: Value(msg.moderatedBy ?? ''),
+      retractedReason: Value(msg.moderationReason ?? ''),
       // The reply body is the *stripped* one: [ReplyInfo.body] has the `> `
       // quote already removed when the sender supplied the offsets, so storing
       // it keeps the bubble free of a duplicated quote.

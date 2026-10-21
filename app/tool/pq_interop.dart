@@ -18,7 +18,7 @@ import 'dart:typed_data';
 
 import 'package:logging/logging.dart';
 import 'package:moxxmpp/moxxmpp.dart';
-import 'package:moxxmpp_socket_tcp/moxxmpp_socket_tcp.dart';
+import 'package:moxxmpp/socket_tcp.dart';
 import 'package:omemo_dart/omemo_dart_omemo2.dart';
 import 'package:pqcrypto/pqcrypto.dart';
 import 'package:xml/xml.dart';

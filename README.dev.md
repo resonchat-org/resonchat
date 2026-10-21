@@ -34,8 +34,7 @@ resonchat/
 │  ├─ test/                  按关注点：crypto / rooms / persistence / messages / session / ui
 │  └─ tool/                  Flutter 构建前置（web assets 等）+ Dart 探针
 └─ vendor/                 上游 fork（git 子模块，path 依赖）
-   ├─ moxxmpp/packages/moxxmpp
-   ├─ moxxmpp/packages/moxxmpp_socket_tcp
+   ├─ moxxmpp
    ├─ omemo_dart
    └─ moxlib
 ```
@@ -157,7 +156,7 @@ XMPP 传输同样条件导入（`lib/xmpp/xmpp_socket.dart`）：
 
 | 平台 | 实现 |
 |---|---|
-| 原生 | TCP + SOCKS5（`moxxmpp_socket_tcp`） |
+| 原生 | TCP + SOCKS5（`package:moxxmpp/socket_tcp.dart`） |
 | Web | `moxxmpp` RFC 7395 WebSocket + XEP-0156 host-meta |
 
 RFC 7395 framing / `WebSocketXmppSocket` 与 XEP-0156 在 `vendor/moxxmpp`（`rfcs/rfc_7395`、`xeps/xep_0156`），主库只做平台工厂。

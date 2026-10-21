@@ -20,7 +20,7 @@ import 'dart:io';
 
 import 'package:logging/logging.dart';
 import 'package:moxxmpp/moxxmpp.dart';
-import 'package:moxxmpp_socket_tcp/moxxmpp_socket_tcp.dart';
+import 'package:moxxmpp/socket_tcp.dart';
 import 'package:omemo_dart/omemo_dart_axolotl.dart' as axolotl;
 
 Future<void> main(List<String> args) async {

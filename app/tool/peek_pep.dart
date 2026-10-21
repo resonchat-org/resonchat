@@ -27,7 +27,7 @@ import 'dart:io';
 
 import 'package:logging/logging.dart';
 import 'package:moxxmpp/moxxmpp.dart';
-import 'package:moxxmpp_socket_tcp/moxxmpp_socket_tcp.dart';
+import 'package:moxxmpp/socket_tcp.dart';
 import 'package:xml/xml.dart';
 
 /// Progress and findings, on stderr.

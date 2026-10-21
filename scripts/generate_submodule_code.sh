@@ -11,5 +11,4 @@ cd "$root"
 
 (cd vendor/moxlib && dart pub get)
 (cd vendor/omemo_dart && dart pub get)
-(cd vendor/moxxmpp/packages/moxxmpp && dart pub get && dart run build_runner build)
-(cd vendor/moxxmpp/packages/moxxmpp_socket_tcp && dart pub get)
+(cd vendor/moxxmpp && dart pub get && dart run build_runner build)

@@ -383,6 +383,13 @@
       "name": { "type": "String" }
     }
   },
+  "retractionWithReason": "{notice}, reason: {reason}",
+  "@retractionWithReason": {
+    "placeholders": {
+      "notice": { "type": "String" },
+      "reason": { "type": "String" }
+    }
+  },
   "viewRetractedMessage": "View retracted message",
   "selectMessages": "Select messages",
   "selectedCount": "{count} selected",

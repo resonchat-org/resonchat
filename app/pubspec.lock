@@ -725,14 +725,7 @@ packages:
   moxxmpp:
     dependency: "direct main"
     description:
-      path: "../vendor/moxxmpp/packages/moxxmpp"
-      relative: true
-    source: path
-    version: "0.4.0"
-  moxxmpp_socket_tcp:
-    dependency: "direct main"
-    description:
-      path: "../vendor/moxxmpp/packages/moxxmpp_socket_tcp"
+      path: "../vendor/moxxmpp"
       relative: true
     source: path
     version: "0.4.0"

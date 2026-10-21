@@ -427,4 +427,27 @@ void main() {
       ]);
     },
   );
+
+  test(
+    'room stanza id fills an empty column and leaves a stored one',
+    () async {
+      await db.upsertChat('room@conference.example', isGroup: true);
+      await db.insertMessage(
+        const MessagesCompanion(
+          chatJid: Value('room@conference.example'),
+          sender: Value('me'),
+          stanzaId: Value('origin-1'),
+          body: Value('hi'),
+          incoming: Value(false),
+        ),
+      );
+      await db.setRoomStanzaId('room@conference.example', 'origin-1', 'room-a');
+      await db.setRoomStanzaId('room@conference.example', 'origin-1', 'room-b');
+      final row = await db.messageWithStanzaId(
+        'room@conference.example',
+        'origin-1',
+      );
+      expect(row?.roomStanzaId, 'room-a');
+    },
+  );
 }

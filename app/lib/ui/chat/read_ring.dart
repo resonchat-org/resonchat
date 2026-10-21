@@ -30,14 +30,13 @@ class ReadRing extends StatelessWidget {
   Widget build(BuildContext context) {
     final tg = context.tg;
     final clamped = fraction.clamp(0.0, 1.0);
-    final done = clamped >= 1;
     final ring = SizedBox(
       width: _ringSize,
       height: _ringSize,
       child: CustomPaint(
         painter: _ReadRingPainter(
           fraction: clamped,
-          ringColor: done ? tg.online : tg.textSecondary,
+          ringColor: clamped > 0 ? tg.online : tg.textSecondary,
           fillColor: tg.online,
         ),
       ),

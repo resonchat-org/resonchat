@@ -1401,6 +1401,12 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
   }
 
   /// Fetches MAM history; returns how many messages arrived, or null on
-  /// failure.
-  Future<int?> loadHistory() => _xmpp.fetchHistory(JID.fromString(peerJid));
+  /// failure. A room is queried on itself, not via the account archive.
+  Future<int?> loadHistory() async {
+    final chat = await _db.getChat(peerJid);
+    return _xmpp.fetchHistory(
+      JID.fromString(peerJid),
+      group: chat?.isGroup ?? state.isGroup,
+    );
+  }
 }

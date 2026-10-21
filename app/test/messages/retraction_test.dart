@@ -124,6 +124,60 @@ void main() {
       final row = (await db.watchMessages(chat).first).single;
       expect(row.retracted, isTrue);
       expect(row.retractedBy, 'mod');
+      expect(row.retractedReason, isEmpty);
+    });
+
+    test(
+      'a later moderation notice fills the moderator and the reason',
+      () async {
+        // A plain retract can land first and mark the row with nobody's name.
+        // The moderation that names the moderator still has to be recorded.
+        await store(stanzaId: id, incoming: true);
+        expect(await db.markRetracted(id), isTrue);
+        expect(await db.markRetracted(id, by: 'mod', reason: 'spam'), isTrue);
+        final row = (await db.watchMessages(chat).first).single;
+        expect(row.retractedBy, 'mod');
+        expect(row.retractedReason, 'spam');
+        final at = row.retractedAt;
+        expect(
+          await db.markRetracted(id, by: 'other', reason: 'nope'),
+          isFalse,
+        );
+        final again = (await db.watchMessages(chat).first).single;
+        expect(again.retractedBy, 'mod');
+        expect(again.retractedReason, 'spam');
+        expect(again.retractedAt, at);
+      },
+    );
+
+    test('an empty reason is not stored', () async {
+      await store(stanzaId: id, incoming: true);
+      expect(await db.markRetracted(id, by: 'mod', reason: '   '), isTrue);
+      final row = (await db.watchMessages(chat).first).single;
+      expect(row.retractedBy, 'mod');
+      expect(row.retractedReason, isEmpty);
+    });
+
+    test('a group moderation is addressed by the room stanza-id', () async {
+      await db.upsertChat(chat);
+      await db.insertMessage(
+        MessagesCompanion.insert(
+          chatJid: chat,
+          sender: 'room@example.org/alice',
+          stanzaId: const Value('origin-id-9'),
+          roomStanzaId: const Value('room-stanza-9'),
+          body: 'spam',
+          incoming: true,
+        ),
+      );
+      expect(
+        await db.markRetracted('room-stanza-9', by: 'mod', reason: 'spam'),
+        isTrue,
+      );
+      final row = (await db.watchMessages(chat).first).single;
+      expect(row.stanzaId, 'origin-id-9');
+      expect(row.retractedBy, 'mod');
+      expect(row.retractedReason, 'spam');
     });
   });
 

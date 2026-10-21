@@ -24,7 +24,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 import 'package:logging/logging.dart';
-import 'package:moxxmpp_socket_tcp/moxxmpp_socket_tcp.dart';
+import 'package:moxxmpp/socket_tcp.dart';
 
 /// The DNS RR type for SRV (RFC 2782); the `dns-json` API returns type numbers.
 const int _srvRecordType = 33;

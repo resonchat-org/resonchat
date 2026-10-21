@@ -52,8 +52,13 @@ Future<bool> retractMessage(
 /// Applies a retraction that arrived, and reports whether it changed anything.
 ///
 /// [by] is the moderator's nick when the retraction is XEP-0425.
-Future<bool> applyRetraction(AppDatabase db, String targetId, {String? by}) =>
-    db.markRetracted(targetId, by: by);
+/// [reason] is omitted when the moderator gave none.
+Future<bool> applyRetraction(
+  AppDatabase db,
+  String targetId, {
+  String? by,
+  String? reason,
+}) => db.markRetracted(targetId, by: by, reason: reason);
 
 /// Replaces the content of the message addressed by [targetId].
 ///

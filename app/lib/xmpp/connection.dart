@@ -41,6 +41,7 @@ import 'package:resonchat/xmpp/reactions.dart';
 import 'package:resonchat/xmpp/reconnect_policy.dart';
 import 'package:resonchat/xmpp/replies.dart';
 import 'package:resonchat/xmpp/room_invite.dart';
+import 'package:resonchat/xmpp/stanza_id.dart';
 import 'package:resonchat/xmpp/xmpp_socket.dart';
 
 /// Decrypted inbound chat message, either track or plaintext.
@@ -64,6 +65,7 @@ class InboundMessage {
     this.retractionTombstone = false,
     this.retractedStamp,
     this.moderatedBy,
+    this.moderationReason,
     this.roomStanzaId,
     this.corrects,
     this.reply,
@@ -139,6 +141,12 @@ class InboundMessage {
 
   /// Moderator nick when this retraction is XEP-0425. Null for a self-retract.
   final String? moderatedBy;
+
+  /// Reason a moderator gave (XEP-0425). Null when they gave none.
+  ///
+  /// A blank reason is stored as null so the transcript can omit the reason
+  /// clause entirely — no comma, no label, no colon.
+  final String? moderationReason;
 
   /// Stanza-id assigned by the room (XEP-0359), when [type] is `groupchat`.
   final String? roomStanzaId;
@@ -1459,6 +1467,9 @@ class XmppService {
   }
 
   void _cacheRoomPolicy(String bare, RoomInformation info) {
+    final key = bare.toLowerCase();
+    _roomMam[key] = info.features.contains(mamXmlns);
+    _roomStableIds[key] = info.features.contains(stableIdXmlns);
     _membersOnly[bare] = info.features.contains('muc_membersonly');
     _roomModeration[bare] = info.features.contains(messageModerateXmlns);
     final form = info.roomInfo;
@@ -1853,6 +1864,11 @@ class XmppService {
   }) async {
     final manager = muc;
     if (manager == null) return NoNicknameSpecified();
+    final bare = JID.fromString(roomJid).toBare().toString();
+    // Disco before presence so a MAM room joins with no XEP-0045 history
+    // (Conversations `history.setMaxStanzas(0)` when `mamSupport()`).
+    var info = await queryRoomInformation(bare);
+    var mam = _roomMam[bare.toLowerCase()] ?? false;
     // moxxmpp's joinRoom waits on a completer that its presence handler
     // completes. A MUC service that never answers — wrong address, a service
     // that is not a MUC at all, a server that drops the request — leaves that
@@ -1860,7 +1876,7 @@ class XmppService {
     // that never returns. Bounded here rather than in moxxmpp so the reason
     // reaches the user as text.
     final result = await manager
-        .joinRoom(JID.fromString(roomJid), nick)
+        .joinRoom(JID.fromString(bare), nick, maxHistoryStanzas: mam ? 0 : null)
         .timeout(
           timeout,
           // The one error type moxxmpp does not have, which is the point: a
@@ -1870,6 +1886,14 @@ class XmppService {
               Result<bool, MUCError>(MucServiceUnresponsive(roomJid)),
         );
     if (!result.isType<bool>()) return result.get<MUCError>();
+    if (info == null) {
+      await queryRoomInformation(bare);
+      mam = _roomMam[bare.toLowerCase()] ?? false;
+    }
+    // Conversations `catchupMUC` after a join into a MAM room. The room's
+    // `<result id='…'/>` is the stanza-id the live reflection may not have
+    // carried yet.
+    if (mam) unawaited(_catchUpRoomArchive(bare));
     return null;
   }
 
@@ -2529,29 +2553,72 @@ class XmppService {
 
   /// Pulls archived messages for one chat (XEP-0313).
   ///
-  /// Queries the **account** archive (our bare JID) with a `with` filter for
-  /// [chatJid], matching Conversations. Results are replayed through the
-  /// normal inbound pipeline. [beforeId] is an RSM `before` cursor for paging
-  /// older history; returns the number of messages the server sent, or null
-  /// on error.
+  /// A 1:1 chat queries the account archive with a `with` filter. A room
+  /// ([group]) is queried on the room itself, with no `with` field —
+  /// Conversations `Query.muc()`. Results are replayed through the normal
+  /// inbound pipeline. [beforeId] is an RSM `before` cursor for paging older
+  /// history; returns the number of messages the server sent, or null on error.
   Future<int?> fetchHistory(
     JID chatJid, {
     String? beforeId,
     int? pageSize = mamPageSize,
+    bool group = false,
   }) async {
     final mm = _connection?.getManagerById<MessageArchiveManagementManager>(
       mamManager,
     );
     final own = _connection?.connectionSettings.jid.toBare();
-    if (mm == null || own == null || !_mamAvailable) return null;
+    if (mm == null || own == null) return null;
+    // A room archive is separate from the account archive. Account MAM being
+    // off must not block loading a room that advertises MAM itself.
+    if (!group && !_mamAvailable) return null;
     final result = await mm.requestMessages(
-      own,
-      withJid: chatJid.toBare(),
+      group ? chatJid.toBare() : own,
+      withJid: group ? null : chatJid.toBare(),
       rsmBefore: beforeId ?? '',
       pageSize: pageSize,
     );
     if (!result.isType<MamQueryResult>()) return null;
     return result.get<MamQueryResult>().count;
+  }
+
+  /// Conversations `catchupMUC`: page the room archive so each message picks
+  /// up the room's `<result id='…'/>`.
+  ///
+  /// Newest page first (`<before/>` empty), then older pages, capped at
+  /// [mamCatchupMaxPages].
+  Future<void> _catchUpRoomArchive(String roomJid) async {
+    final mm = _connection?.getManagerById<MessageArchiveManagementManager>(
+      mamManager,
+    );
+    if (mm == null) return;
+    final room = JID.fromString(roomJid).toBare();
+    String? before;
+    for (var page = 0; page < mamCatchupMaxPages; page++) {
+      final result = await mm.requestMessages(
+        room,
+        rsmBefore: before ?? '',
+        pageSize: mamPageSize,
+      );
+      if (!result.isType<MamQueryResult>()) {
+        _log.warning('MUC MAM catch-up failed for $room on page $page');
+        return;
+      }
+      final pageResult = result.get<MamQueryResult>();
+      _log.info(
+        'MUC MAM $room page $page: ${pageResult.count} msg(s), '
+        'complete=${pageResult.complete}',
+      );
+      final cursor = pageResult.first;
+      if (pageResult.complete ||
+          pageResult.count == 0 ||
+          cursor == null ||
+          cursor.isEmpty ||
+          cursor == before) {
+        return;
+      }
+      before = cursor;
+    }
   }
 
   /// Catch up the account message archive after login.
@@ -3421,6 +3488,12 @@ class XmppService {
   /// Room disco advertises XEP-0425 (`urn:xmpp:message-moderate:1`).
   final _roomModeration = <String, bool>{};
 
+  /// Room disco advertises MAM (`urn:xmpp:mam:2`). Keyed by lowercased bare JID.
+  final _roomMam = <String, bool>{};
+
+  /// Room disco advertises XEP-0359 (`urn:xmpp:sid:0`). Same key as [_roomMam].
+  final _roomStableIds = <String, bool>{};
+
   Future<void> _publishRoomState(XmppEvent event) async {
     final roomJid = switch (event) {
       MemberJoinedEvent e => e.roomJid,
@@ -3602,6 +3675,7 @@ class XmppService {
           error != null ||
           reactionData != null ||
           retraction != null ||
+          (moderation != null && moderation.spoofed == false) ||
           correction != null;
       // Chat-state-only stanzas are not stored (Conversations treats them as
       // presence-like notifications).
@@ -3628,19 +3702,47 @@ class XmppService {
 
       if (!hasContent) return;
 
-      final tombstone = retraction?.tombstone ?? false;
-      String? roomStanzaId;
-      if (event.type == 'groupchat') {
-        final room = event.from.toBare();
-        for (final stanza in stable?.stanzaIds ?? const <StanzaId>[]) {
-          final by = stanza.by.toBare();
-          if (by.local == room.local &&
-              by.domain.toLowerCase() == room.domain.toLowerCase()) {
-            roomStanzaId = stanza.id;
-            break;
-          }
-        }
+      final tombstone =
+          (retraction?.tombstone ?? false) || (moderation?.tombstone ?? false);
+      // A live retraction names the room stanza-id (`<retract id>`), which is
+      // not the origin-id. The older fasten form puts that same id on
+      // `<apply-to id>` and has no top-level `<retract/>`.
+      final retractId = tombstone
+          ? null
+          : () {
+              final fromRetract = retraction?.id;
+              if (fromRetract != null && fromRetract.isNotEmpty) {
+                return fromRetract;
+              }
+              final fromModeration = moderation?.stanzaId;
+              if (fromModeration != null && fromModeration.isNotEmpty) {
+                return fromModeration;
+              }
+              return null;
+            }();
+      final moderationReason = moderation?.reason?.trim();
+      final isRoomMessage = event.type == 'groupchat';
+      final roomBare = event.from.toBare().toString();
+      // Conversations skips groupchat that arrived on the account archive.
+      // That result id belongs to our server, not the room.
+      if (mam != null &&
+          isRoomMessage &&
+          groupchatOnAccountArchive(
+            archiveBare: mam.delay.from.toBare().toString(),
+            roomBare: roomBare,
+          )) {
+        _log.fine('skipping groupchat from account MAM: $roomBare');
+        return;
       }
+      final roomStanzaId = isRoomMessage
+          ? roomServerMessageId(
+              mucArchive: mam != null,
+              archiveResultId: mam?.archiveId,
+              trustStanzaId: _roomStableIds[roomBare.toLowerCase()] ?? false,
+              stanzaIds: stable?.stanzaIds ?? const [],
+              roomBare: roomBare,
+            )
+          : null;
       final inbound = InboundMessage(
         from: event.from,
         to: event.to,
@@ -3657,12 +3759,15 @@ class XmppService {
         markable: event.get<MarkableData>()?.isMarkable ?? false,
         track: foreign ? null : Track.fromEme(eme),
         originId: stable?.originId,
-        retracts: tombstone ? null : retraction?.id,
+        retracts: retractId,
         retractionTombstone: tombstone,
         retractedStamp: retraction?.stamp,
         moderatedBy: (moderation?.nick?.isNotEmpty ?? false)
             ? moderation!.nick
             : null,
+        moderationReason: (moderationReason == null || moderationReason.isEmpty)
+            ? null
+            : moderationReason,
         roomStanzaId: roomStanzaId,
         corrects: correction?.id,
         mediaUrl: tombstone ? '' : mediaUrl,

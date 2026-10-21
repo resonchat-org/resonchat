@@ -73,7 +73,7 @@ ndk {
 
 | 包 | 用途 |
 |---|---|
-| `moxxmpp` / `moxxmpp_socket_tcp` / `moxlib` / `omemo_dart` | XMPP + OMEMO（path） |
+| `moxxmpp` / `moxlib` / `omemo_dart` | XMPP + OMEMO（path）。TCP 在 `package:moxxmpp/socket_tcp.dart` |
 | `cryptography` | 经典密码学 |
 | `pqcrypto` | 纯 Dart ML-DSA-87（KEM 与 SHA3 指纹在 omemo_dart） |
 | `drift` + `sqlite3`（hooks → sqlcipher） | 加密数据库 |

@@ -23,10 +23,10 @@ Future<QueryExecutor> openPrefsDatabaseConnection() =>
 /// Must match [AppDatabase.schemaVersion] in `database.dart`.
 ///
 /// Version 1 is the current tables, plus [Messages.roomStanzaId] at 2,
-/// [Messages.retractedBy] at 3, and [Messages.readBy] at 4. A file written by
-/// a newer build is deleted; nothing older is migrated from the documents
-/// directory.
-const int kAccountSchemaVersion = 4;
+/// [Messages.retractedBy] at 3, [Messages.readBy] at 4, and
+/// [Messages.retractedReason] at 5. A file written by a newer build is
+/// deleted; nothing older is migrated from the documents directory.
+const int kAccountSchemaVersion = 5;
 
 /// Per-account DB (`resonchat_<accountId>.sqlite3`). [accountId] is required.
 Future<QueryExecutor> openAccountDatabaseConnection(String accountId) {

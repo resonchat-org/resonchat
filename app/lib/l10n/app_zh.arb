@@ -373,6 +373,13 @@
       "name": { "type": "String" }
     }
   },
+  "retractionWithReason": "{notice}，原因：{reason}",
+  "@retractionWithReason": {
+    "placeholders": {
+      "notice": { "type": "String" },
+      "reason": { "type": "String" }
+    }
+  },
   "viewRetractedMessage": "查看已撤回的消息",
   "selectMessages": "选择消息",
   "selectedCount": "已选 {count} 条",

@@ -16,9 +16,7 @@ dependencies:
   moxlib:
     path: ../vendor/moxlib
   moxxmpp:
-    path: ../vendor/moxxmpp/packages/moxxmpp
-  moxxmpp_socket_tcp:
-    path: ../vendor/moxxmpp/packages/moxxmpp_socket_tcp
+    path: ../vendor/moxxmpp
   omemo_dart:
     path: ../vendor/omemo_dart
 

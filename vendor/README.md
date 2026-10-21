@@ -6,8 +6,7 @@
 
 | 目录 | 上游 | 许可证 |
 |---|---|---|
-| `moxxmpp/packages/moxxmpp` | https://codeberg.org/moxxy/moxxmpp | MIT |
-| `moxxmpp/packages/moxxmpp_socket_tcp` | 同上（monorepo 内子包） | MIT |
+| `moxxmpp` | https://codeberg.org/moxxy/moxxmpp | MIT |
 | `omemo_dart` | https://github.com/PapaTutuWawa/omemo_dart | MIT |
 | `moxlib` | https://codeberg.org/moxxy/moxlib | **GPL-3.0** |
 
@@ -19,9 +18,10 @@
 
 保持与上游最小差异，便于日后 rebase：
 
-**moxxmpp / moxxmpp_socket_tcp**
-- `pubspec.yaml`：删除 `publish_to`；依赖由 app 侧 `dependency_overrides` 覆盖为本地路径。
-- `moxxmpp_socket_tcp`：`environment.sdk` 提升为 Dart 3。
+**moxxmpp**
+- `pubspec.yaml`：删除 `publish_to`；依赖由 app 侧 path 引用。
+- 库根就是仓库根（原先在 `packages/moxxmpp`）。分析规则收成根目录一份 `analysis_options.yaml`。
+- TCP 传输（原 `moxxmpp_socket_tcp`）在 `package:moxxmpp/socket_tcp.dart`。
 - **并入 MAM（XEP-0313）**：从上游 `feat/mam` 取增量（`xep_0313.dart` 等）。
 - **RFC 7395 WebSocket + XEP-0156**：Web 传输与 host-meta 发现在 moxxmpp 内实现；应用侧只做平台 socket 工厂。
 
@@ -34,7 +34,7 @@
 
 ## 未参与构建的子包
 
-`moxxmpp` 仓库还含 `moxxmpp_color`、examples、`integration_tests` 等，本项目保留在目录内但不参与应用构建。
+`moxxmpp` 仓库还含 examples、`integration_tests` 等，本项目保留在目录内但不参与应用构建。XEP-0392 的 `moxxmpp_color` 未使用，已删除。
 
 ## B 轨与 A 轨分工
 

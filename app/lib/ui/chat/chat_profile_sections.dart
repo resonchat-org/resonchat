@@ -191,8 +191,10 @@ Future<void> loadChatHistory(BuildContext context, String chatJid) async {
   final resolved = resolveChatKey(chatJid);
   final messenger = ScaffoldMessenger.of(context);
   final l10n = context.l10n;
+  final chat = await resolved.session.db.getChat(resolved.jid);
   final count = await resolved.session.xmpp.fetchHistory(
     JID.fromString(resolved.jid),
+    group: chat?.isGroup ?? false,
   );
   messenger.showSnackBar(
     SnackBar(

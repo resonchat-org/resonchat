@@ -515,12 +515,19 @@ String _retractionLabel(
   final actor = message.retractedBy;
   final actorIsMe = selfNick.isNotEmpty && actor == selfNick;
   final samePerson = authorIsMe ? actorIsMe : actor == author;
+  final String notice;
   if (samePerson) {
-    return actorIsMe
+    notice = actorIsMe
         ? l10n.youRetractedMessage
         : l10n.peerRetractedMessage(actor);
+  } else if (actorIsMe) {
+    notice = l10n.youRetractedTheirs(author);
+  } else if (authorIsMe) {
+    notice = l10n.peerRetractedYours(actor);
+  } else {
+    notice = l10n.peerRetractedTheirs(actor, author);
   }
-  if (actorIsMe) return l10n.youRetractedTheirs(author);
-  if (authorIsMe) return l10n.peerRetractedYours(actor);
-  return l10n.peerRetractedTheirs(actor, author);
+  final reason = message.retractedReason.trim();
+  if (reason.isEmpty) return notice;
+  return l10n.retractionWithReason(notice, reason);
 }
