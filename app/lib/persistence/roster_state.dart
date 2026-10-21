@@ -7,12 +7,14 @@
 
 import 'package:moxxmpp/moxxmpp.dart';
 
+import 'package:resonchat/domain/roster_service.dart';
 import 'package:resonchat/persistence/database.dart';
 
 class DriftRosterStateManager extends BaseRosterStateManager {
-  DriftRosterStateManager(this._db);
+  DriftRosterStateManager(this._db) : _roster = RosterService(_db);
 
   final AppDatabase _db;
+  final RosterService _roster;
 
   @override
   Future<RosterCacheLoadResult> loadRosterCache() async {
@@ -38,7 +40,7 @@ class DriftRosterStateManager extends BaseRosterStateManager {
     List<XmppRosterItem> modified,
     List<XmppRosterItem> added,
   ) async {
-    await _db.commitRoster(
+    await _roster.commitRoster(
       version: version,
       removed: removed,
       modified: modified,

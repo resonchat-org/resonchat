@@ -14,7 +14,7 @@ import 'package:flutter/material.dart';
 import 'package:resonchat/l10n/l10n.dart';
 import 'package:resonchat/ui/room/occupant_matrix.dart';
 import 'package:resonchat/ui/theme.dart';
-import 'package:resonchat/xmpp/muc.dart';
+import 'package:resonchat/xmpp/muc/muc.dart';
 
 const double _ringSize = 15;
 const double _stroke = 1.6;

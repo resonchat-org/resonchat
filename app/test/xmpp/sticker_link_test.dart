@@ -5,7 +5,7 @@ import 'dart:convert';
 
 import 'package:test/test.dart';
 
-import 'package:resonchat/xmpp/sticker_link.dart';
+import 'package:resonchat/xmpp/chat/sticker_link.dart';
 
 void main() {
   final now = DateTime.utc(2026, 6, 1, 12);

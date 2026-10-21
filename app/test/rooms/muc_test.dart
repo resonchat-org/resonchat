@@ -14,7 +14,7 @@ import 'package:test/test.dart';
 
 import 'package:resonchat/crypto/dual/track.dart';
 import 'package:resonchat/crypto/dual/track_resolver.dart';
-import 'package:resonchat/xmpp/muc.dart';
+import 'package:resonchat/xmpp/muc/muc.dart';
 
 void main() {
   group('private non-anonymous (Conversations)', () {

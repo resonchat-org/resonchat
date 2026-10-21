@@ -23,7 +23,7 @@
 
 import 'package:resonchat/crypto/dual/track.dart';
 import 'package:resonchat/l10n/generated/app_localizations.dart';
-import 'package:resonchat/xmpp/capabilities.dart';
+import 'package:resonchat/xmpp/encryption/capabilities.dart';
 
 /// Why a chosen track cannot be used, if it cannot.
 ///

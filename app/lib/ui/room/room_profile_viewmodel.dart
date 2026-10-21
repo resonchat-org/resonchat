@@ -10,8 +10,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:resonchat/account/resolve.dart';
 import 'package:resonchat/state/providers.dart';
-import 'package:resonchat/xmpp/avatar.dart';
-import 'package:resonchat/xmpp/muc.dart';
+import 'package:resonchat/xmpp/muc/muc.dart';
+import 'package:resonchat/xmpp/roster/avatar.dart';
 
 const Object _keep = Object();
 

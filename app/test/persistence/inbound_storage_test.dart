@@ -15,8 +15,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:moxxmpp/moxxmpp.dart';
 
 import 'package:resonchat/crypto/dual/track.dart';
+import 'package:resonchat/domain/messages_service.dart';
 import 'package:resonchat/persistence/database.dart';
-import 'package:resonchat/state/app_wiring.dart';
 import 'package:resonchat/ui/chats/chats_viewmodel.dart';
 import 'package:resonchat/xmpp/connection.dart';
 
@@ -77,8 +77,8 @@ void main() {
     );
 
     test('an ordinary message is stored once', () async {
-      await storeInbound(db, message(body: 'hello'));
-      await storeInbound(db, message(body: 'hello'));
+      await MessagesService(db).storeInbound(message(body: 'hello'));
+      await MessagesService(db).storeInbound(message(body: 'hello'));
 
       final rows = await db.watchMessages('peer@example.org').first;
       expect(rows.length, 1);
@@ -87,10 +87,8 @@ void main() {
     });
 
     test('a carbon is not stored at all', () async {
-      await storeInbound(
-        db,
-        message(body: 'mine', stanzaId: 'c1', carbon: true),
-      );
+      await MessagesService(db)
+          .storeInbound(message(body: 'mine', stanzaId: 'c1', carbon: true));
       final rows = await db.watchMessages('peer@example.org').first;
       expect(rows, isEmpty);
       // The chat itself is still created, so the conversation appears.
@@ -99,8 +97,7 @@ void main() {
     });
 
     test('own archived outbound lands in the peer chat as outgoing', () async {
-      await storeInbound(
-        db,
+      await MessagesService(db).storeInbound(
         InboundMessage(
           from: JID.fromString('me@example.org/phone'),
           to: JID.fromString('peer@example.org'),
@@ -122,8 +119,7 @@ void main() {
     test(
       'an undecryptable message stores a placeholder, never ciphertext',
       () async {
-        await storeInbound(
-          db,
+        await MessagesService(db).storeInbound(
           InboundMessage(
             from: JID.fromString('peer@example.org/phone'),
             body: '',
@@ -144,7 +140,7 @@ void main() {
       // Distinct stanza ids: these are separate conversations' worth of rows
       // sharing one database, and storeInbound deduplicates by id.
       Future<String?> storedTrack(String id, InboundMessage m) async {
-        await storeInbound(db, m);
+        await MessagesService(db).storeInbound(m);
         final rows = await db.watchMessages('peer@example.org').first;
         return rows.firstWhere((r) => r.stanzaId == id).encMode;
       }
@@ -184,8 +180,10 @@ void main() {
     });
 
     test('a message with no stanza id is still stored exactly once', () async {
-      await storeInbound(db, message(body: 'x', stanzaId: null));
-      await storeInbound(db, message(body: 'x', stanzaId: null));
+      await MessagesService(db)
+          .storeInbound(message(body: 'x', stanzaId: null));
+      await MessagesService(db)
+          .storeInbound(message(body: 'x', stanzaId: null));
       // Without an id we cannot deduplicate, so the second copy is kept —
       // but the first must not be lost, which is the part that matters.
       final rows = await db.watchMessages('peer@example.org').first;
@@ -195,8 +193,7 @@ void main() {
 
     test('the archived timestamp is preserved when present', () async {
       final when = DateTime(2026, 3, 4, 5, 6, 7);
-      await storeInbound(
-        db,
+      await MessagesService(db).storeInbound(
         InboundMessage(
           from: JID.fromString('peer@example.org/phone'),
           body: 'old',

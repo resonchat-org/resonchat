@@ -51,14 +51,14 @@ import 'package:resonchat/ui/room/room_sheet.dart';
 import 'package:resonchat/ui/theme.dart';
 import 'package:resonchat/untracker/prefs.dart';
 import 'package:resonchat/untracker/untracker.dart';
+import 'package:resonchat/xmpp/chat/forwarding.dart';
+import 'package:resonchat/xmpp/chat/reactions.dart';
+import 'package:resonchat/xmpp/chat/sticker_link.dart';
 import 'package:resonchat/xmpp/connection.dart';
-import 'package:resonchat/xmpp/forwarding.dart';
-import 'package:resonchat/xmpp/last_seen.dart';
-import 'package:resonchat/xmpp/local_nickname.dart';
-import 'package:resonchat/xmpp/muc.dart';
-import 'package:resonchat/xmpp/presence_store.dart';
-import 'package:resonchat/xmpp/reactions.dart';
-import 'package:resonchat/xmpp/sticker_link.dart';
+import 'package:resonchat/xmpp/muc/muc.dart';
+import 'package:resonchat/xmpp/roster/last_seen.dart';
+import 'package:resonchat/xmpp/roster/local_nickname.dart';
+import 'package:resonchat/xmpp/roster/presence_store.dart';
 
 class ChatPage extends ConsumerStatefulWidget {
   const ChatPage({

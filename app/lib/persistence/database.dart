@@ -5,17 +5,14 @@
 //   native → SQLCipher / SQLite file (`database_connection_io.dart`)
 //   web    → sqlite3.wasm over OPFS / IndexedDB (`database_connection_web.dart`)
 
-import 'dart:convert';
-
 import 'package:drift/drift.dart';
-import 'package:moxxmpp/moxxmpp.dart' show ConferenceBookmark, XmppRosterItem;
 
 import 'package:resonchat/crypto/dual/track.dart';
 import 'package:resonchat/persistence/database_connection.dart';
+import 'package:resonchat/xmpp/chat/sticker_link.dart';
 import 'package:resonchat/xmpp/chat_notify_mode.dart';
 import 'package:resonchat/xmpp/group_read.dart';
 import 'package:resonchat/xmpp/message_send_status.dart';
-import 'package:resonchat/xmpp/sticker_link.dart';
 
 part 'database.g.dart';
 
@@ -502,29 +499,11 @@ class AppDatabase extends _$AppDatabase {
 
   @override
   // Keep in sync with [kAccountSchemaVersion] in database_connection_io.dart.
-  // Version 2 adds [Messages.roomStanzaId]. Version 3 adds
-  // [Messages.retractedBy]. Version 4 adds [Messages.readBy]. Version 5 adds
-  // [Messages.retractedReason].
-  int get schemaVersion => 5;
+  int get schemaVersion => 1;
 
   @override
-  MigrationStrategy get migration => MigrationStrategy(
-    onCreate: (m) async => m.createAll(),
-    onUpgrade: (m, from, to) async {
-      if (from < 2) {
-        await m.addColumn(messages, messages.roomStanzaId);
-      }
-      if (from < 3) {
-        await m.addColumn(messages, messages.retractedBy);
-      }
-      if (from < 4) {
-        await m.addColumn(messages, messages.readBy);
-      }
-      if (from < 5) {
-        await m.addColumn(messages, messages.retractedReason);
-      }
-    },
-  );
+  MigrationStrategy get migration =>
+      MigrationStrategy(onCreate: (m) async => m.createAll());
 
   /// True when the user has acknowledged, for this conversation, that
   /// plaintext is readable by anyone with server access.
@@ -537,83 +516,49 @@ class AppDatabase extends _$AppDatabase {
   ///
   /// Cleared when the conversation's track changes away from NO, so returning
   /// to plaintext asks again.
-  /// Marks the message addressed by [targetId] as retracted for everyone.
-  ///
-  /// Returns false when no such message is held, which is not an error: a
-  /// retraction for a message that arrived out of order, or for one we never
-  /// had, has to be a no-op rather than a failure.
-  ///
-  /// Returns false when no such message is held, which is not an error: a
-  /// retraction for a message that arrived out of order, or for one we never
-  /// had, has to be a no-op rather than a failure. The sender retracting
-  /// something before we received it is ordinary, not exceptional.
-  Future<bool> markRetracted(
-    String targetId, {
-    DateTime? at,
-    String? by,
-    String? reason,
-  }) async {
-    if (targetId.isEmpty) return false;
-    // Never un-retract: a second retraction for the same message is a replay,
-    // and honouring it would flip the marker back off.
-    //
-    // A group retraction names the room's stanza-id, which is not the
-    // origin-id stored in [Messages.stanzaId]. A 1:1 retraction names the
-    // message id, which is that column. [by] is the moderator's nick for
-    // XEP-0425; a self-retraction leaves it empty. [reason] is omitted when
-    // the moderator gave none.
-    final stamp = at ?? DateTime.now();
-    final nick = (by != null && by.isNotEmpty) ? by : null;
-    final why = reason?.trim();
-    final text = (why != null && why.isNotEmpty) ? why : null;
-    final mark = MessagesCompanion(
-      retracted: const Value(true),
-      retractedAt: Value(stamp),
-      retractedBy: nick != null ? Value(nick) : const Value.absent(),
-      retractedReason: text != null ? Value(text) : const Value.absent(),
-    );
-    final byMessageId =
-        await (update(messages)..where(
-              (m) => m.stanzaId.equals(targetId) & m.retracted.equals(false),
-            ))
-            .write(mark);
-    if (byMessageId > 0) return true;
-    final byRoomId =
-        await (update(messages)..where(
-              (m) =>
-                  m.roomStanzaId.equals(targetId) & m.retracted.equals(false),
-            ))
-            .write(mark);
-    if (byRoomId > 0) return true;
+  /// Rows updated when marking non-retracted messages with [stanzaId] = [targetId].
+  Future<int> markMessageRetractedByStanzaId(
+    String targetId,
+    MessagesCompanion mark,
+  ) {
+    return (update(messages)..where(
+          (m) => m.stanzaId.equals(targetId) & m.retracted.equals(false),
+        ))
+        .write(mark);
+  }
 
-    // A plain retract can land before the moderation notice. Fill the
-    // moderator and the reason without moving the timestamp or replacing a
-    // nick we already have.
+  /// Rows updated when marking non-retracted messages with [roomStanzaId] = [targetId].
+  Future<int> markMessageRetractedByRoomStanzaId(
+    String targetId,
+    MessagesCompanion mark,
+  ) {
+    return (update(messages)..where(
+          (m) => m.roomStanzaId.equals(targetId) & m.retracted.equals(false),
+        ))
+        .write(mark);
+  }
+
+  /// Fills empty [retractedBy] on messages addressed by [targetId].
+  Future<int> fillRetractedByIfEmpty(String targetId, String nick) {
     final addressed =
         messages.stanzaId.equals(targetId) |
         messages.roomStanzaId.equals(targetId);
-    var filled = false;
-    if (nick != null) {
-      final n =
-          await (update(messages)
-                ..where((m) => addressed & m.retractedBy.equals('')))
-              .write(MessagesCompanion(retractedBy: Value(nick)));
-      if (n > 0) filled = true;
-    }
-    if (text != null) {
-      final n =
-          await (update(messages)
-                ..where((m) => addressed & m.retractedReason.equals('')))
-              .write(MessagesCompanion(retractedReason: Value(text)));
-      if (n > 0) filled = true;
-    }
-    return filled;
+    return (update(messages)
+          ..where((m) => addressed & m.retractedBy.equals('')))
+        .write(MessagesCompanion(retractedBy: Value(nick)));
+  }
+
+  /// Fills empty [retractedReason] on messages addressed by [targetId].
+  Future<int> fillRetractedReasonIfEmpty(String targetId, String text) {
+    final addressed =
+        messages.stanzaId.equals(targetId) |
+        messages.roomStanzaId.equals(targetId);
+    return (update(messages)
+          ..where((m) => addressed & m.retractedReason.equals('')))
+        .write(MessagesCompanion(retractedReason: Value(text)));
   }
 
   /// True when [chatJid] holds a message addressed by [targetId].
-  ///
-  /// [targetId] may be the origin-id stored in [Messages.stanzaId] or the
-  /// room stanza-id. Those two are different ids.
   Future<bool> messageAddressedBy(String chatJid, String targetId) async {
     if (targetId.isEmpty) return false;
     final row =
@@ -629,54 +574,34 @@ class AppDatabase extends _$AppDatabase {
     return row != null;
   }
 
-  /// Applies a correction (XEP-0308) to the message addressed by [targetId],
-  /// inserting it when the original was never seen.
-  ///
-  /// Both cases are handled here rather than by the caller because they are
-  /// the same operation from the store's point of view, and the arrival order
-  /// is not ours to choose: a correction can legitimately arrive before the
-  /// message it corrects, and whichever way round they land the result must be
-  /// one row with the corrected body.
-  ///
-  /// [encMode] is the track the sender declared, not one we picked. A
-  /// correction is a new rendering of their message, and mislabelling its
-  /// encryption would be exactly the lie the per-message label exists to
-  /// avoid.
-  Future<void> applyCorrection({
-    required String chatJid,
+  /// Updates body / editedAt and clears retract for [targetId] by stanza id.
+  Future<int> updateMessageBodyClearingRetract({
+    required String targetId,
+    required String body,
+    required DateTime editedAt,
+  }) {
+    return (update(messages)..where((m) => m.stanzaId.equals(targetId))).write(
+      MessagesCompanion(
+        body: Value(body),
+        editedAt: Value(editedAt),
+        retracted: const Value(false),
+      ),
+    );
+  }
+
+  /// Holds a correction until the original message arrives.
+  Future<void> upsertPendingCorrection({
     required String targetId,
     required String body,
     required String encMode,
-  }) async {
-    if (targetId.isEmpty) return;
-    final now = DateTime.now();
-    final updated =
-        await (update(
-          messages,
-        )..where((m) => m.stanzaId.equals(targetId))).write(
-          MessagesCompanion(
-            body: Value(body),
-            editedAt: Value(now),
-            // Kept in step with a correction of a retracted message: the sender
-            // un-deleted it by correcting it, and a placeholder that outlives its
-            // message is the wrong history.
-            retracted: const Value(false),
-          ),
-        );
-    if (updated > 0) {
-      await upsertChat(chatJid);
-      return;
-    }
-    // Never seen the original. Held until it arrives, and applied by
-    // insertMessage so the two can land in either order. Storing it as a
-    // message of its own would show the same text twice — once stale, once
-    // correct — which is worse than showing nothing for a moment.
-    await into(pendingCorrections).insertOnConflictUpdate(
+    required DateTime correctedAt,
+  }) {
+    return into(pendingCorrections).insertOnConflictUpdate(
       PendingCorrectionsCompanion.insert(
         targetId: targetId,
         body: body,
         encMode: Value(encMode),
-        correctedAt: Value(now),
+        correctedAt: Value(correctedAt),
       ),
     );
   }
@@ -822,7 +747,7 @@ class AppDatabase extends _$AppDatabase {
     return {for (final c in rows) c.jid};
   }
 
-  /// Live roster for the Contacts tab (RFC 6121 pushes land in [commitRoster]).
+  /// Live roster for the Contacts tab (RFC 6121 pushes land in [commitRosterRows]).
   Stream<List<RosterEntry>> watchRoster() =>
       (select(rosterEntries)..orderBy([
             (r) => OrderingTerm.asc(r.name),
@@ -883,27 +808,18 @@ class AppDatabase extends _$AppDatabase {
     return row?.value;
   }
 
-  /// Applies one roster commit (fetch result or push) atomically.
-  Future<void> commitRoster({
+  /// Applies one roster commit atomically (companions already mapped).
+  Future<void> commitRosterRows({
     required String? version,
     required List<String> removed,
-    required List<XmppRosterItem> modified,
-    required List<XmppRosterItem> added,
+    required List<RosterEntriesCompanion> upserts,
   }) async {
     await transaction(() async {
       if (removed.isNotEmpty) {
         await (delete(rosterEntries)..where((r) => r.jid.isIn(removed))).go();
       }
-      for (final item in [...modified, ...added]) {
-        await into(rosterEntries).insertOnConflictUpdate(
-          RosterEntriesCompanion(
-            jid: Value(item.jid),
-            name: Value(item.name ?? ''),
-            subscription: Value(item.subscription),
-            ask: Value(item.ask ?? ''),
-            groups: Value(item.groups.join(',')),
-          ),
-        );
+      for (final row in upserts) {
+        await into(rosterEntries).insertOnConflictUpdate(row);
       }
       if (version != null) {
         await into(meta).insertOnConflictUpdate(
@@ -1505,43 +1421,16 @@ class AppDatabase extends _$AppDatabase {
     chats,
   )..where((c) => c.isGroup.equals(true) & c.mucNick.equals('').not())).get();
 
-  Future<void> insertMessage(MessagesCompanion message) async {
-    await transaction(() async {
-      // A correction that arrived before its message is applied here rather
-      // than stored as a message of its own: showing the same text twice — once
-      // stale, once correct — is worse than showing nothing for a moment.
-      final targetId = message.stanzaId.present ? message.stanzaId.value : '';
-      PendingCorrection? pending;
-      if (targetId.isNotEmpty) {
-        pending = await pendingCorrection(targetId);
-      }
-      final effective = pending == null
-          ? message
-          : message.copyWith(
-              body: Value(pending.body),
-              editedAt: Value(pending.correctedAt),
-              // The sender's declaration wins over the archive's: an archived
-              // copy carries no EME, and reporting "no encryption" for a
-              // message we were told was encrypted is the lie the label rule
-              // exists to prevent.
-              encMode: Value(pending.encMode),
-              retracted: const Value(false),
-            );
+  /// Inserts one message row (no pending-correction merge).
+  Future<void> insertMessageRow(MessagesCompanion message) =>
+      into(messages).insert(message);
 
-      await into(messages).insert(effective);
-      if (pending != null) await clearPendingCorrection(targetId);
-      // Bump the chat's activity only when the message is newer than what
-      // we already recorded (importing old history must not regress it).
-      final ts = message.timestamp.present
-          ? message.timestamp.value
-          : DateTime.now();
-      await (update(chats)..where(
-            (c) =>
-                c.jid.equals(message.chatJid.value) &
-                c.lastActivity.isSmallerThanValue(ts),
-          ))
-          .write(ChatsCompanion(lastActivity: Value(ts)));
-    });
+  /// Bumps [chatJid] lastActivity when [ts] is newer.
+  Future<void> bumpChatActivityIfNewer(String chatJid, DateTime ts) {
+    return (update(chats)..where(
+          (c) => c.jid.equals(chatJid) & c.lastActivity.isSmallerThanValue(ts),
+        ))
+        .write(ChatsCompanion(lastActivity: Value(ts)));
   }
 
   /// Non-empty [localPath] values for messages in [chatJid].
@@ -1862,56 +1751,6 @@ class AppDatabase extends _$AppDatabase {
 
   Future<void> setOwnPresenceShowWire(String show) =>
       setMetaValue('pref_presence_show', show);
-
-  static const _conferenceBookmarksMetaKey = 'conference_bookmarks';
-
-  /// Last-known XEP-0402 / legacy conference bookmarks (cold-start UI cache).
-  ///
-  /// Replaced wholesale on each successful PEP sync. Not a second source of
-  /// truth — only bridges the gap until [fetchBookmarks] finishes.
-  Future<List<ConferenceBookmark>> loadConferenceBookmarks() async {
-    final raw = await metaValue(_conferenceBookmarksMetaKey);
-    if (raw == null || raw.isEmpty) return const [];
-    try {
-      final decoded = jsonDecode(raw);
-      if (decoded is! List) return const [];
-      final out = <ConferenceBookmark>[];
-      for (final item in decoded) {
-        if (item is! Map) continue;
-        final jid = item['jid'];
-        if (jid is! String || jid.isEmpty) continue;
-        out.add(
-          ConferenceBookmark(
-            jid: jid,
-            name: item['name'] is String ? item['name'] as String : null,
-            nick: item['nick'] is String ? item['nick'] as String : null,
-            password: item['password'] is String
-                ? item['password'] as String
-                : null,
-            autoJoin: item['autoJoin'] == true,
-          ),
-        );
-      }
-      return out;
-    } catch (_) {
-      return const [];
-    }
-  }
-
-  Future<void> saveConferenceBookmarks(List<ConferenceBookmark> list) async {
-    final payload = [
-      for (final b in list)
-        {
-          'jid': b.jid,
-          if (b.name != null && b.name!.isNotEmpty) 'name': b.name,
-          if (b.nick != null && b.nick!.isNotEmpty) 'nick': b.nick,
-          if (b.password != null && b.password!.isNotEmpty)
-            'password': b.password,
-          'autoJoin': b.autoJoin,
-        },
-    ];
-    await setMetaValue(_conferenceBookmarksMetaKey, jsonEncode(payload));
-  }
 
   /// Newest message timestamp across all chats.
   ///

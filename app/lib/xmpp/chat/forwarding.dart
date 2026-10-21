@@ -22,8 +22,8 @@
 import 'package:moxxmpp/moxxmpp.dart' show JID;
 
 import 'package:resonchat/crypto/dual/track.dart';
+import 'package:resonchat/xmpp/chat/replies.dart';
 import 'package:resonchat/xmpp/connection.dart';
-import 'package:resonchat/xmpp/replies.dart';
 
 /// Why a forward could not be sent.
 enum ForwardRefusal {

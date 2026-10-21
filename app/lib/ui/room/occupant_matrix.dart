@@ -9,7 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:resonchat/l10n/l10n.dart';
 import 'package:resonchat/ui/contact_avatar.dart';
 import 'package:resonchat/ui/theme.dart';
-import 'package:resonchat/xmpp/muc.dart';
+import 'package:resonchat/xmpp/muc/muc.dart';
 
 /// Width of one avatar cell. Shared so the room roster and the read sheet
 /// line up.

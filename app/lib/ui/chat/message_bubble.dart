@@ -16,8 +16,8 @@ import 'package:resonchat/ui/chat/linkified_text.dart';
 import 'package:resonchat/ui/chat/media_attachment.dart';
 import 'package:resonchat/ui/chat/read_ring.dart';
 import 'package:resonchat/ui/theme.dart';
+import 'package:resonchat/xmpp/chat/reactions.dart';
 import 'package:resonchat/xmpp/message_send_status.dart';
-import 'package:resonchat/xmpp/reactions.dart';
 
 enum BubbleSide { incoming, outgoing }
 

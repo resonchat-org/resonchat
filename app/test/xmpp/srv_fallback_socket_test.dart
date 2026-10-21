@@ -12,7 +12,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:moxxmpp/socket_tcp.dart';
 
-import 'package:resonchat/xmpp/xmpp_socket_io.dart';
+import 'package:resonchat/xmpp/socket/xmpp_socket_io.dart';
 
 /// Records every connect attempt and SRV query, in order, as `'tcp host:port'`
 /// and `'srv name'`.

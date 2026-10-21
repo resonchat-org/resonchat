@@ -132,14 +132,19 @@ moxxmpp 发送 → 服务端转发 → 各设备
    └─ 无 encrypted → 明文
    │
    ▼
-解密得明文 + 发送方设备信息；enc_mode 从 EME / 命名空间写入
+moxxmpp managers → MessageEvent（extensions）
    │
    ▼
-更新会话棘轮状态、解密状态（成功/失败/未知设备）
+connection：MessageEvent → InboundMessage（入站 DTO）
    │
    ▼
-写入数据库并推送 UI
+MessagesService.storeInbound → AppDatabase（纯 SQL）
+   │
+   ▼
+推送 UI
 ```
+
+账户库 `schemaVersion` 为 **1**（`onCreate` 即当前表结构）。
 
 解密失败时**不得**崩溃或丢弃消息：显示「无法解密」占位，保留原始 payload 以便设备密钥恢复后重试（OMEMO 常见问题，需专门处理）。
 

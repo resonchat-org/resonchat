@@ -17,8 +17,8 @@ import 'package:moxxmpp/moxxmpp.dart';
 import 'package:test/test.dart';
 
 import 'package:resonchat/persistence/database.dart';
-import 'package:resonchat/xmpp/blocked_inbound.dart';
-import 'package:resonchat/xmpp/blocking.dart';
+import 'package:resonchat/xmpp/roster/blocked_inbound.dart';
+import 'package:resonchat/xmpp/roster/blocking.dart';
 
 void main() {
   group('the guarantee', () {

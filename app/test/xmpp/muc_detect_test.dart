@@ -3,7 +3,7 @@
 
 import 'package:test/test.dart';
 
-import 'package:resonchat/xmpp/muc_detect.dart';
+import 'package:resonchat/xmpp/muc/muc_detect.dart';
 
 void main() {
   group('looksLikeChannelDomain', () {

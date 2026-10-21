@@ -17,8 +17,8 @@ import 'package:resonchat/persistence/media_store.dart';
 import 'package:resonchat/state/providers.dart';
 import 'package:resonchat/ui/chats/notify_mode_sheet.dart';
 import 'package:resonchat/ui/theme.dart';
-import 'package:resonchat/xmpp/capabilities.dart';
 import 'package:resonchat/xmpp/chat_notify_mode.dart';
+import 'package:resonchat/xmpp/encryption/capabilities.dart';
 
 /// Section title used on chat detail / profile lists.
 class ChatProfileSectionTitle extends StatelessWidget {

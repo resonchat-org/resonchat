@@ -21,6 +21,9 @@ import 'package:moxxmpp/moxxmpp.dart' show JID;
 import 'package:resonchat/persistence/database.dart';
 import 'package:resonchat/xmpp/connection.dart';
 
+export 'package:resonchat/xmpp/inbound/reaction_update.dart'
+    show ReactionUpdate;
+
 /// The emoji offered without opening a picker.
 ///
 /// Deliberately a short list of single-code-point characters. Reactions cross
@@ -31,26 +34,6 @@ import 'package:resonchat/xmpp/connection.dart';
 /// trailing variation selector is what decides whether it renders as a heart
 /// pictograph or as text.
 const kQuickReactions = <String>['👍', '❤', '😂', '😮', '😢', '🙏'];
-
-/// One reaction broadcast, as it arrived or as it is about to be sent.
-class ReactionUpdate {
-  const ReactionUpdate({
-    required this.targetId,
-    required this.reactor,
-    required this.emojis,
-  });
-
-  /// Origin-id of the message reacted to.
-  final String targetId;
-
-  /// Bare JID of the reactor.
-  final String reactor;
-
-  /// The reactor's complete set. Empty means "no reaction".
-  final List<String> emojis;
-
-  bool get isEmpty => emojis.isEmpty;
-}
 
 /// One emoji and the people who chose it, as the UI needs it.
 class ReactionGroup {
@@ -82,15 +65,6 @@ class ReactionGroup {
       mine: row.mine,
     );
   }
-}
-
-/// Stores one broadcast, replacing that reactor's previous set for the target.
-Future<void> storeReaction(AppDatabase db, ReactionUpdate update) {
-  return db.setReactions(
-    targetId: update.targetId,
-    reactor: update.reactor,
-    emojis: update.emojis,
-  );
 }
 
 /// Reaction chips for [targetId], ready to hand to a bubble.

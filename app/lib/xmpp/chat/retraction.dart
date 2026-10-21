@@ -23,7 +23,7 @@
 import 'package:moxxmpp/moxxmpp.dart' show JID;
 
 import 'package:resonchat/crypto/dual/track.dart';
-import 'package:resonchat/persistence/database.dart';
+import 'package:resonchat/domain/messages_service.dart';
 import 'package:resonchat/xmpp/connection.dart';
 
 /// Retracts the message addressed by [targetId] for everyone in [chatJid].
@@ -54,27 +54,27 @@ Future<bool> retractMessage(
 /// [by] is the moderator's nick when the retraction is XEP-0425.
 /// [reason] is omitted when the moderator gave none.
 Future<bool> applyRetraction(
-  AppDatabase db,
+  MessagesService messages,
   String targetId, {
   String? by,
   String? reason,
-}) => db.markRetracted(targetId, by: by, reason: reason);
+}) => messages.applyRetraction(targetId, by: by, reason: reason);
 
 /// Replaces the content of the message addressed by [targetId].
 ///
 /// Idempotent in both directions, so the caller does not have to know whether
 /// the original arrived yet.
 Future<void> correctMessage({
-  required AppDatabase db,
+  required MessagesService messages,
   required String chatJid,
   required String targetId,
   required String body,
   required Track track,
 }) {
-  return db.applyCorrection(
+  return messages.correctMessage(
     chatJid: chatJid,
     targetId: targetId,
     body: body,
-    encMode: EncModeToken.of(track).wire,
+    track: track,
   );
 }

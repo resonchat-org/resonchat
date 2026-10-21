@@ -4,7 +4,7 @@
 import 'package:test/test.dart';
 
 import 'package:resonchat/xmpp/group_read.dart';
-import 'package:resonchat/xmpp/muc.dart';
+import 'package:resonchat/xmpp/muc/muc.dart';
 
 Occupant member(String nick, String jid) => Occupant(
   nick: nick,

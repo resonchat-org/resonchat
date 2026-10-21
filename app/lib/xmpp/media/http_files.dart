@@ -18,7 +18,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:resonchat/net/app_network.dart';
 import 'package:resonchat/persistence/media_store.dart';
-import 'package:resonchat/xmpp/aesgcm_url.dart';
+import 'package:resonchat/xmpp/media/aesgcm_url.dart';
 
 final _log = Logger('HttpFiles');
 

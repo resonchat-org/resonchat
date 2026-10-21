@@ -9,10 +9,12 @@ import 'package:drift/native.dart';
 import 'package:moxxmpp/moxxmpp.dart' show XmppRosterItem;
 import 'package:test/test.dart';
 
+import 'package:resonchat/domain/messages_service.dart';
+import 'package:resonchat/domain/roster_service.dart';
 import 'package:resonchat/persistence/database.dart';
+import 'package:resonchat/xmpp/chat/sticker_link.dart';
 import 'package:resonchat/xmpp/chat_notify_mode.dart';
 import 'package:resonchat/xmpp/message_send_status.dart';
-import 'package:resonchat/xmpp/sticker_link.dart';
 
 void main() {
   late AppDatabase db;
@@ -28,7 +30,7 @@ void main() {
 
   Future<void> seedOutgoing(String stanzaId) async {
     await db.upsertChat('bob@example.org');
-    await db.insertMessage(
+    await db.insertMessageRow(
       MessagesCompanion(
         chatJid: const Value('bob@example.org'),
         sender: const Value('me'),
@@ -41,7 +43,7 @@ void main() {
 
   test('insertMessage bumps the chat activity timestamp', () async {
     await db.upsertChat('bob@example.org', at: clock(0));
-    await db.insertMessage(
+    await MessagesService(db).insertMessage(
       MessagesCompanion(
         chatJid: const Value('bob@example.org'),
         sender: const Value('me'),
@@ -56,7 +58,8 @@ void main() {
 
   test('importing older history does not regress the chat activity', () async {
     await db.upsertChat('bob@example.org', at: clock(100));
-    await db.insertMessage(
+    final messages = MessagesService(db);
+    await messages.insertMessage(
       MessagesCompanion(
         chatJid: const Value('bob@example.org'),
         sender: const Value('me'),
@@ -65,7 +68,7 @@ void main() {
         incoming: const Value(false),
       ),
     );
-    await db.insertMessage(
+    await messages.insertMessage(
       MessagesCompanion(
         chatJid: const Value('bob@example.org'),
         sender: const Value('bob@example.org'),
@@ -91,7 +94,7 @@ void main() {
 
   test('markDelivered only touches our own outgoing messages', () async {
     await db.upsertChat('bob@example.org');
-    await db.insertMessage(
+    await db.insertMessageRow(
       MessagesCompanion(
         chatJid: const Value('bob@example.org'),
         sender: const Value('me'),
@@ -102,7 +105,7 @@ void main() {
         sendStatus: const Value(MessageSendStatus.send),
       ),
     );
-    await db.insertMessage(
+    await db.insertMessageRow(
       MessagesCompanion(
         chatJid: const Value('bob@example.org'),
         sender: const Value('bob@example.org/laptop'),
@@ -125,7 +128,7 @@ void main() {
 
   test('updateEncMode rewrites only our own outgoing row', () async {
     await seedOutgoing('out-1');
-    await db.insertMessage(
+    await db.insertMessageRow(
       MessagesCompanion(
         chatJid: const Value('bob@example.org'),
         sender: const Value('bob@example.org'),
@@ -152,7 +155,7 @@ void main() {
 
   test('deleteOutgoingByStanzaId drops only the placeholder row', () async {
     await seedOutgoing('out-1');
-    await db.insertMessage(
+    await db.insertMessageRow(
       MessagesCompanion(
         chatJid: const Value('bob@example.org'),
         sender: const Value('bob@example.org'),
@@ -174,7 +177,7 @@ void main() {
   test('messages stream is ordered oldest first', () async {
     await db.upsertChat('bob@example.org', at: clock(0));
     for (final (i, body) in ['a', 'b', 'c'].indexed) {
-      await db.insertMessage(
+      await db.insertMessageRow(
         MessagesCompanion(
           chatJid: const Value('bob@example.org'),
           sender: const Value('me'),
@@ -191,7 +194,7 @@ void main() {
   test('same-second messages keep insertion order', () async {
     await db.upsertChat('bob@example.org', at: clock(0));
     for (final body in ['first', 'second', 'third']) {
-      await db.insertMessage(
+      await db.insertMessageRow(
         MessagesCompanion(
           chatJid: const Value('bob@example.org'),
           sender: const Value('me'),
@@ -212,7 +215,7 @@ void main() {
     expect(rows.first.jid, 'b@example.org');
 
     // Activity in the older chat moves it to the top.
-    await db.insertMessage(
+    await MessagesService(db).insertMessage(
       MessagesCompanion(
         chatJid: const Value('a@example.org'),
         sender: const Value('me'),
@@ -251,7 +254,7 @@ void main() {
   test('syncChatLastActivity repairs login-stamped rows', () async {
     await db.upsertChat('empty@example.org', at: clock(999));
     await db.upsertChat('busy@example.org', at: clock(999));
-    await db.insertMessage(
+    await db.insertMessageRow(
       MessagesCompanion(
         chatJid: const Value('busy@example.org'),
         sender: const Value('me'),
@@ -270,7 +273,7 @@ void main() {
 
   test('clearChatMessages resets lastActivity to the epoch', () async {
     await db.upsertChat('bob@example.org', at: clock(10));
-    await db.insertMessage(
+    await db.insertMessageRow(
       MessagesCompanion(
         chatJid: const Value('bob@example.org'),
         sender: const Value('me'),
@@ -287,7 +290,7 @@ void main() {
   });
 
   test('roster commits persist items, version and removals', () async {
-    await db.commitRoster(
+    await RosterService(db).commitRoster(
       version: 'v1',
       removed: const [],
       modified: const [],
@@ -303,7 +306,7 @@ void main() {
     expect(await db.allRosterEntries(), hasLength(1));
 
     // Re-publish without the JID: it must be dropped from the cache.
-    await db.commitRoster(
+    await RosterService(db).commitRoster(
       version: 'v2',
       removed: const ['bob@example.org'],
       modified: const [],
@@ -396,7 +399,7 @@ void main() {
     () async {
       await db.upsertChat('room@conference.example', isGroup: true);
       Future<void> outgoing(String id, int seconds) {
-        return db.insertMessage(
+        return db.insertMessageRow(
           MessagesCompanion(
             chatJid: const Value('room@conference.example'),
             sender: const Value('me'),
@@ -432,7 +435,7 @@ void main() {
     'room stanza id fills an empty column and leaves a stored one',
     () async {
       await db.upsertChat('room@conference.example', isGroup: true);
-      await db.insertMessage(
+      await db.insertMessageRow(
         const MessagesCompanion(
           chatJid: Value('room@conference.example'),
           sender: Value('me'),

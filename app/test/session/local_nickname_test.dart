@@ -16,7 +16,7 @@
 
 import 'package:test/test.dart';
 
-import 'package:resonchat/xmpp/local_nickname.dart';
+import 'package:resonchat/xmpp/roster/local_nickname.dart';
 
 void main() {
   group('what a nickname may be', () {

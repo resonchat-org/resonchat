@@ -15,8 +15,8 @@ import 'package:test/test.dart';
 
 import 'package:resonchat/crypto/dual/track.dart';
 import 'package:resonchat/crypto/dual/track_resolver.dart';
-import 'package:resonchat/xmpp/muc.dart';
-import 'package:resonchat/xmpp/muc_crypto.dart';
+import 'package:resonchat/xmpp/muc/muc.dart';
+import 'package:resonchat/xmpp/muc/muc_crypto.dart';
 
 /// A fixed clock, so the staleness rule is tested rather than slept through.
 final _now = DateTime.utc(2026, 5, 1, 12);

@@ -17,7 +17,7 @@ import 'package:test/test.dart';
 import 'package:resonchat/crypto/dual/negotiation.dart';
 import 'package:resonchat/crypto/dual/track.dart';
 import 'package:resonchat/crypto/dual/track_resolver.dart';
-import 'package:resonchat/xmpp/capabilities.dart';
+import 'package:resonchat/xmpp/encryption/capabilities.dart';
 
 ChatCapabilities caps({
   required Set<int> devices,

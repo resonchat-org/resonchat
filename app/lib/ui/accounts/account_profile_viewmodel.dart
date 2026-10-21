@@ -14,8 +14,8 @@ import 'package:resonchat/crypto/dual/fingerprint_trust.dart';
 import 'package:resonchat/crypto/dual/own_fingerprints.dart';
 import 'package:resonchat/persistence/account_store.dart';
 import 'package:resonchat/state/providers.dart';
-import 'package:resonchat/xmpp/avatar.dart';
 import 'package:resonchat/xmpp/connection.dart';
+import 'package:resonchat/xmpp/roster/avatar.dart';
 
 class AccountProfileUiState {
   const AccountProfileUiState({

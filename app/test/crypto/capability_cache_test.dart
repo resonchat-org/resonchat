@@ -10,7 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:moxxmpp/moxxmpp.dart';
 
 import 'package:resonchat/crypto/dual/dual_track_manager.dart';
-import 'package:resonchat/xmpp/capabilities.dart';
+import 'package:resonchat/xmpp/encryption/capabilities.dart';
 
 /// Thrown by the fake tracks() so we can count resolution attempts.
 class _Boom implements Exception {

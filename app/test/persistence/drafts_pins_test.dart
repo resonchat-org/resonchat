@@ -12,6 +12,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:test/test.dart';
 
+import 'package:resonchat/domain/messages_service.dart';
 import 'package:resonchat/persistence/database.dart';
 
 void main() {
@@ -67,7 +68,7 @@ void main() {
   group('pinned messages', () {
     Future<void> seed(String stanzaId) async {
       await db.upsertChat('a@example.org');
-      await db.insertMessage(
+      await db.insertMessageRow(
         MessagesCompanion.insert(
           chatJid: 'a@example.org',
           sender: 'a@example.org/x',
@@ -117,7 +118,7 @@ void main() {
       // choice evaporate because of somebody else's delete.
       await seed('m1');
       await db.togglePinned('a@example.org', 'm1');
-      await db.markRetracted('m1');
+      await MessagesService(db).markRetracted('m1');
       expect(await db.watchPinned('a@example.org').first, ['m1']);
     });
   });

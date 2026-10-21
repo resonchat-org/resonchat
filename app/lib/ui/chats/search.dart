@@ -19,7 +19,7 @@ import 'package:resonchat/state/providers.dart';
 import 'package:resonchat/ui/chat/chat_page.dart';
 import 'package:resonchat/ui/chats/unread.dart';
 import 'package:resonchat/ui/theme.dart';
-import 'package:resonchat/xmpp/forwarding.dart';
+import 'package:resonchat/xmpp/chat/forwarding.dart';
 
 /// One hit in a search result list.
 class SearchHit {

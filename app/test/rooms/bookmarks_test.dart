@@ -12,7 +12,7 @@
 
 import 'package:test/test.dart';
 
-import 'package:resonchat/xmpp/bookmarks.dart';
+import 'package:resonchat/xmpp/roster/bookmarks.dart';
 
 void main() {
   /// What a bookmark's row reads as, which is all a test needs to assert on.

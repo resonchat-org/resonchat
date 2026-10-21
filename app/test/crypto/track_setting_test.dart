@@ -128,7 +128,7 @@ void main() {
       await db.upsertChat('bob@example.org');
       expect(await db.trackOverride('bob@example.org'), Track.none);
 
-      await db.insertMessage(
+      await db.insertMessageRow(
         MessagesCompanion(
           chatJid: const Value('bob@example.org'),
           sender: const Value('bob@example.org'),
@@ -181,7 +181,7 @@ void main() {
       // track is a fact about the past and does not change because we
       // renamed the vocabulary.
       await db.upsertChat('bob@example.org');
-      await db.insertMessage(
+      await db.insertMessageRow(
         MessagesCompanion(
           chatJid: const Value('bob@example.org'),
           sender: const Value('me'),

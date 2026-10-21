@@ -20,7 +20,7 @@
 
 import 'package:resonchat/crypto/dual/track.dart';
 import 'package:resonchat/crypto/dual/track_resolver.dart';
-import 'package:resonchat/xmpp/capabilities.dart';
+import 'package:resonchat/xmpp/encryption/capabilities.dart';
 
 /// Why the advice exists.
 enum TrackAdviceKind {

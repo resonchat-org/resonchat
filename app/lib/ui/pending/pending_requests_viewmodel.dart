@@ -13,7 +13,7 @@ import 'package:resonchat/account/account_hub.dart';
 import 'package:resonchat/account/chat_ref.dart';
 import 'package:resonchat/persistence/database.dart';
 import 'package:resonchat/state/providers.dart';
-import 'package:resonchat/xmpp/muc.dart';
+import 'package:resonchat/xmpp/muc/muc.dart';
 
 /// [chatKey] is set when the room was joined. [reason] is the join failure.
 class AcceptInviteResult {

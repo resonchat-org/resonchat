@@ -21,7 +21,7 @@ import 'package:moxxmpp/moxxmpp.dart' show PresenceShow;
 
 import 'package:resonchat/state/providers.dart';
 import 'package:resonchat/ui/theme.dart';
-import 'package:resonchat/xmpp/avatar.dart';
+import 'package:resonchat/xmpp/roster/avatar.dart';
 
 class ContactAvatar extends ConsumerWidget {
   const ContactAvatar({

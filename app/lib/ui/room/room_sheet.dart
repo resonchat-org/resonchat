@@ -19,7 +19,7 @@ import 'package:resonchat/l10n/l10n.dart';
 import 'package:resonchat/state/providers.dart';
 import 'package:resonchat/ui/home/open_chat.dart';
 import 'package:resonchat/ui/theme.dart';
-import 'package:resonchat/xmpp/muc.dart';
+import 'package:resonchat/xmpp/muc/muc.dart';
 
 /// Asks for a room JID and a nickname, then joins.
 /// Shows the join-room sheet, optionally prefilled from an `xmpp:?join` URI.

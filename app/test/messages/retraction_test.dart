@@ -13,6 +13,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:test/test.dart';
 
+import 'package:resonchat/domain/messages_service.dart';
 import 'package:resonchat/persistence/database.dart';
 
 void main() {
@@ -29,7 +30,7 @@ void main() {
     bool incoming = false,
   }) async {
     await db.upsertChat(chat);
-    await db.insertMessage(
+    await MessagesService(db).insertMessage(
       MessagesCompanion.insert(
         chatJid: chat,
         sender: incoming ? 'peer@example.org/x' : 'me',
@@ -46,7 +47,7 @@ void main() {
   group('retraction', () {
     test('marks the message and keeps the body', () async {
       await store(stanzaId: id);
-      expect(await db.markRetracted(id), isTrue);
+      expect(await MessagesService(db).markRetracted(id), isTrue);
 
       final row = (await db.watchMessages(chat).first).single;
       expect(row.retracted, isTrue);
@@ -67,10 +68,10 @@ void main() {
 
     test('is idempotent, and a replay does not un-retract', () async {
       await store(stanzaId: id);
-      await db.markRetracted(id);
+      await MessagesService(db).markRetracted(id);
       final firstAt = (await db.watchMessages(chat).first).single.retractedAt;
 
-      expect(await db.markRetracted(id), isFalse);
+      expect(await MessagesService(db).markRetracted(id), isFalse);
       final row = (await db.watchMessages(chat).first).single;
       expect(row.retracted, isTrue);
       expect(row.retractedAt, firstAt, reason: 'the time must not move');
@@ -81,19 +82,19 @@ void main() {
       // retract something before it arrives. Failing here would drop it and
       // then apply it to whatever arrived next.
       await store(stanzaId: id);
-      expect(await db.markRetracted('some-other-id'), isFalse);
+      expect(await MessagesService(db).markRetracted('some-other-id'), isFalse);
       expect((await db.watchMessages(chat).first).single.retracted, isFalse);
     });
 
     test('an empty id does nothing', () async {
       await store(stanzaId: id);
-      expect(await db.markRetracted(''), isFalse);
+      expect(await MessagesService(db).markRetracted(''), isFalse);
     });
 
     test('one retraction does not touch its neighbours', () async {
       await store(stanzaId: 'a');
       await store(stanzaId: 'b');
-      await db.markRetracted('a');
+      await MessagesService(db).markRetracted('a');
       final rows = await db.watchMessages(chat).first;
       expect(rows.firstWhere((m) => m.stanzaId == 'a').retracted, isTrue);
       expect(rows.firstWhere((m) => m.stanzaId == 'b').retracted, isFalse);
@@ -101,7 +102,7 @@ void main() {
 
     test('a group retraction is addressed by the room stanza-id', () async {
       await db.upsertChat(chat);
-      await db.insertMessage(
+      await db.insertMessageRow(
         MessagesCompanion.insert(
           chatJid: chat,
           sender: 'me',
@@ -111,7 +112,7 @@ void main() {
           incoming: false,
         ),
       );
-      expect(await db.markRetracted('room-stanza-1'), isTrue);
+      expect(await MessagesService(db).markRetracted('room-stanza-1'), isTrue);
       final row = (await db.watchMessages(chat).first).single;
       expect(row.retracted, isTrue);
       expect(row.stanzaId, 'origin-id-1');
@@ -120,7 +121,7 @@ void main() {
 
     test('a moderation records the moderator nick', () async {
       await store(stanzaId: id, incoming: true);
-      expect(await db.markRetracted(id, by: 'mod'), isTrue);
+      expect(await MessagesService(db).markRetracted(id, by: 'mod'), isTrue);
       final row = (await db.watchMessages(chat).first).single;
       expect(row.retracted, isTrue);
       expect(row.retractedBy, 'mod');
@@ -133,14 +134,19 @@ void main() {
         // A plain retract can land first and mark the row with nobody's name.
         // The moderation that names the moderator still has to be recorded.
         await store(stanzaId: id, incoming: true);
-        expect(await db.markRetracted(id), isTrue);
-        expect(await db.markRetracted(id, by: 'mod', reason: 'spam'), isTrue);
+        expect(await MessagesService(db).markRetracted(id), isTrue);
+        expect(
+          await MessagesService(db)
+              .markRetracted(id, by: 'mod', reason: 'spam'),
+          isTrue,
+        );
         final row = (await db.watchMessages(chat).first).single;
         expect(row.retractedBy, 'mod');
         expect(row.retractedReason, 'spam');
         final at = row.retractedAt;
         expect(
-          await db.markRetracted(id, by: 'other', reason: 'nope'),
+          await MessagesService(db)
+              .markRetracted(id, by: 'other', reason: 'nope'),
           isFalse,
         );
         final again = (await db.watchMessages(chat).first).single;
@@ -152,7 +158,10 @@ void main() {
 
     test('an empty reason is not stored', () async {
       await store(stanzaId: id, incoming: true);
-      expect(await db.markRetracted(id, by: 'mod', reason: '   '), isTrue);
+      expect(
+        await MessagesService(db).markRetracted(id, by: 'mod', reason: '   '),
+        isTrue,
+      );
       final row = (await db.watchMessages(chat).first).single;
       expect(row.retractedBy, 'mod');
       expect(row.retractedReason, isEmpty);
@@ -160,7 +169,7 @@ void main() {
 
     test('a group moderation is addressed by the room stanza-id', () async {
       await db.upsertChat(chat);
-      await db.insertMessage(
+      await db.insertMessageRow(
         MessagesCompanion.insert(
           chatJid: chat,
           sender: 'room@example.org/alice',
@@ -171,7 +180,8 @@ void main() {
         ),
       );
       expect(
-        await db.markRetracted('room-stanza-9', by: 'mod', reason: 'spam'),
+        await MessagesService(db)
+            .markRetracted('room-stanza-9', by: 'mod', reason: 'spam'),
         isTrue,
       );
       final row = (await db.watchMessages(chat).first).single;
@@ -184,7 +194,7 @@ void main() {
   group('correction', () {
     test('replaces the body and marks it edited', () async {
       await store(stanzaId: id);
-      await db.applyCorrection(
+      await MessagesService(db).applyCorrection(
         chatJid: chat,
         targetId: id,
         body: 'the corrected text',
@@ -206,7 +216,7 @@ void main() {
       // Order is not ours to choose: a correction can legitimately arrive
       // first. Showing the correction as a message of its own would put the
       // same text on screen twice — once stale, once correct.
-      await db.applyCorrection(
+      await MessagesService(db).applyCorrection(
         chatJid: chat,
         targetId: id,
         body: 'the corrected text',
@@ -229,7 +239,7 @@ void main() {
     test('a held correction keeps the sender\'s declared track', () async {
       // An archived original carries no EME, so applying it would report "no
       // encryption" for a message the sender told us was encrypted.
-      await db.applyCorrection(
+      await MessagesService(db).applyCorrection(
         chatJid: chat,
         targetId: id,
         body: 'the corrected text',
@@ -243,8 +253,8 @@ void main() {
       // The sender un-deleted it by correcting it; a placeholder that outlives
       // its message is the wrong history.
       await store(stanzaId: id);
-      await db.markRetracted(id);
-      await db.applyCorrection(
+      await MessagesService(db).markRetracted(id);
+      await MessagesService(db).applyCorrection(
         chatJid: chat,
         targetId: id,
         body: 'meant to say this',
@@ -257,13 +267,13 @@ void main() {
 
     test('a correction of a known message adds no row', () async {
       await store(stanzaId: id);
-      await db.applyCorrection(
+      await MessagesService(db).applyCorrection(
         chatJid: chat,
         targetId: id,
         body: 'first fix',
         encMode: 'OM',
       );
-      await db.applyCorrection(
+      await MessagesService(db).applyCorrection(
         chatJid: chat,
         targetId: id,
         body: 'second fix',
@@ -278,8 +288,8 @@ void main() {
       // The sender un-deleted it by correcting it; a placeholder that outlives
       // its message is the wrong history.
       await store(stanzaId: id);
-      await db.markRetracted(id);
-      await db.applyCorrection(
+      await MessagesService(db).markRetracted(id);
+      await MessagesService(db).applyCorrection(
         chatJid: chat,
         targetId: id,
         body: 'meant to say this',
@@ -292,7 +302,7 @@ void main() {
 
     test('an empty id is ignored', () async {
       await store(stanzaId: id);
-      await db.applyCorrection(
+      await MessagesService(db).applyCorrection(
         chatJid: chat,
         targetId: '',
         body: 'nowhere',

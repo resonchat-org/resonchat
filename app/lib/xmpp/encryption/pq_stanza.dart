@@ -13,7 +13,7 @@ import 'package:xml/xml.dart';
 
 import 'package:resonchat/crypto/omemo2/message_codec.dart';
 import 'package:resonchat/crypto/omemo2/protocol.dart';
-import 'package:resonchat/xmpp/eme.dart';
+import 'package:resonchat/xmpp/encryption/eme.dart';
 
 /// Stanza extension holding a B-track encrypted element.
 class PqEncryptedData implements StanzaHandlerExtension {

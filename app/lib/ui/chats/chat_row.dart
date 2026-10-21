@@ -31,7 +31,7 @@ import 'package:resonchat/ui/dialog_cell.dart';
 import 'package:resonchat/ui/theme.dart';
 import 'package:resonchat/xmpp/chat_notify_mode.dart';
 import 'package:resonchat/xmpp/conversation_archive.dart';
-import 'package:resonchat/xmpp/local_nickname.dart';
+import 'package:resonchat/xmpp/roster/local_nickname.dart';
 
 class ChatRow extends ConsumerWidget {
   const ChatRow({

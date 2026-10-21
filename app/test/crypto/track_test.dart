@@ -14,7 +14,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:moxxmpp/moxxmpp.dart' show ExplicitEncryptionType;
 
 import 'package:resonchat/crypto/dual/track.dart';
-import 'package:resonchat/xmpp/eme.dart';
+import 'package:resonchat/xmpp/encryption/eme.dart';
 
 void main() {
   group('labels', () {

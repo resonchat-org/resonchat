@@ -29,7 +29,7 @@ void main() {
 
     Future<void> seed(String id, int minute, {bool incoming = true}) async {
       await db.upsertChat('peer@example.org');
-      await db.insertMessage(
+      await db.insertMessageRow(
         MessagesCompanion.insert(
           chatJid: 'peer@example.org',
           sender: incoming ? 'peer@example.org/x' : 'me',
@@ -110,7 +110,7 @@ void main() {
       // the bottom" would not be it. Deriving from the timestamp does not care
       // how a row is drawn.
       await db.upsertChat('peer@example.org');
-      await db.insertMessage(
+      await db.insertMessageRow(
         MessagesCompanion.insert(
           chatJid: 'peer@example.org',
           sender: 'peer@example.org/x',

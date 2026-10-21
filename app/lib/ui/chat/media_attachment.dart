@@ -22,8 +22,8 @@ import 'package:resonchat/platform/linux_cli_io.dart'
     if (dart.library.js_interop) 'package:resonchat/platform/linux_cli_stub.dart';
 import 'package:resonchat/platform/linux_cli_types.dart';
 import 'package:resonchat/ui/theme.dart';
-import 'package:resonchat/xmpp/file_preview.dart';
-import 'package:resonchat/xmpp/http_files.dart';
+import 'package:resonchat/xmpp/media/file_preview.dart';
+import 'package:resonchat/xmpp/media/http_files.dart';
 
 bool isImageMime(String mime, String pathOrName) {
   if (mime.toLowerCase().startsWith('image/')) return true;

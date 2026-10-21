@@ -3,7 +3,7 @@
 
 import 'package:test/test.dart';
 
-import 'package:resonchat/xmpp/file_preview.dart';
+import 'package:resonchat/xmpp/media/file_preview.dart';
 
 void main() {
   test('size cap covers images and other files the same way', () {

@@ -13,8 +13,9 @@ import 'package:drift/native.dart';
 import 'package:moxxmpp/moxxmpp.dart' show ReplyData;
 import 'package:test/test.dart';
 
+import 'package:resonchat/domain/messages_service.dart';
 import 'package:resonchat/persistence/database.dart';
-import 'package:resonchat/xmpp/replies.dart';
+import 'package:resonchat/xmpp/chat/replies.dart';
 
 void main() {
   late AppDatabase db;
@@ -31,7 +32,7 @@ void main() {
     String replyAuthor = '',
   }) async {
     await db.upsertChat(chat);
-    await db.insertMessage(
+    await db.insertMessageRow(
       MessagesCompanion.insert(
         chatJid: chat,
         sender: 'peer@example.org/x',
@@ -101,7 +102,7 @@ void main() {
           replyAuthor: 'peer@example.org',
         ),
       ]).then((_) async {
-        await db.markRetracted('target');
+        await MessagesService(db).markRetracted('target');
         final rows = await db.watchMessages(chat).first;
         final reply = rows.firstWhere((m) => m.stanzaId == 'reply');
         expect(reply.replyBody, 'the original');
@@ -123,7 +124,7 @@ void main() {
           replyBody: 'the original',
         ),
       ]).then((_) async {
-        await db.applyCorrection(
+        await MessagesService(db).applyCorrection(
           chatJid: chat,
           targetId: 'target',
           body: 'the corrected text',

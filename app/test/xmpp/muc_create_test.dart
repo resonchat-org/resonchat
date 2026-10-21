@@ -5,7 +5,7 @@ import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:resonchat/xmpp/muc_create.dart';
+import 'package:resonchat/xmpp/muc/muc_create.dart';
 
 void main() {
   test('pronounceableRoomLocalpart is lowercase letters only', () {

@@ -10,7 +10,7 @@
 
 import 'dart:convert';
 
-import 'package:resonchat/xmpp/muc.dart';
+import 'package:resonchat/xmpp/muc/muc.dart';
 
 /// JSON array of bare real JIDs stored on [Message.readBy].
 Set<String> decodeReadBy(String raw) {

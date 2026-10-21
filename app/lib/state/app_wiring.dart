@@ -5,7 +5,6 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 
-import 'package:drift/drift.dart' show Value;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logging/logging.dart';
 import 'package:moxxmpp/moxxmpp.dart' show JID;
@@ -16,20 +15,16 @@ import 'package:resonchat/crypto/dual/dual_track_manager.dart';
 import 'package:resonchat/crypto/dual/track.dart';
 import 'package:resonchat/crypto/dual/track_advice.dart';
 import 'package:resonchat/persistence/database.dart';
-import 'package:resonchat/persistence/prefs_database.dart';
 import 'package:resonchat/platform/app_notifications.dart';
 import 'package:resonchat/security/app_lock.dart';
 import 'package:resonchat/state/providers.dart';
 import 'package:resonchat/xmpp/auto_reply.dart';
-import 'package:resonchat/xmpp/blocking.dart';
-import 'package:resonchat/xmpp/capabilities.dart';
 import 'package:resonchat/xmpp/chat_notify_mode.dart';
 import 'package:resonchat/xmpp/connection.dart';
+import 'package:resonchat/xmpp/encryption/capabilities.dart';
 import 'package:resonchat/xmpp/message_expiry.dart';
-import 'package:resonchat/xmpp/message_send_status.dart';
 import 'package:resonchat/xmpp/notify_policy.dart';
-import 'package:resonchat/xmpp/reactions.dart';
-import 'package:resonchat/xmpp/retraction.dart';
+import 'package:resonchat/xmpp/roster/blocking.dart';
 
 /// Connects the connection's streams to persistent state for the app's
 /// lifetime: delivery receipts, delivery failures and capability
@@ -242,7 +237,7 @@ class _AppWiringState extends ConsumerState<AppWiring>
       xmpp.reactions.listen((msg) {
         final update = msg.reactions;
         if (update == null) return;
-        unawaited(storeReaction(db, update));
+        unawaited(session.messages.storeReaction(update));
       }),
     );
     _subs.add(
@@ -312,7 +307,7 @@ Future<void> _acceptInbound(
 ) async {
   final db = session.db;
   final ownBare = session.xmpp.myJid;
-  final mentionsMe = await storeInbound(db, msg, ownBare: ownBare);
+  final mentionsMe = await session.messages.storeInbound(msg, ownBare: ownBare);
   final chatJid = _chatJidFor(msg, ownBare);
   if (_isOwnArchive(msg, ownBare)) return;
   if (msg.fromArchive) return;
@@ -432,18 +427,6 @@ bool _isOwnArchive(InboundMessage msg, String? ownBare) {
   return msg.from.toBare().toString() == ownBare;
 }
 
-/// Live (or archived) room reflection of something we said.
-///
-/// Groupchat reflections arrive as `room@server/ourNick`. They are not
-/// carbons and not 1:1 archive rows, so [_isOwnArchive] misses them — without
-/// this check they draw on the left as if somebody else wrote them.
-bool _isOwnMucReflection(InboundMessage msg, String? mucNick) {
-  if (msg.type != 'groupchat') return false;
-  final nick = mucNick?.trim() ?? '';
-  if (nick.isEmpty) return false;
-  return msg.from.resource == nick;
-}
-
 Future<void> _loadPrivacyPrefs(AccountSession session) async {
   final db = session.db;
   final xmpp = session.xmpp;
@@ -492,206 +475,3 @@ Stream<TrackAdvice> get trackAdvice => _advice.stream;
 /// Called when the account changes: another account's devices are another
 /// account's business.
 void forgetCapabilityHistory() => _lastCapabilities.clear();
-
-/// Writes one inbound message into the store.
-///
-/// Idempotent by stanza id, so a carbon that arrives twice, or a message
-/// that is also replayed from the archive, cannot duplicate a bubble.
-///
-/// [ownBare] is our account bare JID. When set, archived messages we sent
-/// are stored as outgoing under the peer (`to`), matching Conversations.
-///
-/// Returns whether the stored row highlighted us (nick / MUC PM). False when
-/// nothing was inserted.
-Future<bool> storeInbound(
-  AppDatabase db,
-  InboundMessage msg, {
-  String? ownBare,
-}) async {
-  // In a room the sender is the *nick*, not the address. Storing the room as
-  // the conversation and the nick as the sender is what makes `room@server`
-  // and `room@server/nick` the same conversation in the chat list, and what
-  // puts the right name on the bubble.
-  final ownArchive = _isOwnArchive(msg, ownBare);
-  // Own archived outbound without a peer address cannot be placed in a chat.
-  if (ownArchive && msg.to == null) return false;
-  final chatJid = _chatJidFor(msg, ownBare);
-  final sender = msg.from.toString();
-  final isGroupchat = msg.type == 'groupchat';
-  // Conversations MODE_MULTI: a groupchat stanza marks the conversation as a
-  // room. Never infer from the JID alone — that is how rooms become "contacts".
-  await db.upsertChat(chatJid, isGroup: isGroupchat ? true : null);
-
-  // A carbon duplicates a message we already hold locally.
-  if (msg.isCarbonCopy) return false;
-
-  // A retraction request is an instruction about an earlier message, not a
-  // message. Storing it would put a duplicate bubble next to the one it
-  // refers to, and the bubble would contain the fallback text as though the
-  // sender had written it.
-  if (msg.retracts != null) {
-    await applyRetraction(
-      db,
-      msg.retracts!,
-      by: msg.moderatedBy,
-      reason: msg.moderationReason,
-    );
-    return false;
-  }
-  if (msg.corrects != null) {
-    // A correction is a new rendering of the original: the body is its real
-    // content, encrypted like any other message, so the track comes from the
-    // sender's declaration rather than from anything we chose.
-    await correctMessage(
-      db: db,
-      chatJid: chatJid,
-      targetId: msg.corrects!,
-      body: msg.body,
-      track: msg.track ?? Track.none,
-    );
-    return false;
-  }
-
-  // Conversations: do not persist messages older than the retention cutoff.
-  final stamp = msg.archiveTimestamp ?? DateTime.now();
-  try {
-    final cutoff = (await loadAutomaticMessageDeletion(appPrefs)).cutoffAt();
-    if (cutoff != null && stamp.isBefore(cutoff)) return false;
-  } catch (_) {}
-
-  final chat = await db.getChat(chatJid);
-  final isGroup = chat?.isGroup ?? isGroupchat;
-  final ownMuc = _isOwnMucReflection(msg, chat?.mucNick);
-  final remoteId = msg.originId ?? msg.stanzaId ?? '';
-
-  // Group retraction (XEP-0424) names the room's stanza-id, not our origin-id.
-  // A MAM replay of a message we already stored still has to fill that id
-  // (Conversations updates serverMsgId on the duplicate, then skips the copy).
-  final roomId = msg.roomStanzaId;
-  if (isGroupchat && roomId != null && roomId.isNotEmpty) {
-    final keys = <String>{
-      if ((msg.originId ?? '').isNotEmpty) msg.originId!,
-      if ((msg.stanzaId ?? '').isNotEmpty) msg.stanzaId!,
-    };
-    for (final key in keys) {
-      await db.setRoomStanzaId(chatJid, key, roomId);
-    }
-  }
-
-  // Conversations MessageParser for MUC self: markMessage(STATUS_SEND_RECEIVED)
-  // on the local UNSEND row and return — never a second bubble.
-  if (ownMuc && remoteId.isNotEmpty) {
-    if (await db.markDelivered(chatJid, remoteId) > 0) {
-      return false;
-    }
-  }
-
-  final stanzaId = msg.stanzaId ?? '';
-  final storedId = msg.originId ?? stanzaId;
-  if (msg.retractionTombstone) {
-    // The archive result id is the room stanza-id of the message that was
-    // replaced. That is not the origin-id, and a tombstone's own message id
-    // is not that either. Try each id we actually have.
-    final targets = <String>[
-      if (roomId != null && roomId.isNotEmpty) roomId,
-      if (storedId.isNotEmpty) storedId,
-      if (stanzaId.isNotEmpty && stanzaId != storedId) stanzaId,
-    ];
-    var matched = false;
-    for (final id in targets) {
-      if (await db.markRetracted(
-        id,
-        at: msg.retractedStamp,
-        by: msg.moderatedBy,
-        reason: msg.moderationReason,
-      )) {
-        matched = true;
-      } else if (await db.messageAddressedBy(chatJid, id)) {
-        matched = true;
-      }
-    }
-    if (matched) return false;
-  }
-  // The room reflection of something we already stored (same origin-id). The
-  // stanza-id was written above; another row would be a second copy of it.
-  if (msg.originId != null &&
-      msg.originId!.isNotEmpty &&
-      await db.findByStanzaId(chatJid, msg.originId!) != null) {
-    return false;
-  }
-  if (await db.findByStanzaId(chatJid, stanzaId) != null) return false;
-  // A room message is identified by its sender's full JID, not just the room:
-  // two people in the same room can, and frequently do, send stanzas with the
-  // same id. Deduplicating on the bare room would drop the second one.
-  final dedupeKey = sender.isEmpty ? stanzaId : sender;
-  if (await db.findByStanzaId(chatJid, dedupeKey) != null) return false;
-
-  final fromMe = ownArchive || ownMuc;
-  final privateMessage =
-      isGroup && msg.type == 'chat' && msg.from.resource.isNotEmpty;
-  final mentionsMe =
-      !fromMe &&
-      isGroup &&
-      msg.encryptionError == null &&
-      (privateMessage ||
-          bodyHighlightsNick(
-            msg.body,
-            highlightNamesFor(nickname: chat?.mucNick, meJid: ownBare),
-          ));
-
-  await db.insertMessage(
-    MessagesCompanion(
-      chatJid: Value(chatJid),
-      // Outgoing room reflections use the same `me` sender as 1:1 sends so
-      // chrome merge / mine bubbles stay consistent.
-      sender: Value(fromMe ? 'me' : sender),
-      // The origin-id when the sender published one, because that is the id
-      // reactions, replies, edits and retrations address. The server's stanza
-      // id is a fallback and it changes across an archive round trip, so a
-      // message keyed on it becomes unaddressable after a MAM import.
-      stanzaId: Value(msg.originId ?? stanzaId),
-      roomStanzaId: Value(msg.roomStanzaId ?? ''),
-      retracted: Value(msg.retractionTombstone),
-      retractedAt: Value(msg.retractedStamp),
-      retractedBy: Value(msg.moderatedBy ?? ''),
-      retractedReason: Value(msg.moderationReason ?? ''),
-      // The reply body is the *stripped* one: [ReplyInfo.body] has the `> `
-      // quote already removed when the sender supplied the offsets, so storing
-      // it keeps the bubble free of a duplicated quote.
-      replyTo: Value(msg.reply?.targetId ?? ''),
-      replyBody: Value(msg.reply?.body ?? ''),
-      replyAuthor: Value(
-        isGroupchat && msg.from.resource.isNotEmpty
-            ? msg.from.resource
-            : msg.from.toBare().toString(),
-      ),
-      // Never store the ciphertext of something we could not open: the
-      // placeholder carries the failure, not the payload.
-      body: Value(msg.encryptionError != null ? '' : msg.body),
-      timestamp: Value(msg.archiveTimestamp ?? DateTime.now()),
-      encMode: Value(
-        // A message we could not open is a condition, not a track: the UI has
-        // to say "this was encrypted, but not by us", and "none" would say
-        // the opposite.
-        msg.encryptionError != null
-            ? EncModeToken.error.wire
-            : EncModeToken.of(msg.track ?? Track.none).wire,
-      ),
-      incoming: Value(!fromMe),
-      // Reflection without a prior local row (other device / MAM): already
-      // confirmed by the room.
-      delivered: Value(fromMe && ownMuc),
-      sendStatus: Value(
-        fromMe
-            ? (ownMuc ? MessageSendStatus.sendReceived : MessageSendStatus.send)
-            : MessageSendStatus.received,
-      ),
-      markable: Value(msg.markable),
-      mediaUrl: Value(msg.encryptionError != null ? '' : msg.mediaUrl),
-      mediaMime: Value(msg.mediaMime),
-      mediaName: Value(msg.mediaName),
-      mentionsMe: Value(mentionsMe),
-    ),
-  );
-  return mentionsMe;
-}

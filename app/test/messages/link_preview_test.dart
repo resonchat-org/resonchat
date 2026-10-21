@@ -12,7 +12,7 @@
 
 import 'package:test/test.dart';
 
-import 'package:resonchat/xmpp/link_preview.dart';
+import 'package:resonchat/xmpp/media/link_preview.dart';
 
 /// A fetcher that records what it was asked for and never touches a network.
 class RecordingFetcher implements LinkPreviewFetcher {

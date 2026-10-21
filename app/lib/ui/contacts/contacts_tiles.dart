@@ -20,7 +20,7 @@ import 'package:resonchat/ui/room/channel_discovery_sheet.dart';
 import 'package:resonchat/ui/room/create_group_sheet.dart';
 import 'package:resonchat/ui/room/room_sheet.dart';
 import 'package:resonchat/ui/theme.dart';
-import 'package:resonchat/xmpp/last_seen.dart';
+import 'package:resonchat/xmpp/roster/last_seen.dart';
 
 TextStyle _detailStyle(Color color) {
   return TextStyle(color: color, fontSize: TgDimens.timeFontSize, height: 1.15);

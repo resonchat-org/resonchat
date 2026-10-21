@@ -30,7 +30,7 @@
 
 import 'package:resonchat/crypto/dual/track.dart';
 import 'package:resonchat/crypto/dual/track_resolver.dart';
-import 'package:resonchat/xmpp/muc.dart';
+import 'package:resonchat/xmpp/muc/muc.dart';
 
 /// One occupant of a room, as far as encryption is concerned.
 ///

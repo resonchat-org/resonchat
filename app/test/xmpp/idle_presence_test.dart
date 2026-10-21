@@ -4,8 +4,8 @@
 import 'package:moxxmpp/moxxmpp.dart';
 import 'package:test/test.dart';
 
-import 'package:resonchat/xmpp/last_seen.dart';
-import 'package:resonchat/xmpp/presence_store.dart';
+import 'package:resonchat/xmpp/roster/last_seen.dart';
+import 'package:resonchat/xmpp/roster/presence_store.dart';
 
 void main() {
   test('XEP-0319 since parses, and a bad value does not', () {

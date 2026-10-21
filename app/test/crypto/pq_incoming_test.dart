@@ -13,8 +13,8 @@ import 'package:moxxmpp/moxxmpp.dart';
 
 import 'package:resonchat/crypto/omemo2/message_codec.dart';
 import 'package:resonchat/crypto/omemo2/protocol.dart';
-import 'package:resonchat/xmpp/pq_incoming.dart';
-import 'package:resonchat/xmpp/pq_stanza.dart';
+import 'package:resonchat/xmpp/encryption/pq_incoming.dart';
+import 'package:resonchat/xmpp/encryption/pq_stanza.dart';
 
 PqEncryptedMessage _payload() => PqEncryptedMessage(
   senderDeviceId: 1,

@@ -112,10 +112,11 @@ resonchat/
 │  └─ lib/
 │     ├─ main.dart
 │     ├─ account/               # 多账号枢纽（AccountHub）
-│     ├─ xmpp/                  # 连接、收发、MAM prefs、MUC 等
+│     ├─ xmpp/                  # 连接与协议；子目录 muc/ inbound/ socket/ media/ chat/ encryption/ roster/；横切单文件留根下
 │     ├─ crypto/                # axolotl 方言 XML、OMEMO2 XML、ML-DSA、双轨策略
-│     ├─ persistence/                 # drift、备份格式、平台条件导入的 DB 连接
-│     ├─ state/                 # Riverpod providers
+│     ├─ domain/                # 落库用例：协议无关输入 → 编排 AppDatabase（无 XML / 不发 stanza）
+│     ├─ persistence/           # Drift AppDatabase（SQL）、备份、平台 DB 连接
+│     ├─ state/                 # Riverpod providers；流订阅并调用 domain
 │     ├─ net/ / platform/ / l10n/
 │     └─ ui/                    # 登录、会话、聊天、设置、账号管理等
 └─ vendor/                    # git 子模块（path 依赖）

@@ -11,6 +11,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:test/test.dart';
 
+import 'package:resonchat/domain/messages_service.dart';
 import 'package:resonchat/persistence/database.dart';
 
 void main() {
@@ -30,7 +31,7 @@ void main() {
     String? stanzaId,
   }) async {
     await db.upsertChat(chat);
-    await db.insertMessage(
+    await db.insertMessageRow(
       MessagesCompanion.insert(
         chatJid: chat,
         sender: sender,
@@ -106,7 +107,7 @@ void main() {
       // Its body is a placeholder, and a placeholder that happens to contain
       // the needle would send the user looking for text that does not exist.
       await db.upsertChat('a@example.org');
-      await db.insertMessage(
+      await db.insertMessageRow(
         MessagesCompanion.insert(
           chatJid: 'a@example.org',
           sender: 'a@example.org/x',
@@ -127,7 +128,7 @@ void main() {
       // that pair fills the results with the same sentence, once per message
       // nobody could read.
       await db.upsertChat('a@example.org');
-      await db.insertMessage(
+      await db.insertMessageRow(
         MessagesCompanion.insert(
           chatJid: 'a@example.org',
           sender: 'a@example.org/x',
@@ -144,7 +145,7 @@ void main() {
       // The body is kept for the sender's own record, so a bare body search
       // would keep surfacing something the user deliberately removed.
       await seed('a@example.org', 'the secret plan');
-      await db.markRetracted(
+      await MessagesService(db).markRetracted(
         (await db.watchMessages('a@example.org').first).single.stanzaId,
       );
       expect(await db.searchMessages('secret plan').first, isEmpty);

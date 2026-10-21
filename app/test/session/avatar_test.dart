@@ -21,7 +21,7 @@ import 'package:flutter/material.dart';
 import 'package:test/test.dart';
 
 import 'package:resonchat/ui/contact_avatar.dart';
-import 'package:resonchat/xmpp/avatar.dart';
+import 'package:resonchat/xmpp/roster/avatar.dart';
 
 void main() {
   group('identifying an avatar', () {

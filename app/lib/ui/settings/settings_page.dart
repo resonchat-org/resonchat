@@ -29,9 +29,9 @@ import 'package:resonchat/ui/settings/translation_settings_sheet.dart';
 import 'package:resonchat/ui/theme.dart';
 import 'package:resonchat/untracker/prefs.dart';
 import 'package:resonchat/xmpp/auto_reply.dart';
-import 'package:resonchat/xmpp/channel_discovery.dart';
-import 'package:resonchat/xmpp/file_preview.dart';
+import 'package:resonchat/xmpp/media/file_preview.dart';
 import 'package:resonchat/xmpp/message_expiry.dart';
+import 'package:resonchat/xmpp/roster/channel_discovery.dart';
 
 /// App settings. Deliberately free of branding that would suggest any
 /// affiliation with other messengers (docs/05 §6).

@@ -17,19 +17,20 @@ import 'package:resonchat/account/resolve.dart';
 import 'package:resonchat/crypto/dual/track.dart';
 import 'package:resonchat/crypto/dual/track_advice.dart';
 import 'package:resonchat/crypto/dual/track_resolver.dart';
+import 'package:resonchat/domain/messages_service.dart';
 import 'package:resonchat/l10n/generated/app_localizations.dart';
 import 'package:resonchat/persistence/database.dart';
 import 'package:resonchat/state/app_wiring.dart';
 import 'package:resonchat/state/providers.dart';
+import 'package:resonchat/xmpp/chat/forwarding.dart';
+import 'package:resonchat/xmpp/chat/reactions.dart';
+import 'package:resonchat/xmpp/chat/replies.dart';
+import 'package:resonchat/xmpp/chat/retraction.dart' as retraction;
+import 'package:resonchat/xmpp/chat/sticker_link.dart';
 import 'package:resonchat/xmpp/connection.dart';
 import 'package:resonchat/xmpp/conversation_archive.dart';
-import 'package:resonchat/xmpp/forwarding.dart';
 import 'package:resonchat/xmpp/message_send_status.dart';
-import 'package:resonchat/xmpp/muc.dart';
-import 'package:resonchat/xmpp/reactions.dart';
-import 'package:resonchat/xmpp/replies.dart';
-import 'package:resonchat/xmpp/retraction.dart' as retraction;
-import 'package:resonchat/xmpp/sticker_link.dart';
+import 'package:resonchat/xmpp/muc/muc.dart';
 
 /// Asks the user whether to send in the clear. Implemented by the page with
 /// `confirmPlaintext` from track_dialogs.dart.
@@ -812,7 +813,7 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
     // resolution below either confirms it or rewrites it. The id is allocated
     // first so the row and the stanza share one [stanzaId].
     final stanzaId = xmpp.allocateStanzaId();
-    await _db.insertMessage(
+    await MessagesService(_db).insertMessage(
       MessagesCompanion(
         chatJid: Value(peerStr),
         sender: const Value('me'),
@@ -946,7 +947,7 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
 
       // Same insert-first path as text (Conversations).
       final stanzaId = xmpp.allocateStanzaId();
-      await _db.insertMessage(
+      await MessagesService(_db).insertMessage(
         MessagesCompanion(
           chatJid: Value(peerStr),
           sender: const Value('me'),
@@ -1101,7 +1102,7 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
           : JID.fromString(peerStr);
       final messageType = mucPm ? 'chat' : (isGroup ? 'groupchat' : 'chat');
       final stanzaId = xmpp.allocateStanzaId();
-      await _db.insertMessage(
+      await MessagesService(_db).insertMessage(
         MessagesCompanion(
           chatJid: Value(peerStr),
           sender: const Value('me'),
@@ -1186,8 +1187,7 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
       next.add(emoji);
     }
 
-    await storeReaction(
-      db,
+    await r.session.messages.storeReaction(
       ReactionUpdate(targetId: targetId, reactor: myJid, emojis: next.toList()),
     );
     bump();
@@ -1204,8 +1204,7 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
     // set rather than just undoing this one emoji keeps the local state equal
     // to what the last successful broadcast said.
     final previous = <String>{for (final g in mine) g.emoji};
-    await storeReaction(
-      db,
+    await r.session.messages.storeReaction(
       ReactionUpdate(
         targetId: targetId,
         reactor: myJid,
@@ -1240,7 +1239,7 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
       );
       if (!sent) return false;
       final nick = chat?.mucNick ?? '';
-      await r.session.db.markRetracted(
+      await r.session.messages.markRetracted(
         targetId,
         by: nick.isEmpty ? null : nick,
       );
@@ -1257,7 +1256,7 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
       groupchat: group,
     );
     if (!sent) return false;
-    await r.session.db.markRetracted(targetId);
+    await r.session.messages.markRetracted(targetId);
     return true;
   }
 
@@ -1281,7 +1280,7 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
     if (!outcome.sent) {
       return outcome.blocked?.localizedTitle(l10n) ?? l10n.unknownReason;
     }
-    await r.session.db.applyCorrection(
+    await r.session.messages.applyCorrection(
       chatJid: r.jid,
       targetId: targetId,
       body: body,
@@ -1314,7 +1313,7 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
         groupchat: group,
       );
       if (!ok) break;
-      await r.session.db.markRetracted(row.stanzaId);
+      await r.session.messages.markRetracted(row.stanzaId);
       deleted++;
     }
     return (mine: mine.length, deleted: deleted);
@@ -1361,7 +1360,7 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
     if (outcome.ok) {
       final now = DateTime.now();
       for (var i = 0; i < outcome.stanzaId.length; i++) {
-        await dest.session.db.insertMessage(
+        await dest.session.messages.insertMessage(
           MessagesCompanion(
             chatJid: Value(destPeer),
             sender: const Value('me'),

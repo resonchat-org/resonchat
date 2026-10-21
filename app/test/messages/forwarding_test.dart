@@ -17,8 +17,8 @@ import 'package:test/test.dart';
 
 import 'package:resonchat/crypto/dual/track.dart';
 import 'package:resonchat/crypto/dual/track_resolver.dart';
+import 'package:resonchat/xmpp/chat/forwarding.dart';
 import 'package:resonchat/xmpp/connection.dart';
-import 'package:resonchat/xmpp/forwarding.dart';
 
 /// A sender that records what it was asked to send.
 class _Recorder {

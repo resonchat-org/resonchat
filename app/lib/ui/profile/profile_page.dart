@@ -22,7 +22,7 @@ import 'package:resonchat/state/providers.dart';
 import 'package:resonchat/ui/chat/chat_profile_sections.dart';
 import 'package:resonchat/ui/theme.dart';
 import 'package:resonchat/xmpp/connection.dart';
-import 'package:resonchat/xmpp/last_seen.dart';
+import 'package:resonchat/xmpp/roster/last_seen.dart';
 
 class ProfilePage extends ConsumerWidget {
   const ProfilePage({super.key, required this.chatJid});

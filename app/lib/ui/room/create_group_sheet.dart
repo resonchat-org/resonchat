@@ -16,7 +16,7 @@ import 'package:resonchat/l10n/l10n.dart';
 import 'package:resonchat/state/providers.dart';
 import 'package:resonchat/ui/home/open_chat.dart';
 import 'package:resonchat/ui/theme.dart';
-import 'package:resonchat/xmpp/muc_create.dart';
+import 'package:resonchat/xmpp/muc/muc_create.dart';
 
 /// Conversations “Create private group chat”.
 Future<void> showCreatePrivateGroupSheet(BuildContext context) {

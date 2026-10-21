@@ -211,7 +211,7 @@ Future<void> maybeSendAutoReply({
   );
   final track = override ?? global ?? Track.standard;
   final stanzaId = xmpp.allocateStanzaId();
-  await session.db.insertMessage(
+  await session.messages.insertMessage(
     MessagesCompanion(
       chatJid: Value(chatJid),
       sender: const Value('me'),

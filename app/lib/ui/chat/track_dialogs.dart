@@ -19,7 +19,7 @@ import 'package:resonchat/crypto/dual/track_advice.dart';
 import 'package:resonchat/crypto/dual/track_resolver.dart';
 import 'package:resonchat/l10n/l10n.dart';
 import 'package:resonchat/state/providers.dart';
-import 'package:resonchat/xmpp/capabilities.dart';
+import 'package:resonchat/xmpp/encryption/capabilities.dart';
 
 /// The banner shown when a contact's capabilities changed (docs/10 §8).
 ///

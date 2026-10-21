@@ -170,7 +170,7 @@ void main() {
         // counter) before the SQL runs. Forcing unread to 0 would hide it.
         await touch('a@example.org', 10);
         await db.markChatRead('a@example.org', at: clock(1));
-        await db.insertMessage(
+        await db.insertMessageRow(
           MessagesCompanion(
             chatJid: const Value('a@example.org'),
             sender: const Value('room@example.org/bob'),

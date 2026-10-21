@@ -24,9 +24,9 @@ import 'package:resonchat/crypto/dual/track_resolver.dart';
 import 'package:resonchat/crypto/omemo2/protocol.dart';
 import 'package:resonchat/persistence/omemo2_device_store.dart';
 import 'package:resonchat/persistence/pq_identity_store.dart';
-import 'package:resonchat/xmpp/b_track_manager.dart';
-import 'package:resonchat/xmpp/capabilities.dart';
 import 'package:resonchat/xmpp/connection.dart';
+import 'package:resonchat/xmpp/encryption/b_track_manager.dart';
+import 'package:resonchat/xmpp/encryption/capabilities.dart';
 
 final results = <String, bool>{};
 

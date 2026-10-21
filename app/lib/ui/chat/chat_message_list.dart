@@ -20,11 +20,11 @@ import 'package:resonchat/ui/chat/read_ring.dart';
 import 'package:resonchat/ui/chats/unread.dart';
 import 'package:resonchat/ui/contact_avatar.dart';
 import 'package:resonchat/ui/theme.dart';
-import 'package:resonchat/xmpp/avatar.dart';
+import 'package:resonchat/xmpp/chat/reactions.dart';
 import 'package:resonchat/xmpp/group_read.dart';
 import 'package:resonchat/xmpp/message_send_status.dart';
-import 'package:resonchat/xmpp/muc.dart';
-import 'package:resonchat/xmpp/reactions.dart';
+import 'package:resonchat/xmpp/muc/muc.dart';
+import 'package:resonchat/xmpp/roster/avatar.dart';
 
 /// Message list with day separators and an unread marker.
 class ChatMessageList extends StatelessWidget {

@@ -14,14 +14,14 @@ import 'package:resonchat/crypto/dual/track.dart';
 import 'package:resonchat/persistence/database.dart';
 import 'package:resonchat/persistence/prefs_database.dart';
 import 'package:resonchat/ui/chat/appearance.dart';
-import 'package:resonchat/xmpp/avatar.dart';
-import 'package:resonchat/xmpp/b_track_manager.dart';
-import 'package:resonchat/xmpp/blocking.dart';
-import 'package:resonchat/xmpp/capabilities.dart';
+import 'package:resonchat/xmpp/chat/reactions.dart';
 import 'package:resonchat/xmpp/connection.dart';
-import 'package:resonchat/xmpp/muc.dart';
-import 'package:resonchat/xmpp/presence_store.dart';
-import 'package:resonchat/xmpp/reactions.dart';
+import 'package:resonchat/xmpp/encryption/b_track_manager.dart';
+import 'package:resonchat/xmpp/encryption/capabilities.dart';
+import 'package:resonchat/xmpp/muc/muc.dart';
+import 'package:resonchat/xmpp/roster/avatar.dart';
+import 'package:resonchat/xmpp/roster/blocking.dart';
+import 'package:resonchat/xmpp/roster/presence_store.dart';
 
 /// Multi-account hub (installed in `main()`).
 ///

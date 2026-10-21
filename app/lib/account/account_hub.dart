@@ -18,16 +18,18 @@ import 'package:resonchat/account/account_color.dart';
 import 'package:resonchat/account/chat_ref.dart';
 import 'package:resonchat/crypto/dual/dual_track_manager.dart';
 import 'package:resonchat/crypto/dual/fingerprint_trust.dart';
+import 'package:resonchat/domain/messages_service.dart';
+import 'package:resonchat/domain/roster_service.dart';
 import 'package:resonchat/net/app_network.dart';
 import 'package:resonchat/persistence/account_store.dart';
 import 'package:resonchat/persistence/database.dart';
 import 'package:resonchat/persistence/omemo2_device_store.dart';
 import 'package:resonchat/persistence/omemo_device_store.dart';
 import 'package:resonchat/persistence/roster_state.dart';
-import 'package:resonchat/xmpp/b_track_manager.dart';
 import 'package:resonchat/xmpp/connect_failure.dart';
 import 'package:resonchat/xmpp/connection.dart';
 import 'package:resonchat/xmpp/conversation_archive.dart';
+import 'package:resonchat/xmpp/encryption/b_track_manager.dart';
 
 /// One chat row in the unified inbox.
 class AccountChat {
@@ -69,10 +71,14 @@ class AccountBookmark {
 
 /// Live session for one account.
 class AccountSession {
-  AccountSession({required this.account, required this.db, required this.xmpp});
+  AccountSession({required this.account, required this.db, required this.xmpp})
+    : messages = MessagesService(db),
+      roster = RosterService(db);
 
   StoredAccount account;
   final AppDatabase db;
+  final MessagesService messages;
+  final RosterService roster;
   final XmppService xmpp;
   DualTrackManager? tracks;
   final List<StreamSubscription<Object?>> subs = [];
@@ -340,7 +346,7 @@ class AccountHub extends ChangeNotifier {
       // XEP-0402 / legacy bookmarks → local group rows, then rejoin autojoin.
       // Seed from disk so the UI is non-empty and legacy rewrites see the
       // full set if the fetch is slow or fails.
-      xmpp.seedBookmarks(await db.loadConferenceBookmarks());
+      xmpp.seedBookmarks(await session.roster.loadConferenceBookmarks());
       await xmpp.fetchBookmarks();
       await _applyBookmarksToDb(session);
       final rooms = await db.groupChatsForJoin();
@@ -735,7 +741,7 @@ class AccountHub extends ChangeNotifier {
       // before bootstrap finishes.
       var list = s.xmpp.cachedBookmarks;
       if (list.isEmpty) {
-        list = await s.db.loadConferenceBookmarks();
+        list = await s.roster.loadConferenceBookmarks();
       }
       for (final b in list) {
         final key = ChatRef(accountId: account.id, jid: b.jid).key;
@@ -785,7 +791,7 @@ class AccountHub extends ChangeNotifier {
     final db = session.db;
     final bookmarks = session.xmpp.cachedBookmarks;
     // Disk snapshot for cold start (Contacts count before the next PEP fetch).
-    await db.saveConferenceBookmarks(bookmarks);
+    await session.roster.saveConferenceBookmarks(bookmarks);
     final fallbackNick = session.account.bareJid.split('@').first;
     for (final b in bookmarks) {
       final nick = (b.nick != null && b.nick!.trim().isNotEmpty)

@@ -7,7 +7,7 @@ import 'package:moxxmpp/moxxmpp.dart' show JID, RosterManager, rosterManager;
 import 'package:resonchat/account/account_hub.dart';
 import 'package:resonchat/account/chat_ref.dart';
 import 'package:resonchat/xmpp/connection.dart';
-import 'package:resonchat/xmpp/muc_detect.dart';
+import 'package:resonchat/xmpp/muc/muc_detect.dart';
 
 /// Reduces whatever the user typed to a bare JID, or null if it is not one.
 ///

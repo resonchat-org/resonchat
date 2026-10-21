@@ -65,7 +65,7 @@ void main() {
       ),
     );
     await db.upsertChat('bob@example.org', title: 'Bob');
-    await db.insertMessage(
+    await db.insertMessageRow(
       MessagesCompanion(
         chatJid: const Value('bob@example.org'),
         sender: const Value('bob@example.org'),
@@ -142,7 +142,7 @@ void main() {
     final file = File('${dir.path}/plain.sqlite3');
     final db = AppDatabase(NativeDatabase.createInBackground(file));
     await db.upsertChat('dave@example.org');
-    await db.insertMessage(
+    await db.insertMessageRow(
       MessagesCompanion(
         chatJid: const Value('dave@example.org'),
         sender: const Value('dave@example.org'),

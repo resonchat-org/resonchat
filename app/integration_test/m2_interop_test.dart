@@ -34,8 +34,8 @@ import 'package:resonchat/crypto/dual/negotiation.dart';
 import 'package:resonchat/crypto/dual/track.dart';
 import 'package:resonchat/persistence/database.dart';
 import 'package:resonchat/persistence/roster_state.dart';
-import 'package:resonchat/xmpp/capabilities.dart';
 import 'package:resonchat/xmpp/connection.dart';
+import 'package:resonchat/xmpp/encryption/capabilities.dart';
 
 /// Strings shared between steps, so a failure can be reported by name.
 final results = <String, bool>{};

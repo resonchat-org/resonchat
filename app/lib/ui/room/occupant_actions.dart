@@ -18,7 +18,7 @@ import 'package:resonchat/state/providers.dart';
 import 'package:resonchat/ui/chats/chats_viewmodel.dart';
 import 'package:resonchat/ui/theme.dart';
 import 'package:resonchat/xmpp/connection.dart';
-import 'package:resonchat/xmpp/muc.dart';
+import 'package:resonchat/xmpp/muc/muc.dart';
 
 enum OccupantSheetAction {
   privateChat,

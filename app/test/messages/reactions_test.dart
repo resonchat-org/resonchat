@@ -12,22 +12,28 @@
 import 'package:drift/native.dart';
 import 'package:test/test.dart';
 
+import 'package:resonchat/domain/messages_service.dart';
 import 'package:resonchat/persistence/database.dart';
-import 'package:resonchat/xmpp/reactions.dart';
+import 'package:resonchat/xmpp/chat/reactions.dart';
+import 'package:resonchat/xmpp/inbound/reaction_update.dart';
 
 void main() {
   late AppDatabase db;
+  late MessagesService messages;
   const me = 'me@example.org';
   const peer = 'peer@example.org';
   const target = 'origin-id-1';
 
-  setUp(() => db = AppDatabase(NativeDatabase.memory()));
+  setUp(() {
+    db = AppDatabase(NativeDatabase.memory());
+    messages = MessagesService(db);
+  });
   tearDown(() => db.close());
 
-  Future<void> react(String reactor, List<String> emojis) => storeReaction(
-    db,
-    ReactionUpdate(targetId: target, reactor: reactor, emojis: emojis),
-  );
+  Future<void> react(String reactor, List<String> emojis) =>
+      messages.storeReaction(
+        ReactionUpdate(targetId: target, reactor: reactor, emojis: emojis),
+      );
 
   group('a broadcast is a complete set', () {
     test('adding', () async {
@@ -128,12 +134,10 @@ void main() {
 
   group('isolation between messages', () {
     test('a reaction lands on its target only', () async {
-      await storeReaction(
-        db,
+      await messages.storeReaction(
         ReactionUpdate(targetId: 'origin-id-1', reactor: peer, emojis: ['👍']),
       );
-      await storeReaction(
-        db,
+      await messages.storeReaction(
         ReactionUpdate(targetId: 'origin-id-2', reactor: peer, emojis: ['😂']),
       );
       expect((await reactionsFor(db, 'origin-id-1', me)).single.emoji, '👍');

@@ -74,7 +74,7 @@ void main() {
     });
 
     test('the refusal is written onto the sent message', () async {
-      await db.insertMessage(
+      await db.insertMessageRow(
         MessagesCompanion(
           chatJid: const Value('peer@example.org'),
           sender: const Value('me'),
@@ -95,7 +95,7 @@ void main() {
     });
 
     test('an unrelated stanza id changes nothing', () async {
-      await db.insertMessage(
+      await db.insertMessageRow(
         MessagesCompanion(
           chatJid: const Value('peer@example.org'),
           sender: const Value('me'),
@@ -113,7 +113,7 @@ void main() {
     test(
       'an empty stanza id is ignored rather than matching every row',
       () async {
-        await db.insertMessage(
+        await db.insertMessageRow(
           MessagesCompanion(
             chatJid: const Value('peer@example.org'),
             sender: const Value('me'),
@@ -127,7 +127,7 @@ void main() {
     );
 
     test('a fresh message is not marked as failed', () async {
-      await db.insertMessage(
+      await db.insertMessageRow(
         MessagesCompanion(
           chatJid: const Value('peer@example.org'),
           sender: const Value('me'),

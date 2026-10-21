@@ -23,8 +23,8 @@ import 'package:xml/xml.dart';
 import 'package:resonchat/crypto/axolotl/defacto.dart';
 import 'package:resonchat/crypto/dual/dual_track_manager.dart';
 import 'package:resonchat/crypto/dual/track.dart';
-import 'package:resonchat/xmpp/capabilities.dart';
 import 'package:resonchat/xmpp/connection.dart';
+import 'package:resonchat/xmpp/encryption/capabilities.dart';
 
 final results = <String, bool>{};
 

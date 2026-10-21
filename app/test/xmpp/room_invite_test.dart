@@ -4,7 +4,7 @@
 import 'package:moxxmpp/moxxmpp.dart';
 import 'package:test/test.dart';
 
-import 'package:resonchat/xmpp/room_invite.dart';
+import 'package:resonchat/xmpp/muc/room_invite.dart';
 
 void main() {
   test('parses a mediated muc#user invite', () {

@@ -28,8 +28,8 @@ import 'package:resonchat/ui/room/room_config_page.dart';
 import 'package:resonchat/ui/room/room_profile_viewmodel.dart';
 import 'package:resonchat/ui/theme.dart';
 import 'package:resonchat/xmpp/connection.dart';
-import 'package:resonchat/xmpp/local_nickname.dart';
-import 'package:resonchat/xmpp/muc.dart';
+import 'package:resonchat/xmpp/muc/muc.dart';
+import 'package:resonchat/xmpp/roster/local_nickname.dart';
 
 /// What [RoomProfilePage] produced for the chat page.
 class RoomProfileResult {

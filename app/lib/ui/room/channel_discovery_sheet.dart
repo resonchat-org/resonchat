@@ -15,8 +15,8 @@ import 'package:resonchat/l10n/l10n.dart';
 import 'package:resonchat/state/providers.dart';
 import 'package:resonchat/ui/home/open_chat.dart';
 import 'package:resonchat/ui/theme.dart';
-import 'package:resonchat/xmpp/channel_discovery.dart';
-import 'package:resonchat/xmpp/muc.dart';
+import 'package:resonchat/xmpp/muc/muc.dart';
+import 'package:resonchat/xmpp/roster/channel_discovery.dart';
 
 /// Search and join public MUCs via jabber.network or local disco.
 Future<void> showChannelDiscoverySheet(BuildContext context) {
