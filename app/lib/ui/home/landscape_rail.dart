@@ -113,9 +113,7 @@ class LandscapeNavRail extends ConsumerWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            IconButton(
-              tooltip: l10n.pendingRequests,
-              icon: const Icon(Icons.person_add_alt),
+            PendingRequestsButton(
               color: tg.textPrimary,
               onPressed: () {
                 final nav = navigatorKey.currentState;

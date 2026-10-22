@@ -83,6 +83,12 @@ class _AppWiringState extends ConsumerState<AppWiring>
         state == AppLifecycleState.hidden) {
       AppLock.instance.lockAndDisguise();
     }
+    // Gajim `cleanup_chat_history` runs from `_shutdown_core`, including
+    // max_age 0 ("Until Gajim is Closed"). Not on pause: backgrounding is
+    // not closing the app.
+    if (state == AppLifecycleState.detached) {
+      unawaited(expireOldMessagesAcrossAccounts(atShutdown: true));
+    }
   }
 
   void _bindAll() {

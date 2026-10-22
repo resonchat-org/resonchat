@@ -436,7 +436,17 @@ final roomStateProvider = FutureProvider.family<GroupChat?, String>((
   final roomJid = r.jid;
   final xmpp = r.session.xmpp;
   final state = await xmpp.groupChatState(roomJid);
-  if (state == null) return null;
+  if (state == null) {
+    final saved = xmpp.savedRoomMembers(roomJid);
+    if (saved.isEmpty) return null;
+    return GroupChat(
+      roomJid: roomJid,
+      nick: '',
+      occupants: saved,
+      joined: false,
+      canSeeMemberJids: saved.any((o) => (o.realJid ?? '').isNotEmpty),
+    );
+  }
   // Offline affiliates when JIDs are visible (non-anon or owner/admin).
   final occupants = await xmpp.roomDisplayMembers(roomJid);
   return GroupChat(
@@ -553,6 +563,20 @@ final roomInvitationsProvider = StreamProvider<List<RoomInvitation>>((ref) {
   final db = ref.watch(databaseOrNullProvider);
   if (db == null) return Stream.value(const []);
   return db.watchRoomInvitations();
+});
+
+/// Incoming subscription requests plus room invitations.
+///
+/// Outgoing requests are waiting on the other person, so they do not count.
+final actionablePendingCountProvider = Provider<int>((ref) {
+  final requests =
+      ref.watch(subscriptionRequestsProvider).asData?.value ?? const [];
+  final invites = ref.watch(roomInvitationsProvider).asData?.value ?? const [];
+  var incoming = 0;
+  for (final row in requests) {
+    if (!row.outgoing) incoming++;
+  }
+  return incoming + invites.length;
 });
 
 /// The unsent text in [chatKey], or null.

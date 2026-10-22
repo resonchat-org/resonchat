@@ -29,6 +29,7 @@ import 'package:resonchat/ui/settings/translation_settings_sheet.dart';
 import 'package:resonchat/ui/theme.dart';
 import 'package:resonchat/untracker/prefs.dart';
 import 'package:resonchat/xmpp/auto_reply.dart';
+import 'package:resonchat/xmpp/history_sync.dart';
 import 'package:resonchat/xmpp/media/file_preview.dart';
 import 'package:resonchat/xmpp/message_expiry.dart';
 import 'package:resonchat/xmpp/roster/channel_discovery.dart';
@@ -49,6 +50,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   int _previewMaxBytes = kDefaultPreviewMaxFileSize;
   bool _devLogEnabled = false;
   AutoReplyConfig _autoReply = AutoReplyConfig.empty;
+  HistorySyncSetting _historySync = HistorySyncSetting.fallback;
 
   @override
   void initState() {
@@ -59,6 +61,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     unawaited(_reloadPreviewMax());
     unawaited(_reloadDevLog());
     unawaited(_reloadAutoReply());
+    unawaited(_reloadHistorySync());
   }
 
   Future<void> _reloadTranslationPrefs() async {
@@ -89,6 +92,14 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final config = await loadAutoReply();
     if (!mounted) return;
     setState(() => _autoReply = config);
+  }
+
+  Future<void> _reloadHistorySync() async {
+    final setting = await loadHistorySyncSetting(
+      ref.read(prefsDatabaseProvider),
+    );
+    if (!mounted) return;
+    setState(() => _historySync = setting);
   }
 
   Future<void> _reloadDevLog() async {
@@ -253,6 +264,15 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             onChanged: (v) => unawaited(vm.setChatStates(v)),
           ),
           ListTile(
+            leading: const Icon(Icons.history),
+            title: Text(l10n.historySyncTitle),
+            subtitle: Text(
+              '${_historySyncLabel(l10n, _historySync)}\n'
+              '${l10n.historySyncSummary}',
+            ),
+            onTap: () => unawaited(_pickHistorySync(context)),
+          ),
+          ListTile(
             leading: const Icon(Icons.auto_delete_outlined),
             title: Text(l10n.automaticMessageDeletion),
             subtitle: Text(
@@ -404,13 +424,17 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     AppLocalizations l10n,
     AutomaticMessageDeletion value,
   ) => switch (value) {
-    AutomaticMessageDeletion.never => l10n.automaticMessageDeletionNever,
+    AutomaticMessageDeletion.untilClosed =>
+      l10n.automaticMessageDeletionUntilClosed,
     AutomaticMessageDeletion.oneDay => l10n.automaticMessageDeletionOneDay,
     AutomaticMessageDeletion.oneWeek => l10n.automaticMessageDeletionOneWeek,
-    AutomaticMessageDeletion.thirtyDays =>
-      l10n.automaticMessageDeletionThirtyDays,
+    AutomaticMessageDeletion.oneMonth => l10n.automaticMessageDeletionOneMonth,
+    AutomaticMessageDeletion.threeMonths =>
+      l10n.automaticMessageDeletionThreeMonths,
     AutomaticMessageDeletion.sixMonths =>
       l10n.automaticMessageDeletionSixMonths,
+    AutomaticMessageDeletion.oneYear => l10n.automaticMessageDeletionOneYear,
+    AutomaticMessageDeletion.never => l10n.automaticMessageDeletionNever,
   };
 
   Future<void> _pickChannelDiscoveryMethod() async {
@@ -453,27 +477,230 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     setState(() => _channelMethod = chosen);
   }
 
+  String _historySyncLabel(AppLocalizations l10n, HistorySyncSetting setting) {
+    return switch (setting.mode) {
+      HistorySyncMode.off => l10n.historySyncOff,
+      HistorySyncMode.count => l10n.historySyncMessages(setting.count),
+      HistorySyncMode.days => _historySyncDaysLabel(l10n, setting.days),
+    };
+  }
+
+  String _historySyncDaysLabel(AppLocalizations l10n, int days) {
+    return switch (days) {
+      1 => l10n.historySyncOneDay,
+      2 => l10n.historySyncTwoDays,
+      7 => l10n.historySyncOneWeek,
+      30 => l10n.historySyncOneMonth,
+      90 => l10n.historySyncOneQuarter,
+      180 => l10n.historySyncSixMonths,
+      365 => l10n.historySyncOneYear,
+      _ => l10n.historySyncOneWeek,
+    };
+  }
+
+  Future<void> _pickHistorySync(BuildContext context) async {
+    final l10n = context.l10n;
+    var draft = _historySync;
+    final chosen = await showModalBottomSheet<HistorySyncSetting>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheet) {
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(0, 8, 0, 16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                      child: Text(
+                        l10n.historySyncTitle,
+                        style: Theme.of(ctx).textTheme.titleMedium,
+                      ),
+                    ),
+                    ListTile(
+                      title: Text(l10n.historySyncOff),
+                      trailing: draft.mode == HistorySyncMode.off
+                          ? const Icon(Icons.check)
+                          : null,
+                      onTap: () => setSheet(
+                        () => draft = draft.copyWith(mode: HistorySyncMode.off),
+                      ),
+                    ),
+                    ListTile(
+                      title: Text(l10n.historySyncByCount),
+                      trailing: draft.mode == HistorySyncMode.count
+                          ? const Icon(Icons.check)
+                          : null,
+                      onTap: () => setSheet(
+                        () =>
+                            draft = draft.copyWith(mode: HistorySyncMode.count),
+                      ),
+                    ),
+                    if (draft.mode == HistorySyncMode.count)
+                      _discreteOptionSlider(
+                        context: ctx,
+                        options: HistorySyncSetting.countOptions,
+                        value: draft.count,
+                        labelOf: l10n.historySyncMessages,
+                        onChanged: (count) => setSheet(
+                          () => draft = draft.copyWith(
+                            mode: HistorySyncMode.count,
+                            count: count,
+                          ),
+                        ),
+                      ),
+                    ListTile(
+                      title: Text(l10n.historySyncByDays),
+                      trailing: draft.mode == HistorySyncMode.days
+                          ? const Icon(Icons.check)
+                          : null,
+                      onTap: () => setSheet(
+                        () =>
+                            draft = draft.copyWith(mode: HistorySyncMode.days),
+                      ),
+                    ),
+                    if (draft.mode == HistorySyncMode.days)
+                      _discreteOptionSlider(
+                        context: ctx,
+                        options: HistorySyncSetting.dayOptions,
+                        value: draft.days,
+                        labelOf: (days) => _historySyncDaysLabel(l10n, days),
+                        onChanged: (days) => setSheet(
+                          () => draft = draft.copyWith(
+                            mode: HistorySyncMode.days,
+                            days: days,
+                          ),
+                        ),
+                      ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                      child: FilledButton(
+                        onPressed: () => Navigator.pop(ctx, draft),
+                        child: Text(l10n.save),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+    if (chosen == null || !mounted) return;
+    await saveHistorySyncSetting(ref.read(prefsDatabaseProvider), chosen);
+    setState(() => _historySync = chosen);
+  }
+
+  /// A track with tick marks for each discrete option and a draggable thumb.
+  Widget _discreteOptionSlider<T>({
+    required BuildContext context,
+    required List<T> options,
+    required T value,
+    required String Function(T) labelOf,
+    required ValueChanged<T> onChanged,
+  }) {
+    final index = options.indexOf(value).clamp(0, options.length - 1);
+    final scheme = Theme.of(context).colorScheme;
+    final tickStyle = Theme.of(context).textTheme.labelSmall
+        ?.copyWith(color: scheme.onSurfaceVariant, fontSize: 10);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              labelOf(options[index]),
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ),
+          Slider(
+            value: index.toDouble(),
+            min: 0,
+            max: (options.length - 1).toDouble(),
+            divisions: options.length - 1,
+            label: labelOf(options[index]),
+            onChanged: (raw) {
+              final next = raw.round().clamp(0, options.length - 1);
+              onChanged(options[next]);
+            },
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              children: [
+                for (final option in options)
+                  Expanded(
+                    child: Text(
+                      labelOf(option),
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: tickStyle,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _pickAutomaticDeletion(
     BuildContext context,
     AutomaticMessageDeletion current,
     SettingsViewModel vm,
   ) async {
     final l10n = context.l10n;
+    var draft = current;
     final chosen = await showModalBottomSheet<AutomaticMessageDeletion>(
       context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (final option in AutomaticMessageDeletion.values)
-              ListTile(
-                title: Text(_deletionLabel(l10n, option)),
-                trailing: option == current ? const Icon(Icons.check) : null,
-                onTap: () => Navigator.pop(ctx, option),
+      isScrollControlled: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheet) {
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(0, 8, 0, 16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                      child: Text(
+                        l10n.automaticMessageDeletion,
+                        style: Theme.of(ctx).textTheme.titleMedium,
+                      ),
+                    ),
+                    _discreteOptionSlider(
+                      context: ctx,
+                      options: AutomaticMessageDeletion.values,
+                      value: draft,
+                      labelOf: (option) => _deletionLabel(l10n, option),
+                      onChanged: (option) => setSheet(() => draft = option),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                      child: FilledButton(
+                        onPressed: () => Navigator.pop(ctx, draft),
+                        child: Text(l10n.save),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-          ],
-        ),
-      ),
+            );
+          },
+        );
+      },
     );
     if (chosen == null || !mounted) return;
     await vm.setAutomaticMessageDeletion(chosen);
@@ -615,23 +842,48 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
   Future<void> _pickPreviewMax(BuildContext context) async {
     final l10n = context.l10n;
+    var draft = _previewMaxBytes;
     final chosen = await showModalBottomSheet<int>(
       context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (final bytes in previewMaxFileSizeChoices)
-              ListTile(
-                title: Text(_previewLimitLabel(l10n, bytes)),
-                trailing: bytes == _previewMaxBytes
-                    ? const Icon(Icons.check)
-                    : null,
-                onTap: () => Navigator.pop(ctx, bytes),
+      isScrollControlled: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheet) {
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(0, 8, 0, 16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                      child: Text(
+                        l10n.previewMaxFileSize,
+                        style: Theme.of(ctx).textTheme.titleMedium,
+                      ),
+                    ),
+                    _discreteOptionSlider(
+                      context: ctx,
+                      options: previewMaxFileSizeChoices,
+                      value: draft,
+                      labelOf: (bytes) => _previewLimitLabel(l10n, bytes),
+                      onChanged: (bytes) => setSheet(() => draft = bytes),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                      child: FilledButton(
+                        onPressed: () => Navigator.pop(ctx, draft),
+                        child: Text(l10n.save),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-          ],
-        ),
-      ),
+            );
+          },
+        );
+      },
     );
     if (chosen == null || !mounted) return;
     await savePreviewMaxFileSize(chosen);

@@ -14,19 +14,21 @@ Future<String> sha256Hex(List<int> bytes) async {
   return HEX.encode(digest.bytes);
 }
 
-/// Groups hex for display as `xxxxxxxx xxxxxxxx ...` (8 groups of 8).
+/// Hex fingerprint for display or for an `xmpp:` URI.
 ///
 /// Conversations `CryptoHelper.prettifyFingerprint(fp.substring(2))`: drop the
-/// leading DJB Curve type byte (`05`) from a 66-char Signal serialize hex,
-/// then insert spaces every 8 characters.
+/// leading DJB Curve type byte (`05`) from a 66-char Signal serialize hex.
+/// [spaces] inserts a gap every 8 characters (the on-screen form). Pass
+/// `spaces: false` for the unspaced value Conversations puts in a share URI.
 ///
 /// Hybrid (128-char SHA3-512) digests are not stripped — only the classical
 /// 33-byte identity serialize form uses the `05` prefix.
-String formatFingerprint(String hexDigest) {
+String formatFingerprint(String hexDigest, {bool spaces = true}) {
   var clean = hexDigest.replaceAll(RegExp(r'\s+'), '').toLowerCase();
   if (clean.length == 66 && clean.startsWith('05')) {
     clean = clean.substring(2);
   }
+  if (!spaces) return clean;
   final groups = <String>[];
   for (var i = 0; i < clean.length; i += 8) {
     final end = (i + 8 < clean.length) ? i + 8 : clean.length;

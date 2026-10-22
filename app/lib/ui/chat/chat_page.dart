@@ -112,6 +112,19 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
   bool _atBottom = true;
 
+  /// Older MAM page in flight. The list draws a spinner above the oldest row.
+  bool _loadingOlder = false;
+
+  /// The archive reported nothing older than what we already hold.
+  bool _olderExhausted = false;
+
+  /// RSM `<first/>` from the last older-page, when that page added no row.
+  String? _olderCursor;
+
+  /// Previous scroll offset, so a fling toward the latest messages does not
+  /// fetch history.
+  double _lastScrollOffset = 0;
+
   /// Unread count for this conversation, or null while it is being read.
   ///
   /// Watched here rather than only in the chat list because the jump-to-unread
@@ -248,6 +261,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     _scroll.addListener(_onScroll);
     _focus.addListener(_onComposerFocus);
     _bindViewModel();
+    unawaited(_loadOlderExhausted());
     // Deliberately *not* marked read here. Marking on arrival would clear the
     // unread badge before the user has read anything, and the boundary in the
     // transcript would vanish before it had been seen. The marker advances when
@@ -436,11 +450,98 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     };
   }
 
+  Future<void> _loadOlderExhausted() async {
+    final exhausted = await _vm.olderHistoryExhausted();
+    if (!mounted) return;
+    setState(() => _olderExhausted = exhausted);
+  }
+
   void _onScroll() {
     if (!_scroll.hasClients) return;
-    final distance = _scroll.position.maxScrollExtent - _scroll.offset;
+    final position = _scroll.position;
+    final distance = position.maxScrollExtent - position.pixels;
     final atBottom = distance < 80;
     if (atBottom != _atBottom) setState(() => _atBottom = atBottom);
+
+    final towardOlder = position.pixels < _lastScrollOffset - 0.5;
+    _lastScrollOffset = position.pixels;
+    // Finger moving the transcript down (or a fling that lands on the oldest
+    // row). Conversations loads once `firstVisibleItem < 5`.
+    final atTop = position.pixels <= position.minScrollExtent + 48;
+    if (atTop && towardOlder) unawaited(_maybeLoadOlder());
+  }
+
+  /// A downward drag while already on the oldest row. Clamped scrolling does
+  /// not move [ScrollPosition.pixels], so the offset listener never sees it.
+  bool _onOlderPull(ScrollNotification notification) {
+    if (notification is! ScrollUpdateNotification) return false;
+    if (notification.metrics.pixels >
+        notification.metrics.minScrollExtent + 48) {
+      return false;
+    }
+    final dy = notification.dragDetails?.delta.dy ?? 0;
+    if (dy > 0) unawaited(_maybeLoadOlder());
+    return false;
+  }
+
+  /// One page of older messages (Conversations `PAGE_SIZE`) when the user
+  /// has reached the top and the server still has some.
+  Future<void> _maybeLoadOlder() async {
+    if (_loadingOlder || _olderExhausted || !mounted) return;
+    final list = ref.read(messagesProvider(widget.chatJid)).value;
+    if (list == null || list.isEmpty) return;
+    final oldest = list.first;
+    final beforeMax = _scroll.hasClients
+        ? _scroll.position.maxScrollExtent
+        : 0.0;
+    final beforeOffset = _scroll.hasClients ? _scroll.offset : 0.0;
+    _loadingOlder = true;
+    setState(() {});
+    final result = await _vm.loadOlder(
+      end: oldest.timestamp,
+      beforeId: _olderCursor,
+    );
+    if (!mounted) return;
+    // Storage of the page is asynchronous, so "did the list grow?" is not a
+    // reliable signal. Trust the archive: complete, or an empty page, means
+    // there is nothing older. A cursor that moved still lets the next pull
+    // ask for the page before this one.
+    if (result != null && result.first != null && result.first!.isNotEmpty) {
+      _olderCursor = result.first;
+    }
+    final exhausted = result != null && (result.complete || result.count == 0);
+    setState(() {
+      _loadingOlder = false;
+      if (exhausted) _olderExhausted = true;
+    });
+    if (exhausted) unawaited(_vm.setOlderHistoryExhausted(true));
+    _keepScrollAnchor(beforeMax, beforeOffset);
+  }
+
+  /// New rows are inserted above the viewport. Shift the offset by the growth
+  /// so the message the user was reading stays put.
+  void _keepScrollAnchor(double beforeMax, double beforeOffset) {
+    var tries = 0;
+    void adjust() {
+      if (!mounted || !_scroll.hasClients) return;
+      final delta = _scroll.position.maxScrollExtent - beforeMax;
+      if (delta > 8) {
+        final target = beforeOffset + delta;
+        _scroll.jumpTo(
+          target.clamp(
+            _scroll.position.minScrollExtent,
+            _scroll.position.maxScrollExtent,
+          ),
+        );
+        _lastScrollOffset = _scroll.offset;
+        return;
+      }
+      if (tries++ < 4) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => adjust());
+      }
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) => adjust());
   }
 
   void _scrollToBottom() {
@@ -1788,46 +1889,55 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                               messages.when(
                                 data: (list) {
                                   if (list.isNotEmpty) _ensureInitialScroll();
-                                  return ChatMessageList(
-                                    chatKey: widget.chatJid,
-                                    messages: list,
-                                    scroll: _scroll,
-                                    onRetryDecrypt: () => _loadHistory(),
-                                    onReact: _toggleReaction,
-                                    onMenu: _showMessageMenu,
-                                    onToggleSelected: _toggleSelected,
-                                    selectingMessageId: _selectingMessageId,
-                                    onTextSelectionChanged: (slice) {
-                                      _selectedSlice = slice;
-                                    },
-                                    onMentionNick: _mentionOccupant,
-                                    onOccupantAvatarLongPress: (nick) =>
-                                        unawaited(
-                                          _onOccupantAvatarLongPress(nick),
-                                        ),
-                                    selectionMode: _selectionMode,
-                                    selectedIds: _selection,
-                                    translations: _translations,
-                                    translatingIds: _translating,
-                                    readAt: ref
-                                        .watch(
-                                          chatLastReadProvider(widget.chatJid),
-                                        )
-                                        .value,
-                                    unreadCount: _unreadCountHere ?? 0,
-                                    unreadDividerKey: _unreadDividerKey,
-                                    focusMessageAnchor: _activeFocusAnchor,
-                                    focusMessageKey: _focusMessageKey,
-                                    bubbleStyle: appearance.bubble,
-                                    isGroup: ui.isGroup,
-                                    groupReads: ui.isGroup && ui.mucEncryptable,
-                                    room: ui.room,
-                                    highlightNicks: highlightNicksFor(
-                                      mucNick: ui.mucNick,
+                                  return NotificationListener<
+                                    ScrollNotification
+                                  >(
+                                    onNotification: _onOlderPull,
+                                    child: ChatMessageList(
                                       chatKey: widget.chatJid,
+                                      messages: list,
+                                      scroll: _scroll,
+                                      onRetryDecrypt: () => _loadHistory(),
+                                      onReact: _toggleReaction,
+                                      onMenu: _showMessageMenu,
+                                      onToggleSelected: _toggleSelected,
+                                      selectingMessageId: _selectingMessageId,
+                                      onTextSelectionChanged: (slice) {
+                                        _selectedSlice = slice;
+                                      },
+                                      onMentionNick: _mentionOccupant,
+                                      onOccupantAvatarLongPress: (nick) =>
+                                          unawaited(
+                                            _onOccupantAvatarLongPress(nick),
+                                          ),
+                                      selectionMode: _selectionMode,
+                                      selectedIds: _selection,
+                                      translations: _translations,
+                                      translatingIds: _translating,
+                                      readAt: ref
+                                          .watch(
+                                            chatLastReadProvider(
+                                              widget.chatJid,
+                                            ),
+                                          )
+                                          .value,
+                                      unreadCount: _unreadCountHere ?? 0,
+                                      unreadDividerKey: _unreadDividerKey,
+                                      focusMessageAnchor: _activeFocusAnchor,
+                                      focusMessageKey: _focusMessageKey,
+                                      bubbleStyle: appearance.bubble,
+                                      isGroup: ui.isGroup,
+                                      groupReads:
+                                          ui.isGroup && ui.mucEncryptable,
+                                      room: ui.room,
+                                      highlightNicks: highlightNicksFor(
+                                        mucNick: ui.mucNick,
+                                        chatKey: widget.chatJid,
+                                      ),
+                                      peerName: title,
+                                      selfNick: ui.mucNick,
+                                      loadingOlder: _loadingOlder,
                                     ),
-                                    peerName: title,
-                                    selfNick: ui.mucNick,
                                   );
                                 },
                                 loading: () => const Center(

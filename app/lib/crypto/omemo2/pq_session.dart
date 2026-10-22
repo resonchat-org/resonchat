@@ -17,6 +17,14 @@ class PqSessionError implements Exception {
 
 /// Registers peer bundles in-memory and drives [Omemo2Manager].
 class PqSessionManager {
+  PqSessionManager({this.onCommit});
+
+  /// Persists the device, including session records, after encrypt/decrypt.
+  ///
+  /// Conversations writes the session before the stanza leaves. Wiping the
+  /// sealed blob (regenerate) is what drops them.
+  final Future<void> Function(PqDevice device)? onCommit;
+
   Omemo2Manager? _manager;
   Omemo2Device? _own;
   final Map<String, Map<int, Omemo2PreKeyBundle>> _bundles = {};
@@ -33,6 +41,7 @@ class PqSessionManager {
     if (_own?.id == own.id && _manager != null) return;
     _own = own;
     await own.ensureStores();
+    final commit = onCommit;
     _manager = Omemo2Manager(
       own,
       fetchDeviceList: (jid) async {
@@ -41,6 +50,7 @@ class PqSessionManager {
         return map.keys.toList();
       },
       fetchBundle: (jid, deviceId) async => _bundles[jid]?[deviceId],
+      commitDevice: commit ?? (_) async {},
     );
   }
 

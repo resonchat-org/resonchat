@@ -779,6 +779,19 @@ class AppDatabase extends _$AppDatabase {
     rosterEntries,
   )..where((r) => r.jid.equals(jid))).getSingleOrNull();
 
+  /// Meta key: the chat's MAM archive has no messages older than what we hold.
+  static String mamOlderExhaustedKey(String chatJid) =>
+      'mam_older_exhausted:${chatJid.trim().toLowerCase()}';
+
+  Future<bool> mamOlderExhausted(String chatJid) async =>
+      (await metaValue(mamOlderExhaustedKey(chatJid))) == '1';
+
+  Future<void> setMamOlderExhausted(String chatJid, bool exhausted) {
+    final key = mamOlderExhaustedKey(chatJid);
+    if (!exhausted) return deleteMetaValue(key);
+    return setMetaValue(key, '1');
+  }
+
   Future<String?> metaValue(String key) async {
     final row = await (select(
       meta,
@@ -794,6 +807,25 @@ class AppDatabase extends _$AppDatabase {
 
   Future<void> deleteMetaValue(String key) async {
     await (delete(meta)..where((m) => m.key.equals(key))).go();
+  }
+
+  /// Saved MUC display roster, keyed by lowercased bare room JID.
+  static const roomMembersPrefix = 'room_members:';
+
+  static String roomMembersKey(String roomJid) =>
+      '$roomMembersPrefix${roomJid.trim().toLowerCase()}';
+
+  Future<void> saveRoomMembers(String roomJid, String json) {
+    return setMetaValue(roomMembersKey(roomJid), json);
+  }
+
+  /// Lowercased bare room JID → encoded occupant list.
+  Future<Map<String, String>> roomMemberBlobs() async {
+    final rows = await metaEntriesWithPrefix(roomMembersPrefix);
+    return {
+      for (final row in rows)
+        row.key.substring(roomMembersPrefix.length): row.value,
+    };
   }
 
   /// Meta rows whose key starts with [prefix] (SQL `LIKE 'prefix%'`).
@@ -1465,6 +1497,7 @@ class AppDatabase extends _$AppDatabase {
       await (delete(chats)..where((c) => c.jid.equals(chatJid))).go();
       await deleteMetaValue('draft:$chatJid');
       await deleteMetaValue('plaintext_ack:$chatJid');
+      await deleteMetaValue(roomMembersKey(chatJid));
     });
   }
 
@@ -1486,6 +1519,7 @@ class AppDatabase extends _$AppDatabase {
       await (update(chats)..where((c) => c.jid.equals(chatJid))).write(
         ChatsCompanion(lastActivity: Value(chatActivityEpoch)),
       );
+      await deleteMetaValue(mamOlderExhaustedKey(chatJid));
       return n;
     });
   }

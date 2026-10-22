@@ -107,7 +107,7 @@ class BTrackManager {
     await device.ensureStores();
     // Ensure ML-DSA-87 identity exists before first publish.
     await pqIdentity.publicKey();
-    final sessions = PqSessionManager();
+    final sessions = PqSessionManager(onCommit: deviceStore.save);
     // Identity keys come from the sender's published bundle.
     final layer = PqMessageLayer(
       ownDevice: device,

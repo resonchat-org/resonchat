@@ -18,9 +18,11 @@ import 'package:resonchat/account/account_hub.dart';
 import 'package:resonchat/l10n/l10n.dart';
 import 'package:resonchat/persistence/account_store.dart';
 import 'package:resonchat/ui/accounts/account_profile_viewmodel.dart';
+import 'package:resonchat/ui/accounts/account_qr_code.dart';
 import 'package:resonchat/ui/contact_avatar.dart';
 import 'package:resonchat/ui/fingerprint_box.dart';
 import 'package:resonchat/ui/theme.dart';
+import 'package:resonchat/xmpp/account_share_uri.dart';
 import 'package:resonchat/xmpp/connection.dart';
 
 class AccountProfilePage extends ConsumerStatefulWidget {
@@ -84,6 +86,13 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
         content: Text(ok ? l10n.passwordChanged : l10n.couldNotChangePassword),
       ),
     );
+  }
+
+  Future<void> _copyShareUri(String uri) async {
+    await Clipboard.setData(ClipboardData(text: uri));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(context.l10n.uriCopied)));
   }
 
   Future<void> _copyFingerprint(String? fp) async {
@@ -233,6 +242,11 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
             body: Center(child: Text(l10n.noAccountsYet)),
           );
         }
+        final shareUri = accountShareUri(
+          bareJid: account.bareJid,
+          deviceId: ui.deviceId,
+          legacyFingerprint: ui.legacyFingerprint,
+        );
         return Scaffold(
           appBar: AppBar(title: Text(l10n.editProfile)),
           body: ListView(
@@ -275,6 +289,23 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
                 child: Text(
                   account.bareJid,
                   style: TextStyle(color: tg.textSecondary),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Center(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      AccountQrCode(data: shareUri),
+                      IconButton(
+                        tooltip: l10n.copyUri,
+                        onPressed: () => unawaited(_copyShareUri(shareUri)),
+                        icon: const Icon(Icons.copy_outlined),
+                      ),
+                    ],
+                  ),
                 ),
               ),
               const SizedBox(height: 24),

@@ -12,8 +12,9 @@
 //     `room@server/theirNick`.
 //   * The sender of an incoming message is the *nick* (resource), not the room.
 //   * Occupants change without notice. Anything computed once at join time — a
-//     device list, a track decision — is stale by the time it is used, so
-//     nothing here is cached beyond what the presence stream itself says.
+//     device list, a track decision — is stale by the time it is used. The
+//     last display roster is kept so the read ring can draw before the next
+//     presence wave, then replaced when that wave arrives.
 //   * A room is never a roster contact: no subscription, no PEP-as-peer.
 //
 // On encryption, the honest position: a room's recipient set is "whoever is in
@@ -24,6 +25,8 @@
 // conversation uses. Silently sending a room message in the clear because the
 // occupant list was momentarily unreadable would be the worst possible outcome
 // for a room, where the audience is a group.
+
+import 'dart:convert';
 
 import 'package:moxxmpp/moxxmpp.dart';
 
@@ -122,6 +125,55 @@ class Occupant {
 
   @override
   int get hashCode => Object.hash(nick, affiliation, role, realJid, show);
+}
+
+/// JSON for the saved member list. Same fields the read ring and the roster
+/// need before the next presence wave: nick, affiliation, role, real JID.
+String encodeRoomMembers(List<Occupant> occupants) {
+  return jsonEncode([
+    for (final o in occupants)
+      {
+        'nick': o.nick,
+        'affiliation': o.affiliation,
+        'role': o.role,
+        if (o.realJid != null) 'realJid': o.realJid,
+        if (o.show != null) 'show': o.show!.name,
+      },
+  ]);
+}
+
+List<Occupant> decodeRoomMembers(String raw) {
+  final decoded = jsonDecode(raw);
+  if (decoded is! List) return const [];
+  final out = <Occupant>[];
+  for (final item in decoded) {
+    if (item is! Map) continue;
+    final nick = item['nick'];
+    final affiliation = item['affiliation'];
+    final role = item['role'];
+    if (nick is! String || affiliation is! String || role is! String) continue;
+    final real = item['realJid'];
+    final showName = item['show'];
+    PresenceShow? show;
+    if (showName is String) {
+      for (final value in PresenceShow.values) {
+        if (value.name == showName) {
+          show = value;
+          break;
+        }
+      }
+    }
+    out.add(
+      Occupant(
+        nick: nick,
+        affiliation: affiliation,
+        role: role,
+        realJid: real is String && real.isNotEmpty ? real : null,
+        show: show,
+      ),
+    );
+  }
+  return out;
 }
 
 /// Gajim `AffiliationRoleSortOrder` / roster section keys.

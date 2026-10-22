@@ -30,6 +30,7 @@ import 'package:resonchat/xmpp/connect_failure.dart';
 import 'package:resonchat/xmpp/connection.dart';
 import 'package:resonchat/xmpp/conversation_archive.dart';
 import 'package:resonchat/xmpp/encryption/b_track_manager.dart';
+import 'package:resonchat/xmpp/muc/muc.dart';
 
 /// One chat row in the unified inbox.
 class AccountChat {
@@ -225,6 +226,8 @@ class AccountHub extends ChangeNotifier {
       bTrack: bTrack,
       fingerprintTrust: fingerprintTrust,
     );
+    xmpp.onRoomRoster = (room) =>
+        db.saveRoomMembers(room.roomJid, encodeRoomMembers(room.occupants));
     return xmpp;
   }
 
@@ -236,6 +239,7 @@ class AccountHub extends ChangeNotifier {
     }
     final db = await openAppDatabase(accountId: account.id);
     final xmpp = _buildXmpp(db, account.id);
+    xmpp.restoreRoomMembers(await db.roomMemberBlobs());
     final session = AccountSession(account: account, db: db, xmpp: xmpp);
     session.subs.add(db.watchChats().listen((_) => _chatsTick.add(null)));
     session.subs.add(
@@ -357,13 +361,13 @@ class AccountHub extends ChangeNotifier {
       final startRaw = await db.metaValue(XmppService.mamCatchupTsKey);
       final metaTs = startRaw != null ? DateTime.tryParse(startRaw) : null;
       final dbTs = await db.latestMessageTimestamp();
-      DateTime? start;
-      if (afterId == null || afterId.isEmpty) {
-        if (metaTs != null && dbTs != null) {
-          start = metaTs.isAfter(dbTs) ? metaTs : dbTs;
-        } else {
-          start = metaTs ?? dbTs;
-        }
+      // Always pass the anchor so a day-window catch-up can drop a cursor
+      // that is older than the threshold. Private rooms use that same window.
+      final DateTime? start;
+      if (metaTs != null && dbTs != null) {
+        start = metaTs.isAfter(dbTs) ? metaTs : dbTs;
+      } else {
+        start = metaTs ?? dbTs;
       }
       await xmpp.catchUpHistory(
         afterId: afterId,

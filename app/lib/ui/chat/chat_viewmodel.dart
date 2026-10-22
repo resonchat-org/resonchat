@@ -354,6 +354,18 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
       mucEncryptable: row.mucPrivateNonAnonymous,
       roomJid: r.jid,
     );
+    final saved = r.session.xmpp.savedRoomMembers(r.jid);
+    if (saved.isNotEmpty) {
+      state = state.copyWith(
+        room: GroupChat(
+          roomJid: r.jid,
+          nick: row.mucNick,
+          occupants: saved,
+          joined: false,
+          canSeeMemberJids: saved.any((o) => (o.realJid ?? '').isNotEmpty),
+        ),
+      );
+    }
     await _roomSub?.cancel();
     _roomSub = r.session.xmpp.roomOccupants(r.jid).listen((chat) {
       if (_disposed || chat == null) return;
@@ -1406,6 +1418,29 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
     return _xmpp.fetchHistory(
       JID.fromString(peerJid),
       group: chat?.isGroup ?? state.isGroup,
+    );
+  }
+
+  /// True once an older-history page reported the archive has nothing further.
+  Future<bool> olderHistoryExhausted() => _db.mamOlderExhausted(peerJid);
+
+  Future<void> setOlderHistoryExhausted(bool exhausted) =>
+      _db.setMamOlderExhausted(peerJid, exhausted);
+
+  /// One page of messages older than [end] (Conversations page size).
+  ///
+  /// [beforeId] continues from the previous page's RSM cursor when that page
+  /// did not add a row. Null when the query failed.
+  Future<({int count, bool complete, String? first})?> loadOlder({
+    required DateTime end,
+    String? beforeId,
+  }) async {
+    final chat = await _db.getChat(peerJid);
+    return _xmpp.fetchOlderHistory(
+      JID.fromString(peerJid),
+      group: chat?.isGroup ?? state.isGroup,
+      end: end,
+      beforeId: beforeId,
     );
   }
 }

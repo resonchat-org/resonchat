@@ -7,6 +7,7 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' show min;
 import 'dart:typed_data';
 
 import 'package:logging/logging.dart';
@@ -23,6 +24,7 @@ import 'package:resonchat/crypto/dual/track.dart';
 import 'package:resonchat/crypto/dual/track_resolver.dart';
 import 'package:resonchat/crypto/omemo2/protocol.dart';
 import 'package:resonchat/persistence/omemo_device_store.dart';
+import 'package:resonchat/persistence/prefs_database.dart';
 import 'package:resonchat/xmpp/chat/replies.dart';
 import 'package:resonchat/xmpp/connect_failure.dart';
 import 'package:resonchat/xmpp/encryption/b_track_manager.dart';
@@ -30,6 +32,7 @@ import 'package:resonchat/xmpp/encryption/capabilities.dart';
 import 'package:resonchat/xmpp/encryption/eme.dart';
 import 'package:resonchat/xmpp/encryption/pq_incoming.dart';
 import 'package:resonchat/xmpp/encryption/pq_stanza.dart';
+import 'package:resonchat/xmpp/history_sync.dart';
 import 'package:resonchat/xmpp/inbound/inbound_mapper.dart';
 import 'package:resonchat/xmpp/inbound/inbound_message.dart';
 import 'package:resonchat/xmpp/media/http_files.dart';
@@ -1326,15 +1329,38 @@ class XmppService {
   }
 
   /// Member list for the UI (online + offline affiliates when JIDs are visible).
+  ///
+  /// Before this process has seen presence, the list saved at the last emit
+  /// is used so read markers and the ring have a denominator immediately.
   Future<List<Occupant>> roomDisplayMembers(String roomJid) async {
     final bare = JID.fromString(roomJid).toBare().toString();
     final online = await roomOccupantList(bare);
-    return roomMembersForDisplay(
+    final live = roomMembersForDisplay(
       includeOfflineAffiliates: _includeOfflineAffiliates[bare] ?? false,
       affiliation: _affiliations[bare] ?? const [],
       online: online,
     );
+    if (live.isNotEmpty) return live;
+    return List<Occupant>.of(_savedMembers[_roomKey(bare)] ?? const []);
   }
+
+  /// Last display roster written for [roomJid], if any.
+  List<Occupant> savedRoomMembers(String roomJid) =>
+      List<Occupant>.of(_savedMembers[_roomKey(roomJid)] ?? const []);
+
+  /// Loads rosters saved by [onRoomRoster]. Called before connect so a marker
+  /// that arrives with the first presence can already map nick → real JID.
+  void restoreRoomMembers(Map<String, String> jsonByBareJid) {
+    _savedMembers
+      ..clear()
+      ..addAll({
+        for (final entry in jsonByBareJid.entries)
+          entry.key.trim().toLowerCase(): decodeRoomMembers(entry.value),
+      });
+  }
+
+  String _roomKey(String roomJid) =>
+      JID.fromString(roomJid).toBare().toString().toLowerCase();
 
   /// Affiliation roster for OMEMO (Conversations `MucOptions.getMembers`).
   ///
@@ -1983,6 +2009,18 @@ class XmppService {
   /// business holding user-facing text.
   XmppConnectFailure? lastFailure;
 
+  /// Whether this room's disco result advertised MAM. False until disco runs.
+  bool roomMamAvailable(String roomJid) =>
+      _roomMam[roomJid.trim().toLowerCase()] ?? false;
+
+  Future<HistorySyncSetting> _loadHistorySync() async {
+    try {
+      return await loadHistorySyncSetting(appPrefs);
+    } catch (_) {
+      return HistorySyncSetting.fallback;
+    }
+  }
+
   /// Whether the server advertises the MAM archive (XEP-0313). Queried
   /// lazily; cached per connection.
   bool get mamAvailable => _mamAvailable;
@@ -2336,15 +2374,8 @@ class XmppService {
     }
   }
 
-  /// Page size for MAM catch-up and per-chat history (Conversations uses 50).
+  /// Page size for one MAM query (Conversations `Config.PAGE_SIZE`).
   static const int mamPageSize = 50;
-
-  /// Hard cap on catch-up pages (Conversations: MAM_MAX_MESSAGES / PAGE_SIZE).
-  static const int mamCatchupMaxPages = 15;
-
-  /// How far back a first catch-up reaches when we have no local cursor
-  /// (Conversations: MAM_MAX_CATCHUP = 5 days).
-  static const Duration mamCatchupInitialWindow = Duration(days: 5);
 
   /// Meta key for the last MAM archive id we have caught up through.
   static const String mamCatchupIdKey = 'mam_catchup_id';
@@ -2383,51 +2414,71 @@ class XmppService {
     return result.get<MamQueryResult>().count;
   }
 
-  /// Conversations `catchupMUC`: page the room archive so each message picks
-  /// up the room's `<result id='…'/>`.
+  /// One page of messages older than [end] (Conversations `loadMoreMessages`,
+  /// [mamPageSize] at a time).
   ///
-  /// Newest page first (`<before/>` empty), then older pages, capped at
-  /// [mamCatchupMaxPages].
+  /// [beforeId] is the previous page's RSM `<first/>`, used when that page
+  /// overlapped messages already on disk. [complete] is the archive's own
+  /// flag: true means nothing older matches.
+  Future<({int count, bool complete, String? first})?> fetchOlderHistory(
+    JID chatJid, {
+    required bool group,
+    DateTime? end,
+    String? beforeId,
+  }) async {
+    final mm = _connection?.getManagerById<MessageArchiveManagementManager>(
+      mamManager,
+    );
+    final own = _connection?.connectionSettings.jid.toBare();
+    if (mm == null || own == null) return null;
+    if (!group && !_mamAvailable) return null;
+    final cursor = (beforeId != null && beforeId.isNotEmpty) ? beforeId : null;
+    final result = await mm.requestMessages(
+      group ? chatJid.toBare() : own,
+      withJid: group ? null : chatJid.toBare(),
+      end: cursor == null
+          ? end?.toUtc().subtract(const Duration(milliseconds: 1))
+          : null,
+      rsmBefore: cursor ?? '',
+      pageSize: mamPageSize,
+    );
+    if (!result.isType<MamQueryResult>()) return null;
+    final page = result.get<MamQueryResult>();
+    return (count: page.count, complete: page.complete, first: page.first);
+  }
+
+  /// Pulls a room archive after join, limited by [HistorySyncSetting].
+  ///
+  /// Count mode takes the newest N messages. Days mode queries from
+  /// now − N days and pages until the archive is done, with no message
+  /// ceiling (Gajim). Off does nothing. A private room uses the same
+  /// window; there is no unlimited sync.
   Future<void> _catchUpRoomArchive(String roomJid) async {
+    final setting = await _loadHistorySync();
+    if (setting.mode == HistorySyncMode.off) return;
     final mm = _connection?.getManagerById<MessageArchiveManagementManager>(
       mamManager,
     );
     if (mm == null) return;
     final room = JID.fromString(roomJid).toBare();
-    String? before;
-    for (var page = 0; page < mamCatchupMaxPages; page++) {
-      final result = await mm.requestMessages(
-        room,
-        rsmBefore: before ?? '',
-        pageSize: mamPageSize,
+    if (setting.mode == HistorySyncMode.days) {
+      await _pageMamForward(
+        mm: mm,
+        archive: room,
+        start: DateTime.now().toUtc().subtract(Duration(days: setting.days)),
+        mode: HistorySyncMode.days,
       );
-      if (!result.isType<MamQueryResult>()) {
-        _log.warning('MUC MAM catch-up failed for $room on page $page');
-        return;
-      }
-      final pageResult = result.get<MamQueryResult>();
-      _log.info(
-        'MUC MAM $room page $page: ${pageResult.count} msg(s), '
-        'complete=${pageResult.complete}',
-      );
-      final cursor = pageResult.first;
-      if (pageResult.complete ||
-          pageResult.count == 0 ||
-          cursor == null ||
-          cursor.isEmpty ||
-          cursor == before) {
-        return;
-      }
-      before = cursor;
+      return;
     }
+    await _pageMamNewest(mm: mm, archive: room, messageLimit: setting.count);
   }
 
   /// Catch up the account message archive after login.
   ///
-  /// Aligned with Conversations `MessageArchiveManager.catchup()`:
-  /// account bare JID, RSM `after` when [afterId] is known, otherwise `start`
-  /// from [start] (capped to [mamCatchupInitialWindow]), page size 50, abort
-  /// after [mamCatchupMaxPages] × page size (~[Config.MAM_MAX_MESSAGES]).
+  /// Honours [HistorySyncSetting]: off returns immediately, count stops at
+  /// the chosen number, days pages the window until the archive reports
+  /// complete. A cursor older than the day window is dropped so a long
+  /// absence cannot pull history from before the threshold.
   ///
   /// Receipt requests seen during catch-up are postponed and flushed when the
   /// query finishes (`processPostponed`).
@@ -2435,68 +2486,62 @@ class XmppService {
     String? afterId,
     DateTime? start,
     Future<void> Function(String? archiveId, DateTime? timestamp)? saveCursor,
-    int pageSize = mamPageSize,
-    int maxPages = mamCatchupMaxPages,
   }) async {
+    final setting = await _loadHistorySync();
+    if (setting.mode == HistorySyncMode.off) return 0;
+
     final mm = _connection?.getManagerById<MessageArchiveManagementManager>(
       mamManager,
     );
     final own = _connection?.connectionSettings.jid.toBare();
     if (mm == null || own == null || !_mamAvailable) return null;
 
-    // Conversations: either RSM after(reference) *or* form start(timestamp).
-    var cursor = (afterId != null && afterId.isNotEmpty) ? afterId : null;
     final now = DateTime.now().toUtc();
-    final windowStart = now.subtract(mamCatchupInitialWindow);
-    DateTime? pageStart;
-    if (cursor == null) {
-      final raw = start?.toUtc();
-      if (raw == null) {
-        pageStart = windowStart;
-      } else if (now.difference(raw) >= mamCatchupInitialWindow) {
-        // Gap larger than MAM_MAX_CATCHUP → only pull the last window.
-        pageStart = windowStart;
-      } else {
-        pageStart = raw;
-      }
-    }
-
+    final known = (afterId != null && afterId.isNotEmpty) ? afterId : null;
     _mamCatchingUp = true;
     _pendingReceiptRequests.clear();
+    String? lastId = known;
     var total = 0;
-    String? lastId = cursor;
     try {
-      for (var page = 0; page < maxPages; page++) {
-        final result = await mm.requestMessages(
-          own,
+      if (setting.mode == HistorySyncMode.days) {
+        final window = Duration(days: setting.days);
+        final windowStart = now.subtract(window);
+        final raw = start?.toUtc();
+        final gapTooWide = raw == null || now.difference(raw) >= window;
+        final cursor = (known == null || gapTooWide) ? null : known;
+        final pageStart = cursor != null
+            ? null
+            : (raw != null && !gapTooWide ? raw : windowStart);
+        final run = await _pageMamForward(
+          mm: mm,
+          archive: own,
           start: pageStart,
-          rsmAfter: cursor,
-          pageSize: pageSize,
+          afterId: cursor,
+          mode: HistorySyncMode.days,
         );
-        if (!result.isType<MamQueryResult>()) {
-          _log.warning('MAM catch-up failed on page $page');
-          return total == 0 ? null : total;
-        }
-        final pageResult = result.get<MamQueryResult>();
-        total += pageResult.count;
-        if (pageResult.last != null && pageResult.last!.isNotEmpty) {
-          lastId = pageResult.last;
-        }
-        // After the first page, continue only with RSM after.
-        pageStart = null;
-        cursor = pageResult.last;
-        _log.info(
-          'MAM catch-up page $page: ${pageResult.count} msg(s), '
-          'complete=${pageResult.complete}, last=$cursor',
+        if (run == null) return null;
+        total = run.count;
+        lastId = run.lastId ?? lastId;
+      } else if (known == null) {
+        final run = await _pageMamNewest(
+          mm: mm,
+          archive: own,
+          messageLimit: setting.count,
         );
-        if (pageResult.complete ||
-            pageResult.count == 0 ||
-            cursor == null ||
-            cursor.isEmpty) {
-          break;
-        }
-        // Conversations aborts at MAM_MAX_MESSAGES.
-        if (total >= pageSize * maxPages) break;
+        if (run == null) return null;
+        total = run.count;
+        lastId = run.lastId;
+      } else {
+        final run = await _pageMamForward(
+          mm: mm,
+          archive: own,
+          afterId: known,
+          mode: HistorySyncMode.count,
+          messageLimit: setting.count,
+        );
+        if (run == null) return null;
+        total = run.count;
+        lastId = run.lastId ?? lastId;
       }
     } finally {
       _mamCatchingUp = false;
@@ -2507,6 +2552,137 @@ class XmppService {
       await saveCursor(lastId, now);
     }
     return total;
+  }
+
+  /// Pages forward (`after`) until [historySyncShouldContinue] says stop.
+  ///
+  /// The id returned is the newest archive id seen, so the next login can
+  /// resume. Days mode passes no [messageLimit].
+  Future<({int count, String? lastId})?> _pageMamForward({
+    required MessageArchiveManagementManager mm,
+    required JID archive,
+    required HistorySyncMode mode,
+    DateTime? start,
+    String? afterId,
+    JID? withJid,
+    int? messageLimit,
+  }) async {
+    var cursor = (afterId != null && afterId.isNotEmpty) ? afterId : null;
+    var pageStart = cursor == null ? start : null;
+    var total = 0;
+    String? lastId = cursor;
+    var page = 0;
+    while (historySyncShouldContinue(
+      mode: mode,
+      complete: false,
+      fetched: total,
+      cursorAdvanced: true,
+      messageLimit: messageLimit,
+    )) {
+      final pageSize = messageLimit == null
+          ? mamPageSize
+          : min(mamPageSize, messageLimit - total);
+      final result = await mm.requestMessages(
+        archive,
+        withJid: withJid,
+        start: pageStart,
+        rsmAfter: cursor,
+        pageSize: pageSize,
+      );
+      if (!result.isType<MamQueryResult>()) {
+        _log.warning('MAM page $page failed for ${archive.toBare()}');
+        return total == 0 ? null : (count: total, lastId: lastId);
+      }
+      final pageResult = result.get<MamQueryResult>();
+      total += pageResult.count;
+      if (pageResult.last != null && pageResult.last!.isNotEmpty) {
+        lastId = pageResult.last;
+      }
+      pageStart = null;
+      final next = pageResult.last;
+      final advanced =
+          pageResult.count > 0 &&
+          next != null &&
+          next.isNotEmpty &&
+          next != cursor;
+      _log.info(
+        'MAM ${archive.toBare()} page $page: ${pageResult.count} msg(s), '
+        'complete=${pageResult.complete}, last=$next',
+      );
+      if (!historySyncShouldContinue(
+        mode: mode,
+        complete: pageResult.complete,
+        fetched: total,
+        cursorAdvanced: advanced,
+        messageLimit: messageLimit,
+      )) {
+        break;
+      }
+      cursor = next;
+      page++;
+    }
+    return (count: total, lastId: lastId);
+  }
+
+  /// Newest [messageLimit] messages, one [mamPageSize] page at a time.
+  ///
+  /// The id returned is the newest archive id (the first page's `<last/>`),
+  /// not the oldest page walked to.
+  Future<({int count, String? lastId})?> _pageMamNewest({
+    required MessageArchiveManagementManager mm,
+    required JID archive,
+    required int messageLimit,
+    JID? withJid,
+  }) async {
+    var before = '';
+    var total = 0;
+    String? newestId;
+    var page = 0;
+    while (historySyncShouldContinue(
+      mode: HistorySyncMode.count,
+      complete: false,
+      fetched: total,
+      cursorAdvanced: true,
+      messageLimit: messageLimit,
+    )) {
+      final result = await mm.requestMessages(
+        archive,
+        withJid: withJid,
+        rsmBefore: before,
+        pageSize: min(mamPageSize, messageLimit - total),
+      );
+      if (!result.isType<MamQueryResult>()) {
+        _log.warning('MAM page $page failed for ${archive.toBare()}');
+        return total == 0 ? null : (count: total, lastId: newestId);
+      }
+      final pageResult = result.get<MamQueryResult>();
+      newestId ??= (pageResult.last != null && pageResult.last!.isNotEmpty)
+          ? pageResult.last
+          : null;
+      total += pageResult.count;
+      final next = pageResult.first;
+      final advanced =
+          pageResult.count > 0 &&
+          next != null &&
+          next.isNotEmpty &&
+          next != before;
+      _log.info(
+        'MAM ${archive.toBare()} newest page $page: ${pageResult.count} '
+        'msg(s), complete=${pageResult.complete}',
+      );
+      if (!historySyncShouldContinue(
+        mode: HistorySyncMode.count,
+        complete: pageResult.complete,
+        fetched: total,
+        cursorAdvanced: advanced,
+        messageLimit: messageLimit,
+      )) {
+        break;
+      }
+      before = next!;
+      page++;
+    }
+    return (count: total, lastId: newestId);
   }
 
   /// Sends postponed XEP-0184 receipts after MAM catch-up
@@ -3269,6 +3445,12 @@ class XmppService {
   /// Affiliation stubs from `muc#admin` (owner/admin/member), keyed by bare room.
   final _affiliations = <String, List<Occupant>>{};
 
+  /// Last non-empty display roster per lowercased bare room JID.
+  final _savedMembers = <String, List<Occupant>>{};
+
+  /// Writes that roster. Set by the account hub; the connection has no database.
+  Future<void> Function(GroupChat room)? onRoomRoster;
+
   /// Whether [roomJid] is Conversations `isPrivateAndNonAnonymous`.
   final _privateNonAnonymous = <String, bool>{};
 
@@ -3344,19 +3526,24 @@ class XmppService {
       affiliation: _affiliations[bare] ?? const [],
       online: online,
     );
-    _roomOccupants.add(
-      GroupChat(
-        roomJid: bare,
-        // A room with no nick is one we are not in; showing the member list of
-        // a room we only queried would be a list of people we are not talking
-        // to.
-        nick: state.nick ?? '',
-        occupants: occupants,
-        subject: state.subject,
-        joined: state.joined,
-        canSeeMemberJids: _includeOfflineAffiliates[bare] ?? false,
-      ),
+    final chat = GroupChat(
+      roomJid: bare,
+      // A room with no nick is one we are not in; showing the member list of
+      // a room we only queried would be a list of people we are not talking
+      // to.
+      nick: state.nick ?? '',
+      occupants: occupants,
+      subject: state.subject,
+      joined: state.joined,
+      canSeeMemberJids: _includeOfflineAffiliates[bare] ?? false,
     );
+    _roomOccupants.add(chat);
+    // An empty emit during join must not wipe the roster we already saved.
+    // The next presence or affiliation result replaces it wholesale.
+    if (occupants.isEmpty) return;
+    _savedMembers[_roomKey(bare)] = occupants;
+    final persist = onRoomRoster;
+    if (persist != null) unawaited(persist(chat));
   }
 
   /// Disco `muc_membersonly` for [roomJid]. False until that disco result lands.

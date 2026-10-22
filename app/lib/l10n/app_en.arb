@@ -112,11 +112,14 @@
   "typingNotificationsSummary": "Let contacts know when you are writing a message",
   "automaticMessageDeletion": "Automatic message deletion",
   "automaticMessageDeletionSummary": "Deletes old messages on this device only",
+  "automaticMessageDeletionUntilClosed": "Until closed",
+  "automaticMessageDeletionOneDay": "1 day",
+  "automaticMessageDeletionOneWeek": "1 week",
+  "automaticMessageDeletionOneMonth": "1 month",
+  "automaticMessageDeletionThreeMonths": "3 months",
+  "automaticMessageDeletionSixMonths": "6 months",
+  "automaticMessageDeletionOneYear": "1 year",
   "automaticMessageDeletionNever": "Never",
-  "automaticMessageDeletionOneDay": "After 1 day",
-  "automaticMessageDeletionOneWeek": "After 1 week",
-  "automaticMessageDeletionThirtyDays": "After 30 days",
-  "automaticMessageDeletionSixMonths": "After 6 months",
   "saveFile": "Save file",
   "fileSavedToPublic": "Saved to {path}",
   "@fileSavedToPublic": {
@@ -203,6 +206,13 @@
   },
   "clear": "Clear",
   "pendingRequests": "Pending requests",
+  "pendingRequestsReminder": "{count, plural, =1{You have 1 pending request} other{You have {count} pending requests}}",
+  "@pendingRequestsReminder": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "pendingRequestsView": "View",
   "nothingWaiting": "Nothing waiting",
   "wantToSeeYou": "Want to see you",
   "waitingForThem": "Waiting for them",
@@ -421,12 +431,6 @@
   "save": "Save",
   "details": "Details",
   "members": "Members",
-  "membersInRoom": "{count} in the room",
-  "@membersInRoom": {
-    "placeholders": {
-      "count": { "type": "int" }
-    }
-  },
   "membersOnlineCount": "{online} online",
   "@membersOnlineCount": {
     "placeholders": {
@@ -734,6 +738,9 @@
   "omemoEncryption": "OMEMO encryption",
   "omemo2Fingerprint": "PQ OMEMO2 fingerprint",
   "omemoLegacyFingerprint": "Legacy OMEMO fingerprint",
+  "accountQrCode": "QR code",
+  "copyUri": "Copy URI",
+  "uriCopied": "Copied URI to clipboard",
   "omemo2FingerprintShort": "OMEMO2",
   "omemoLegacyFingerprintShort": "Legacy",
   "regenerateOmemoKey": "Regenerate legacy OMEMO key",
@@ -919,6 +926,24 @@
     }
   },
   "messageSettings": "Messages",
+  "historySyncTitle": "Fetch history when coming online",
+  "historySyncSummary": "Fetches this much history when you come online or join a group. Private rooms use the same limit.",
+  "historySyncOff": "Don't fetch automatically",
+  "historySyncByCount": "By number of messages",
+  "historySyncByDays": "By number of days",
+  "historySyncMessages": "{count} messages",
+  "@historySyncMessages": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "historySyncOneDay": "1 day",
+  "historySyncTwoDays": "2 days",
+  "historySyncOneWeek": "1 week",
+  "historySyncOneMonth": "1 month",
+  "historySyncOneQuarter": "1 quarter",
+  "historySyncSixMonths": "6 months",
+  "historySyncOneYear": "1 year",
   "autoReply": "Auto-reply",
   "autoReplyOff": "Off",
   "autoReplyRuleCount": "{count} rules",

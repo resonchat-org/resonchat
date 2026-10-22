@@ -19,11 +19,40 @@ import 'package:resonchat/ui/home/open_chat.dart';
 import 'package:resonchat/ui/pending/pending_requests_viewmodel.dart';
 import 'package:resonchat/ui/theme.dart';
 
-class PendingRequestsPage extends ConsumerWidget {
+/// True while [PendingRequestsPage] is on screen.
+///
+/// A [ValueNotifier] rather than a provider: leaving the page updates this
+/// during [State.dispose], and a provider notification at that moment marks
+/// the shell dirty while the tree is locked.
+final pendingRequestsOpen = ValueNotifier<bool>(false);
+
+class PendingRequestsPage extends ConsumerStatefulWidget {
   const PendingRequestsPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<PendingRequestsPage> createState() =>
+      _PendingRequestsPageState();
+}
+
+class _PendingRequestsPageState extends ConsumerState<PendingRequestsPage> {
+  @override
+  void initState() {
+    super.initState();
+    pendingRequestsOpen.value = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ScaffoldMessenger.maybeOf(context)?.hideCurrentSnackBar();
+    });
+  }
+
+  @override
+  void dispose() {
+    pendingRequestsOpen.value = false;
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final tg = context.tg;
     final l10n = context.l10n;
     final requests = ref.watch(subscriptionRequestsProvider);

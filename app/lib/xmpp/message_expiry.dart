@@ -23,24 +23,52 @@ const kAutomaticMessageDeletionPref = 'automatic_message_deletion';
 /// How often to sweep while the app is running (Conversations: 30 minutes).
 const kMessageExpiryInterval = Duration(minutes: 30);
 
-/// Retention choices stored as **seconds** (Conversations arrays.xml).
+/// Retention choices, Gajim `chat_history_max_age` (seconds).
+///
+/// Declaration order is the slider order: shortest window on the left,
+/// [never] (`-1`) on the right. [untilClosed] is `0` — Gajim
+/// "Until Gajim is Closed". That value is applied only when the process
+/// is going away (`cleanup_chat_history` in `_shutdown_core`), never while
+/// a chat is on screen.
 enum AutomaticMessageDeletion {
-  never(0),
+  untilClosed(0),
   oneDay(86400),
   oneWeek(604800),
-  thirtyDays(2592000),
-  sixMonths(15811200);
+  oneMonth(2629743),
+  threeMonths(7889229),
+  sixMonths(15778458),
+  oneYear(31556926),
+  never(-1);
 
   const AutomaticMessageDeletion(this.seconds);
 
+  /// Gajim stores never-delete as `-1` and "until closed" as `0`.
   final int seconds;
 
-  bool get deletes => seconds > 0;
+  /// True for a finite age that may be swept while the app is running.
+  ///
+  /// [untilClosed] is excluded: a cutoff of "now" would erase the open
+  /// transcript. [never] keeps everything.
+  bool get deletesWhileRunning => seconds > 0;
 
-  /// Cutoff instant: messages with `timestamp < cutoff` expire.
+  /// Cutoff for the periodic sweep and for dropping archived inbound.
+  ///
+  /// Null for [never] and [untilClosed].
   DateTime? cutoffAt([DateTime? now]) {
-    if (!deletes) return null;
+    if (!deletesWhileRunning) return null;
     return (now ?? DateTime.now()).subtract(Duration(seconds: seconds));
+  }
+
+  /// Cutoff for Gajim's shutdown sweep.
+  ///
+  /// [never] skips the sweep. [untilClosed] deletes every row already
+  /// stored (`timestamp < now`). A positive age deletes rows older than
+  /// that window.
+  DateTime? shutdownCutoff([DateTime? now]) {
+    if (this == never) return null;
+    final clock = now ?? DateTime.now();
+    if (seconds <= 0) return clock;
+    return clock.subtract(Duration(seconds: seconds));
   }
 
   static AutomaticMessageDeletion fromStored(String? raw) {
@@ -74,9 +102,12 @@ Future<void> saveAutomaticMessageDeletion(
 Future<int> expireOldMessagesAcrossAccounts({
   AutomaticMessageDeletion? setting,
   DateTime? now,
+  bool atShutdown = false,
 }) async {
   final deletion = setting ?? await loadAutomaticMessageDeletion();
-  final cutoff = deletion.cutoffAt(now);
+  final cutoff = atShutdown
+      ? deletion.shutdownCutoff(now)
+      : deletion.cutoffAt(now);
   if (cutoff == null) return 0;
 
   var total = 0;

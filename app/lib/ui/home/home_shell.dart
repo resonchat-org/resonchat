@@ -19,6 +19,7 @@ import 'package:resonchat/ui/column_mode.dart';
 import 'package:resonchat/ui/contacts/contacts_page.dart';
 import 'package:resonchat/ui/empty_chat_pane.dart';
 import 'package:resonchat/ui/home/portrait_home.dart';
+import 'package:resonchat/ui/home/shell_actions.dart';
 import 'package:resonchat/ui/me/me_page.dart';
 import 'package:resonchat/ui/two_column_layout.dart';
 
@@ -33,6 +34,7 @@ class HomeShell extends ConsumerWidget {
     final tab = ref.watch(homeTabIndexProvider);
     final landscape =
         MediaQuery.orientationOf(context) == Orientation.landscape;
+    remindPendingRequests(context, ref);
 
     final chatsBody = wide
         ? TwoColumnLayout(

@@ -19,5 +19,11 @@ void main() {
       final hybrid = 'a' * 128;
       expect(formatFingerprint(hybrid).replaceAll(' ', ''), hybrid);
     });
+
+    test('spaces off is the unspaced share-uri fingerprint', () {
+      final raw = '05${'ab' * 32}';
+      expect(formatFingerprint(raw, spaces: false), 'ab' * 32);
+      expect(formatFingerprint(raw, spaces: false).contains(' '), isFalse);
+    });
   });
 }

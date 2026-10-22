@@ -57,6 +57,7 @@ class ChatMessageList extends StatelessWidget {
     required this.highlightNicks,
     required this.peerName,
     required this.selfNick,
+    this.loadingOlder = false,
   });
 
   final String chatKey;
@@ -135,13 +136,28 @@ class ChatMessageList extends StatelessWidget {
   /// Our room nick, so a moderation we issued reads as "you".
   final String selfNick;
 
+  /// Spinner above the oldest row while an older MAM page is in flight.
+  final bool loadingOlder;
+
   @override
   Widget build(BuildContext context) {
     if (messages.isEmpty) {
       return Center(child: Text(context.l10n.noMessagesYet));
     }
 
-    final rows = <Widget>[];
+    final rows = <Widget>[
+      if (loadingOlder)
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 12),
+          child: Center(
+            child: SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
+        ),
+    ];
     DateTime? lastDay;
     // The first message the user had not read when they last read this chat.
     // Null when everything here has been read, or when the marker is newer than
