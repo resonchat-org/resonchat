@@ -49,6 +49,7 @@ import 'package:resonchat/ui/room/occupant_actions.dart';
 import 'package:resonchat/ui/room/room_profile_page.dart';
 import 'package:resonchat/ui/room/room_sheet.dart';
 import 'package:resonchat/ui/theme.dart';
+import 'package:resonchat/untracker/image_metadata.dart';
 import 'package:resonchat/untracker/prefs.dart';
 import 'package:resonchat/untracker/untracker.dart';
 import 'package:resonchat/xmpp/chat/forwarding.dart';
@@ -807,10 +808,16 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final bytes = await picked.readAsBytes();
     if (!mounted || bytes.isEmpty) return;
 
+    final prepared = await _prepareImageBytesForSend(
+      Uint8List.fromList(bytes),
+      fileName: picked.name,
+    );
+    if (!mounted || prepared == null) return;
+
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(context.l10n.uploadingFile)));
     final result = await _vm.sendAttachmentBytes(
-      bytes,
+      prepared,
       fileName: picked.name,
       confirm: _confirm,
       l10n: context.l10n,
@@ -976,6 +983,73 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       _restoreUnsentDraft(body, reply);
       _showUnsentNotice();
     }
+  }
+
+  /// Pre-send image metadata check (same preference / choices as URL untrack).
+  ///
+  /// Returns bytes to upload, or null if the user cancelled.
+  Future<Uint8List?> _prepareImageBytesForSend(
+    Uint8List raw, {
+    required String fileName,
+  }) async {
+    final mime = (lookupMimeType(fileName) ?? '').toLowerCase();
+    if (!mime.startsWith('image/')) return raw;
+
+    final enabled = await loadRemoveTrackingEnabled();
+    if (!mounted) return null;
+    if (!enabled) return raw;
+    if (!imageHasRemovableMetadata(raw)) return raw;
+
+    final l10n = context.l10n;
+    final cleaned = stripImageMetadata(raw);
+    if (imageHasRemovableMetadata(cleaned)) {
+      // Detected but could not strip — same shape as trackingNetworkError.
+      final sendOriginal = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(l10n.trackingWarning),
+          content: Text(l10n.trackingExifStripFailed),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(l10n.cancel),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(l10n.trackingSendOriginal),
+            ),
+          ],
+        ),
+      );
+      return sendOriginal == true ? raw : null;
+    }
+
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.trackingWarning),
+        content: Text(l10n.trackingExifDetected),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(l10n.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'original'),
+            child: Text(l10n.trackingSendOriginal),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'cleaned'),
+            child: Text(l10n.trackingSendSafely),
+          ),
+        ],
+      ),
+    );
+    return switch (choice) {
+      'original' => raw,
+      'cleaned' => cleaned,
+      _ => null,
+    };
   }
 
   /// Pre-send tracking check. Returns body to send, or null if cancelled.

@@ -21,7 +21,6 @@ import 'package:resonchat/crypto/omemo2/bundle_codec.dart';
 import 'package:resonchat/crypto/omemo2/message_codec.dart';
 import 'package:resonchat/crypto/omemo2/pq_message_layer.dart';
 import 'package:resonchat/crypto/omemo2/pq_session.dart';
-import 'package:resonchat/crypto/omemo2/protocol.dart';
 import 'package:resonchat/persistence/omemo2_device_store.dart';
 import 'package:resonchat/persistence/pq_identity_store.dart';
 
@@ -154,99 +153,31 @@ class BTrackManager {
     return ok;
   }
 
-  /// Publish a PQ device list containing only this installation's id.
+  /// Wipe other devices from the B-track PEP list only.
+  ///
+  /// Parallel to [XmppConnection.wipeOtherOmemoDevices]: PEP write lives in
+  /// [DualTrackManager.publishPqDeviceIds], history reset is B-only.
   Future<bool> wipeOtherDevices() async {
     final session = _session;
-    final pm = pubsubOf();
-    if (session == null || pm == null) return false;
+    if (session == null) return false;
     final bare = JID.fromString(session.device.jid);
-    final listResult = await pm.publish(
-      bare,
-      omemo2DevicesXmlns,
-      XMLNode.xmlns(
-        tag: 'devices',
-        xmlns: omemo2Xmlns,
-        children: [
-          XMLNode(tag: 'device', attributes: {'id': '${session.device.id}'}),
-        ],
-      ),
-      id: 'current',
-      options: const PubSubPublishOptions(accessModel: 'open'),
-    );
-    return listResult.isType<bool>() && listResult.get<bool>();
+    final id = session.device.id;
+    final ok = await tracks().publishPqDeviceIds(bare, {id});
+    if (ok) await tracks().replacePublishedPqDevices({id});
+    return ok;
   }
 
-  /// Publishes our B-track device list entry and bundle to PEP.
+  /// Publishes our B-track bundle via [DualTrackManager.publishPqBundle].
+  ///
+  /// Parallel to [XmppConnection.ensureOmemoDevice] → `publishOmemoBundle`:
+  /// this manager owns the session; PEP I/O lives on DualTrackManager.
   Future<bool> publish() async {
     final session = _session;
-    final pm = pubsubOf();
-    if (session == null || pm == null) return false;
-
+    if (session == null) return false;
     final bundle = await _toBundle(session.device);
     final bare = JID.fromString(session.device.jid);
-
-    // Merge our id into the existing device list rather than replacing it,
-    // so other devices of ours survive.
-    final ids = <int>{};
-    final existing = await pm.getItems(bare, omemo2DevicesXmlns);
-    if (existing.isType<List<PubSubItem>>()) {
-      for (final item in existing.get<List<PubSubItem>>()) {
-        for (final dev in item.payload.children.where(
-          (c) => c.tag == 'device',
-        )) {
-          final id = int.tryParse('${dev.attributes['id']}');
-          if (id != null) ids.add(id);
-        }
-      }
-    }
-    ids.add(session.device.id);
-
-    // Payload xmlns is [omemo2Xmlns], PEP node is [omemo2DevicesXmlns] —
-    // monocles publishes/parses the same split (IqGenerator.publishOmemo2DeviceIds).
-    final listResult = await pm.publish(
-      bare,
-      omemo2DevicesXmlns,
-      XMLNode.xmlns(
-        tag: 'devices',
-        xmlns: omemo2Xmlns,
-        children: [
-          for (final id in ids)
-            XMLNode(tag: 'device', attributes: {'id': '$id'}),
-        ],
-      ),
-      id: 'current',
-      options: const PubSubPublishOptions(accessModel: 'open'),
-    );
-    if (!listResult.isType<bool>() || !listResult.get<bool>()) {
-      return false;
-    }
-    // Conversations / monocles refine access_model after publish so contacts
-    // outside our roster can still fetch the list (open PEP).
-    try {
-      await pm.configure(
-        bare,
-        omemo2DevicesXmlns,
-        const PubSubPublishOptions(accessModel: 'open'),
-      );
-    } catch (_) {}
-
-    final bundleResult = await pm.publish(
-      bare,
-      omemo2BundlesXmlns,
-      XMLNode.fromString(bundle.toXml().toXmlString()),
-      id: '${session.device.id}',
-      options: const PubSubPublishOptions(accessModel: 'open', maxItems: 'max'),
-    );
-    final ok = bundleResult.isType<bool>() && bundleResult.get<bool>();
-    if (ok) {
-      try {
-        await pm.configure(
-          bare,
-          omemo2BundlesXmlns,
-          const PubSubPublishOptions(accessModel: 'open', maxItems: 'max'),
-        );
-      } catch (_) {}
-    }
+    final ok = await tracks().publishPqBundle(bare, bundle);
+    if (ok) await tracks().notePublishedPqDevice(session.device.id);
     return ok;
   }
 

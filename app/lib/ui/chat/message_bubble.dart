@@ -127,7 +127,7 @@ class MessageBubble extends StatelessWidget {
     this.displayed = false,
     this.failed = false,
     this.sendStatus = MessageSendStatus.received,
-    this.track = Track.none,
+    this.encMode = EncModeToken.none,
     this.reactions = const [],
     this.retracted = false,
     this.edited = false,
@@ -187,12 +187,12 @@ class MessageBubble extends StatelessWidget {
   final DateTime time;
   final BubbleSide side;
 
-  /// Which track this message actually travelled on.
+  /// Track (+ optional Gajim trust) this message actually used.
   ///
-  /// Defaults to [Track.none] rather than being required: a bubble that
-  /// forgets to say so would then claim "no encryption" for a message that
-  /// was encrypted, which is the one mistake this label must never make.
-  final Track track;
+  /// Defaults to [EncModeToken.none]: a bubble that forgets to say so would
+  /// claim "no encryption" for an encrypted message — the one mistake this
+  /// label must never make.
+  final EncModeToken encMode;
 
   /// Reaction chips to draw under the bubble (XEP-0444).
   final List<ReactionGroup> reactions;
@@ -396,7 +396,7 @@ class MessageBubble extends StatelessWidget {
                   displayed: displayed,
                   failed: failed,
                   mine: mine,
-                  track: track,
+                  encMode: encMode,
                 ),
               ],
             ),
@@ -777,11 +777,7 @@ IconData? receiptTicks({
   return null;
 }
 
-/// Timestamp, receipt ticks and the track this message used.
-///
-/// The track sits in the meta row rather than its own line: it is metadata
-/// about the message, and the two-letter code is only readable at the size
-/// the timestamp is already drawn at.
+/// Timestamp, receipt ticks and the track (+ trust) this message used.
 class _MetaRow extends StatelessWidget {
   const _MetaRow({
     required this.time,
@@ -790,7 +786,7 @@ class _MetaRow extends StatelessWidget {
     required this.displayed,
     required this.failed,
     required this.mine,
-    required this.track,
+    required this.encMode,
   });
 
   final DateTime time;
@@ -799,7 +795,7 @@ class _MetaRow extends StatelessWidget {
   final bool displayed;
   final bool failed;
   final bool mine;
-  final Track track;
+  final EncModeToken encMode;
 
   String get _timeText {
     final h = time.hour.toString().padLeft(2, '0');
@@ -833,6 +829,8 @@ class _MetaRow extends StatelessWidget {
       sent: status == MessageSendStatus.send,
     );
     final tickColor = isFailed ? tg.danger : tg.textSecondary;
+    final warn = encMode.emphasizeWarning;
+    final labelColor = warn ? tg.danger : tg.textSecondary;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -847,22 +845,16 @@ class _MetaRow extends StatelessWidget {
           const SizedBox(width: 3),
           Icon(ticks, size: 14, color: tickColor),
         ],
-        // Before the ticks on outgoing messages, after on incoming ones, so
-        // the track lines up on the outer edge of the bubble either way.
         const SizedBox(width: 5),
-        Icon(
-          track.icon,
-          size: 12,
-          color: track == Track.none ? tg.danger : tg.textSecondary,
-        ),
+        Icon(encMode.icon, size: 12, color: labelColor),
         const SizedBox(width: 1),
         Text(
-          track.label,
+          encMode.label,
           style: TextStyle(
             fontSize: TgDimens.timeFontSize - 1,
             fontWeight: FontWeight.w500,
             letterSpacing: 0.3,
-            color: track == Track.none ? tg.danger : tg.textSecondary,
+            color: labelColor,
           ),
         ),
       ],

@@ -1,6 +1,7 @@
 // Copyright (C) 2026 ResonChat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:test/test.dart';
 
@@ -10,20 +11,37 @@ import 'package:resonchat/persistence/database.dart';
 void main() {
   late AppDatabase db;
   late FingerprintTrustStore store;
+  var blindTrust = true;
 
   setUp(() {
     db = AppDatabase(NativeDatabase.memory());
-    store = FingerprintTrustStore(db);
+    blindTrust = true;
+    store = FingerprintTrustStore(
+      db,
+      blindTrustEnabled: () async => blindTrust,
+    );
   });
 
   tearDown(() => db.close());
 
-  test('unseen fingerprints are trusted (BTBV)', () async {
+  test(
+    'unseen fingerprints follow blind-trust policy (Gajim default)',
+    () async {
+      expect(
+        await store.getTrust('alice@example.org', 'aabbcc'),
+        FingerprintTrust.blind,
+      );
+      expect(await store.mayEncryptTo('alice@example.org', 'aabbcc'), isTrue);
+    },
+  );
+
+  test('blind trust off → undecided for unseen', () async {
+    blindTrust = false;
     expect(
       await store.getTrust('alice@example.org', 'aabbcc'),
-      FingerprintTrust.trusted,
+      FingerprintTrust.undecided,
     );
-    expect(await store.mayEncryptTo('alice@example.org', 'aabbcc'), isTrue);
+    expect(await store.mayEncryptTo('alice@example.org', 'aabbcc'), isFalse);
   });
 
   test('distrust is per fingerprint, not per contact', () async {
@@ -33,11 +51,13 @@ void main() {
       FingerprintTrust.untrusted,
     );
     expect(await store.mayEncryptTo('alice@example.org', 'deadbeef'), isFalse);
+    // Gajim get_default_trust: once the contact has untrusted/undecided
+    // identities, new ones default to undecided — not blind.
     expect(
-      await store.mayEncryptTo('alice@example.org', 'cafebabe'),
-      isTrue,
-      reason: 'other fingerprints stay trusted',
+      await store.getTrust('alice@example.org', 'cafebabe'),
+      FingerprintTrust.undecided,
     );
+    expect(await store.mayEncryptTo('alice@example.org', 'cafebabe'), isFalse);
   });
 
   test('trust keys are scoped to the bare JID', () async {
@@ -53,7 +73,7 @@ void main() {
     );
   });
 
-  test('rememberDevice seeds BTBV and caches device id', () async {
+  test('rememberDevice seeds default trust and caches device id', () async {
     await store.rememberDevice(
       jid: 'alice@example.org',
       deviceId: 42,
@@ -66,11 +86,18 @@ void main() {
     );
     expect(
       await store.getTrust('alice@example.org', 'aabbcc'),
-      FingerprintTrust.trusted,
+      FingerprintTrust.blind,
     );
     final rows = await store.identitiesFor('alice@example.org');
     expect(rows, hasLength(1));
     expect(rows.single.active, isTrue);
+  });
+
+  test('verified allows encrypt; undecided does not', () async {
+    await store.setTrust('alice@example.org', 'aa', FingerprintTrust.verified);
+    await store.setTrust('alice@example.org', 'bb', FingerprintTrust.undecided);
+    expect(await store.mayEncryptTo('alice@example.org', 'aa'), isTrue);
+    expect(await store.mayEncryptTo('alice@example.org', 'bb'), isFalse);
   });
 
   test('normalize strips whitespace and case', () {
@@ -162,7 +189,6 @@ void main() {
     await db.setMetaValue('fp_dev:ax:alice@example.org:9', 'aabb');
     await db.setMetaValue('fp_dev:pq:alice@example.org:9', 'ccddee');
 
-    // Trigger migration via any read.
     expect(
       await store.getTrust('alice@example.org', 'aabb'),
       FingerprintTrust.untrusted,
@@ -178,5 +204,25 @@ void main() {
     expect(await db.metaValue('fp_store_v2'), '1');
     expect(await db.metaEntriesWithPrefix('fp_trust:'), isEmpty);
     expect(await db.metaEntriesWithPrefix('fp_dev:'), isEmpty);
+  });
+
+  test('legacy trusted label rewrites to blind', () async {
+    await db
+        .into(db.omemoIdentities)
+        .insert(
+          OmemoIdentitiesCompanion.insert(
+            bareJid: 'alice@example.org',
+            fingerprint: 'legacy',
+            deviceId: 1,
+            omemo2: false,
+            trust: 'trusted',
+            active: true,
+            lastActivation: const Value(1),
+          ),
+        );
+    expect(
+      await store.getTrust('alice@example.org', 'legacy'),
+      FingerprintTrust.blind,
+    );
   });
 }

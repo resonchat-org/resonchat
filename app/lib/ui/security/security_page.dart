@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // Encryption info page: fingerprints users compare in person, and per-device
-// trust toggles (monocles TrustKeysActivity). Distrusted devices are skipped
-// on the next encrypt (classic + OMEMO2).
+// trust (Gajim CryptoTrustManager). Four stored levels exist; the set-trust
+// menu offers only Verified / Blind / Untrusted — Undecided is automatic
+// (new device when blind-trust is off), never a menu choice.
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -161,7 +162,7 @@ class _PeerFingerprintTile extends StatelessWidget {
 
   final PeerFingerprintRow row;
   final VoidCallback onCopy;
-  final ValueChanged<bool> onTrustChanged;
+  final ValueChanged<FingerprintTrust> onTrustChanged;
   final bool showPeerJid;
 
   @override
@@ -190,10 +191,8 @@ class _PeerFingerprintTile extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SwitchListTile(
+            ListTile(
               contentPadding: EdgeInsets.zero,
-              value: row.trusted,
-              onChanged: onTrustChanged,
               title: Text(
                 title,
                 style: TextStyle(
@@ -204,11 +203,34 @@ class _PeerFingerprintTile extends StatelessWidget {
                 [
                   if (showPeerJid) row.peerJid,
                   if (!row.active) l10n.fingerprintInactiveSummary,
-                  row.trusted
-                      ? l10n.fingerprintTrustedSummary
-                      : l10n.fingerprintDistrustedSummary,
+                  _trustSummary(l10n, row.trust),
                 ].join('\n'),
                 style: TextStyle(fontSize: 12, color: tg.textSecondary),
+              ),
+              trailing: PopupMenuButton<FingerprintTrust>(
+                tooltip: l10n.setFingerprintTrust,
+                initialValue: row.trust == FingerprintTrust.undecided
+                    ? null
+                    : row.trust,
+                onSelected: onTrustChanged,
+                // Gajim TrustPopver: Verified / Blind / Untrusted only —
+                // never Undecided, and never the level already selected.
+                itemBuilder: (ctx) => [
+                  for (final t in const [
+                    FingerprintTrust.verified,
+                    FingerprintTrust.blind,
+                    FingerprintTrust.untrusted,
+                  ])
+                    if (t != row.trust)
+                      PopupMenuItem(
+                        value: t,
+                        child: Text(_trustLabel(l10n, t)),
+                      ),
+                ],
+                child: Chip(
+                  label: Text(_trustLabel(l10n, row.trust)),
+                  visualDensity: VisualDensity.compact,
+                ),
               ),
             ),
             SelectableText(
@@ -233,4 +255,20 @@ class _PeerFingerprintTile extends StatelessWidget {
       ),
     );
   }
+
+  static String _trustLabel(AppLocalizations l10n, FingerprintTrust t) =>
+      switch (t) {
+        FingerprintTrust.verified => l10n.fingerprintTrustVerified,
+        FingerprintTrust.blind => l10n.fingerprintTrustBlind,
+        FingerprintTrust.undecided => l10n.fingerprintTrustUndecided,
+        FingerprintTrust.untrusted => l10n.fingerprintTrustUntrusted,
+      };
+
+  static String _trustSummary(AppLocalizations l10n, FingerprintTrust t) =>
+      switch (t) {
+        FingerprintTrust.verified => l10n.fingerprintTrustVerifiedSummary,
+        FingerprintTrust.blind => l10n.fingerprintTrustBlindSummary,
+        FingerprintTrust.undecided => l10n.fingerprintTrustUndecidedSummary,
+        FingerprintTrust.untrusted => l10n.fingerprintTrustUntrustedSummary,
+      };
 }

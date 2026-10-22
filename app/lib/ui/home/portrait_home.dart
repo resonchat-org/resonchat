@@ -24,47 +24,54 @@ class PortraitHome extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final media = MediaQuery.of(context);
-    final inset = NavigationDock.insetOf(context);
-    final paddedMedia = media.copyWith(
-      padding: media.padding.copyWith(bottom: inset),
-      viewPadding: media.viewPadding.copyWith(bottom: inset),
-    );
 
     return Scaffold(
       extendBody: true,
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: MediaQuery(
-              data: paddedMedia,
-              child: IndexedStack(index: tab, children: pages),
-            ),
-          ),
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: NavigationDock(
-              selectedIndex: tab,
-              onSelected: onSelect,
-              destinations: [
-                NavigationDockDestination(
-                  icon: Icons.chat_bubble,
-                  label: l10n.tabChats,
+      // Read MediaQuery from the body: Scaffold has already resized for the
+      // keyboard and stripped viewInsets. Rebuilding padding from the outer
+      // context re-injected those insets and child Scaffolds reserved the
+      // keyboard height a second time (white band above the keyboard).
+      body: Builder(
+        builder: (context) {
+          final media = MediaQuery.of(context);
+          final inset = NavigationDock.insetOf(context);
+          return Stack(
+            children: [
+              Positioned.fill(
+                child: MediaQuery(
+                  data: media.copyWith(
+                    padding: media.padding.copyWith(bottom: inset),
+                    viewPadding: media.viewPadding.copyWith(bottom: inset),
+                  ),
+                  child: IndexedStack(index: tab, children: pages),
                 ),
-                NavigationDockDestination(
-                  icon: Icons.people,
-                  label: l10n.tabContacts,
+              ),
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: NavigationDock(
+                  selectedIndex: tab,
+                  onSelected: onSelect,
+                  destinations: [
+                    NavigationDockDestination(
+                      icon: Icons.chat_bubble,
+                      label: l10n.tabChats,
+                    ),
+                    NavigationDockDestination(
+                      icon: Icons.people,
+                      label: l10n.tabContacts,
+                    ),
+                    NavigationDockDestination(
+                      icon: Icons.person,
+                      label: l10n.tabMe,
+                    ),
+                  ],
                 ),
-                NavigationDockDestination(
-                  icon: Icons.person,
-                  label: l10n.tabMe,
-                ),
-              ],
-            ),
-          ),
-        ],
+              ),
+            ],
+          );
+        },
       ),
     );
   }

@@ -16,6 +16,7 @@ import 'package:moxxmpp/moxxmpp.dart' show ConferenceBookmark, PresenceShow;
 
 import 'package:resonchat/account/account_color.dart';
 import 'package:resonchat/account/chat_ref.dart';
+import 'package:resonchat/crypto/dual/blind_trust_prefs.dart';
 import 'package:resonchat/crypto/dual/dual_track_manager.dart';
 import 'package:resonchat/crypto/dual/fingerprint_trust.dart';
 import 'package:resonchat/domain/messages_service.dart';
@@ -212,7 +213,10 @@ class AccountHub extends ChangeNotifier {
           db.setMetaValue('omemo2_device_blob', base64Encode(bytes)),
       deleteSecret: () => db.deleteMetaValue('omemo2_device_blob'),
     );
-    final fingerprintTrust = FingerprintTrustStore(db);
+    final fingerprintTrust = FingerprintTrustStore(
+      db,
+      blindTrustEnabled: loadOmemoBlindTrust,
+    );
     final bTrack = BTrackManager(
       tracks: () => xmpp.tracks!,
       pubsubOf: () => xmpp.pubsub,
@@ -397,9 +401,13 @@ class AccountHub extends ChangeNotifier {
     final tracks = DualTrackManager(aTrack: moxxOmemo, pubsubOf: () => pubsub);
     xmpp.tracks = tracks;
     session.tracks = tracks;
-    tracks.deviceMemory = PublishedDeviceMemory(
-      load: () => session.db.publishedDeviceIds(),
-      save: (ids) => session.db.savePublishedDeviceIds(ids),
+    tracks.omemoDeviceMemory = PublishedDeviceMemory(
+      load: () => session.db.publishedOmemoDeviceIds(),
+      save: (ids) => session.db.savePublishedOmemoDeviceIds(ids),
+    );
+    tracks.pqDeviceMemory = PublishedDeviceMemory(
+      load: () => session.db.publishedPqDeviceIds(),
+      save: (ids) => session.db.savePublishedPqDeviceIds(ids),
     );
   }
 

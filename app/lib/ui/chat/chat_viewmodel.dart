@@ -354,27 +354,24 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
       mucEncryptable: row.mucPrivateNonAnonymous,
       roomJid: r.jid,
     );
-    final saved = r.session.xmpp.savedRoomMembers(r.jid);
-    if (saved.isNotEmpty) {
-      state = state.copyWith(
-        room: GroupChat(
-          roomJid: r.jid,
-          nick: row.mucNick,
-          occupants: saved,
-          joined: false,
-          canSeeMemberJids: saved.any((o) => (o.realJid ?? '').isNotEmpty),
-        ),
-      );
+    // Local roster first (same resolveRoomRoster path as members UI).
+    final local = r.session.xmpp.localRoomChat(r.jid, nick: row.mucNick);
+    if (local != null) {
+      state = state.copyWith(room: local);
     }
     await _roomSub?.cancel();
+    // Stream already emits resolveRoomRoster results — apply as-is.
     _roomSub = r.session.xmpp.roomOccupants(r.jid).listen((chat) {
       if (_disposed || chat == null) return;
       state = state.copyWith(room: chat);
       unawaited(refreshCanChangeSubject());
       unawaited(refreshCanModerate());
     });
-    await loadRoom();
-    await refreshRoomEncryptable();
+    // Network catch-up after local paint — do not block open on disco/join.
+    unawaited(() async {
+      await loadRoom();
+      await refreshRoomEncryptable();
+    }());
   }
 
   Future<void> refreshCanChangeSubject() async {
@@ -832,7 +829,7 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
         stanzaId: Value(stanzaId),
         body: Value(text),
         timestamp: Value(DateTime.now()),
-        encMode: Value(EncModeToken.of(chosen).wire),
+        encMode: Value((await _xmpp.encModeForPeer(peerStr, chosen)).wire),
         incoming: const Value(false),
         sendStatus: const Value(MessageSendStatus.waiting),
         replyTo: Value(reply?.id ?? ''),
@@ -864,7 +861,11 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
     }
     if (resolved != chosen) {
       chosen = resolved;
-      await _db.updateEncMode(peerStr, stanzaId, EncModeToken.of(chosen).wire);
+      await _db.updateEncMode(
+        peerStr,
+        stanzaId,
+        (await _xmpp.encModeForPeer(peerStr, chosen)).wire,
+      );
     }
 
     final outcome = reply == null
@@ -966,7 +967,7 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
           stanzaId: Value(stanzaId),
           body: Value(uploaded.shareUrl),
           timestamp: Value(DateTime.now()),
-          encMode: Value(EncModeToken.of(fileTrack).wire),
+          encMode: Value((await xmpp.encModeForPeer(peerStr, fileTrack)).wire),
           incoming: const Value(false),
           sendStatus: const Value(MessageSendStatus.waiting),
           mediaUrl: Value(uploaded.shareUrl),
@@ -1121,7 +1122,7 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
           stanzaId: Value(stanzaId),
           body: Value(shareUrl),
           timestamp: Value(DateTime.now()),
-          encMode: Value(EncModeToken.of(fileTrack).wire),
+          encMode: Value((await xmpp.encModeForPeer(peerStr, fileTrack)).wire),
           incoming: const Value(false),
           sendStatus: const Value(MessageSendStatus.waiting),
           mediaUrl: Value(shareUrl),
@@ -1296,7 +1297,7 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
       chatJid: r.jid,
       targetId: targetId,
       body: body,
-      encMode: EncModeToken.of(outcome.track).wire,
+      encMode: (await r.session.xmpp.encModeForPeer(r.jid, outcome.track)).wire,
     );
     return null;
   }
@@ -1379,7 +1380,9 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
             stanzaId: Value(outcome.stanzaId[i]),
             body: Value(outcome.wireBodies[i]),
             timestamp: Value(now.add(Duration(milliseconds: i))),
-            encMode: Value(EncModeToken.of(track).wire),
+            encMode: Value(
+              (await dest.session.xmpp.encModeForPeer(destPeer, track)).wire,
+            ),
             incoming: const Value(false),
             // Already on the wire from [forwardMessages].
             sendStatus: const Value(MessageSendStatus.send),

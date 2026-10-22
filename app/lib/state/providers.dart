@@ -81,7 +81,7 @@ final databaseProvider = Provider<AppDatabase>((ref) {
 });
 
 /// Dual-track manager already wired on the session ([AccountHub._wireTracks]).
-/// Never construct a second instance here — that would drop [deviceMemory].
+/// Never construct a second instance here — that would drop publish history.
 final Provider<DualTrackManager?> dualTrackManagerProvider =
     Provider<DualTrackManager?>((ref) {
       ref.watch(accountHubProvider);
@@ -433,30 +433,8 @@ final roomStateProvider = FutureProvider.family<GroupChat?, String>((
   // anything having to invalidate this.
   ref.watch(roomOccupantsProvider(chatKey));
   final r = resolveChatKey(chatKey);
-  final roomJid = r.jid;
-  final xmpp = r.session.xmpp;
-  final state = await xmpp.groupChatState(roomJid);
-  if (state == null) {
-    final saved = xmpp.savedRoomMembers(roomJid);
-    if (saved.isEmpty) return null;
-    return GroupChat(
-      roomJid: roomJid,
-      nick: '',
-      occupants: saved,
-      joined: false,
-      canSeeMemberJids: saved.any((o) => (o.realJid ?? '').isNotEmpty),
-    );
-  }
-  // Offline affiliates when JIDs are visible (non-anon or owner/admin).
-  final occupants = await xmpp.roomDisplayMembers(roomJid);
-  return GroupChat(
-    roomJid: roomJid,
-    nick: state.nick ?? '',
-    occupants: occupants,
-    subject: state.subject,
-    joined: state.joined,
-    canSeeMemberJids: xmpp.roomCanSeeMemberJids(roomJid),
-  );
+  // Single local-first entry: members UI and read rings share this path.
+  return r.session.xmpp.roomChatForDisplay(r.jid);
 });
 
 /// Occupants of the room for [chatKey], updated as presence arrives.

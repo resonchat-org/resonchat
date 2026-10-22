@@ -19,6 +19,7 @@ class SecurityUiState {
     this.legacyFingerprint,
     this.peerRows,
     this.peerLoading = true,
+    this.peerRefreshing = false,
     this.peerError,
     this.isGroup = false,
   });
@@ -28,17 +29,27 @@ class SecurityUiState {
   final String? legacyFingerprint;
   final List<PeerFingerprintRow>? peerRows;
   final bool peerLoading;
+
+  /// Network refresh in flight after local rows were already shown.
+  final bool peerRefreshing;
   final String? peerError;
   final bool isGroup;
 
-  SecurityUiState copyWith({List<PeerFingerprintRow>? peerRows}) {
+  SecurityUiState copyWith({
+    List<PeerFingerprintRow>? peerRows,
+    bool? peerLoading,
+    bool? peerRefreshing,
+    String? peerError,
+    bool clearPeerError = false,
+  }) {
     return SecurityUiState(
       deviceId: deviceId,
       hybridFingerprint: hybridFingerprint,
       legacyFingerprint: legacyFingerprint,
       peerRows: peerRows ?? this.peerRows,
-      peerLoading: peerLoading,
-      peerError: peerError,
+      peerLoading: peerLoading ?? this.peerLoading,
+      peerRefreshing: peerRefreshing ?? this.peerRefreshing,
+      peerError: clearPeerError ? null : (peerError ?? this.peerError),
       isGroup: isGroup,
     );
   }
@@ -84,8 +95,9 @@ class SecurityViewModel
     );
     final chat = await session.db.getChat(_peerBare);
     final isGroup = chat?.isGroup ?? false;
-    List<PeerFingerprintRow> peers = const [];
-    Object? peerErr;
+
+    // 1) Local identities immediately — do not block the spinner on PEP.
+    List<PeerFingerprintRow> localPeers = const [];
     try {
       if (isGroup) {
         final room = await ref.read(roomStateProvider(arg).future);
@@ -97,12 +109,15 @@ class SecurityViewModel
                 o.realJid!.toLowerCase() != ownBare)
               o.realJid!,
         };
-        peers = await session.xmpp.groupFingerprintRows(members);
+        localPeers = await session.xmpp.groupFingerprintRows(
+          members,
+          refreshFromNetwork: false,
+        );
       } else {
-        peers = await session.xmpp.peerFingerprintRows(_peerBare);
+        localPeers = await session.xmpp.peerFingerprintRowsLocal(_peerBare);
       }
-    } catch (e) {
-      peerErr = e;
+    } catch (_) {
+      // Empty local list is fine; refresh may still fill it.
     }
     if (_disposed) return;
     state = SecurityUiState(
@@ -112,17 +127,49 @@ class SecurityViewModel
           ? hybridFromTrack
           : (fps.hybrid.isEmpty ? null : fps.hybrid),
       legacyFingerprint: fps.legacy,
-      peerRows: peers,
-      peerError: peerErr?.toString(),
+      peerRows: localPeers,
+      peerLoading: false,
+      peerRefreshing: true,
     );
+
+    // 2) Background PEP refresh; update the list when it finishes.
+    try {
+      final List<PeerFingerprintRow> refreshed;
+      if (isGroup) {
+        final room = await ref.read(roomStateProvider(arg).future);
+        final ownBare = session.xmpp.myJid?.toLowerCase();
+        final members = <String>{
+          for (final o in room?.occupants ?? const [])
+            if (o.realJid != null &&
+                o.realJid!.isNotEmpty &&
+                o.realJid!.toLowerCase() != ownBare)
+              o.realJid!,
+        };
+        refreshed = await session.xmpp.groupFingerprintRows(members);
+      } else {
+        refreshed = await session.xmpp.peerFingerprintRows(_peerBare);
+      }
+      if (_disposed) return;
+      state = state.copyWith(
+        peerRows: refreshed,
+        peerRefreshing: false,
+        clearPeerError: true,
+      );
+    } catch (e) {
+      if (_disposed) return;
+      state = state.copyWith(peerRefreshing: false, peerError: e.toString());
+    }
   }
 
-  Future<void> setPeerTrust(PeerFingerprintRow row, bool trusted) async {
+  Future<void> setPeerTrust(
+    PeerFingerprintRow row,
+    FingerprintTrust trust,
+  ) async {
     final xmpp = resolveChatKey(arg).session.xmpp;
     await xmpp.setPeerFingerprintTrust(
       bareJid: row.peerJid,
       fingerprint: row.fingerprint,
-      trusted: trusted,
+      trust: trust,
     );
     if (_disposed) return;
     final rows = state.peerRows;
@@ -138,7 +185,7 @@ class SecurityViewModel
               deviceId: r.deviceId,
               fingerprint: r.fingerprint,
               omemo2: r.omemo2,
-              trusted: trusted,
+              trust: trust,
               active: r.active,
             )
           else

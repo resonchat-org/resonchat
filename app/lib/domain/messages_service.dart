@@ -5,6 +5,7 @@
 
 import 'package:drift/drift.dart' show Value;
 
+import 'package:resonchat/crypto/dual/fingerprint_trust.dart';
 import 'package:resonchat/crypto/dual/track.dart';
 import 'package:resonchat/persistence/database.dart';
 import 'package:resonchat/persistence/prefs_database.dart';
@@ -283,7 +284,7 @@ class MessagesService {
         encMode: Value(
           msg.encryptionError != null
               ? EncModeToken.error.wire
-              : EncModeToken.of(msg.track ?? Track.none).wire,
+              : await _encWireForInbound(msg),
         ),
         incoming: Value(!fromMe),
         delivered: Value(fromMe && ownMuc),
@@ -302,6 +303,16 @@ class MessagesService {
       ),
     );
     return mentionsMe;
+  }
+
+  Future<String> _encWireForInbound(InboundMessage msg) async {
+    final track = msg.track ?? Track.none;
+    if (track == Track.none) return EncModeToken.none.wire;
+    final trust = await FingerprintTrustStore(_db).aggregateActiveTrust(
+      msg.from.toBare().toString(),
+      omemo2: track == Track.pq,
+    );
+    return EncModeToken.of(track, trust: trust).wire;
   }
 }
 

@@ -128,13 +128,17 @@ void main() {
       );
     });
 
-    test('the published device ids row is not on the meta allow-list', () {
-      // Nothing secret about it, and refusing it anyway: it records which ids
-      // on our own published list are superseded builds of *this* install, so
-      // restoring it onto another device has us pruning the live device out of
-      // our own list — an OMEMO outage caused by a backup.
+    test('the published device ids rows are not on the meta allow-list', () {
+      // Nothing secret about them, and refusing anyway: they record which ids
+      // on our own published lists are superseded builds of *this* install, so
+      // restoring them onto another device has us pruning the live device out
+      // of our own list — an OMEMO outage caused by a backup.
       expect(
         _metaRejection('omemo_published_ids'),
+        BackupRejectionKind.unknownMetaKey,
+      );
+      expect(
+        _metaRejection('omemo2_published_ids'),
         BackupRejectionKind.unknownMetaKey,
       );
     });

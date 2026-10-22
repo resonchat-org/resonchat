@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:resonchat/crypto/dual/blind_trust_prefs.dart';
 import 'package:resonchat/crypto/dual/track.dart';
 import 'package:resonchat/l10n/l10n.dart';
 import 'package:resonchat/l10n/locale_controller.dart';
@@ -47,6 +48,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   TranslationPrefs? _translationPrefs;
   ChannelDiscoveryMethod _channelMethod = ChannelDiscoveryMethod.jabberNetwork;
   bool _removeTrackingEnabled = false;
+  bool _omemoBlindTrust = true;
   int _previewMaxBytes = kDefaultPreviewMaxFileSize;
   bool _devLogEnabled = false;
   AutoReplyConfig _autoReply = AutoReplyConfig.empty;
@@ -58,6 +60,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     unawaited(_reloadTranslationPrefs());
     unawaited(_reloadChannelMethod());
     unawaited(_reloadRemoveTracking());
+    unawaited(_reloadOmemoBlindTrust());
     unawaited(_reloadPreviewMax());
     unawaited(_reloadDevLog());
     unawaited(_reloadAutoReply());
@@ -80,6 +83,18 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final enabled = await loadRemoveTrackingEnabled();
     if (!mounted) return;
     setState(() => _removeTrackingEnabled = enabled);
+  }
+
+  Future<void> _reloadOmemoBlindTrust() async {
+    final enabled = await loadOmemoBlindTrust();
+    if (!mounted) return;
+    setState(() => _omemoBlindTrust = enabled);
+  }
+
+  Future<void> _setOmemoBlindTrust(bool enabled) async {
+    await saveOmemoBlindTrust(enabled);
+    if (!mounted) return;
+    setState(() => _omemoBlindTrust = enabled);
   }
 
   Future<void> _reloadPreviewMax() async {
@@ -239,6 +254,13 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             subtitle: Text(l10n.removeTrackingSummary),
             value: _removeTrackingEnabled,
             onChanged: (v) => unawaited(_setRemoveTracking(v)),
+          ),
+          SwitchListTile(
+            secondary: const Icon(Icons.shield_outlined),
+            title: Text(l10n.omemoBlindTrust),
+            subtitle: Text(l10n.omemoBlindTrustSummary),
+            value: _omemoBlindTrust,
+            onChanged: (v) => unawaited(_setOmemoBlindTrust(v)),
           ),
 
           _header(tg, l10n.messageSettings),

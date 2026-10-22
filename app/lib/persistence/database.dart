@@ -431,7 +431,8 @@ class OmemoIdentities extends Table {
   /// True for the PQ OMEMO2 stack; false for legacy A-track.
   BoolColumn get omemo2 => boolean()();
 
-  /// `trusted` or `untrusted`. Unseen fingerprints are inserted as trusted (BTBV).
+  /// Gajim trust wire: `untrusted` / `undecided` / `blind` / `verified`
+  /// (legacy `trusted` is rewritten to `blind` on read).
   TextColumn get trust => text()();
 
   /// Currently present on the peer's announced device list for this stack.
@@ -974,17 +975,23 @@ class AppDatabase extends _$AppDatabase {
     )..where((r) => r.roomJid.equals(roomJid))).go();
   }
 
-  /// Every OMEMO device id this installation has published.
-  ///
-  /// Stored so that a later publish can tell which ids on our own public
-  /// device list are superseded builds of ours. Without it there is no way to
-  /// tell our own history apart from a device we know nothing about, and the
-  /// safe answer — leave it alone — means the list grows forever.
-  Future<Set<int>> publishedDeviceIds() async {
-    final raw = await metaValue('omemo_published_ids');
+  /// Classic OMEMO (A-track) device ids this installation has published.
+  Future<Set<int>> publishedOmemoDeviceIds() =>
+      _publishedDeviceIds('omemo_published_ids');
+
+  Future<void> savePublishedOmemoDeviceIds(Set<int> ids) =>
+      setMetaValue('omemo_published_ids', ids.join(','));
+
+  /// OMEMO2 / PQ (B-track) device ids this installation has published.
+  Future<Set<int>> publishedPqDeviceIds() =>
+      _publishedDeviceIds('omemo2_published_ids');
+
+  Future<void> savePublishedPqDeviceIds(Set<int> ids) =>
+      setMetaValue('omemo2_published_ids', ids.join(','));
+
+  Future<Set<int>> _publishedDeviceIds(String metaKey) async {
+    final raw = await metaValue(metaKey);
     if (raw == null || raw.isEmpty) return const {};
-    // Parsed defensively: a truncated or hand-edited row must not take the
-    // device-publishing path down with it.
     try {
       return raw
           .split(',')
@@ -995,9 +1002,6 @@ class AppDatabase extends _$AppDatabase {
       return const {};
     }
   }
-
-  Future<void> savePublishedDeviceIds(Set<int> ids) =>
-      setMetaValue('omemo_published_ids', ids.join(','));
 
   /// Stores [raw] as [chatJid]'s appearance, or clears it when null.
   ///

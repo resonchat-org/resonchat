@@ -379,10 +379,11 @@ const Map<BackupTable, BackupTableSpec> kBackupTables = {
   //
   // Drafts and the plaintext acknowledgement are included: both are local
   // decisions about the user's own words, both are lost in a reinstall, and
-  // neither is a secret anybody else can use. `omemo_published_ids` is excluded
-  // for a second reason — it records which ids on our own published device list
-  // are superseded builds of *this* installation, so restoring it onto another
-  // device has us pruning the live device out of our own list.
+  // neither is a secret anybody else can use. `omemo_published_ids` /
+  // `omemo2_published_ids` are excluded for a second reason — they record
+  // which ids on our own published device lists are superseded builds of
+  // *this* installation, so restoring them onto another device has us
+  // pruning the live device out of our own list.
   BackupTable.meta: BackupTableSpec(
     BackupTable.meta,
     [

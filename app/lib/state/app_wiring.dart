@@ -160,9 +160,13 @@ class _AppWiringState extends ConsumerState<AppWiring>
     final db = session.db;
     final tracks = xmpp.tracks ?? session.tracks;
     if (tracks != null) {
-      tracks.deviceMemory = PublishedDeviceMemory(
-        load: () => db.publishedDeviceIds(),
-        save: (ids) => db.savePublishedDeviceIds(ids),
+      tracks.omemoDeviceMemory = PublishedDeviceMemory(
+        load: () => db.publishedOmemoDeviceIds(),
+        save: (ids) => db.savePublishedOmemoDeviceIds(ids),
+      );
+      tracks.pqDeviceMemory = PublishedDeviceMemory(
+        load: () => db.publishedPqDeviceIds(),
+        save: (ids) => db.savePublishedPqDeviceIds(ids),
       );
       // Per-session capability service — primary-only provider would resolve
       // secondary accounts against the wrong OMEMO / PQ device set.

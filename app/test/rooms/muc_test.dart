@@ -107,6 +107,63 @@ void main() {
       expect(display, [online]);
     });
 
+    test('resolveRoomRoster keeps saved when live is empty', () {
+      const saved = Occupant(
+        nick: 'bob',
+        affiliation: 'member',
+        role: 'none',
+        realJid: 'bob@example.org',
+      );
+      expect(resolveRoomRoster(live: const [], saved: const [saved]), [saved]);
+    });
+
+    test('resolveRoomRoster keeps saved JIDs over nick-only live', () {
+      const saved = Occupant(
+        nick: 'bob',
+        affiliation: 'member',
+        role: 'none',
+        realJid: 'bob@example.org',
+      );
+      const liveNickOnly = Occupant(
+        nick: 'bob',
+        affiliation: 'none',
+        role: 'participant',
+      );
+      expect(
+        resolveRoomRoster(live: const [liveNickOnly], saved: const [saved]),
+        [saved],
+      );
+      expect(
+        shouldPersistRoomRoster(
+          live: const [liveNickOnly],
+          saved: const [saved],
+        ),
+        isFalse,
+      );
+    });
+
+    test('resolveRoomRoster takes live when it has real JIDs', () {
+      const saved = Occupant(
+        nick: 'bob',
+        affiliation: 'member',
+        role: 'none',
+        realJid: 'bob@example.org',
+      );
+      const live = Occupant(
+        nick: 'bob',
+        affiliation: 'member',
+        role: 'participant',
+        realJid: 'bob@example.org',
+      );
+      expect(resolveRoomRoster(live: const [live], saved: const [saved]), [
+        live,
+      ]);
+      expect(
+        shouldPersistRoomRoster(live: const [live], saved: const [saved]),
+        isTrue,
+      );
+    });
+
     test('canSeeRoomMemberJids: non-anon or owner/admin', () {
       expect(
         canSeeRoomMemberJids(nonAnonymous: true, selfAffiliation: 'none'),

@@ -1328,25 +1328,73 @@ class XmppService {
     return state.members.values.map(Occupant.from).toList();
   }
 
-  /// Member list for the UI (online + offline affiliates when JIDs are visible).
-  ///
-  /// Before this process has seen presence, the list saved at the last emit
-  /// is used so read markers and the ring have a denominator immediately.
-  Future<List<Occupant>> roomDisplayMembers(String roomJid) async {
-    final bare = JID.fromString(roomJid).toBare().toString();
+  /// Live affiliation+presence merge for [roomJid] (may be empty / nick-only).
+  Future<List<Occupant>> _liveRoomMembers(String bare) async {
     final online = await roomOccupantList(bare);
-    final live = roomMembersForDisplay(
+    return roomMembersForDisplay(
       includeOfflineAffiliates: _includeOfflineAffiliates[bare] ?? false,
       affiliation: _affiliations[bare] ?? const [],
       online: online,
     );
-    if (live.isNotEmpty) return live;
-    return List<Occupant>.of(_savedMembers[_roomKey(bare)] ?? const []);
+  }
+
+  /// Member list for the UI (members page, read rings, crypto targets).
+  ///
+  /// Always local-first via [resolveRoomRoster]: saved roster until live has
+  /// real JIDs (or any live when we never had JIDs).
+  Future<List<Occupant>> roomDisplayMembers(String roomJid) async {
+    final bare = JID.fromString(roomJid).toBare().toString();
+    final saved = savedRoomMembers(bare);
+    final live = await _liveRoomMembers(bare);
+    return resolveRoomRoster(live: live, saved: saved);
   }
 
   /// Last display roster written for [roomJid], if any.
   List<Occupant> savedRoomMembers(String roomJid) =>
       List<Occupant>.of(_savedMembers[_roomKey(roomJid)] ?? const []);
+
+  /// [GroupChat] the UI should show (member list + read rings).
+  ///
+  /// Uses [roomDisplayMembers] so offline / pre-join opens still get the
+  /// persisted roster; live MUC state only supplies nick/subject/joined.
+  Future<GroupChat?> roomChatForDisplay(String roomJid) async {
+    final bare = JID.fromString(roomJid).toBare().toString();
+    final occupants = await roomDisplayMembers(bare);
+    final state = await groupChatState(bare);
+    if (state == null) {
+      if (occupants.isEmpty) return null;
+      return GroupChat(
+        roomJid: bare,
+        nick: '',
+        occupants: occupants,
+        joined: false,
+        canSeeMemberJids: roomRosterHasRealJids(occupants),
+      );
+    }
+    return GroupChat(
+      roomJid: bare,
+      nick: state.nick ?? '',
+      occupants: occupants,
+      subject: state.subject,
+      joined: state.joined,
+      canSeeMemberJids:
+          roomCanSeeMemberJids(bare) || roomRosterHasRealJids(occupants),
+    );
+  }
+
+  /// Offline snapshot from the persisted roster (paint before join/disco).
+  GroupChat? localRoomChat(String roomJid, {required String nick}) {
+    final bare = JID.fromString(roomJid).toBare().toString();
+    final saved = savedRoomMembers(bare);
+    if (saved.isEmpty) return null;
+    return GroupChat(
+      roomJid: bare,
+      nick: nick,
+      occupants: saved,
+      joined: false,
+      canSeeMemberJids: roomRosterHasRealJids(saved),
+    );
+  }
 
   /// Loads rosters saved by [onRoomRoster]. Called before connect so a marker
   /// that arrives with the first presence can already map nick → real JID.
@@ -2797,69 +2845,110 @@ class XmppService {
     if (trust == null) return resolved.devices.toList();
     final out = <int>[];
     for (final id in resolved.devices) {
-      final fp = await _classicFingerprintFor(bare, id);
+      final fp = await _fingerprintFor(bare, id, omemo2: false);
       if (fp == null) continue;
       if (await trust.mayEncryptToActive(bare, fp)) out.add(id);
     }
     return out;
   }
 
-  Future<String?> _classicFingerprintFor(String bare, int deviceId) async {
+  /// Cache → PEP bundle → remember. [omemo2] only switches A/B fetch+store.
+  Future<String?> _fingerprintFor(
+    String bare,
+    int deviceId, {
+    required bool omemo2,
+  }) async {
     final trust = fingerprintTrust;
     final cached = await trust?.fingerprintOfDevice(
       bare,
       deviceId,
-      omemo2: false,
+      omemo2: omemo2,
     );
     if (cached != null && cached.isNotEmpty) return cached;
-    final bundle = await tracks?.getOmemoBundle(JID.fromString(bare), deviceId);
-    if (bundle == null) return null;
-    final fp = bundle.fingerprint;
+
+    late final String fp;
+    if (omemo2) {
+      final bundle = await tracks?.getPqBundle(JID.fromString(bare), deviceId);
+      if (bundle == null || !bundle.hasPqIdentity) return null;
+      fp = hybridOmemo2Fingerprint(
+        bundle.ikSerialized,
+        Uint8List.fromList(base64Decode(bundle.pqIk)),
+      );
+    } else {
+      final bundle = await tracks?.getOmemoBundle(
+        JID.fromString(bare),
+        deviceId,
+      );
+      if (bundle == null) return null;
+      fp = bundle.fingerprint;
+    }
+
     await trust?.rememberDevice(
       jid: bare,
       deviceId: deviceId,
       fingerprint: fp,
-      omemo2: false,
+      omemo2: omemo2,
     );
     return FingerprintTrustStore.normalize(fp);
   }
 
-  /// Peer device fingerprints for the security / trust UI (classic + OMEMO2).
-  ///
-  /// Local [OmemoIdentities] first (including inactive). A live PEP refresh
-  /// updates fingerprints and active flags when the network is available.
-  Future<List<PeerFingerprintRow>> peerFingerprintRows(String bareJid) async {
+  /// Peer device fingerprints from local [OmemoIdentities] only (no network).
+  Future<List<PeerFingerprintRow>> peerFingerprintRowsLocal(
+    String bareJid,
+  ) async {
     final bare = JID.fromString(bareJid).toBare().toString();
-    final trust = fingerprintTrust;
-    // Refresh announced lists / bundles when we can; failures keep local rows.
-    try {
-      final caps = await capabilitiesFor(JID.fromString(bare));
-      if (caps != null) {
-        if (caps.classicReliable) {
-          await trust?.syncAnnouncedDevices(
-            jid: bare,
-            announcedIds: caps.peerDevices,
-            omemo2: false,
-          );
-          for (final id in caps.peerDevices) {
-            await _classicFingerprintFor(bare, id);
-          }
-        }
-        if (caps.pqReliable) {
-          await trust?.syncAnnouncedDevices(
-            jid: bare,
-            announcedIds: caps.pqDevices,
-            omemo2: true,
-          );
-          for (final id in caps.pqDevices) {
-            await _pqFingerprintFor(bare, id);
-          }
-        }
-      }
-    } catch (_) {
-      // Offline / timeout — fall through to persisted identities.
-    }
+    return _peerFingerprintRowsFromStore(bare);
+  }
 
+  /// Peer fingerprints for the security UI: optional PEP refresh, then local.
+  ///
+  /// Pass [refreshFromNetwork]: false to paint cached rows immediately; the
+  /// security page refreshes in the background afterwards.
+  Future<List<PeerFingerprintRow>> peerFingerprintRows(
+    String bareJid, {
+    bool refreshFromNetwork = true,
+  }) async {
+    final bare = JID.fromString(bareJid).toBare().toString();
+    if (refreshFromNetwork) {
+      try {
+        await _refreshPeerFingerprintsFromNetwork(bare);
+      } catch (_) {
+        // Offline / timeout — keep whatever is already stored.
+      }
+    }
+    return _peerFingerprintRowsFromStore(bare);
+  }
+
+  Future<void> _refreshPeerFingerprintsFromNetwork(String bare) async {
+    final trust = fingerprintTrust;
+    final caps = await capabilitiesFor(JID.fromString(bare));
+    if (caps == null) return;
+    if (caps.classicReliable) {
+      await trust?.syncAnnouncedDevices(
+        jid: bare,
+        announcedIds: caps.peerDevices,
+        omemo2: false,
+      );
+      for (final id in caps.peerDevices) {
+        await _fingerprintFor(bare, id, omemo2: false);
+      }
+    }
+    if (caps.pqReliable) {
+      await trust?.syncAnnouncedDevices(
+        jid: bare,
+        announcedIds: caps.pqDevices,
+        omemo2: true,
+      );
+      for (final id in caps.pqDevices) {
+        await _fingerprintFor(bare, id, omemo2: true);
+      }
+    }
+  }
+
+  Future<List<PeerFingerprintRow>> _peerFingerprintRowsFromStore(
+    String bare,
+  ) async {
+    final trust = fingerprintTrust;
     if (trust == null) return const [];
     final stored = await trust.identitiesFor(bare);
     final rows = <PeerFingerprintRow>[
@@ -2870,7 +2959,7 @@ class XmppService {
             deviceId: r.deviceId,
             fingerprint: r.fingerprint,
             omemo2: r.omemo2,
-            trusted: r.trust != 'untrusted',
+            trust: FingerprintTrust.parse(r.trust),
             active: r.active,
           ),
     ];
@@ -2892,6 +2981,7 @@ class XmppService {
   Future<List<PeerFingerprintRow>> groupFingerprintRows(
     Iterable<String> memberBareJids, {
     String? excludeBareJid,
+    bool refreshFromNetwork = true,
   }) async {
     final skip = (excludeBareJid ?? myJid)?.toLowerCase();
     final rows = <PeerFingerprintRow>[];
@@ -2900,7 +2990,9 @@ class XmppService {
       final bare = JID.fromString(raw).toBare().toString();
       if (skip != null && bare.toLowerCase() == skip) continue;
       if (!seen.add(bare)) continue;
-      rows.addAll(await peerFingerprintRows(bare));
+      rows.addAll(
+        await peerFingerprintRows(bare, refreshFromNetwork: refreshFromNetwork),
+      );
     }
     return rows;
   }
@@ -2922,43 +3014,26 @@ class XmppService {
     ];
   }
 
-  Future<String?> _pqFingerprintFor(String bare, int deviceId) async {
-    final trust = fingerprintTrust;
-    final cached = await trust?.fingerprintOfDevice(
-      bare,
-      deviceId,
-      omemo2: true,
+  /// Trust snapshot for a stored message on [track] with peer [bareJid].
+  Future<EncModeToken> encModeForPeer(String bareJid, Track track) async {
+    if (track == Track.none) return EncModeToken.none;
+    final trust = await fingerprintTrust?.aggregateActiveTrust(
+      JID.fromString(bareJid).toBare().toString(),
+      omemo2: track == Track.pq,
     );
-    if (cached != null && cached.isNotEmpty) return cached;
-    final bundle = await tracks?.getPqBundle(JID.fromString(bare), deviceId);
-    if (bundle == null || !bundle.hasPqIdentity) return null;
-    final fp = hybridOmemo2Fingerprint(
-      bundle.ikSerialized,
-      Uint8List.fromList(base64Decode(bundle.pqIk)),
-    );
-    await trust?.rememberDevice(
-      jid: bare,
-      deviceId: deviceId,
-      fingerprint: fp,
-      omemo2: true,
-    );
-    return FingerprintTrustStore.normalize(fp);
+    return EncModeToken.of(track, trust: trust);
   }
 
-  /// Toggle trust for one peer fingerprint (security page switch).
+  /// Set Gajim-style trust for one peer fingerprint.
   Future<void> setPeerFingerprintTrust({
     required String bareJid,
     required String fingerprint,
-    required bool trusted,
+    required FingerprintTrust trust,
   }) async {
     final store = fingerprintTrust;
     if (store == null) return;
     final bare = JID.fromString(bareJid).toBare().toString();
-    await store.setTrust(
-      bare,
-      fingerprint,
-      trusted ? FingerprintTrust.trusted : FingerprintTrust.untrusted,
-    );
+    await store.setTrust(bare, fingerprint, trust);
     // Refresh the classic encrypt target cache with the new trust filter.
     final om = _omemo;
     if (om != null) {
@@ -2993,12 +3068,9 @@ class XmppService {
     // registration id / identity pair in account DB independently of announce).
     await deviceStore?.save(device);
 
-    // Publish through the dual-track manager so the bundle lands in both
-    // the de-facto and the XEP-0384 dialects. Publishing only the spec form
-    // makes us invisible to every client that actually exists. The device
-    // list is merged (own id added), never replaced — same as Conversations'
-    // `publishOwnDeviceId`. Clearing other devices is an explicit user action
-    // (`wipeOtherOmemoDevices`), never automatic on identity mint.
+    // Conversations: publishBundlesIfNeeded then publishOwnDeviceIdIfNeeded.
+    // Dual-track writes both dialects once each; device list is a per-node
+    // merge (own id added). Wiping other devices is only wipeOtherOmemoDevices.
     final published = tracks == null
         ? await _moxxOmemo!
               .publishBundle(bundle)
@@ -3013,7 +3085,7 @@ class XmppService {
     if (!published) {
       _log.warning('OMEMO bundle publish reported failure');
     } else {
-      await tracks?.notePublishedDevice(id);
+      await tracks?.notePublishedOmemoDevice(id);
     }
     return id;
   }
@@ -3050,6 +3122,8 @@ class XmppService {
   }
 
   /// Wipe other devices from the **classic OMEMO** PEP announcement only.
+  ///
+  /// Parallel to [BTrackManager.wipeOtherDevices] on the B stack.
   Future<bool> wipeOtherOmemoDevices() async {
     final manager = await _omemoOrCreate();
     final id = await manager.getDeviceId();
@@ -3063,7 +3137,10 @@ class XmppService {
     }
     final ok = await trackManager.publishOmemoDeviceIds(bare, {id});
     if (ok) {
-      await trackManager.notePublishedDevice(id);
+      // Conversations wipeOtherPepDevices leaves only this id on PEP; the
+      // local publish history must match or the next merge will treat the
+      // wiped ids as still ours and put them back.
+      await trackManager.replacePublishedOmemoDevices({id});
       _capabilities?.invalidateAll();
     }
     return ok;
@@ -3514,18 +3591,20 @@ class XmppService {
     }
   }
 
-  /// Emit display roster: affiliation+online when JIDs are visible to us,
-  /// otherwise online-only.
+  /// Emit display roster via [resolveRoomRoster] (local-first), then optionally
+  /// persist a usable live merge.
   Future<void> _emitRoomState(String roomJid) async {
     final bare = JID.fromString(roomJid).toBare().toString();
     final state = await groupChatState(bare);
     if (state == null || _roomOccupants.isClosed) return;
     final online = state.members.values.map(Occupant.from).toList();
-    final occupants = roomMembersForDisplay(
+    final live = roomMembersForDisplay(
       includeOfflineAffiliates: _includeOfflineAffiliates[bare] ?? false,
       affiliation: _affiliations[bare] ?? const [],
       online: online,
     );
+    final saved = savedRoomMembers(bare);
+    final occupants = resolveRoomRoster(live: live, saved: saved);
     final chat = GroupChat(
       roomJid: bare,
       // A room with no nick is one we are not in; showing the member list of
@@ -3535,15 +3614,17 @@ class XmppService {
       occupants: occupants,
       subject: state.subject,
       joined: state.joined,
-      canSeeMemberJids: _includeOfflineAffiliates[bare] ?? false,
+      canSeeMemberJids:
+          (_includeOfflineAffiliates[bare] ?? false) ||
+          roomRosterHasRealJids(occupants),
     );
     _roomOccupants.add(chat);
-    // An empty emit during join must not wipe the roster we already saved.
-    // The next presence or affiliation result replaces it wholesale.
-    if (occupants.isEmpty) return;
-    _savedMembers[_roomKey(bare)] = occupants;
+    if (!shouldPersistRoomRoster(live: live, saved: saved)) return;
+    _savedMembers[_roomKey(bare)] = live;
     final persist = onRoomRoster;
-    if (persist != null) unawaited(persist(chat));
+    if (persist != null) {
+      unawaited(persist(chat.copyWith(occupants: live)));
+    }
   }
 
   /// Disco `muc_membersonly` for [roomJid]. False until that disco result lands.

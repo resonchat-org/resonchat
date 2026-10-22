@@ -15,6 +15,7 @@ import 'package:flutter/material.dart';
 import 'package:moxxmpp/moxxmpp.dart'
     show ExplicitEncryptionType, emeOmemo, emePomemo0;
 
+import 'package:resonchat/crypto/dual/fingerprint_trust.dart';
 import 'package:resonchat/l10n/generated/app_localizations.dart';
 
 /// Which track a message used.
@@ -126,49 +127,106 @@ enum Track {
 
 /// The token stored in `messages.enc_mode`.
 ///
-/// Deliberately a closed vocabulary: the column is a database contract, and
-/// binding it to a Dart enum identifier would let a rename silently rewrite
-/// history.
-///
-/// The stored spelling is [Track.stored] — the same two letters the user
-/// reads under a message — so the column and [chats.track_override] cannot
-/// disagree about what "pq" was called. [error] is the only value with a
-/// spelling of its own, because it is a condition rather than a track: a
-/// message that was encrypted by something we cannot read.
-enum EncModeToken {
-  none(Track.none),
-  standard(Track.standard),
-  pq(Track.pq),
-  error(null);
+/// Track spelling is [Track.stored]. Optional Gajim trust is a `:suffix`
+/// (`om:verified`, `o2:blind`, …). Legacy rows without a suffix keep working;
+/// [trust] is then null and the bubble shows the plain track label.
+class EncModeToken {
+  const EncModeToken._(this.track, [this.trust]);
 
-  const EncModeToken(this.track);
+  static const none = EncModeToken._(Track.none);
+  static const standard = EncModeToken._(Track.standard);
+  static const pq = EncModeToken._(Track.pq);
+  static const error = EncModeToken._(null);
 
   /// The track this token records, or null for [error].
   final Track? track;
 
-  /// The stored form.
-  String get wire => track?.stored ?? 'error';
+  /// Snapshot of fingerprint trust when the message was stored, if known.
+  final FingerprintTrust? trust;
 
-  /// The token for [track].
-  static EncModeToken of(Track track) => switch (track) {
-    Track.none => EncModeToken.none,
-    Track.standard => EncModeToken.standard,
-    Track.pq => EncModeToken.pq,
-  };
+  /// Wire form written to SQL.
+  String get wire {
+    if (track == null) return 'error';
+    if (track == Track.none) return track!.stored;
+    final base = track!.stored;
+    final t = trust;
+    if (t == null) return base;
+    return '$base:${t.wire}';
+  }
+
+  /// Short label under the bubble (Gajim-style subdivision of OM / O2).
+  String get label {
+    if (track == null) return 'ERR';
+    final base = track!.label;
+    if (track == Track.none) return base;
+    return switch (trust) {
+      FingerprintTrust.verified => '$base✓',
+      FingerprintTrust.blind => base,
+      FingerprintTrust.undecided => '$base?',
+      FingerprintTrust.untrusted => '$base✗',
+      null => base,
+    };
+  }
+
+  IconData get icon {
+    if (track == null) return Icons.error_outline;
+    if (track == Track.none) return Track.none.icon;
+    return switch (trust) {
+      FingerprintTrust.verified => Icons.verified_user_outlined,
+      FingerprintTrust.blind => track!.icon,
+      FingerprintTrust.undecided => Icons.help_outline,
+      FingerprintTrust.untrusted => Icons.gpp_bad_outlined,
+      null => track!.icon,
+    };
+  }
+
+  /// Danger styling (plaintext or explicitly untrusted encryption).
+  bool get emphasizeWarning =>
+      track == Track.none || trust == FingerprintTrust.untrusted;
+
+  /// The token for [track], optionally with a trust snapshot.
+  static EncModeToken of(Track track, {FingerprintTrust? trust}) {
+    if (track == Track.none || trust == null) {
+      return switch (track) {
+        Track.none => EncModeToken.none,
+        Track.standard => EncModeToken.standard,
+        Track.pq => EncModeToken.pq,
+      };
+    }
+    return EncModeToken._(track, trust);
+  }
 
   /// Reads a stored value, including every spelling earlier builds wrote.
-  ///
-  /// An unrecognised value resolves to [none] rather than throwing: a single
-  /// corrupt row must not make the whole history unreadable. Note this is the
-  /// one place where "give up and treat as plaintext" is acceptable, because
-  /// the value describes a message that was *already sent* — there is nothing
-  /// left to protect by being uncertain about it. The same uncertainty on the
-  /// send path is not acceptable, which is why [fromStored] returns null.
-  static EncModeToken parse(String? value) => switch (value?.toLowerCase()) {
-    'o2' || 'po' || 'pq' || 'pqomemo' || 'omemo2' => EncModeToken.pq,
-    'om' || 'standard' || 'standardomemo' => EncModeToken.standard,
-    'no' || 'none' => EncModeToken.none,
-    'error' => EncModeToken.error,
-    _ => EncModeToken.none,
-  };
+  static EncModeToken parse(String? value) {
+    if (value == null || value.isEmpty) return EncModeToken.none;
+    final raw = value.toLowerCase();
+    if (raw == 'error') return EncModeToken.error;
+
+    FingerprintTrust? trust;
+    var trackPart = raw;
+    final colon = raw.indexOf(':');
+    if (colon > 0) {
+      trackPart = raw.substring(0, colon);
+      trust = FingerprintTrust.parse(raw.substring(colon + 1));
+    }
+
+    final track = switch (trackPart) {
+      'o2' || 'po' || 'pq' || 'pqomemo' || 'omemo2' => Track.pq,
+      'om' || 'standard' || 'standardomemo' => Track.standard,
+      'no' || 'none' => Track.none,
+      _ => null,
+    };
+    if (track == null) return EncModeToken.none;
+    if (track == Track.none) return EncModeToken.none;
+    return EncModeToken.of(track, trust: trust);
+  }
+
+  static const List<EncModeToken> values = [none, standard, pq, error];
+
+  @override
+  bool operator ==(Object other) =>
+      other is EncModeToken && other.track == track && other.trust == trust;
+
+  @override
+  int get hashCode => Object.hash(track, trust);
 }

@@ -468,6 +468,41 @@ List<Occupant> roomMembersForDisplay({
   return List<Occupant>.of(online);
 }
 
+/// True when any occupant carries a real bare JID (read rings / OMEMO).
+bool roomRosterHasRealJids(Iterable<Occupant> occupants) =>
+    occupants.any((o) => (o.realJid ?? '').contains('@'));
+
+/// Local-first display roster for member lists and group read rings.
+///
+/// Prefer [live] when it is usable; otherwise keep [saved] so opening a room
+/// (or a nick-only presence snapshot) cannot blank the UI until the network
+/// affiliation / non-anonymous presence catches up.
+List<Occupant> resolveRoomRoster({
+  required List<Occupant> live,
+  required List<Occupant> saved,
+}) {
+  if (live.isEmpty) return List<Occupant>.of(saved);
+  if (!roomRosterHasRealJids(live) && roomRosterHasRealJids(saved)) {
+    return List<Occupant>.of(saved);
+  }
+  return List<Occupant>.of(live);
+}
+
+/// Whether a live merge should replace the persisted local roster.
+///
+/// Never overwrite a JID-bearing saved roster with an empty or nick-only live
+/// snapshot.
+bool shouldPersistRoomRoster({
+  required List<Occupant> live,
+  required List<Occupant> saved,
+}) {
+  if (live.isEmpty) return false;
+  if (!roomRosterHasRealJids(live) && roomRosterHasRealJids(saved)) {
+    return false;
+  }
+  return true;
+}
+
 /// A room we are in.
 class GroupChat {
   const GroupChat({

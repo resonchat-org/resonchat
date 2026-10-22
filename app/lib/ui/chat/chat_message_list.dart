@@ -420,10 +420,9 @@ class _ChatReactionBubble extends ConsumerWidget {
           message.sendStatus == MessageSendStatus.sendFailed ||
           message.deliveryError.isNotEmpty,
       sendStatus: message.sendStatus,
-      // What the message actually used, from what the sender declared — not
-      // what we would have chosen. Read back from the row rather than
-      // recomputed, so the label survives a change of mind afterwards.
-      track: EncModeToken.parse(message.encMode).track ?? Track.none,
+      // What the message actually used (+ trust snapshot). Read from the row
+      // rather than recomputed, so the label survives a later trust change.
+      encMode: EncModeToken.parse(message.encMode),
       reactions: reactions,
       retracted: message.retracted,
       edited: message.editedAt != null,

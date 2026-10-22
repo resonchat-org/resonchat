@@ -19,24 +19,12 @@ import 'package:xml/xml.dart';
 
 import 'package:resonchat/crypto/axolotl/defacto.dart';
 import 'package:resonchat/crypto/dual/bounded.dart';
-import 'package:resonchat/crypto/dual/device_pruning.dart';
 import 'package:resonchat/crypto/dual/negotiation.dart';
 import 'package:resonchat/crypto/omemo2/bundle_codec.dart';
 import 'package:resonchat/crypto/omemo2/mlkem.dart';
 import 'package:resonchat/crypto/omemo2/omemo2_bundle_verify.dart';
 import 'package:resonchat/crypto/omemo2/pq_session.dart';
 import 'package:resonchat/crypto/omemo2/protocol.dart';
-
-/// [ids] as an ascending, comma-separated string.
-///
-/// Sorted because this goes into a log line that someone will read twice and
-/// compare against a server response by eye; set iteration order makes two
-/// identical accounts print two different lines, which is indistinguishable from
-/// a real difference.
-String sortedNumericIds(Iterable<int> ids) {
-  final sorted = ids.toList()..sort();
-  return sorted.isEmpty ? '(none)' : sorted.join(',');
-}
 
 final Logger _log = Logger('DualTrackManager');
 
@@ -71,12 +59,13 @@ const int kBundleFetchConcurrency = 3;
 /// longer converts a large device list into one.
 const Duration kDeviceListDeadline = Duration(seconds: 30);
 
-/// Owns the B track's PEP state and the outbound-track decision.
+/// PEP publish/fetch for both stacks, plus the outbound-track decision.
 ///
-/// The A track is fully delegated to moxxmpp's [OmemoManager] (kept
-/// byte-compatible with Conversations/Moxxy/Dino); the B track uses
-/// parallel PEP nodes ([omemo2DevicesXmlns]/[omemo2BundlesXmlns]) so
-/// standard clients never see keys they cannot use.
+/// A and B are independent namespaces with parallel APIs:
+/// `publishOmemoBundle` / `publishOmemoDeviceIds` (classic) and
+/// `publishPqBundle` / `publishPqDeviceIds` (OMEMO2). Session lifecycle
+/// stays outside: [XmppConnection.ensureOmemoDevice] for A,
+/// [BTrackManager] for B — each builds a bundle then calls these methods.
 class DualTrackManager {
   DualTrackManager({required this.aTrack, required this.pubsubOf});
 
@@ -230,20 +219,31 @@ class DualTrackManager {
   /// Matches Conversations' `IqParser.deviceIds`: the PEP list as advertised,
   /// including ids whose bundles we cannot fetch right now. Filtering those
   /// out before a merge-publish would drop live second devices from the list.
+  ///
+  /// Unions every dialect for *reads* (capability / encrypt). Own-list
+  /// *publishes* must not use this union — see [publishOmemoBundle].
   Future<Set<int>> fetchOmemoDeviceIds(JID jid) async {
-    final pm = pubsubOf();
     final listed = <int>{};
     for (final node in [omemoDefactoDevicesNode, ...omemoSpecDevicesNodes]) {
-      final items = await pm.getItems(jid, node);
-      if (!items.isType<List<PubSubItem>>()) continue;
-      for (final item in items.get<List<PubSubItem>>()) {
-        try {
-          final doc = XmlDocument.parse(item.payload.toXml());
-          final parsed = parseOmemoDeviceList(doc.rootElement);
-          if (parsed != null) listed.addAll(parsed);
-        } catch (_) {
-          // Unreadable payload contributes nothing.
-        }
+      listed.addAll(await fetchOmemoDeviceIdsFromNode(jid, node));
+    }
+    return listed;
+  }
+
+  /// Device ids on one PEP dialect node only (Conversations reads a single
+  /// node before `publishOwnDeviceId`).
+  Future<Set<int>> fetchOmemoDeviceIdsFromNode(JID jid, String node) async {
+    final pm = pubsubOf();
+    final listed = <int>{};
+    final items = await pm.getItems(jid, node);
+    if (!items.isType<List<PubSubItem>>()) return listed;
+    for (final item in items.get<List<PubSubItem>>()) {
+      try {
+        final doc = XmlDocument.parse(item.payload.toXml());
+        final parsed = parseOmemoDeviceList(doc.rootElement);
+        if (parsed != null) listed.addAll(parsed);
+      } catch (_) {
+        // Unreadable payload contributes nothing.
       }
     }
     return listed;
@@ -360,153 +360,69 @@ class DualTrackManager {
   /// implementation, which is exactly where a wire-format assumption shows
   /// up; hence the two-dialect tolerance in `parseOmemoBundle`.
   ///
-  /// Note the item id: real clients publish the bundle under the item
-  /// `current`, while moxxmpp uses the device id. Asking for one specific
-  /// id and failing on the other would make every peer look incapable, so
-  /// the whole node is fetched and whichever item parses is taken.
-  /// Persistence for the set of device ids this installation has published.
-  ///
-  /// Not secret — these ids are on a public node — and deliberately separate
-  /// from the sealed key material: a user who clears their keys should still
-  /// have the previous ids remembered, because that is exactly the case where
-  /// pruning them matters.
-  PublishedDeviceMemory? deviceMemory;
+  // ── Per-stack publish history (A and B are independent) ──────────────
+  //
+  // Not secret — these ids are on a public node — and deliberately separate
+  // from the sealed key material: a user who clears their keys should still
+  // have the previous ids remembered, because that is exactly the case where
+  // the next merge must not put them back on the list.
 
-  /// Every device id this installation has published, newest last.
-  Future<Set<int>> publishedDeviceIds() async {
-    final loader = deviceMemory?.load;
-    if (loader == null) return _published;
+  /// Classic OMEMO (A-track) ids this installation has published.
+  PublishedDeviceMemory? omemoDeviceMemory;
+
+  /// OMEMO2 / PQ (B-track) ids this installation has published.
+  PublishedDeviceMemory? pqDeviceMemory;
+
+  Future<Set<int>> publishedOmemoDeviceIds() =>
+      _publishedIds(_omemoPublished, omemoDeviceMemory);
+
+  Future<Set<int>> publishedPqDeviceIds() =>
+      _publishedIds(_pqPublished, pqDeviceMemory);
+
+  Future<void> notePublishedOmemoDevice(int id) =>
+      _notePublished(id, _omemoPublished, omemoDeviceMemory);
+
+  Future<void> notePublishedPqDevice(int id) =>
+      _notePublished(id, _pqPublished, pqDeviceMemory);
+
+  /// Wipe / regenerate: local history must match the singleton PEP list.
+  Future<void> replacePublishedOmemoDevices(Set<int> ids) =>
+      _replacePublished(ids, _omemoPublished, omemoDeviceMemory);
+
+  Future<void> replacePublishedPqDevices(Set<int> ids) =>
+      _replacePublished(ids, _pqPublished, pqDeviceMemory);
+
+  final _omemoPublished = <int>{};
+  final _pqPublished = <int>{};
+
+  Future<Set<int>> _publishedIds(
+    Set<int> memory,
+    PublishedDeviceMemory? store,
+  ) async {
+    final loader = store?.load;
+    if (loader == null) return memory;
     final stored = await loader();
-    // Union rather than replace: the in-memory set may already hold an id
-    // published a moment ago and not yet flushed.
-    return {..._published, ...stored};
+    return {...memory, ...stored};
   }
 
-  /// Records [id] as published, both in memory and in the store.
-  Future<void> notePublishedDevice(int id) async {
-    _published.add(id);
-    await deviceMemory?.save({..._published});
+  Future<void> _notePublished(
+    int id,
+    Set<int> memory,
+    PublishedDeviceMemory? store,
+  ) async {
+    memory.add(id);
+    await store?.save({...memory});
   }
 
-  final _published = <int>{};
-
-  /// Whether [deviceId]'s bundle is **known to be absent**.
-  ///
-  /// The distinction is the whole point, and it is why the pubsub layer had to
-  /// learn the error conditions: a node that does not exist and a node we
-  /// failed to read both used to come back as `UnknownPubSubError`, and a
-  /// signal that cannot tell them apart cannot answer this question. It now
-  /// returns `item-not-found` / `node-not-found` as themselves, and only those
-  /// count as absence.
-  ///
-  /// Both the de-facto and the spec dialect are consulted: a peer may have
-  /// published a bundle in either, and "not in the first one" is not "gone"
-  /// until the second has been asked too.
-  Future<bool> bundleKnownAbsent(JID jid, int deviceId) async {
-    final pm = pubsubOf();
-    for (final node in [
-      '$omemoDefactoBundlesNode:$deviceId',
-      for (final n in omemoSpecBundlesNodes) '$n:$deviceId',
-    ]) {
-      final items = await pm.getItems(jid, node);
-      if (items.isType<List<PubSubItem>>()) {
-        for (final item in items.get<List<PubSubItem>>()) {
-          try {
-            final doc = XmlDocument.parse(item.payload.toXml());
-            parseOmemoBundle(
-              doc.rootElement,
-              jid: jid.toBare().toString(),
-              deviceId: deviceId,
-            );
-            // Present and usable.
-            return false;
-          } catch (_) {
-            // Present but unparseable. Not absence: removing it would remove a
-            // device that is really there.
-            return false;
-          }
-        }
-        // The node answered with nothing.
-        return true;
-      }
-      if (!pubSubErrorMeansAbsent(items.get<PubSubError>())) {
-        // We do not know, and "we do not know" is not permission to remove a
-        // device. Try the other dialect rather than concluding anything.
-        continue;
-      }
-      // This dialect positively says the item is not there. The other dialect
-      // might still have it, so keep going and only conclude once every node
-      // has said so.
-    }
-    // Every dialect said "not there", or said it for the one that exists.
-    return true;
-  }
-
-  /// Removes device ids from [bareJid]'s own published list whose bundle is
-  /// known to be gone.
-  ///
-  /// Only ever called for a JID we publish to ourselves, and only removes ids
-  /// that have been *positively* established as dead. Never touches a peer's
-  /// list: we have no rights there, and a client that pruned somebody else's
-  /// device list would be silently downgrading them.
-  ///
-  /// Returns the ids removed, so the caller can say what happened.
-  Future<Set<int>> pruneOwnDeadDevices(JID bareJid, int ourDeviceId) async {
-    final pm = pubsubOf();
-    final listed = await fetchOmemoDeviceIds(bareJid);
-    if (listed.isEmpty) return const {};
-
-    // One round trip per id, fetched up front so the decision below is pure
-    // arithmetic on answers we already have.
-    final absent = <int, bool>{};
-    for (final id in listed) {
-      if (id == ourDeviceId) continue;
-      absent[id] = await bundleKnownAbsent(bareJid, id);
-    }
-
-    // Conversations never mass-revokes other devices on a fresh install: other
-    // ids on the list may be a live second phone. Only remove an id when its
-    // bundle is positively gone (`bundleKnownAbsent`). Explicit wipe belongs
-    // in a user-driven path (Conversations' `wipeOtherPepDevices`), not here.
-
-    // The decision is now made, so say what it was made from.
-    //
-    // Without this the whole prune is unobservable: it keeps a device or drops
-    // it silently, and "our device list advertises an id whose bundle is gone"
-    // — the state that makes a peer report "could not fetch encryption keys"
-    // and then encrypt to a device nobody holds keys for — looks exactly like a
-    // healthy account from inside this app. An id is only ever *absent* from
-    // `absent` when it is our own current device, so this line is the complete
-    // list of what the account is claiming and why.
-    final claimed = listed.where(
-      (id) => id == ourDeviceId || absent[id] != true,
-    );
-    _log.fine(
-      'own device list for ${bareJid.toBare().toString()}: '
-      'claiming ${sortedNumericIds(claimed)} of ${sortedNumericIds(listed)}'
-      ' (ourDeviceId=$ourDeviceId); bundle absent for '
-      '${sortedNumericIds(absent.entries.where((e) => e.value).map((e) => e.key))}',
-    );
-
-    final kept = keepableDeviceIds(
-      listed: listed,
-      ourDeviceId: ourDeviceId,
-      bundleAbsent: (id) => absent[id] ?? false,
-    );
-    final dead = deadDeviceIds(listed: listed, kept: kept);
-    if (dead.isEmpty) return const {};
-
-    // Both dialects: a client reading either one must not see the dead ids.
-    for (final node in [omemoDefactoDevicesNode, ...omemoSpecDevicesNodes]) {
-      await pm.publish(
-        bareJid,
-        node,
-        XMLNode.fromString(deviceListToDefactoXml(kept).toXmlString()),
-        id: 'current',
-        options: const PubSubPublishOptions(accessModel: 'open'),
-      );
-    }
-    return dead;
+  Future<void> _replacePublished(
+    Set<int> ids,
+    Set<int> memory,
+    PublishedDeviceMemory? store,
+  ) async {
+    memory
+      ..clear()
+      ..addAll(ids);
+    await store?.save({...memory});
   }
 
   Future<AxolotlBundle?> getOmemoBundle(JID jid, int deviceId) async {
@@ -586,51 +502,166 @@ class DualTrackManager {
     return listOk;
   }
 
-  /// Publishes our standard-OMEMO bundle in **both** dialects.
+  /// Conversations `publishBundlesIfNeeded` then `publishOwnDeviceIdIfNeeded`.
   ///
-  /// The de-facto form is what real clients read; the spec form is what
-  /// moxxmpp's own `publishBundle` writes and what a future client might
-  /// adopt. Returns true when at least one form was accepted.
+  /// Order matches Conversations: publish the bundle(s) first; only after a
+  /// successful bundle write do we announce our device id. Each device-list
+  /// node is retrieved and rewritten on its own (never a cross-dialect
+  /// union — that resurrects ids a wipe already cleared on one node).
   ///
-  /// Device-list publish follows Conversations' `publishOwnDeviceId`: read the
-  /// existing PEP list and **add** our id. Never replace the list with a
-  /// singleton — that revokes every other live device of the same account.
+  /// Spec bundles are written directly. We do **not** call moxxmpp
+  /// [OmemoManager.publishBundle]: that path retrieves and rewrites the
+  /// device list a second time, undoing the per-node merge above.
   Future<bool> publishOmemoBundle(JID bareJid, AxolotlBundle bundle) async {
     final pm = pubsubOf();
+    final ourId = bundle.deviceId;
 
-    final ids = await fetchOmemoDeviceIds(bareJid);
-    ids.add(bundle.deviceId);
-    final listOk = await publishOmemoDeviceIds(bareJid, ids);
-
-    final bundleResult = await pm.publish(
+    final defactoBundle = await pm.publish(
       bareJid,
-      '$omemoDefactoBundlesNode:${bundle.deviceId}',
+      '$omemoDefactoBundlesNode:$ourId',
       XMLNode.fromString(bundleToDefactoXml(bundle).toXmlString()),
       id: 'current',
       options: const PubSubPublishOptions(accessModel: 'open', maxItems: '1'),
     );
-    final bundleOk = bundleResult.isType<bool>() && bundleResult.get<bool>();
-
+    final defactoOk = defactoBundle.isType<bool>() && defactoBundle.get<bool>();
     try {
       await pm.configure(
         bareJid,
-        '$omemoDefactoBundlesNode:${bundle.deviceId}',
+        '$omemoDefactoBundlesNode:$ourId',
         const PubSubPublishOptions(accessModel: 'open'),
       );
     } catch (_) {
       // Best-effort access-model tighten.
     }
 
-    // Spec dialect via moxxmpp (bool true == failure).
-    bool specOk = false;
-    try {
-      final spec = await aTrack.publishBundle(bundle);
-      specOk = spec.isType<bool>() && !spec.get<bool>();
-    } catch (_) {
-      specOk = false;
+    var specOk = false;
+    for (final node in omemoSpecBundlesNodes) {
+      final specBundle = await pm.publish(
+        bareJid,
+        node,
+        axolotlBundleToXML(bundle),
+        id: '$ourId',
+        options: const PubSubPublishOptions(
+          accessModel: 'open',
+          maxItems: 'max',
+        ),
+      );
+      if (specBundle.isType<bool>() && specBundle.get<bool>()) specOk = true;
+      try {
+        await pm.configure(
+          bareJid,
+          node,
+          const PubSubPublishOptions(accessModel: 'open', maxItems: 'max'),
+        );
+      } catch (_) {
+        // Best-effort access-model tighten.
+      }
     }
 
-    return listOk && bundleOk || specOk;
+    // Conversations only announces after the bundle is current on PEP.
+    if (!defactoOk && !specOk) return false;
+
+    final ours = await publishedOmemoDeviceIds();
+    var listOk = false;
+    for (final node in [omemoDefactoDevicesNode, ...omemoSpecDevicesNodes]) {
+      // Conversations: retrieveDeviceIds → publishOwnDeviceId(pepList + own).
+      final ids = await fetchOmemoDeviceIdsFromNode(bareJid, node);
+      // Ids this install previously published are superseded builds. Leaving
+      // them in the merge re-announces a wipe. Live second phones are never
+      // in [publishedOmemoDeviceIds], so they remain.
+      ids.removeWhere((id) => id != ourId && ours.contains(id));
+      ids.add(ourId);
+      final listResult = await pm.publish(
+        bareJid,
+        node,
+        XMLNode.fromString(deviceListToDefactoXml(ids).toXmlString()),
+        id: 'current',
+        options: const PubSubPublishOptions(accessModel: 'open'),
+      );
+      if (listResult.isType<bool>() && listResult.get<bool>()) listOk = true;
+      try {
+        await pm.configure(
+          bareJid,
+          node,
+          const PubSubPublishOptions(accessModel: 'open'),
+        );
+      } catch (_) {
+        // Best-effort access-model tighten.
+      }
+    }
+
+    return listOk;
+  }
+
+  /// Publishes [ids] as our OMEMO2 / PQ device list (B-track PEP only).
+  ///
+  /// Parallel to [publishOmemoDeviceIds]. Caller chooses merge vs wipe
+  /// (singleton of our id).
+  Future<bool> publishPqDeviceIds(JID bareJid, Set<int> ids) async {
+    final pm = pubsubOf();
+    final listResult = await pm.publish(
+      bareJid,
+      omemo2DevicesXmlns,
+      XMLNode.xmlns(
+        tag: 'devices',
+        xmlns: omemo2Xmlns,
+        children: [
+          for (final id in ids)
+            XMLNode(tag: 'device', attributes: {'id': '$id'}),
+        ],
+      ),
+      id: 'current',
+      options: const PubSubPublishOptions(accessModel: 'open'),
+    );
+    if (!listResult.isType<bool>() || !listResult.get<bool>()) return false;
+    try {
+      await pm.configure(
+        bareJid,
+        omemo2DevicesXmlns,
+        const PubSubPublishOptions(accessModel: 'open'),
+      );
+    } catch (_) {
+      // Best-effort access-model tighten.
+    }
+    return true;
+  }
+
+  /// Publishes our OMEMO2 / PQ bundle, then announces our device id.
+  ///
+  /// Parallel to [publishOmemoBundle]: same order (bundle → device list),
+  /// same merge rules, independent PEP namespace ([omemo2BundlesXmlns] /
+  /// [omemo2DevicesXmlns]). Does not touch classic OMEMO nodes or
+  /// [publishedOmemoDeviceIds].
+  Future<bool> publishPqBundle(JID bareJid, PqBundle bundle) async {
+    final pm = pubsubOf();
+    final ourId = bundle.deviceId;
+
+    final bundleResult = await pm.publish(
+      bareJid,
+      omemo2BundlesXmlns,
+      XMLNode.fromString(bundle.toXml().toXmlString()),
+      id: '$ourId',
+      options: const PubSubPublishOptions(accessModel: 'open', maxItems: 'max'),
+    );
+    if (!bundleResult.isType<bool>() || !bundleResult.get<bool>()) {
+      return false;
+    }
+    try {
+      await pm.configure(
+        bareJid,
+        omemo2BundlesXmlns,
+        const PubSubPublishOptions(accessModel: 'open', maxItems: 'max'),
+      );
+    } catch (_) {
+      // Best-effort access-model tighten.
+    }
+
+    // Same merge as classic announce, on the B list/history only.
+    final ours = await publishedPqDeviceIds();
+    final ids = (await fetchPqDeviceIds(bareJid)).devices;
+    ids.removeWhere((id) => id != ourId && ours.contains(id));
+    ids.add(ourId);
+    return publishPqDeviceIds(bareJid, ids);
   }
 
   /// OMEMO2 device ids published on the B-track PEP node — list only.
@@ -689,60 +720,6 @@ class DualTrackManager {
       _log.warning('PQ bundle parse failed for $jid:$deviceId: $e\n$st');
       return null;
     }
-  }
-
-  /// Publishes our B-track device list entry + bundle.
-  /// Returns true only when the bundle item was accepted.
-  ///
-  /// Note the two conventions in play: [PubSubManager.publish] yields
-  /// `Result<PubSubError, bool>` where **true means success**, whereas
-  /// moxxmpp's `OmemoManager.publishBundle` (used for the A track) yields
-  /// a bool where **true means failure**. Do not mix them up.
-  Future<bool> publishPqBundle(JID bareJid, PqBundle bundle) async {
-    final pm = pubsubOf();
-
-    final existing = await pm.getItems(bareJid, omemo2DevicesXmlns);
-    final ids = <int>{};
-    if (existing.isType<List<PubSubItem>>()) {
-      for (final item in existing.get<List<PubSubItem>>()) {
-        for (final dev in item.payload.children.where(
-          (c) => c.tag == 'device',
-        )) {
-          final id = int.tryParse('${dev.attributes['id']}');
-          if (id != null) ids.add(id);
-        }
-      }
-    }
-    ids.add(bundle.deviceId);
-    // Payload xmlns = [omemo2Xmlns]; PEP node = [omemo2DevicesXmlns].
-    // Matching monocles: `<devices xmlns='urn:monocles:omemo-pq:1'>`.
-    final listNode = XMLNode.xmlns(
-      tag: 'devices',
-      xmlns: omemo2Xmlns,
-      children: [
-        for (final id in ids) XMLNode(tag: 'device', attributes: {'id': '$id'}),
-      ],
-    );
-    final listResult = await pm.publish(
-      bareJid,
-      omemo2DevicesXmlns,
-      listNode,
-      id: 'current',
-      options: const PubSubPublishOptions(accessModel: 'open'),
-    );
-    if (!listResult.isType<bool>() || !listResult.get<bool>()) {
-      return false;
-    }
-
-    final bundleNode = XMLNode.fromString(bundle.toXml().toXmlString());
-    final bundleResult = await pm.publish(
-      bareJid,
-      omemo2BundlesXmlns,
-      bundleNode,
-      id: '${bundle.deviceId}',
-      options: const PubSubPublishOptions(accessModel: 'open', maxItems: 'max'),
-    );
-    return bundleResult.isType<bool>() && bundleResult.get<bool>();
   }
 
   /// Outbound-track decision for one chat. See [decideEncMode].
