@@ -697,10 +697,12 @@
   "subscriptionMutualSummary": "Messages are delivered both ways.",
   "subscriptionNotMutualSummary": "Many servers refuse messages until both sides have accepted each other.",
   "subscriptionBannerNone": "Not a contact yet — the server may refuse messages.",
-  "subscriptionBannerToAsked": "They can see you. Waiting for them to accept.",
-  "subscriptionBannerTo": "They can see you, but you cannot see them.",
-  "subscriptionBannerFromAsked": "You can see them. Waiting for them to accept your request.",
-  "subscriptionBannerFrom": "You can see them, but they cannot see you.",
+  "subscriptionBannerToAsked": "You can see them; waiting for them to accept your request.",
+  "subscriptionBannerTo": "You can see them, but they cannot see you.",
+  "subscriptionBannerFromAsked": "They can see you; your request to see them is pending.",
+  "subscriptionBannerFrom": "They can see you, but you cannot see them.",
+  "subscriptionBannerIncoming": "They asked to add you as a contact.",
+  "subscriptionBannerAccepted": "Request accepted. Waiting for the server to update the contact.",
   "subscriptionBannerOther": "Subscription state: {status}",
   "@subscriptionBannerOther": {
     "placeholders": {

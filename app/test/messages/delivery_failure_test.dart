@@ -161,13 +161,15 @@ void main() {
         const ContactState(subscription: 'from', asked: true).summary,
         contains('pending'),
       );
+      // RFC 6121: `from` means they are subscribed to us, so they see us.
       expect(
         const ContactState(subscription: 'from', asked: false).summary,
-        contains('they cannot see you'),
+        contains('you cannot see them'),
       );
+      // `to` means we are subscribed to them, so we see them.
       expect(
         const ContactState(subscription: 'to', asked: false).summary,
-        contains('you cannot see them'),
+        contains('they cannot see you'),
       );
       expect(
         const ContactState(subscription: 'none', asked: false).summary,
@@ -196,6 +198,51 @@ void main() {
       );
       expect(failure.toString(), contains('abc'));
       expect(failure.toString(), contains('Access denied by service policy'));
+    });
+  });
+
+  group('only a content stanza can fail delivery', () {
+    MessageEvent bounce({String? body, bool encrypted = false}) => MessageEvent(
+      JID.fromString('peer@example.org'),
+      JID.fromString('me@example.org'),
+      encrypted,
+      TypedMap<StanzaHandlerExtension>.fromList([
+        if (body != null) MessageBodyData(body),
+      ]),
+      id: 'm1',
+      type: 'error',
+    );
+
+    test('a body counts', () {
+      expect(carriesMessageContent(bounce(body: 'hello')), isTrue);
+    });
+
+    test('an encrypted stanza counts', () {
+      expect(carriesMessageContent(bounce(encrypted: true)), isTrue);
+    });
+
+    test('a bounced chat state does not', () {
+      // Servers echo <composing/> back with the peer as `from` and an
+      // <error/>; treating that as a message failure is what invented the
+      // "not a mutual subscription" dialog for an offline contact.
+      expect(carriesMessageContent(bounce()), isFalse);
+    });
+  });
+
+  group('a cancelled send says why nothing went out', () {
+    test('no usable device is named', () {
+      expect(
+        describeSendingCancellation(OmemoNotSupportedForContactException()),
+        contains('no usable encryption device'),
+      );
+    });
+
+    test('other encryption failures stay generic', () {
+      expect(
+        describeSendingCancellation(UnknownOmemoError()),
+        contains('could not be encrypted'),
+      );
+      expect(describeSendingCancellation(null), startsWith('cancel'));
     });
   });
 }

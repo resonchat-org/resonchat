@@ -39,10 +39,11 @@ bool matchesUnreadAnchor(Message m, String? anchor) {
   return unreadAnchorOf(m) == anchor;
 }
 
-/// The id of the first message that was unread at [readAt], or null.
+/// The id of the first *incoming* message that was unread at [readAt], or null.
 ///
 /// Null when everything here was already read, or when the read marker is
-/// newer than every message we hold (read on another device).
+/// newer than every message we hold (read on another device), or when the only
+/// messages after the marker are ones we sent ourselves.
 ///
 /// When [unreadCount] is positive but the marker alone finds no boundary
 /// (same-second insert vs `last_read_at`), falls back to the oldest of the
@@ -54,6 +55,10 @@ String? firstUnreadId(
 }) {
   if (readAt != null) {
     for (final m in messages) {
+      // Only an incoming message can be unread. Our own message written after
+      // the marker is not something the user has failed to read, and anchoring
+      // the divider on it puts the line above a bubble we just sent.
+      if (!m.incoming) continue;
       if (m.timestamp.isAfter(readAt)) return unreadAnchorOf(m);
     }
   }

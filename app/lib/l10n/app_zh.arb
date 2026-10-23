@@ -590,10 +590,12 @@
   "subscriptionMutualSummary": "双方均可正常收发消息。",
   "subscriptionNotMutualSummary": "许多服务器在双方互相接受之前会拒绝投递消息。",
   "subscriptionBannerNone": "尚非联系人 — 服务器可能会拒绝消息。",
-  "subscriptionBannerToAsked": "对方可以看到你。正在等待对方接受。",
-  "subscriptionBannerTo": "对方可以看到你，但你看不到对方。",
-  "subscriptionBannerFromAsked": "你可以看到对方。正在等待对方接受你的请求。",
-  "subscriptionBannerFrom": "你可以看到对方，但对方看不到你。",
+  "subscriptionBannerToAsked": "你可以看到对方；正在等待对方接受你的请求。",
+  "subscriptionBannerTo": "你可以看到对方，但对方看不到你。",
+  "subscriptionBannerFromAsked": "对方可以看到你；你请求查看对方的申请还在等待。",
+  "subscriptionBannerFrom": "对方可以看到你，但你看不到对方。",
+  "subscriptionBannerIncoming": "对方请求添加你为联系人。",
+  "subscriptionBannerAccepted": "已接受请求，正在等待服务器更新联系人状态。",
   "subscriptionBannerOther": "订阅状态：{status}",
   "@subscriptionBannerOther": {
     "placeholders": {

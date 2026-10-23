@@ -268,6 +268,38 @@ class XmppService {
 
   XmppConnectionState _state = XmppConnectionState.disconnected;
 
+  /// How often [livenessPing] asks the server for an answer, and how long it
+  /// waits before declaring the socket dead.
+  static const Duration livenessInterval = Duration(minutes: 2);
+  static const Duration livenessTimeout = Duration(seconds: 20);
+
+  /// How often an idle connection sends a whitespace keepalive.
+  ///
+  /// moxxmpp's own keepalive runs every five minutes, which is longer than the
+  /// idle timeout of many NATs and proxies: the flow is dropped while both
+  /// sides believe it is open. One whitespace byte (RFC 6120 §4.6.1) every half
+  /// minute keeps the flow warm at negligible cost. Nothing answers it, so it
+  /// cannot detect a dead socket — [_runLivenessPing] does that.
+  static const Duration keepaliveInterval = Duration(seconds: 30);
+
+  /// XEP-0199. XMPP's own ping, used only as a liveness probe.
+  static const String pingXmlns = 'urn:xmpp:ping';
+
+  /// Periodic liveness probe.
+  ///
+  /// moxxmpp's keepalive is a *whitespace* ping: no reply is expected, so it
+  /// can never fail. That is fine while the socket reports its own errors, but
+  /// when the peer closes the TCP connection and no closure event reaches us,
+  /// the connection stays "connected" forever: every write succeeds locally,
+  /// the keepalive logs "Attempting to send ping", and nothing is ever
+  /// received. That is a silent dead account that never auto-reconnects.
+  ///
+  /// An IQ ping *does* have an answer, so a missing reply is something we can
+  /// act on.
+  Timer? _livenessTimer;
+  Timer? _keepaliveTimer;
+  bool _livenessProbeRunning = false;
+
   /// Overrides the automatic per-chat decision. Set by the settings UI.
   set shouldEncrypt(ShouldEncrypt fn) => _shouldEncrypt = fn;
 
@@ -2284,6 +2316,16 @@ class XmppService {
           ? XmppConnectFailure.unknown
           : classifyConnectFailure(error);
       _log.severe('connect failed: $lastFailure ($error)');
+      // A drop before login finishes can leave the failed connection's policy
+      // with a reconnect timer armed. Nothing consumes its events any more, and
+      // it would reconnect behind the *next* attempt's back. Stop it here.
+      await _eventsSub?.cancel();
+      _eventsSub = null;
+      try {
+        await connection.disconnect();
+      } catch (e) {
+        _log.fine('failed connection teardown: $e');
+      }
     }
     _connection = ok ? connection : null;
     _setState(
@@ -2291,6 +2333,7 @@ class XmppService {
     );
     if (ok) {
       await _afterStreamReady(resumed: false);
+      _startLivenessWatchdog();
     }
     _log.info('connect($jid): $ok');
     return ok;
@@ -3501,11 +3544,90 @@ class XmppService {
     return 'resonchat-${DateTime.now().microsecondsSinceEpoch}-$_stanzaCounter';
   }
 
+  /// Starts (or restarts) the periodic liveness probe.
+  ///
+  /// Called after a fresh login and after an automatic reconnect: both paths
+  /// end with a usable socket, and the old timer must not survive a connection
+  /// that was replaced in between.
+  void _startLivenessWatchdog() {
+    _livenessTimer?.cancel();
+    _livenessTimer = Timer.periodic(livenessInterval, (_) {
+      unawaited(_runLivenessPing());
+    });
+    _keepaliveTimer?.cancel();
+    _keepaliveTimer = Timer.periodic(keepaliveInterval, (_) {
+      if (_state != XmppConnectionState.connected) return;
+      _connection?.sendWhitespacePing();
+    });
+  }
+
+  void _stopLivenessWatchdog() {
+    _livenessTimer?.cancel();
+    _livenessTimer = null;
+    _keepaliveTimer?.cancel();
+    _keepaliveTimer = null;
+  }
+
+  /// XEP-0199 ping with a deadline; a missing answer forces a reconnect.
+  ///
+  /// An IQ error is a perfectly good sign of life — it proves the stream is
+  /// carrying stanzas in both directions — so only *no reply at all* counts as
+  /// dead.
+  Future<void> _runLivenessPing() async {
+    final connection = _connection;
+    if (connection == null || _livenessProbeRunning) return;
+    if (_state != XmppConnectionState.connected) return;
+    _livenessProbeRunning = true;
+    var alive = false;
+    try {
+      final reply = await connection
+          .sendStanza(
+            StanzaDetails(
+              Stanza.iq(
+                to: connection.connectionSettings.serverJid.toString(),
+                type: 'get',
+                children: [
+                  XMLNode(tag: 'ping', attributes: {'xmlns': pingXmlns}),
+                ],
+              ),
+              shouldEncrypt: false,
+            ),
+          )
+          .timeout(livenessTimeout);
+      alive = reply != null;
+    } catch (e) {
+      _log.warning('liveness ping failed: $e');
+    } finally {
+      _livenessProbeRunning = false;
+    }
+    // A ping that threw *after* the connection object was replaced belongs to
+    // the old socket; do not drag the new one down with it.
+    if (alive || !identical(_connection, connection)) return;
+    _log.warning('liveness ping timed out; forcing a reconnect');
+    // Stop the probe before feeding the failure: the reconnection policy sets
+    // the state to notConnected, and a second probe would fire while it waits
+    // out its backoff. It is restarted on the next stream-ready event.
+    _stopLivenessWatchdog();
+    await connection.handleError(TimeoutError());
+  }
+
   Future<void> disconnect() async {
+    _stopLivenessWatchdog();
     await _eventsSub?.cancel();
     _eventsSub = null;
-    await _connection?.disconnect();
-    _connection = null;
+    try {
+      await _connection?.disconnect();
+    } catch (e, st) {
+      // moxxmpp's graceful close writes `</stream:stream>` before closing the
+      // socket. When the peer has already gone, that write throws
+      // `StateError: StreamSink is closed` — an Error, not an Exception, so it
+      // escaped the socket wrapper's own guard. Letting it escape here aborted
+      // AccountSession.dispose before the database was closed and left the
+      // account half torn down.
+      _log.warning('disconnect failed (socket already gone): $e', e, st);
+    } finally {
+      _connection = null;
+    }
     presence.clear();
     if (!_presenceChanges.isClosed) _presenceChanges.add(null);
     _setState(XmppConnectionState.disconnected);
@@ -3648,6 +3770,10 @@ class XmppService {
         _ => XmppConnectionState.disconnected,
       };
       _setState(next);
+      // The watchdog belongs to one live socket. A drop, or the reconnect's
+      // own "connecting" interlude, must not leave a timer behind that probes
+      // a stream that is no longer there.
+      if (next != XmppConnectionState.connected) _stopLivenessWatchdog();
       return;
     }
     if (event is StreamNegotiationsDoneEvent) {
@@ -3655,24 +3781,57 @@ class XmppService {
       // PEP must be re-armed here (monocles manageAccountConnectionStates).
       if (_connection != null) {
         unawaited(_afterStreamReady(resumed: event.resumed));
+        _startLivenessWatchdog();
+      }
+      return;
+    }
+    if (event is StanzaSendingCancelledEvent) {
+      // A pre-send handler refused to encrypt the stanza: nothing left the
+      // client. MessageManager.sendMessage is unawaitable, so without this
+      // the send path reports success and the bubble keeps a tick for a
+      // message no device ever received.
+      final stanza = event.data.stanza;
+      final id = stanza.id;
+      final to = stanza.to;
+      if (stanza.tag == 'message' &&
+          id != null &&
+          id.isNotEmpty &&
+          to != null) {
+        if (!_deliveryFailures.isClosed) {
+          _deliveryFailures.add(
+            DeliveryFailure(
+              stanzaId: id,
+              from: JID.fromString(to),
+              reason: describeSendingCancellation(event.data.cancelReason),
+            ),
+          );
+        }
       }
       return;
     }
     if (event is MessageEvent) {
       final error = event.encryptionError;
       // Our own message coming back as an error: it was refused, not
-      // delivered. Report it before anything else so the UI can correct the
-      // stored row instead of leaving a bubble that looks sent.
+      // delivered. Report it so the UI can correct the stored row instead of
+      // leaving a bubble that looks sent.
       final stanzaError = event.error;
-      if (stanzaError != null && event.id != null && !event.encrypted) {
-        if (!_deliveryFailures.isClosed) {
-          _deliveryFailures.add(
-            DeliveryFailure(
-              stanzaId: event.id!,
-              from: event.from,
-              reason: describeStanzaError(stanzaError),
-            ),
-          );
+      if (stanzaError != null) {
+        // A bounce is never inbound content: the server echoes the stanza we
+        // sent and stamps the peer as `from`. Chat states, receipts and
+        // markers come back the same way, so processing one as an incoming
+        // message makes our own `composing` look like the peer typing.
+        if (event.id != null &&
+            event.id!.isNotEmpty &&
+            carriesMessageContent(event)) {
+          if (!_deliveryFailures.isClosed) {
+            _deliveryFailures.add(
+              DeliveryFailure(
+                stanzaId: event.id!,
+                from: event.from,
+                reason: describeStanzaError(stanzaError),
+              ),
+            );
+          }
         }
         return;
       }
@@ -3872,4 +4031,30 @@ String describeStanzaError(StanzaError error) {
     return '${error.type}/${error.condition}$text';
   }
   return error.toString();
+}
+
+/// Whether a bounced stanza was a message the user actually sent.
+///
+/// A server echoes the refused stanza verbatim and adds `<error/>`. Chat
+/// states, receipts and markers therefore come back looking like ordinary
+/// inbound traffic; only a body (or an encrypted payload) marks the stanza as
+/// a message whose delivery the user cares about.
+bool carriesMessageContent(MessageEvent event) =>
+    event.encrypted ||
+    event.encryptionError != null ||
+    (event.get<MessageBodyData>()?.body ?? '').isNotEmpty;
+
+/// Renders why a pre-send handler cancelled a stanza.
+///
+/// The interesting case is OMEMO giving up because no recipient device had
+/// usable key material — that is not a transport failure and must not be
+/// retried as one, but the user still needs to know the message did not go.
+String describeSendingCancellation(Object? reason) {
+  if (reason is OmemoNotSupportedForContactException) {
+    return 'cancel/omemo: this contact has no usable encryption device';
+  }
+  if (reason is OmemoError) {
+    return 'cancel/omemo: the message could not be encrypted';
+  }
+  return 'cancel: sending was cancelled before the stanza left the client';
 }

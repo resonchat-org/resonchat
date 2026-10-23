@@ -240,16 +240,20 @@ class ContactState {
   bool get isMutual => subscription == 'both';
 
   /// One-line description for the user.
+  ///
+  /// RFC 6121: `to` means *we* are subscribed to *their* presence — we see
+  /// them. `from` means *they* are subscribed to ours — they see us. Stating
+  /// these the other way round sends the user to fix the wrong side.
   String get summary => switch (subscription) {
     'both' => 'mutual',
     'to' =>
       asked
-          ? 'they can see you; your request is pending'
-          : 'they can see you; you cannot see them',
-    'from' =>
-      asked
           ? 'you can see them; your request is pending'
           : 'you can see them; they cannot see you',
+    'from' =>
+      asked
+          ? 'they can see you; your request is pending'
+          : 'they can see you; you cannot see them',
     _ => 'not a contact',
   };
 }

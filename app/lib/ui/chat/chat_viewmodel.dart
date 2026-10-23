@@ -654,11 +654,18 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
   // --- Delivery failure -----------------------------------------------------
 
   /// Marks the refused message in the DB. Returns the reason to show, or null
-  /// when the failure is about another conversation.
+  /// when the failure is about another conversation or not a stored message.
+  ///
+  /// Servers bounce body-less stanzas too — chat states, receipts, markers —
+  /// and the updater is the test for "this was one of our messages": no row
+  /// means nothing to mark and nothing to report.
   Future<String?> handleDeliveryFailure(DeliveryFailure failure) async {
     if (failure.from.toBare().toString() != peerJid) return null;
-    await _db.markDeliveryFailure(failure.stanzaId, failure.reason);
-    return failure.reason;
+    final recorded = await _db.markDeliveryFailure(
+      failure.stanzaId,
+      failure.reason,
+    );
+    return recorded ? failure.reason : null;
   }
 
   // --- Track advice ---------------------------------------------------------

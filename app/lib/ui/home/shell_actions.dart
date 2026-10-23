@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // The two shell actions: pending requests and settings.
-// Portrait puts them on the chat and contact app bars. Landscape puts the
-// same actions at the bottom of the rail.
+// The dock layout puts them on the chat and contact app bars. The rail layout
+// puts the same actions at the bottom of the rail.
 
 import 'package:flutter/material.dart';
 
@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:resonchat/l10n/l10n.dart';
 import 'package:resonchat/state/providers.dart';
+import 'package:resonchat/ui/column_mode.dart';
 import 'package:resonchat/ui/pending/pending_requests_page.dart';
 import 'package:resonchat/ui/theme.dart';
 
@@ -24,9 +25,9 @@ void openSettings(NavigatorState nav) {
   nav.pushNamed('/settings');
 }
 
-/// App-bar actions for portrait. Landscape owns these on the rail instead.
+/// App-bar actions for the dock layout. The rail owns these instead.
 List<Widget> portraitShellActions(BuildContext context) {
-  if (MediaQuery.orientationOf(context) == Orientation.landscape) {
+  if (usesNavigationRail(context)) {
     return const [];
   }
   final l10n = context.l10n;

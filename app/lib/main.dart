@@ -27,6 +27,7 @@ import 'package:resonchat/state/app_wiring.dart';
 import 'package:resonchat/ui/accent_theme.dart';
 import 'package:resonchat/ui/accounts/manage_accounts_page.dart';
 import 'package:resonchat/ui/chat/chat_page.dart';
+import 'package:resonchat/ui/column_mode.dart';
 import 'package:resonchat/ui/column_mode_sync.dart';
 import 'package:resonchat/ui/disguise/disguise_2048_page.dart';
 import 'package:resonchat/ui/home/home_shell.dart';
@@ -405,11 +406,9 @@ class _AppState extends ConsumerState<App> {
                       valueListenable: shellChrome.visible,
                       child: navigator,
                       builder: (context, shellVisible, navigator) {
-                        final landscape =
-                            MediaQuery.orientationOf(context) ==
-                            Orientation.landscape;
+                        final rail = usesNavigationRail(context);
                         final page = navigator ?? const SizedBox.shrink();
-                        if (!landscape || !shellVisible) return page;
+                        if (!rail || !shellVisible) return page;
                         return LandscapeFrame(
                           navigatorKey: appNavigatorKey,
                           child: page,

@@ -126,6 +126,25 @@ void main() {
       expect(firstUnreadId(list, at(4)), unreadAnchorOf(list.single));
     });
 
+    test('our own message after the marker is not unread', () async {
+      // Sending does not advance last_read_at while the chat stays open. An
+      // outgoing bubble is read by definition, so it must not be where the
+      // divider goes — the screenshot that found this had the line sitting
+      // between two messages the user had just sent.
+      await seed('in', 1);
+      await seed('mine', 2, incoming: false);
+      final list = await messages();
+      expect(firstUnreadId(list, at(1).add(const Duration(seconds: 30))), isNull);
+    });
+
+    test('the boundary is the first incoming message, skipping our own', () async {
+      await seed('in1', 1);
+      await seed('mine', 2, incoming: false);
+      await seed('in2', 3);
+      final list = await messages();
+      expect(firstUnreadId(list, at(1).add(const Duration(seconds: 30))), 'in2');
+    });
+
     test('unread count places a boundary when the marker finds none', () async {
       // Same-second race: last_read_at equals the message timestamp so
       // isAfter finds nothing, but the badge still says unread.

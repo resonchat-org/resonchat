@@ -38,8 +38,15 @@ class MonoclesBackoffReconnectionPolicy extends ReconnectionPolicy {
   bool get isTimerRunning => _timer != null;
 
   /// Delay before the next try for [attemptIndex] (0-based), without jitter.
+  ///
+  /// The first retry is immediate. A dropped TCP connection is usually
+  /// momentary — a Wi-Fi roam, a proxy closing an idle flow, a server restart —
+  /// and waiting 25 s before even trying means 25 s in which messages neither
+  /// arrive nor send, which looks exactly like "it never reconnected". Only a
+  /// retry that *fails* is worth backing off for.
   int delaySecondsForAttempt(int attemptIndex) {
-    final raw = baseSeconds * _pow(factor, attemptIndex);
+    if (attemptIndex <= 0) return 0;
+    final raw = baseSeconds * _pow(factor, attemptIndex - 1);
     final capped = raw > maxSeconds ? maxSeconds : raw.round();
     return capped < 1 ? 1 : capped;
   }
@@ -56,13 +63,24 @@ class MonoclesBackoffReconnectionPolicy extends ReconnectionPolicy {
   Future<void> reset() async {
     _timer?.cancel();
     _timer = null;
-    _attempt = 0;
+    // Keep the attempt counter while a reconnect attempt is starting.
+    //
+    // moxxmpp calls reset() at the top of every `_connectImpl`, including the
+    // one `_attemptReconnection` starts. Zeroing here made every retry "attempt
+    // 1" — 25 s forever, no exponential backoff, which is exactly what the log
+    // showed during a server outage. `_isReconnecting` is still true for an
+    // automatic attempt and false for a user-initiated connect, so that is the
+    // signal that separates "try again" from "start over".
+    if (!await getIsReconnecting()) _attempt = 0;
     await super.reset();
   }
 
   @override
   Future<void> onSuccess() async {
     _log.fine('reconnect succeeded; resetting backoff');
+    // Explicit: reset() also runs at the start of every connection attempt and
+    // keeps the counter while one is in flight.
+    _attempt = 0;
     await reset();
   }
 
@@ -86,12 +104,14 @@ class MonoclesBackoffReconnectionPolicy extends ReconnectionPolicy {
     _timer = null;
     if (!(await getShouldReconnect())) {
       _log.fine('should not reconnect; skipping');
+      _attempt = 0;
       await reset();
       return;
     }
     final reconnect = performReconnect;
     if (reconnect == null) {
       _log.warning('no performReconnect registered');
+      _attempt = 0;
       await reset();
       return;
     }

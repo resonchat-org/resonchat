@@ -3,8 +3,9 @@
 //
 // Home after login: Chats / Contacts / Me.
 //
-// Portrait and landscape do not share a layout. Portrait is [PortraitHome]
-// (floating dock, full-screen routes). Landscape is only the tab body here;
+// The two layouts do not share navigation chrome. Narrow windows are
+// [PortraitHome] (floating dock, full-screen routes). From
+// [kNavigationRailMinWidth] up, this widget is only the tab body;
 // [LandscapeFrame] wraps the root navigator so the rail stays outside every
 // pushed page. Wide windows keep master/detail on the Chats tab either way.
 
@@ -32,8 +33,7 @@ class HomeShell extends ConsumerWidget {
     final wide = isColumnMode(context);
     final selected = ref.watch(selectedChatKeyProvider);
     final tab = ref.watch(homeTabIndexProvider);
-    final landscape =
-        MediaQuery.orientationOf(context) == Orientation.landscape;
+    final rail = usesNavigationRail(context);
     remindPendingRequests(context, ref);
 
     final chatsBody = wide
@@ -50,7 +50,7 @@ class HomeShell extends ConsumerWidget {
         : const ChatsPage();
     final pages = [chatsBody, const ContactsPage(), const MePage()];
 
-    if (landscape) {
+    if (rail) {
       return IndexedStack(index: tab, children: pages);
     }
     return PortraitHome(

@@ -373,15 +373,23 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   /// `auth/forbidden` in practice means the server refuses stanzas outside a
   /// mutual subscription, which is the single most common reason a fresh
   /// contact sees every message silently vanish.
+  ///
+  /// That guess needs the error to actually be an authorization refusal.
+  /// `service-unavailable: User session not found` is the peer's server saying
+  /// it has no session to hand the stanza to — the contact is offline and the
+  /// server keeps no offline copy. Blaming a missing subscription for that
+  /// sends the user to solve a problem they do not have.
   void _showRefusalHelp(String reason) {
     final mutual = ref.read(contactStateProvider(widget.chatJid)).value;
     final l10n = context.l10n;
-    final body = (mutual?.isMutual ?? false)
-        ? l10n.messageNotDeliveredBody(reason)
-        : l10n.messageNotDeliveredBodyNotMutual(
+    final notMutual =
+        !(mutual?.isMutual ?? false) && _isPolicyRefusal(reason);
+    final body = notMutual
+        ? l10n.messageNotDeliveredBodyNotMutual(
             reason,
             mutual?.summary ?? l10n.subscriptionUnknown,
-          );
+          )
+        : l10n.messageNotDeliveredBody(reason);
     showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
@@ -395,6 +403,17 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         ],
       ),
     );
+  }
+
+  /// True when the server refused the stanza on policy grounds.
+  ///
+  /// `DeliveryFailure.reason` is the rendered `type/condition: text` string;
+  /// an authorization condition is the only one that says anything about the
+  /// roster relationship.
+  static bool _isPolicyRefusal(String reason) {
+    final normalized = reason.toLowerCase();
+    return normalized.contains('forbidden') ||
+        normalized.contains('not-authorized');
   }
 
   @override
@@ -2031,6 +2050,18 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                                     subject: ui.room!.subject!.trim(),
                                   ),
                                 ),
+                              // Inside the transcript, not the Scaffold's
+                              // floatingActionButton: the composer is part of
+                              // the body, so a scratch-level FAB lands on the
+                              // input island and covers the send slot. Anchored
+                              // here it always sits above whatever the composer
+                              // is currently showing.
+                              if (!_selectionMode && !_atBottom)
+                                Positioned(
+                                  right: 16,
+                                  bottom: 12,
+                                  child: _scrollButton(tg),
+                                ),
                             ],
                           ),
                         ),
@@ -2133,13 +2164,6 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                 ],
               ),
             ),
-            // Two different destinations, so two different affordances. Scrolling to
-            // the bottom is "show me what just happened"; jumping to the first unread
-            // is "show me what I missed". Collapsing them means the user who scrolled
-            // up to find an older message cannot get back to the new ones in one tap.
-            floatingActionButton: _selectionMode || _atBottom
-                ? null
-                : _scrollButton(tg),
           ),
           // Covers app bar, transcript, FAB, and input while the OS picker is up
           // so nothing behind it can be tapped or scrolled.

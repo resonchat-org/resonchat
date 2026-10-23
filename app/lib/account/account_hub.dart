@@ -90,8 +90,14 @@ class AccountSession {
       await s.cancel();
     }
     subs.clear();
-    await xmpp.disconnect();
-    await db.close();
+    try {
+      await xmpp.disconnect();
+    } finally {
+      // The database is closed even if the socket teardown failed: a session
+      // left holding an open SQLite handle blocks the next spare (and the
+      // account looked "off but still there" after a reconnect).
+      await db.close();
+    }
   }
 }
 
@@ -103,6 +109,14 @@ class AccountHub extends ChangeNotifier {
   final _log = Logger('AccountHub');
   final Map<String, AccountSession> _sessions = {};
   List<StoredAccount> _accounts = [];
+
+  /// Pending retry of an *initial* login that never completed, keyed by
+  /// account id. moxxmpp's reconnection policy only covers an established
+  /// connection that is then lost.
+  final Map<String, Timer> _retryTimers = {};
+  final Map<String, int> _retryAttempts = {};
+  static const int _retryBaseSeconds = 15;
+  static const int _retryMaxSeconds = 300;
 
   final StreamController<void> _sessionChanges =
       StreamController<void>.broadcast();
@@ -289,12 +303,56 @@ class AccountHub extends ChangeNotifier {
       _log.warning('connect failed for ${a.jid}: ${session.xmpp.lastFailure}');
       notifyListeners();
       _sessionChanges.add(null);
+      _scheduleConnectRetry(accountId, session.xmpp.lastFailure);
       return false;
     }
+    _cancelConnectRetry(accountId);
     _wireTracks(session);
     notifyListeners();
     _sessionChanges.add(null);
     return true;
+  }
+
+  /// Cancels a pending login retry (successful login, account disabled or
+  /// removed). Resets the backoff so the next failure starts from the base
+  /// delay instead of inheriting an old outage's exponent.
+  void _cancelConnectRetry(String accountId) {
+    _retryTimers.remove(accountId)?.cancel();
+    _retryAttempts.remove(accountId);
+  }
+
+  /// Schedules another login attempt after [failure].
+  ///
+  /// moxxmpp retries a *recoverable loss of an established connection*; it
+  /// does not retry a login that never finished. When the first attempt sets
+  /// up no connection at all (no network yet at launch, server down, TLS
+  /// handshake refused, …) the connection object is dropped and the account
+  /// used to stay offline until the user acted. The hub knows whether the
+  /// account is still enabled, so it is the right place to keep trying.
+  void _scheduleConnectRetry(String accountId, XmppConnectFailure? failure) {
+    _retryTimers.remove(accountId)?.cancel();
+    // Rejected credentials or an unusable SASL mechanism are not transient;
+    // retrying just hammers the server with the same wrong password.
+    if (failure == XmppConnectFailure.auth ||
+        failure == XmppConnectFailure.mechanism) {
+      _retryAttempts.remove(accountId);
+      return;
+    }
+    final attempt = _retryAttempts[accountId] ?? 0;
+    _retryAttempts[accountId] = attempt + 1;
+    final raw = _retryBaseSeconds * (1 << attempt);
+    final seconds = raw > _retryMaxSeconds ? _retryMaxSeconds : raw;
+    _log.info(
+      'account $accountId still offline (${failure?.name ?? 'unknown'}); '
+      'retry ${attempt + 1} in ${seconds}s',
+    );
+    _retryTimers[accountId] = Timer(Duration(seconds: seconds), () {
+      _retryTimers.remove(accountId);
+      final i = _accounts.indexWhere((a) => a.id == accountId);
+      if (i < 0 || !_accounts[i].enabled) return;
+      if (!_sessions.containsKey(accountId)) return;
+      unawaited(_connectAndBootstrap(accountId));
+    });
   }
 
   Future<bool> _connectAndBootstrap(String accountId) async {
@@ -486,6 +544,7 @@ class AccountHub extends ChangeNotifier {
       lastConnectFailure = session.xmpp.lastFailure;
       if (existing == null) {
         // Brand-new account: drop the ephemeral session; nothing to persist.
+        _cancelConnectRetry(account.id);
         _sessions.remove(account.id);
         await session.dispose();
       } else {
@@ -522,9 +581,11 @@ class AccountHub extends ChangeNotifier {
       _accounts = [..._accounts]..[i] = updated;
     }
     if (!enabled) {
+      _cancelConnectRetry(accountId);
       final s = _sessions.remove(accountId);
       await s?.dispose();
     } else {
+      _cancelConnectRetry(accountId);
       await _ensureSession(updated);
       unawaited(_connectAndBootstrap(accountId));
     }
@@ -595,6 +656,7 @@ class AccountHub extends ChangeNotifier {
       if (!ok) return false;
     }
     final s = _sessions.remove(accountId);
+    _cancelConnectRetry(accountId);
     await s?.dispose();
     await _store.remove(accountId);
     _accounts = await _store.loadAll();
