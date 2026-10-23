@@ -4,7 +4,7 @@
 
 English | [中文](README.zh.md)
 
-A Flutter XMPP client that implements **post-quantum encryption isomorphic to OMEMO** — X25519 + ML-KEM-1024 — with **no server changes and no new XEP**, while staying **interoperable with standard OMEMO clients**. The UI follows Telegram for Android. Android first.
+A Flutter XMPP client that implements **post-quantum encryption isomorphic to OMEMO** — X25519 + ML-KEM-1024 — with **no server changes and no new XEP**, while staying **interoperable with standard OMEMO clients**. The UI is ResonChat's own; the composer is ported from Telegram for Android. Android first.
 
 ## Developer preview
 
@@ -44,7 +44,7 @@ Every release so far is a **developer preview** signed with the debug keystore. 
 | Encrypted database at rest | Done | SQLCipher, with the key protected by the Android Keystore |
 | Standard protocol extensions | Done | MAM (XEP-0313) history sync, delivery receipts (XEP-0184), chat states (XEP-0085), carbons (XEP-0280) |
 | Platform support | Partial | Android (arm64-v8a / x86_64, `pqcrypto` + native `libsignal`); Web (Dart→Wasm + Drift WASM + WebSocket); Linux AppImage / deb / rpm; Windows installer; iOS not started |
-| Telegram-for-Android look | In progress | Bubbles, palette and list layout are in place; animation and tablet layout are not |
+| UI | In progress | Own palette, bubbles and list layout; the composer is ported from Telegram for Android. Animation and tablet layout are not done |
 
 ## Status
 
@@ -58,7 +58,7 @@ Every release so far is a **developer preview** signed with the debug keystore. 
 | M3 PQ core | Done | ML-KEM / PQXDH / SPQR through native `libsignal`; pure-Dart `pqcrypto` for ML-DSA-87 and SHA3-512; **cross-tested between two accounts on different servers** (conversations.im and jabber.fr); the PQ bundle is really published to the server |
 | M4 Negotiation and send policy | Done | Capability service, user track choice and `TrackResolver` (docs/10); PEP changes invalidate the cache |
 | M5 Storage and protection | Done | OMEMO device keys sealed through the Keystore, SQLCipher-encrypted database, a chat-history backup format. **Key backup/restore and a "never store plaintext" option are not done** |
-| M6 UI | In progress | Per [docs/05](docs/05-ui-telegram.md) |
+| M6 UI | In progress | Per [docs/05](docs/05-ui.md) |
 | M7 Release | Not started | — |
 
 CI runs `dart analyze` and the full `flutter test` suite on every push, and compiles Linux and Web together as a smoke check.
@@ -159,7 +159,7 @@ The full design documentation lives in [`docs/`](docs/README.md) (Chinese):
 | [Protocol specification](docs/02-protocol-pqomemo.md) | Dual-track OMEMO, PQXDH, message format |
 | [XMPP integration](docs/03-xmpp-integration.md) | PEP nodes, send and receive flows |
 | [Cryptography](docs/04-crypto-android.md) | pqcrypto / libsignal, key storage |
-| [UI specification](docs/05-ui-telegram.md) | Telegram look and porting |
+| [UI specification](docs/05-ui.md) | Layout, components, ported composer |
 | [Milestones](docs/06-android-milestones.md) | M0–M7 |
 | [Compliance](docs/07-licensing-compliance.md) | Licenses and trademarks |
 | [Risks](docs/08-risks-open-questions.md) | Risks and open questions |
@@ -187,7 +187,7 @@ These four libraries are forks of upstream projects. **Their original license he
 
 ### UI design reference
 
-The interface under `app/lib/ui/` follows the layout and interaction patterns of Telegram for Android (GPL-2.0-or-later). Files ported from Telegram keep their original copyright notices and NOTICE, and note the source and date of modification prominently. **This project is not an official Telegram client and is not affiliated with Telegram**; the Telegram name and logo are trademarks of their respective owners.
+The interface under `app/lib/ui/` is ResonChat's own design. Specific components — notably the composer — are ported from Telegram for Android (GPL-2.0-or-later). Files ported from Telegram keep their original copyright notices and NOTICE, and note the source and date of modification prominently. **This project is not an official Telegram client and is not affiliated with Telegram**; the Telegram name and logo are trademarks of their respective owners.
 
 ### Runtime dependencies (obtained through package managers, not in this repository)
 

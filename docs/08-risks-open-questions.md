@@ -38,7 +38,7 @@
 4. **终端安全边界**——设备被入侵则加密无效，与所有 E2EE 一致。
 5. **Web / 桌面 / Android PQ**——统一走 `omemo_dart` 里的 native `libsignal`（KEM/棘轮）+ 应用侧 `pqcrypto`（ML-DSA）。
 6. **换机**——设备密钥仅存本机 Keystore，无密钥备份时会话需重建。
-7. **录音前静音探测非整平台**——Linux / Android / Windows 已接；Web / iOS / macOS 当前跳过（见 [05-ui-telegram.md](05-ui-telegram.md) §3.1）。
+7. **录音前静音探测非整平台**——Linux / Android / Windows 已接；Web / iOS / macOS 当前跳过（见 [05-ui.md](05-ui.md) §3.1）。
 
 ## 4. 当前待办优先级
 

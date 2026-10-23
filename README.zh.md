@@ -4,7 +4,7 @@
 
 [English](README.md) | 中文
 
-一个基于 Flutter 的 XMPP 客户端：在**不修改服务端、不引入新 XEP** 的前提下，实现与 OMEMO 同构的**后量子加密**（X25519 + ML-KEM-1024），同时**保持与标准 OMEMO 客户端互通**；UI 采用 Telegram Android 观感。Android 优先。
+一个基于 Flutter 的 XMPP 客户端：在**不修改服务端、不引入新 XEP** 的前提下，实现与 OMEMO 同构的**后量子加密**（X25519 + ML-KEM-1024），同时**保持与标准 OMEMO 客户端互通**；UI 为自有设计，输入栏等局部组件移植自 Telegram Android。Android 优先。
 
 ## 开发者预览
 
@@ -44,7 +44,7 @@ Android 构建产物挂在 [GitHub Releases](https://github.com/resonchat-org/re
 | 数据库落盘加密 | 已完成 | SQLCipher，口令由 Android Keystore 保护 |
 | 标准协议扩展 | 已完成 | MAM（XEP-0313）历史同步、回执（XEP-0184）、输入状态（XEP-0085）、Carbons（XEP-0280） |
 | 平台支持 | 部分完成 | Android（arm64-v8a / x86_64，`pqcrypto` + native `libsignal`）；Web（Dart→Wasm + Drift WASM + WebSocket）；Linux AppImage / deb / rpm；Windows 安装包；iOS 未做 |
-| Telegram Android 观感 UI | 进行中 | 气泡、色板、列表布局已实现；动画、平板适配未做 |
+| UI | 进行中 | 自有气泡、色板与列表布局；输入栏移植自 Telegram Android。动画、平板适配未做 |
 
 ## 状态
 
@@ -58,7 +58,7 @@ Android 构建产物挂在 [GitHub Releases](https://github.com/resonchat-org/re
 | M3 PQ 内核 | 已完成 | ML-KEM / PQXDH / SPQR 走 native `libsignal`；纯 Dart `pqcrypto` 用于 ML-DSA-87 与 SHA3-512；**双账号跨服务器互测通过**（conversations.im 与 jabber.fr）；PQ bundle 已真实发布到服务器 |
 | M4 协商与发送策略 | 已完成 | 能力服务 + 用户 Track / `TrackResolver`（docs/10）；PEP 变更失效缓存 |
 | M5 存储与保护 | 已完成 | OMEMO 设备密钥经 Keystore 封存落库；数据库 SQLCipher 加密；聊天历史备份格式已有。**密钥备份/恢复与「不保存明文」选项未做** |
-| M6 UI | 进行中 | 按 [docs/05](docs/05-ui-telegram.md) |
+| M6 UI | 进行中 | 按 [docs/05](docs/05-ui.md) |
 | M7 发布 | 未开始 | — |
 
 每次 push 都会跑 CI：`dart analyze` 与完整的 `flutter test`，并在同一次任务里编译 Linux 和 Web，只确认能编过。
@@ -159,7 +159,7 @@ Web（Drift `sqlite3.wasm` + Dart→Wasm；产物在 `app/build/web/`）：
 | [协议规范](docs/02-protocol-pqomemo.md) | 双轨 OMEMO、PQXDH、消息格式 |
 | [XMPP 集成](docs/03-xmpp-integration.md) | PEP 节点、收发流程 |
 | [密码学实现](docs/04-crypto-android.md) | pqcrypto / libsignal、密钥存储 |
-| [UI 规范](docs/05-ui-telegram.md) | Telegram 观感与移植 |
+| [UI 规范](docs/05-ui.md) | 布局、组件、输入栏移植 |
 | [里程碑](docs/06-android-milestones.md) | M0–M7 |
 | [合规](docs/07-licensing-compliance.md) | 许可证与商标 |
 | [风险](docs/08-risks-open-questions.md) | 风险与待决问题 |
@@ -187,7 +187,7 @@ Web（Drift `sqlite3.wasm` + Dart→Wasm；产物在 `app/build/web/`）：
 
 ### UI 设计参考
 
-`app/lib/ui/` 下的界面设计参照 Telegram for Android 的布局与交互范式（GPL-2.0-or-later）。移植自 Telegram 的文件保留原始版权声明与 NOTICE，并显著标注修改来源与日期。**本项目不是 Telegram 官方客户端，与 Telegram 无关**；Telegram 名称与 Logo 均为其各自所有者的商标。
+`app/lib/ui/` 下的界面以本项目自有设计为主。局部组件（主要是输入栏）参考/移植自 Telegram for Android（GPL-2.0-or-later）。移植自 Telegram 的文件保留原始版权声明与 NOTICE，并显著标注修改来源与日期。**本项目不是 Telegram 官方客户端，与 Telegram 无关**；Telegram 名称与 Logo 均为其各自所有者的商标。
 
 ### 运行时依赖（经包管理器获取，不在本仓库内）
 

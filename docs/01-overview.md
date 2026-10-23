@@ -8,12 +8,12 @@
 | G2 | 与 **标准 OMEMO 客户端**（Conversations / Moxxy / Dino / Gajim）完全互通 |
 | G3 | 在双方均为本客户端且用户选定后量子轨道时，使用**后量子混合加密**（X25519 + ML-KEM-1024；握手 PQXDH、棘轮 SPQR） |
 | G4 | **不修改服务端**、**不引入新 XEP**、**不依赖服务端特殊支持** |
-| G5 | UI 观感与 **Telegram Android 高度一致** |
+| G5 | UI 为**自有设计**；输入栏等**局部组件**参考 Telegram Android |
 | G6 | 以 **GPLv3** 开源发布 |
 
 ## 2. 非目标（明确排除）
 
-- ❌ 不做 Telegram 协议的客户端（不用 TDLib、不连 Telegram 服务器）——UI 只是「外观参考」。
+- ❌ 不做 Telegram 协议的客户端（不用 TDLib、不连 Telegram 服务器）；UI 整体自有，只在输入栏等局部组件上参考 Telegram Android。
 - ❌ 不发明或提交新的 XEP。
 - ❌ 不修改 Prosody / ejabberd / Openfire 等任何服务端。
 - ❌ 不与标准 OMEMO 客户端共享 PQ 会话（它们不可能解密，这是物理限制）。
@@ -58,8 +58,8 @@
   - 两轨会话密码学都在 `omemo_dart`（axolotl 与 OMEMO2 同一形状：设备、会话、bundle 模型、指纹、KMAC 密封）。moxxmpp 做 A 轨 stanza 与规范 `urn:xmpp:omemo:2` PEP。B 轨 XML 还不是 XEP，留在应用；成为 XEP 后再进 moxxmpp。应用保留 ML-DSA 身份（`pqcrypto`，因为主库仍要直接依赖它）和双轨策略。ML-KEM 由 `omemo_dart` 里的 native `libsignal` 生成消费；纯 Dart KEM 仅供测试/诊断。
 - **后果**：需跟进上游变更；A 轨保持与上游最小差异，便于合并。
 
-### ADR-005：UI 移植 Telegram Android（Kotlin → Dart），整体 GPLv3
-- **决定**：参考/翻译 TG Android 的 UI 代码与资源；不使用其名称与 Logo。
+### ADR-005：UI 局部移植 Telegram Android（输入栏等），整体 GPLv3
+- **决定**：输入栏等**局部组件**参考/翻译 TG Android 的 UI 代码；整体视觉与布局为自有设计；不使用其名称与 Logo。
 - **理由**：TG Android 是 GPLv2-or-later，可合法并入 GPLv3 工程。
 - **后果**：需逐文件标注来源与修改；商标问题需人工审查。
 
@@ -77,7 +77,7 @@
 │                                                               │
 │  ┌───────────┐   ┌───────────────┐   ┌───────────────────┐   │
 │  │  ui/      │   │  state/       │   │  store/           │   │
-│  │ TG 观感   │◄─►│ Riverpod      │◄─►│ drift + SQLCipher │   │
+│  │ 自有 UI   │◄─►│ Riverpod      │◄─►│ drift + SQLCipher │   │
 │  └───────────┘   └───────┬───────┘   │ (Web: Drift WASM) │   │
 │                          │           └───────────────────┘   │
 │  ┌───────────┐   ┌───────▼───────────────────────────────┐   │

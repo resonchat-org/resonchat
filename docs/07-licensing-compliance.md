@@ -6,7 +6,7 @@
 |---|---|---|---|
 | moxxmpp | **MIT** | ✅ | Copyright 2022 Alexander "PapaTutuWawa" |
 | omemo_dart | MIT | ✅ | |
-| Telegram for Android（移植的 UI 代码） | **GPL-2.0-or-later** | ✅ | 「or later」使其可并入 GPLv3 |
+| Telegram for Android（输入栏等移植组件） | **GPL-2.0-or-later** | ✅ | 「or later」使其可并入 GPLv3 |
 | moxlib | **GPL-3.0** | ✅ | `vendor/moxlib/LICENSE` |
 | `cryptography` (Dart) | Apache-2.0 | ✅ | 以包内 LICENSE 为准 |
 | `pqcrypto` (Dart) | MIT | ✅ | 纯 Dart ML-KEM / ML-DSA |
@@ -49,7 +49,7 @@
 | `omemo_dart` | https://github.com/PapaTutuWawa/omemo_dart |
 | `moxlib` | https://codeberg.org/moxxy/moxlib |
 
-**设计边界建议**：保留 Telegram 的**布局与交互范式**（这是行业通用的聊天 UI 语言），但：
+**设计边界建议**：整体视觉与布局为自有设计，只借鉴**输入栏等具体交互**（这是行业通用的聊天 UI 语言），并且：
 1. 替换所有品牌标识（应用名 **ResonChat**，包名 `org.resonchat.resonchat`，图标见 `assets/icons/`）
 2. 主色调做出可辨识差异
 3. 图标使用自绘或 MIT/Apache 授权图标集
