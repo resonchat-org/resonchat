@@ -32,7 +32,10 @@ jobs:
     # `labeled` event and fired the job twice.
     if: github.event.label.name == 'opencode'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # GitHub caps a single job at 360 minutes (6 hours). Use the whole window
+    # instead of cutting the agent off at 30 minutes: the run keeps its live
+    # OpenCode session, so the task continues automatically with full context.
+    timeout-minutes: 360
     # The OpenCode App installation token performs the repo writes; this
     # workflow only needs to mint the OIDC token for the exchange.
     permissions:
