@@ -7,6 +7,7 @@
 // the theme; no Telegram assets are bundled.
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 
 import 'package:resonchat/crypto/dual/track.dart';
 import 'package:resonchat/l10n/l10n.dart';
@@ -142,6 +143,8 @@ class MessageBubble extends StatelessWidget {
     this.replyTo = '',
     this.replyBody = '',
     this.replyAuthor = '',
+    this.onReplyTap,
+    this.highlighted = false,
     this.message,
     this.chatKey,
     this.mentionsMe = false,
@@ -248,6 +251,12 @@ class MessageBubble extends StatelessWidget {
   /// Nickname of the quoted message's author.
   final String replyAuthor;
 
+  /// Tap the monocles-style reply card → jump to the original (when found).
+  final VoidCallback? onReplyTap;
+
+  /// Brief flash after jumping here from a reply card (monocles scale flash).
+  final bool highlighted;
+
   /// Shown above the bubble in group chats, tinted per sender.
   final String? senderName;
   final Color? senderColor;
@@ -336,69 +345,94 @@ class MessageBubble extends StatelessWidget {
           TgDimens.bubblePaddingH + 4,
           TgDimens.bubblePaddingV,
         ),
-        // Body above, time/status below — avoids Row(Flexible+meta) which
-        // reserved an empty strip beside the text and often overflowed.
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (!retracted && message != null && message!.mediaUrl.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: MediaAttachment(message: message!, chatKey: chatKey),
-              ),
-            if (!_shouldHideUrlBody(message, text) &&
-                (textSelecting || text.isNotEmpty))
-              textSelecting
-                  ? _SelectingMessageText(
-                      text: text,
-                      style: bodyStyle,
-                      onChanged: onTextSelectionChanged,
-                    )
-                  : LinkifiedText(
-                      text: text,
-                      style: bodyStyle,
-                      highlightNicks: highlightNicks,
-                      mentionStyle: bodyStyle.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: tg.accent,
-                      ),
-                      linkStyle: bodyStyle.copyWith(
-                        color: tg.accent,
-                        decoration: TextDecoration.underline,
-                        decorationColor: tg.accent,
-                      ),
-                      quoteColor: tg.textSecondary,
+        // Width comes only from body / media / meta. The reply card reports
+        // zero intrinsic width and then stretches to that sibling width, so a
+        // long quote never widens the bubble (monocles in-bubble card).
+        child: IntrinsicWidth(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (replyTo.isNotEmpty && !retracted)
+                _ExcludeFromIntrinsicWidth(
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: _ReplyQuote(
+                      body: replyBody,
+                      author: replyAuthor,
+                      onTap: onReplyTap,
                     ),
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (edited && !retracted)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 6),
-                      child: Text(
-                        context.l10n.edited,
-                        style: TextStyle(
-                          fontSize: TgDimens.timeFontSize - 1,
-                          color: tg.textSecondary,
+                  ),
+                ),
+              if (!retracted && message != null && message!.mediaUrl.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: MediaAttachment(message: message!, chatKey: chatKey),
+                ),
+              if (!_shouldHideUrlBody(message, text) &&
+                  (textSelecting || text.isNotEmpty))
+                textSelecting
+                    ? _SelectingMessageText(
+                        text: text,
+                        style: bodyStyle,
+                        onChanged: onTextSelectionChanged,
+                      )
+                    // SelectableText is ~3px wider than Text; keep that strip
+                    // while idle so long-press does not shift a short bubble.
+                    : Row(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Flexible(
+                            child: LinkifiedText(
+                              text: text,
+                              style: bodyStyle,
+                              highlightNicks: highlightNicks,
+                              mentionStyle: bodyStyle.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: tg.accent,
+                              ),
+                              linkStyle: bodyStyle.copyWith(
+                                color: tg.accent,
+                                decoration: TextDecoration.underline,
+                                decorationColor: tg.accent,
+                              ),
+                              quoteColor: tg.textSecondary,
+                            ),
+                          ),
+                          const SizedBox(width: 3),
+                        ],
+                      ),
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    if (edited && !retracted)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: Text(
+                          context.l10n.edited,
+                          style: TextStyle(
+                            fontSize: TgDimens.timeFontSize - 1,
+                            color: tg.textSecondary,
+                          ),
                         ),
                       ),
+                    _MetaRow(
+                      time: time,
+                      sendStatus: sendStatus,
+                      delivered: delivered,
+                      displayed: displayed,
+                      failed: failed,
+                      mine: mine,
+                      encMode: encMode,
                     ),
-                  _MetaRow(
-                    time: time,
-                    sendStatus: sendStatus,
-                    delivered: delivered,
-                    displayed: displayed,
-                    failed: failed,
-                    mine: mine,
-                    encMode: encMode,
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -446,26 +480,16 @@ class MessageBubble extends StatelessWidget {
                   ],
                 ),
               ),
-            if (replyTo.isNotEmpty && !retracted)
-              Align(
-                // Same side as the bubble — a full-width Row would pin the quote
-                // to the left even for outgoing replies.
-                alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
-                child: _ReplyQuote(body: replyBody, author: replyAuthor),
-              ),
-            Align(
-              alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  if (hasRing) ...[
-                    ReadRing(fraction: readFraction!, onTap: onReadRing),
-                    const SizedBox(width: 4),
-                  ],
-                  bubbleCap,
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                if (hasRing) ...[
+                  ReadRing(fraction: readFraction!, onTap: onReadRing),
+                  const SizedBox(width: 4),
                 ],
-              ),
+                bubbleCap,
+              ],
             ),
             if (!retracted &&
                 (translating ||
@@ -563,13 +587,14 @@ class MessageBubble extends StatelessWidget {
             children: rowChildren,
           );
 
+    final flash = highlighted
+        ? tg.accent.withValues(alpha: 0.14)
+        : selected
+        ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.5)
+        : null;
     return Container(
-      // The selection tint is on the row, not the bubble: tinting the bubble
-      // itself would hide the text it is tinting behind the highlight.
-      color: selected
-          ? Theme.of(context).colorScheme.primaryContainer
-                .withValues(alpha: 0.5)
-          : null,
+      // Selection / reply-jump tint is on the row, not the bubble paint.
+      color: flash,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
       child: Builder(
         builder: (rowContext) {
@@ -663,70 +688,91 @@ class _SelectingMessageTextState extends State<_SelectingMessageText> {
   }
 }
 
-/// The quoted block drawn above a reply.
+/// Does not contribute to [IntrinsicWidth]; layouts to the width siblings chose.
+class _ExcludeFromIntrinsicWidth extends SingleChildRenderObjectWidget {
+  const _ExcludeFromIntrinsicWidth({required Widget child})
+    : super(child: child);
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderExcludeFromIntrinsicWidth();
+}
+
+class _RenderExcludeFromIntrinsicWidth extends RenderProxyBox {
+  @override
+  double computeMinIntrinsicWidth(double height) => 0;
+
+  @override
+  double computeMaxIntrinsicWidth(double height) => 0;
+}
+
+/// Monocles `in_reply_to_box`: scrim card, 5dp leading bar, bold author + body.
 ///
-/// The quote sits *outside* the bubble, above it, the way Telegram and
-/// Conversations both draw it: it is not part of what was said, and putting it
-/// inside would make the reply look longer than it is.
+/// Width is forced by the bubble (sibling body/media); long quotes wrap inside.
 class _ReplyQuote extends StatelessWidget {
-  const _ReplyQuote({required this.body, required this.author});
+  const _ReplyQuote({required this.body, required this.author, this.onTap});
 
   final String body;
   final String author;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final tg = context.tg;
-    // Cap width like a bubble so a long quote stays above the bubble instead
-    // of stretching edge-to-edge.
-    final maxW = MediaQuery.sizeOf(context).width * 0.72;
-    return Padding(
-      padding: const EdgeInsets.only(left: 4, right: 4, bottom: 3),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: maxW),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 3,
-              // As tall as the text it labels; a fixed height either floats
-              // above a one-line quote or runs past a long one.
-              constraints: const BoxConstraints(minHeight: 18),
-              margin: const EdgeInsets.only(top: 2, right: 8),
-              color: tg.accent,
-            ),
-            Flexible(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (author.isNotEmpty)
-                    Text(
-                      author,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: TgDimens.timeFontSize,
-                        fontWeight: FontWeight.w600,
-                        color: tg.accent,
-                      ),
-                    ),
-                  Text(
-                    body,
-                    // Two lines: enough to recognise the message being answered,
-                    // not so much that the quote competes with the reply.
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: TgDimens.timeFontSize,
-                      color: tg.textSecondary,
-                    ),
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    // monocles `quote_box_scrim`: #16000000 light / #26FFFFFF dark.
+    final scrim = dark ? const Color(0x26FFFFFF) : const Color(0x16000000);
+    return Material(
+      color: scrim,
+      elevation: 0,
+      borderRadius: BorderRadius.circular(8),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // monocles: 5dp `?colorTertiaryContainer` — use accent.
+              ColoredBox(color: tg.accent, child: const SizedBox(width: 5)),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 4, 10, 4),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (author.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 2),
+                          child: Text(
+                            author,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: tg.accent,
+                            ),
+                          ),
+                        ),
+                      if (body.isNotEmpty)
+                        Text(
+                          body,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 14,
+                            height: 1.25,
+                            color: tg.textSecondary,
+                          ),
+                        ),
+                    ],
                   ),
-                ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

@@ -531,73 +531,86 @@ class QuickReactionBar extends StatelessWidget {
   }
 }
 
-/// The strip above the input bar while a reply is being written.
-///
-/// Above the input rather than in it: the text being typed is the reply, and
-/// mixing a quote into the same field means the user edits their own reply by
-/// accident.
+/// Monocles `context_preview`: strip above the composer while a reply is
+/// drafted — reply icon, author + body (max 2 lines), cancel. Tap jumps to
+/// the quoted message (same as the in-bubble reply card).
 class ReplyPreview extends StatelessWidget {
   const ReplyPreview({
     super.key,
     required this.author,
     required this.body,
     required this.onCancel,
+    this.onTap,
   });
 
   final String author;
   final String body;
   final VoidCallback onCancel;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final tg = context.tg;
     final l10n = context.l10n;
     return Material(
       color: theme.colorScheme.surfaceContainerHigh,
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 3,
-                constraints: const BoxConstraints(minHeight: 20),
-                margin: const EdgeInsets.only(top: 2, right: 10),
-                color: theme.colorScheme.primary,
-              ),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      l10n.replyingTo(author),
-                      style: TextStyle(
-                        fontSize: TgDimens.timeFontSize,
-                        fontWeight: FontWeight.w600,
-                        color: theme.colorScheme.primary,
-                      ),
-                    ),
-                    Text(
-                      body,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: TgDimens.timeFontSize,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 40),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            const SizedBox(width: 12),
+            Icon(Icons.reply, size: 20, color: tg.accent),
+            Expanded(
+              child: InkWell(
+                onTap: onTap,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(13, 6, 15, 6),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (author.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 2),
+                          child: Text(
+                            author,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: tg.accent,
+                            ),
+                          ),
+                        ),
+                      if (body.isNotEmpty)
+                        Text(
+                          body,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 14,
+                            height: 1.25,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ),
-              IconButton(
-                onPressed: onCancel,
-                icon: const Icon(Icons.close, size: 18),
-                tooltip: l10n.cancelReply,
-              ),
-            ],
-          ),
+            ),
+            IconButton(
+              onPressed: onCancel,
+              icon: const Icon(Icons.cancel_outlined, size: 22),
+              tooltip: l10n.cancelReply,
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+            ),
+            const SizedBox(width: 4),
+          ],
         ),
       ),
     );

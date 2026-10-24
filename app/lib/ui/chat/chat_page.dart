@@ -43,6 +43,7 @@ import 'package:resonchat/ui/chat/quoted_transcript.dart';
 import 'package:resonchat/ui/chat/sticker_panel.dart';
 import 'package:resonchat/ui/chat/track_dialogs.dart';
 import 'package:resonchat/ui/chats/search.dart';
+import 'package:resonchat/ui/chats/unread.dart';
 import 'package:resonchat/ui/contact_avatar.dart';
 import 'package:resonchat/ui/home/open_chat.dart';
 import 'package:resonchat/ui/room/occupant_actions.dart';
@@ -147,6 +148,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   /// Override from in-chat search; [ChatPage.focusMessageAnchor] for deep links.
   String? _focusMessageAnchor;
 
+  /// Brief monocles-style flash after jumping from a reply card.
+  String? _replyHighlightAnchor;
+
   String? get _activeFocusAnchor =>
       _focusMessageAnchor ?? widget.focusMessageAnchor;
 
@@ -189,6 +193,53 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
   void _jumpToFocusMessage({bool animate = true}) =>
       _jumpToKeyedWidget(_focusMessageKey, animate: animate, alignment: 0.35);
+
+  /// Monocles `scrollToReply`: jump to the XEP-0461 target, or snackbar if
+  /// that message is not in the loaded transcript.
+  void _jumpToReply(String replyId) {
+    if (replyId.isEmpty) return;
+    final list =
+        ref.read(messagesProvider(widget.chatJid)).value ?? const <Message>[];
+    Message? found;
+    for (final m in list) {
+      if (messageMatchesReplyId(m, replyId)) {
+        found = m;
+        break;
+      }
+    }
+    if (found == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(context.l10n.replyTargetNotFound)));
+      return;
+    }
+    final anchor = unreadAnchorOf(found);
+    setState(() {
+      _focusMessageAnchor = anchor;
+      _replyHighlightAnchor = anchor;
+    });
+    void jump({required int attempt}) {
+      if (!mounted) return;
+      if (_focusMessageKey.currentContext != null && _scroll.hasClients) {
+        _jumpToFocusMessage();
+        return;
+      }
+      if (attempt < 12) {
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => jump(attempt: attempt + 1),
+        );
+      }
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) => jump(attempt: 0));
+    Future<void>.delayed(const Duration(milliseconds: 700), () {
+      if (!mounted) return;
+      if (_replyHighlightAnchor == anchor) {
+        setState(() => _replyHighlightAnchor = null);
+      }
+    });
+  }
 
   Future<void> _openInChatSearch() async {
     final hit = await Navigator.of(context).push<SearchHit>(
@@ -1188,7 +1239,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     );
   }
 
-  /// Opens [ProfilePage] or [RoomProfilePage], same entry as tapping the header.
+  /// Opens [ProfilePage] or [RoomProfilePage] from the AppBar ⋮.
   Future<void> _openChatProfile() async {
     final ui = _ui;
     if (!ui.isGroup) {
@@ -1754,25 +1805,6 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     );
   }
 
-  /// Appearance is per chat, so the sheet writes on every change rather than on
-  /// dismissal: the swatches are the preview, and waiting for "done" would mean
-  /// choosing blind.
-  void _openAppearance() {
-    final appearance =
-        ref.read(chatAppearanceProvider(widget.chatJid)).value ??
-        const ChatAppearance();
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (sheetContext) => AppearancePicker(
-        chatJid: _peerJid,
-        initial: appearance,
-        onChanged: (next) =>
-            unawaited(setChatAppearance(ref, widget.chatJid, next)),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final tg = context.tg;
@@ -1832,76 +1864,68 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                   ? Text(l10n.selectedCount(_selection.length))
                   : Row(
                       children: [
-                        GestureDetector(
-                          onTap: _openChatProfile,
-                          behavior: HitTestBehavior.opaque,
-                          child: ContactAvatar(
-                            jid: _peerJid,
-                            title: title,
-                            radius: TgDimens.avatarChat / 2,
-                            hero: true,
-                            showPresence: !ui.isGroup,
-                            presence: ui.isGroup
-                                ? null
-                                : ref
-                                      .watch(
-                                        contactPresenceProvider(widget.chatJid),
-                                      )
-                                      .value
-                                      ?.show,
-                          ),
+                        ContactAvatar(
+                          jid: _peerJid,
+                          title: title,
+                          radius: TgDimens.avatarChat / 2,
+                          hero: true,
+                          showPresence: !ui.isGroup,
+                          presence: ui.isGroup
+                              ? null
+                              : ref
+                                    .watch(
+                                      contactPresenceProvider(widget.chatJid),
+                                    )
+                                    .value
+                                    ?.show,
                         ),
                         const SizedBox(width: 10),
                         Expanded(
-                          child: GestureDetector(
-                            onTap: _openChatProfile,
-                            behavior: HitTestBehavior.opaque,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  title,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              Text(
+                                ui.isGroup
+                                    ? (ui.room == null
+                                          ? l10n.joining
+                                          : _roomMembersSubtitle(
+                                              l10n,
+                                              ui.room!,
+                                            ))
+                                    : _peerStatusSubtitle(
+                                        context,
+                                        ui.peerTyping,
+                                        presence: ref
+                                            .watch(
+                                              contactPresenceProvider(
+                                                widget.chatJid,
+                                              ),
+                                            )
+                                            .value,
+                                      ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: TgDimens.timeFontSize,
+                                  fontWeight: FontWeight.w400,
+                                  color: Colors.white70,
+                                  fontStyle:
+                                      !ui.isGroup &&
+                                          (ui.peerTyping ==
+                                                  TypingState.composing ||
+                                              ui.peerTyping ==
+                                                  TypingState.paused)
+                                      ? FontStyle.italic
+                                      : FontStyle.normal,
                                 ),
-                                Text(
-                                  ui.isGroup
-                                      ? (ui.room == null
-                                            ? l10n.joining
-                                            : _roomMembersSubtitle(
-                                                l10n,
-                                                ui.room!,
-                                              ))
-                                      : _peerStatusSubtitle(
-                                          context,
-                                          ui.peerTyping,
-                                          presence: ref
-                                              .watch(
-                                                contactPresenceProvider(
-                                                  widget.chatJid,
-                                                ),
-                                              )
-                                              .value,
-                                        ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: TgDimens.timeFontSize,
-                                    fontWeight: FontWeight.w400,
-                                    color: Colors.white70,
-                                    fontStyle:
-                                        !ui.isGroup &&
-                                            (ui.peerTyping ==
-                                                    TypingState.composing ||
-                                                ui.peerTyping ==
-                                                    TypingState.paused)
-                                        ? FontStyle.italic
-                                        : FontStyle.normal,
-                                  ),
-                                ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
@@ -1938,14 +1962,14 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                         onPressed: _openInChatSearch,
                       ),
                       IconButton(
-                        icon: const Icon(Icons.palette_outlined),
-                        tooltip: l10n.appearance,
-                        onPressed: _openAppearance,
-                      ),
-                      IconButton(
                         icon: const Icon(Icons.push_pin_outlined),
                         tooltip: l10n.pinnedMessages,
                         onPressed: _showPinned,
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.more_vert),
+                        tooltip: l10n.details,
+                        onPressed: () => unawaited(_openChatProfile()),
                       ),
                     ],
             ),
@@ -2019,6 +2043,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                                       unreadDividerKey: _unreadDividerKey,
                                       focusMessageAnchor: _activeFocusAnchor,
                                       focusMessageKey: _focusMessageKey,
+                                      highlightMessageAnchor:
+                                          _replyHighlightAnchor,
+                                      onReplyTap: _jumpToReply,
                                       bubbleStyle: appearance.bubble,
                                       isGroup: ui.isGroup,
                                       groupReads:
@@ -2098,6 +2125,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                             author: _replyingTo!.author,
                             body: _replyingTo!.body,
                             onCancel: () => setState(() => _replyingTo = null),
+                            onTap: () => _jumpToReply(_replyingTo!.id),
                           ),
                         if (_notice != null)
                           _ChatNoticeBanner(

@@ -3,10 +3,8 @@
 //
 // Contact profile page.
 //
-// Reached by tapping the avatar in a conversation's top bar, which is where
-// every other messenger puts it. It answers the questions the chat screen
-// cannot: who is this account, what does the server think of the
-// subscription, and fingerprint / verification details.
+// Reached from the chat AppBar ⋮. Answers who this account is, subscription,
+// appearance, and fingerprint / verification details.
 //
 // Everything here is read from real state. A page that shows plausible
 // values is worse than one that shows nothing.
@@ -111,6 +109,7 @@ class ProfilePage extends ConsumerWidget {
 
           ChatEncryptionSection(chatJid: chatJid),
           ChatNotifySection(chatJid: chatJid),
+          ChatAppearanceSection(chatJid: chatJid),
 
           ChatProfileSectionTitle(l10n.actions),
           if (contact?.inRoster == true && chat?.isGroup != true)

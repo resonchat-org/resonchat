@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // Shared blocks for 1:1 [ProfilePage] and MUC [RoomProfilePage]: encryption
-// entry, notification mode, and local history actions.
+// entry, notification mode, appearance, and local history actions.
+
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 
@@ -15,6 +17,7 @@ import 'package:resonchat/crypto/dual/track_resolver.dart';
 import 'package:resonchat/l10n/l10n.dart';
 import 'package:resonchat/persistence/media_store.dart';
 import 'package:resonchat/state/providers.dart';
+import 'package:resonchat/ui/chat/appearance.dart';
 import 'package:resonchat/ui/chats/notify_mode_sheet.dart';
 import 'package:resonchat/ui/theme.dart';
 import 'package:resonchat/xmpp/chat_notify_mode.dart';
@@ -131,6 +134,52 @@ class ChatNotifySection extends ConsumerWidget {
       ],
     );
   }
+}
+
+/// Wallpaper / bubble shape (moved here from the chat AppBar palette).
+class ChatAppearanceSection extends ConsumerWidget {
+  const ChatAppearanceSection({super.key, required this.chatJid});
+
+  final String chatJid;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = context.l10n;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ChatProfileSectionTitle(l10n.appearance),
+        ListTile(
+          leading: const Icon(Icons.palette_outlined),
+          title: Text(l10n.appearance),
+          subtitle: Text(l10n.appearanceBackground),
+          onTap: () => openChatAppearanceSheet(context, ref, chatJid),
+        ),
+      ],
+    );
+  }
+}
+
+/// Opens the per-chat appearance sheet (wallpaper + bubble shape).
+void openChatAppearanceSheet(
+  BuildContext context,
+  WidgetRef ref,
+  String chatJid,
+) {
+  final appearance =
+      ref.read(chatAppearanceProvider(chatJid)).value ?? const ChatAppearance();
+  final bare = resolveChatKey(chatJid).jid;
+  unawaited(
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => AppearancePicker(
+        chatJid: bare,
+        initial: appearance,
+        onChanged: (next) => unawaited(setChatAppearance(ref, chatJid, next)),
+      ),
+    ),
+  );
 }
 
 /// Load MAM + clear local transcript (server archive untouched).

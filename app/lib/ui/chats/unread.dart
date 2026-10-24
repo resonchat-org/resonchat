@@ -39,6 +39,15 @@ bool matchesUnreadAnchor(Message m, String? anchor) {
   return unreadAnchorOf(m) == anchor;
 }
 
+/// True when [m] is the XEP-0461 target identified by [replyId].
+///
+/// Matches origin-id ([Message.stanzaId]) or the room-assigned stanza-id
+/// (monocles / Conversations also accept serverMsgId / remoteMsgId / uuid).
+bool messageMatchesReplyId(Message m, String replyId) {
+  if (replyId.isEmpty) return false;
+  return m.stanzaId == replyId || m.roomStanzaId == replyId;
+}
+
 /// The id of the first *incoming* message that was unread at [readAt], or null.
 ///
 /// Null when everything here was already read, or when the read marker is

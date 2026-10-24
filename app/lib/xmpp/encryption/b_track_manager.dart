@@ -124,12 +124,21 @@ class BTrackManager {
     );
     _session = BTrackSession(device: device, sessions: sessions, layer: layer);
 
-    final published = await publish();
-    _log.info(published ? 'PQ bundle published' : 'PQ bundle publish failed');
-    if (published) {
-      // Ensure the PQ one-time pool matches [pqOpkCount].
-      await replenishPrekeys(target: pqCount);
-    }
+    // Top up local KEM OPKs first (no PEP write), then reconcile — monocles
+    // publishBundlesIfNeeded / verifyOmemo2 path, OMEMO2 node only.
+    await replenishPrekeys(target: pqCount, republish: false);
+    final minKem = pqCount <= 1 ? pqCount : pqCount ~/ 2;
+    final published = await publish(
+      force: forceNew,
+      minKemPreKeys: minKem < 1 ? 1 : minKem,
+    );
+    _log.info(
+      published
+          ? (forceNew
+                ? 'PQ bundle published'
+                : 'PQ bundle publish-if-needed done')
+          : 'PQ bundle publish failed',
+    );
     return published;
   }
 
@@ -167,18 +176,22 @@ class BTrackManager {
     return ok;
   }
 
-  /// Publishes our B-track bundle via [DualTrackManager.publishPqBundle].
+  /// Publishes our B-track bundle via [DualTrackManager.publishPqBundleIfNeeded].
   ///
-  /// Parallel to [XmppConnection.ensureOmemoDevice] → `publishOmemoBundle`:
+  /// Parallel to [XmppConnection.ensureOmemoDevice] → classic if-needed:
   /// this manager owns the session; PEP I/O lives on DualTrackManager.
-  Future<bool> publish() async {
+  /// Never touches classic OMEMO nodes.
+  Future<bool> publish({bool force = false, int minKemPreKeys = 3}) async {
     final session = _session;
     if (session == null) return false;
     final bundle = await _toBundle(session.device);
     final bare = JID.fromString(session.device.jid);
-    final ok = await tracks().publishPqBundle(bare, bundle);
-    if (ok) await tracks().notePublishedPqDevice(session.device.id);
-    return ok;
+    return tracks().publishPqBundleIfNeeded(
+      bare,
+      bundle,
+      force: force,
+      minKemPreKeys: minKemPreKeys,
+    );
   }
 
   /// Encrypts [plaintext] for every PQ-capable device of [peerJid].
@@ -274,7 +287,11 @@ class BTrackManager {
   /// prekey, which weakens the forward secrecy of those sessions.
   ///
   /// Returns the number of keys added.
-  Future<int> replenishPrekeys({int target = 5}) async {
+  ///
+  /// When [republish] is false, only the local store is updated (caller will
+  /// reconcile via [publish]). When true (default), a drained pool forces a
+  /// B-track PEP write — still never touches classic OMEMO.
+  Future<int> replenishPrekeys({int target = 5, bool republish = true}) async {
     final session = _session;
     if (session == null) return 0;
 
@@ -290,7 +307,10 @@ class BTrackManager {
 
     await deviceStore.save(session.device);
     _log.info('replenished $added ML-KEM one-time prekey(s)');
-    await publish();
+    if (republish) {
+      final minKem = target <= 1 ? target : target ~/ 2;
+      await publish(force: true, minKemPreKeys: minKem < 1 ? 1 : minKem);
+    }
     return added;
   }
 

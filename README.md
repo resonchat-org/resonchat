@@ -6,6 +6,9 @@ English | [中文](README.zh.md)
 
 A Flutter XMPP client that implements **post-quantum encryption isomorphic to OMEMO** — X25519 + ML-KEM-1024 — with **no server changes and no new XEP**, while staying **interoperable with standard OMEMO clients**. The UI is ResonChat's own; the composer is ported from Telegram for Android. Android first.
 
+> [!CAUTION]
+> **DO NOT log in to anti-spam servers such as conversations.im.** ResonChat is still in development and is sometimes **misclassified as spam** by those hosts. The cause is **not fixed** yet — signing in can get your account **banned**.
+
 ## Developer preview
 
 ResonChat is early and iterating quickly. **M0–M5 are complete, M6 is in progress and M7 has not started. THERE WILL BE COMPATIBILITY-BREAKING CHANGES.**

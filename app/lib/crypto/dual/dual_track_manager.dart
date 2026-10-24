@@ -61,11 +61,12 @@ const Duration kDeviceListDeadline = Duration(seconds: 30);
 
 /// PEP publish/fetch for both stacks, plus the outbound-track decision.
 ///
-/// A and B are independent namespaces with parallel APIs:
-/// `publishOmemoBundle` / `publishOmemoDeviceIds` (classic) and
-/// `publishPqBundle` / `publishPqDeviceIds` (OMEMO2). Session lifecycle
-/// stays outside: [XmppConnection.ensureOmemoDevice] for A,
-/// [BTrackManager] for B — each builds a bundle then calls these methods.
+/// A and B are independent namespaces with parallel APIs — never mixed:
+/// `publishOmemoBundle*` / `publishOmemoDeviceIds` (classic) and
+/// `publishPqBundle*` / `publishPqDeviceIds` (OMEMO2). Each track has its
+/// own Conversations/monocles-style publish-if-needed reconcile.
+/// Session lifecycle stays outside: [XmppConnection.ensureOmemoDevice] for A,
+/// [BTrackManager] for B.
 class DualTrackManager {
   DualTrackManager({required this.aTrack, required this.pubsubOf});
 
@@ -489,15 +490,6 @@ class DualTrackManager {
         options: const PubSubPublishOptions(accessModel: 'open'),
       );
       if (listResult.isType<bool>() && listResult.get<bool>()) listOk = true;
-      try {
-        await pm.configure(
-          bareJid,
-          node,
-          const PubSubPublishOptions(accessModel: 'open'),
-        );
-      } catch (_) {
-        // Best-effort access-model tighten.
-      }
     }
     return listOk;
   }
@@ -524,15 +516,6 @@ class DualTrackManager {
       options: const PubSubPublishOptions(accessModel: 'open', maxItems: '1'),
     );
     final defactoOk = defactoBundle.isType<bool>() && defactoBundle.get<bool>();
-    try {
-      await pm.configure(
-        bareJid,
-        '$omemoDefactoBundlesNode:$ourId',
-        const PubSubPublishOptions(accessModel: 'open'),
-      );
-    } catch (_) {
-      // Best-effort access-model tighten.
-    }
 
     var specOk = false;
     for (final node in omemoSpecBundlesNodes) {
@@ -547,28 +530,62 @@ class DualTrackManager {
         ),
       );
       if (specBundle.isType<bool>() && specBundle.get<bool>()) specOk = true;
-      try {
-        await pm.configure(
-          bareJid,
-          node,
-          const PubSubPublishOptions(accessModel: 'open', maxItems: 'max'),
-        );
-      } catch (_) {
-        // Best-effort access-model tighten.
-      }
     }
 
     // Conversations only announces after the bundle is current on PEP.
     if (!defactoOk && !specOk) return false;
 
+    return publishOwnOmemoDeviceId(bareJid, ourId);
+  }
+
+  /// Conversations `publishBundlesIfNeeded` for the **classic** stack only.
+  ///
+  /// Fetches our published A-track bundle, compares identity / signed prekey /
+  /// one-time stock to [local], and skips the PEP write when current. Still
+  /// runs [publishOwnOmemoDeviceIdIfNeeded] when [announce] (same as Conv when
+  /// the bundle was current). Never reads or writes OMEMO2 / PQ nodes.
+  Future<bool> publishOmemoBundleIfNeeded(
+    JID bareJid,
+    AxolotlBundle local, {
+    bool announce = true,
+    bool force = false,
+    int minPreKeys = 20,
+  }) async {
+    if (!force) {
+      final remote = await getOmemoBundle(bareJid, local.deviceId);
+      if (_omemoBundleCurrent(local, remote, minPreKeys: minPreKeys)) {
+        _log.fine('classic OMEMO bundle ${local.deviceId} in PEP was current');
+        if (!announce) return true;
+        return publishOwnOmemoDeviceIdIfNeeded(bareJid, local.deviceId);
+      }
+    }
+    final ok = await publishOmemoBundle(bareJid, local);
+    if (ok) await notePublishedOmemoDevice(local.deviceId);
+    return ok;
+  }
+
+  /// Conversations `publishOwnDeviceIdIfNeeded` — classic device list only.
+  Future<bool> publishOwnOmemoDeviceIdIfNeeded(JID bareJid, int ourId) async {
+    for (final node in [omemoDefactoDevicesNode, ...omemoSpecDevicesNodes]) {
+      final ids = await fetchOmemoDeviceIdsFromNode(bareJid, node);
+      if (!ids.contains(ourId)) {
+        final ok = await publishOwnOmemoDeviceId(bareJid, ourId);
+        if (ok) await notePublishedOmemoDevice(ourId);
+        return ok;
+      }
+    }
+    _log.fine('classic OMEMO device $ourId already on every device-list node');
+    return true;
+  }
+
+  /// Merge [ourId] onto each classic device-list node (per-node, never unioned
+  /// with OMEMO2).
+  Future<bool> publishOwnOmemoDeviceId(JID bareJid, int ourId) async {
+    final pm = pubsubOf();
     final ours = await publishedOmemoDeviceIds();
     var listOk = false;
     for (final node in [omemoDefactoDevicesNode, ...omemoSpecDevicesNodes]) {
-      // Conversations: retrieveDeviceIds → publishOwnDeviceId(pepList + own).
       final ids = await fetchOmemoDeviceIdsFromNode(bareJid, node);
-      // Ids this install previously published are superseded builds. Leaving
-      // them in the merge re-announces a wipe. Live second phones are never
-      // in [publishedOmemoDeviceIds], so they remain.
       ids.removeWhere((id) => id != ourId && ours.contains(id));
       ids.add(ourId);
       final listResult = await pm.publish(
@@ -579,17 +596,7 @@ class DualTrackManager {
         options: const PubSubPublishOptions(accessModel: 'open'),
       );
       if (listResult.isType<bool>() && listResult.get<bool>()) listOk = true;
-      try {
-        await pm.configure(
-          bareJid,
-          node,
-          const PubSubPublishOptions(accessModel: 'open'),
-        );
-      } catch (_) {
-        // Best-effort access-model tighten.
-      }
     }
-
     return listOk;
   }
 
@@ -614,15 +621,6 @@ class DualTrackManager {
       options: const PubSubPublishOptions(accessModel: 'open'),
     );
     if (!listResult.isType<bool>() || !listResult.get<bool>()) return false;
-    try {
-      await pm.configure(
-        bareJid,
-        omemo2DevicesXmlns,
-        const PubSubPublishOptions(accessModel: 'open'),
-      );
-    } catch (_) {
-      // Best-effort access-model tighten.
-    }
     return true;
   }
 
@@ -646,17 +644,49 @@ class DualTrackManager {
     if (!bundleResult.isType<bool>() || !bundleResult.get<bool>()) {
       return false;
     }
-    try {
-      await pm.configure(
-        bareJid,
-        omemo2BundlesXmlns,
-        const PubSubPublishOptions(accessModel: 'open', maxItems: 'max'),
-      );
-    } catch (_) {
-      // Best-effort access-model tighten.
-    }
 
-    // Same merge as classic announce, on the B list/history only.
+    return publishOwnPqDeviceId(bareJid, ourId);
+  }
+
+  /// monocles/Conversations-style reconcile for the **OMEMO2 / PQ** stack only.
+  ///
+  /// Independent of [publishOmemoBundleIfNeeded]: compares against
+  /// [omemo2BundlesXmlns] (IK, SPK, KEM SPK, one-time KEM stock). Never
+  /// touches classic axolotl nodes.
+  Future<bool> publishPqBundleIfNeeded(
+    JID bareJid,
+    PqBundle local, {
+    bool announce = true,
+    bool force = false,
+    int minKemPreKeys = 3,
+  }) async {
+    if (!force) {
+      final remote = await getPqBundle(bareJid, local.deviceId);
+      if (_pqBundleCurrent(local, remote, minKemPreKeys: minKemPreKeys)) {
+        _log.fine('OMEMO2 bundle ${local.deviceId} in PEP was current');
+        if (!announce) return true;
+        return publishOwnPqDeviceIdIfNeeded(bareJid, local.deviceId);
+      }
+    }
+    final ok = await publishPqBundle(bareJid, local);
+    if (ok) await notePublishedPqDevice(local.deviceId);
+    return ok;
+  }
+
+  /// Announce our OMEMO2 device id only when missing from the B-track list.
+  Future<bool> publishOwnPqDeviceIdIfNeeded(JID bareJid, int ourId) async {
+    final listed = await fetchPqDeviceIds(bareJid);
+    if (listed.listReadable && listed.devices.contains(ourId)) {
+      _log.fine('OMEMO2 device $ourId already on device list');
+      return true;
+    }
+    final ok = await publishOwnPqDeviceId(bareJid, ourId);
+    if (ok) await notePublishedPqDevice(ourId);
+    return ok;
+  }
+
+  /// Merge [ourId] onto the OMEMO2 device list (B-track only).
+  Future<bool> publishOwnPqDeviceId(JID bareJid, int ourId) async {
     final ours = await publishedPqDeviceIds();
     final ids = (await fetchPqDeviceIds(bareJid)).devices;
     ids.removeWhere((id) => id != ourId && ours.contains(id));
@@ -720,6 +750,68 @@ class DualTrackManager {
       _log.warning('PQ bundle parse failed for $jid:$deviceId: $e\n$st');
       return null;
     }
+  }
+
+  /// Conversations bundle reconcile: IK + SPK match, and enough published
+  /// one-time prekeys still held locally ([minPreKeys], Conv NUM_KEYS_TO_PUBLISH).
+  static bool _omemoBundleCurrent(
+    AxolotlBundle local,
+    AxolotlBundle? remote, {
+    required int minPreKeys,
+  }) {
+    if (remote == null) return false;
+    if (remote.identityKeyEncoded != local.identityKeyEncoded) return false;
+    if (remote.signedPreKeyId != local.signedPreKeyId) return false;
+    if (remote.signedPreKeyPublicEncoded != local.signedPreKeyPublicEncoded) {
+      return false;
+    }
+    if (remote.signedPreKeySignatureEncoded !=
+        local.signedPreKeySignatureEncoded) {
+      return false;
+    }
+    var matching = 0;
+    for (final e in remote.preKeysEncoded.entries) {
+      if (local.preKeysEncoded[e.key] == e.value) matching++;
+    }
+    final need = minPreKeys <= 0 ? 0 : minPreKeys;
+    if (need == 0) return true;
+    // Local already topped up: republish when PEP stock is short or missing
+    // ids we now hold (Conversations `newKeys > 0`).
+    if (matching < need) return false;
+    final hasUnpublished = local.preKeysEncoded.keys.any(
+      (id) => !remote.preKeysEncoded.containsKey(id),
+    );
+    return !hasUnpublished;
+  }
+
+  /// monocles OMEMO2 reconcile against the PQ node only (never classic).
+  static bool _pqBundleCurrent(
+    PqBundle local,
+    PqBundle? remote, {
+    required int minKemPreKeys,
+  }) {
+    if (remote == null) return false;
+    if (remote.ik != local.ik) return false;
+    if (remote.spkId != local.spkId ||
+        remote.spk != local.spk ||
+        remote.spkSignature != local.spkSignature) {
+      return false;
+    }
+    if (remote.kemSpkId != local.kemSpkId || remote.kemSpk != local.kemSpk) {
+      return false;
+    }
+    if (remote.pqIk != local.pqIk) return false;
+    var matchingKem = 0;
+    for (final e in remote.kemPrekeys.entries) {
+      if (local.kemPrekeys[e.key] == e.value) matchingKem++;
+    }
+    final need = minKemPreKeys <= 0 ? 0 : minKemPreKeys;
+    if (need == 0) return true;
+    if (matchingKem < need) return false;
+    final hasUnpublished = local.kemPrekeys.keys.any(
+      (id) => !remote.kemPrekeys.containsKey(id),
+    );
+    return !hasUnpublished;
   }
 
   /// Outbound-track decision for one chat. See [decideEncMode].

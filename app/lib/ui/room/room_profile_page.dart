@@ -6,8 +6,7 @@
 //
 // Description (`muc#roominfo_description` / `muc#roomconfig_roomdesc`) is not
 // the subject: Conversations `Room.of` reads description from disco; subject is
-// the live MUC topic. Symmetric with [ProfilePage]: tap the chat AppBar header
-// to open.
+// the live MUC topic. Symmetric with [ProfilePage]: open from the chat AppBar ⋮.
 
 import 'dart:async';
 
@@ -444,6 +443,7 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
 
                 ChatEncryptionSection(chatJid: widget.chatJid),
                 ChatNotifySection(chatJid: widget.chatJid),
+                ChatAppearanceSection(chatJid: widget.chatJid),
 
                 _section(
                   tg,

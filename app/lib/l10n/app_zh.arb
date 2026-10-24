@@ -546,6 +546,7 @@
   "tapToOpen": "点击打开",
   "unreadMessages": "未读消息",
   "jumpToFirstUnread": "跳到第一条未读消息",
+  "replyTargetNotFound": "找不到被引用的消息",
   "scrollToLatest": "滚到最新消息",
   "encryptionForThisChat": "此会话的加密方式",
   "trackDescriptionNone": "明文 — 能访问服务器的人都可以阅读。",

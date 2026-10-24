@@ -420,32 +420,40 @@ class AccountHub extends ChangeNotifier {
     final db = session.db;
     final label = session.account.jid;
     try {
-      final items = await xmpp.requestRoster();
-      final knownRoomJids = await db.groupChatJids();
-      for (final item in items) {
-        // Never materialise a MUC as a 1:1 chat row from the roster.
-        if (knownRoomJids.contains(item.jid)) {
-          await xmpp.removeFromRosterIfPresent(item.jid);
-          continue;
+      // Conversations `processResumed`: SM resume keeps the session live —
+      // no BindProcessor (roster/bookmarks/presence/OMEMO republish/MUC).
+      // Still run incremental MAM; unacked stanzas are already resent by SM.
+      final resumed = xmpp.lastStreamResumed;
+      if (!resumed) {
+        final items = await xmpp.requestRoster();
+        final knownRoomJids = await db.groupChatJids();
+        for (final item in items) {
+          // Never materialise a MUC as a 1:1 chat row from the roster.
+          if (knownRoomJids.contains(item.jid)) {
+            await xmpp.removeFromRosterIfPresent(item.jid);
+            continue;
+          }
+          await db.upsertChat(item.jid, title: item.name ?? item.jid);
         }
-        await db.upsertChat(item.jid, title: item.name ?? item.jid);
+        // Roster upsert must not move chats to "now"; realign from messages
+        // (and repair rows stamped with login time by older builds).
+        await db.syncChatLastActivity();
+        await xmpp.ensureOmemoDevice();
+        await xmpp.replenishPrekeys();
+        await xmpp.initialiseBTrack();
+        // XEP-0402 / legacy bookmarks → local group rows, then rejoin autojoin.
+        // Seed from disk so the UI is non-empty and legacy rewrites see the
+        // full set if the fetch is slow or fails.
+        xmpp.seedBookmarks(await session.roster.loadConferenceBookmarks());
+        await xmpp.fetchBookmarks();
+        await _applyBookmarksToDb(session);
+        final rooms = await db.groupChatsForJoin();
+        await xmpp.rejoinGroupChats([
+          for (final c in rooms) (roomJid: c.jid, nick: c.mucNick),
+        ]);
+      } else {
+        _log.info('SM resumed for $label; skipping bind bootstrap');
       }
-      // Roster upsert must not move chats to "now"; realign from messages
-      // (and repair rows stamped with login time by older builds).
-      await db.syncChatLastActivity();
-      await xmpp.ensureOmemoDevice();
-      await xmpp.replenishPrekeys();
-      await xmpp.initialiseBTrack();
-      // XEP-0402 / legacy bookmarks → local group rows, then rejoin autojoin.
-      // Seed from disk so the UI is non-empty and legacy rewrites see the
-      // full set if the fetch is slow or fails.
-      xmpp.seedBookmarks(await session.roster.loadConferenceBookmarks());
-      await xmpp.fetchBookmarks();
-      await _applyBookmarksToDb(session);
-      final rooms = await db.groupChatsForJoin();
-      await xmpp.rejoinGroupChats([
-        for (final c in rooms) (roomJid: c.jid, nick: c.mucNick),
-      ]);
       final afterId = await db.metaValue(XmppService.mamCatchupIdKey);
       final startRaw = await db.metaValue(XmppService.mamCatchupTsKey);
       final metaTs = startRaw != null ? DateTime.tryParse(startRaw) : null;

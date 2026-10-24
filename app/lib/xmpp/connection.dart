@@ -297,6 +297,7 @@ class XmppService {
 
   bool _livenessProbeRunning = false;
   bool _streamReadyHandled = false;
+  bool _lastStreamResumed = false;
 
   /// Overrides the automatic per-chat decision. Set by the settings UI.
   set shouldEncrypt(ShouldEncrypt fn) => _shouldEncrypt = fn;
@@ -2076,6 +2077,10 @@ class XmppService {
   bool get carbonsEnabled => _carbonsEnabled;
   bool _carbonsEnabled = false;
 
+  /// True when the last successful [connect] resumed SM (Conversations
+  /// `processResumed`). Hub skips PEP republish / bookmarks / MUC rejoin.
+  bool get lastStreamResumed => _lastStreamResumed;
+
   /// Why the last [connect] failed, for the UI to put in its own words.
   ///
   /// An enum rather than a string: moxxmpp's error classes define no
@@ -2209,7 +2214,14 @@ class XmppService {
       ),
       // XEP-0077 after login: change password and unregister the account.
       InBandRegistrationManager(),
-      DiscoManager(const []),
+      // Conversations DiscoManager identity + Entity Caps on presence
+      // (`http://conversations.im` → our node). Managers' getDiscoFeatures
+      // (incl. avatar/nick/bookmarks +notify) register into this disco.
+      DiscoManager(const [
+        Identity(category: 'client', type: 'phone', name: 'ResonChat'),
+      ]),
+      // XEP-0115: injects <c/> on presence; answers disco#info on ver node.
+      EntityCapabilitiesManager('https://resonchat.org'),
       _pubsub!,
       // XEP-0402 PEP Native Bookmarks (+ XEP-0048 PEP-conversion fallback).
       _bookmarks!,
@@ -2300,7 +2312,16 @@ class XmppService {
         ?.configure(show: _ownShow);
     presence.clear();
 
+    // Conversations advertises OMEMO `…devicelist+notify` as Entity Caps
+    // features (DiscoManager.getServiceDescription), never as PubSub nodes.
+    connection.getManagerById<DiscoManager>(discoManager)?.addFeatures([
+      '$omemoDefactoDevicesNode+notify',
+      for (final node in omemoSpecDevicesNodes) '$node+notify',
+      '$omemo2DevicesXmlns+notify',
+    ]);
+
     _streamReadyHandled = false;
+    _lastStreamResumed = false;
     _eventsSub = connection.asBroadcastStream().listen(_onEvent);
     // shouldReconnect is always false: AccountConnectionController owns retries.
     final result = await connection
@@ -2342,6 +2363,7 @@ class XmppService {
               .getManagerById<StreamManagementManager>(smManager)
               ?.streamResumed ??
           false;
+      _lastStreamResumed = resumed;
       await _afterStreamReady(resumed: resumed);
       _streamReadyHandled = true;
     }
@@ -2398,31 +2420,16 @@ class XmppService {
     }
   }
 
-  /// PEP nodes worth a subscription: both OMEMO dialects plus the PQ track.
+  /// Own PEP nodes we explicitly subscribe to after a fresh bind.
   ///
-  /// The de-facto node is what real clients announce on, so subscribing
-  /// only to the XEP-0384 spec node means we would never see a peer add a
-  /// device.
-  ///
-  /// The `+notify` variants are the de-facto scheme's *push* nodes — a
-  /// Conversations install subscribes to `eu.siacs.conversations.axolotl.devicelist+notify`
-  /// (AxolotlService.PEP_DEVICE_LIST_NOTIFY) rather than to the bare node, and
-  /// so does every other Signal-protocol client. Subscribing to the bare node
-  /// still fetches, but it does not *tell* us: we then keep acting on a device
-  /// list we already know is stale, which shows up as a peer gaining or losing a
-  /// device and our app not noticing until something else happens to re-resolve.
-  /// Both are subscribed because they cost one IQ each and only one of them
-  /// answers on any given server.
-  // `final`, not `const`: the `+notify` variants are built by interpolation
-  // over a spread, and a const list cannot hold either. The list is created
-  // once when the class is first touched and read on every connect.
-  static final List<String> _subscribedPepNodes = <String>[
+  /// Conversations / Gajim do **not** PubSub-subscribe to `*+notify` — that
+  /// string is an Entity Caps disco feature only. Push notifications arrive
+  /// because we advertise `…devicelist+notify` on presence `<c/>`. These
+  /// bare-node subscribes keep our own list warm; peers are subscribed lazily.
+  static const List<String> _subscribedPepNodes = <String>[
     omemoDefactoDevicesNode,
-    '$omemoDefactoDevicesNode+notify',
-    for (final node in omemoSpecDevicesNodes) ...<String>[node, '$node+notify'],
-    // OMEMO2 / monocles — bare node + +notify (PEP_OMEMO2_DEVICE_LIST_NOTIFY).
+    ...omemoSpecDevicesNodes,
     omemo2DevicesXmlns,
-    '$omemo2DevicesXmlns+notify',
     omemo2BundlesXmlns,
   ];
 
@@ -2434,8 +2441,6 @@ class XmppService {
     final connection = _connection;
     if (pm == null || connection == null) return;
     final bare = connection.connectionSettings.jid.toBare();
-    // One IQ per node, all independent: sending them together costs the
-    // slowest of the seven instead of the sum.
     await Future.wait([
       for (final node in _subscribedPepNodes) _subscribePepNode(pm, bare, node),
     ]);
@@ -3114,15 +3119,17 @@ class XmppService {
     return tracks?.getOmemoBundle(JID.fromString(jid), deviceId);
   }
 
-  /// Creates (or restores) our OMEMO device and publishes its bundle.
+  /// Creates (or restores) our OMEMO device and publishes its bundle if needed.
   ///
   /// Safe to call before the device exists — see [_omemoOrCreate] for why
   /// the creation cannot assume it is the first caller.
+  ///
+  /// Conversations `publishBundlesIfNeeded`: top up local OPKs, then reconcile
+  /// against PEP and skip the write when the classic bundle is current.
   Future<int> ensureOmemoDevice({int opkAmount = 20}) async {
     final manager = await _omemoOrCreate(opkAmount: opkAmount);
     final id = await manager.getDeviceId();
     final device = await manager.getDevice();
-    final bundle = await manager.getLocalBundle();
     final bare = JID.fromString(
       _connection!.connectionSettings.jid.toBare().toString(),
     );
@@ -3131,9 +3138,12 @@ class XmppService {
     // registration id / identity pair in account DB independently of announce).
     await deviceStore?.save(device);
 
-    // Conversations: publishBundlesIfNeeded then publishOwnDeviceIdIfNeeded.
-    // Dual-track writes both dialects once each; device list is a per-node
-    // merge (own id added). Wiping other devices is only wipeOtherOmemoDevices.
+    // Replenish before reconcile so a drained pool forces a republish
+    // (Conversations generates the shortfall inside publishBundlesIfNeeded).
+    await replenishPrekeys(target: opkAmount);
+    final bundle = await manager.getLocalBundle();
+
+    // Classic stack only — never touches OMEMO2 / PQ nodes.
     final published = tracks == null
         ? await _moxxOmemo!
               .publishBundle(bundle)
@@ -3144,11 +3154,13 @@ class XmppService {
                 (r) => r.isType<bool>() && !r.get<bool>(),
                 onError: (_) => false,
               )
-        : await tracks!.publishOmemoBundle(bare, bundle);
+        : await tracks!.publishOmemoBundleIfNeeded(
+            bare,
+            bundle,
+            minPreKeys: opkAmount,
+          );
     if (!published) {
       _log.warning('OMEMO bundle publish reported failure');
-    } else {
-      await tracks?.notePublishedOmemoDevice(id);
     }
     return id;
   }
@@ -3760,6 +3772,7 @@ class XmppService {
     }
     if (event is StreamNegotiationsDoneEvent) {
       if (_connection != null && !_streamReadyHandled) {
+        _lastStreamResumed = event.resumed;
         _streamReadyHandled = true;
         unawaited(_afterStreamReady(resumed: event.resumed));
       }

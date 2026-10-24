@@ -50,6 +50,8 @@ class ChatMessageList extends StatelessWidget {
     required this.unreadDividerKey,
     required this.focusMessageAnchor,
     required this.focusMessageKey,
+    this.highlightMessageAnchor,
+    required this.onReplyTap,
     required this.bubbleStyle,
     required this.isGroup,
     required this.groupReads,
@@ -110,10 +112,17 @@ class ChatMessageList extends StatelessWidget {
   /// Key the unread divider is built with, so the page can scroll to it.
   final GlobalKey unreadDividerKey;
 
-  /// Search / deep-link target; when set, that row gets [focusMessageKey].
+  /// Search / deep-link / reply-jump target; when set, that row gets
+  /// [focusMessageKey].
   final String? focusMessageAnchor;
 
   final GlobalKey focusMessageKey;
+
+  /// Brief flash after jumping here from a reply card (monocles highlight).
+  final String? highlightMessageAnchor;
+
+  /// Tap an in-bubble reply card → jump to the quoted message id.
+  final void Function(String replyToId) onReplyTap;
 
   /// Corner shape of the bubbles, from this conversation's appearance.
   final BubbleStyle bubbleStyle;
@@ -253,6 +262,7 @@ class ChatMessageList extends StatelessWidget {
         message: m,
         selectionMode: selectionMode,
         selected: selectedIds.contains(m.stanzaId),
+        highlighted: matchesUnreadAnchor(m, highlightMessageAnchor),
         bubbleStyle: bubbleStyle,
         isGroup: isGroup,
         groupReads: groupReads,
@@ -263,6 +273,7 @@ class ChatMessageList extends StatelessWidget {
         translating: translatingIds.contains(cacheKey),
         onReact: (emoji) => onReact(m.stanzaId, emoji),
         onMenu: (body, anchor) => onMenu(m, body, anchor),
+        onReplyTap: selectionMode ? null : () => onReplyTap(m.replyTo),
         textSelecting: selectingMessageId == m.id,
         onTextSelectionChanged: selectingMessageId == m.id
             ? onTextSelectionChanged
@@ -296,6 +307,7 @@ class _ChatReactionBubble extends ConsumerWidget {
     required this.message,
     required this.selectionMode,
     required this.selected,
+    this.highlighted = false,
     required this.bubbleStyle,
     required this.isGroup,
     required this.groupReads,
@@ -306,6 +318,7 @@ class _ChatReactionBubble extends ConsumerWidget {
     this.translating = false,
     required this.onReact,
     required this.onMenu,
+    this.onReplyTap,
     required this.onToggleSelected,
     required this.textSelecting,
     this.onTextSelectionChanged,
@@ -317,6 +330,7 @@ class _ChatReactionBubble extends ConsumerWidget {
   final Message message;
   final bool selectionMode;
   final bool selected;
+  final bool highlighted;
   final BubbleStyle bubbleStyle;
   final bool isGroup;
   final bool groupReads;
@@ -330,6 +344,7 @@ class _ChatReactionBubble extends ConsumerWidget {
   final bool translating;
   final void Function(String emoji) onReact;
   final void Function(String body, Rect anchor) onMenu;
+  final VoidCallback? onReplyTap;
   final bool textSelecting;
   final ValueChanged<String>? onTextSelectionChanged;
   final void Function() onToggleSelected;
@@ -428,6 +443,7 @@ class _ChatReactionBubble extends ConsumerWidget {
       edited: message.editedAt != null,
       mine: !message.incoming,
       selected: selected,
+      highlighted: highlighted,
       selectionMode: selectionMode,
       bubbleStyle: bubbleStyle,
       message: message,
@@ -435,6 +451,7 @@ class _ChatReactionBubble extends ConsumerWidget {
       replyTo: message.replyTo,
       replyBody: message.replyBody,
       replyAuthor: message.replyAuthor,
+      onReplyTap: onReplyTap,
       mentionsMe: message.mentionsMe,
       highlightNicks: isGroup ? highlightNicks : const [],
       translation: translation,

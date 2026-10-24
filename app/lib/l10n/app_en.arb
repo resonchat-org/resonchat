@@ -617,6 +617,7 @@
   "tapToOpen": "Tap to open",
   "unreadMessages": "Unread messages",
   "jumpToFirstUnread": "Jump to the first unread message",
+  "replyTargetNotFound": "Original message not found",
   "scrollToLatest": "Scroll to the latest",
   "encryptionForThisChat": "Encryption for this chat",
   "trackDescriptionNone": "Plaintext — anyone with access to the server can read this.",
