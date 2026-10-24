@@ -1817,7 +1817,12 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         children: [
           Scaffold(
             appBar: AppBar(
-              titleSpacing: _selectionMode ? null : 0,
+              // Embedded panes are rounded cards now; a title flush with the
+              // card's corner clipped the 40 dp avatar at the top-left arc.
+              // The mobile route keeps its edge-to-edge title.
+              titleSpacing: _selectionMode
+                  ? null
+                  : (widget.embedded ? 12 : 0),
               automaticallyImplyLeading: !widget.embedded && !_selectionMode,
               leading: _selectionMode
                   ? IconButton(

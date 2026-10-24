@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:resonchat/l10n/l10n.dart';
 import 'package:resonchat/state/providers.dart';
+import 'package:resonchat/ui/desktop_surface.dart';
 import 'package:resonchat/ui/home/shell_actions.dart';
 import 'package:resonchat/ui/theme.dart';
 
@@ -33,17 +34,22 @@ class LandscapeFrame extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final tg = context.tg;
     return _ShellOverlay(
-      child: Row(
-        children: [
-          LandscapeNavRail(
-            navigatorKey: navigatorKey,
-            onSelectTab: (index) => _selectTab(ref, index),
+      child: ColoredBox(
+        color: desktopCanvasOf(context),
+        child: Padding(
+          padding: const EdgeInsets.all(kDesktopGutter),
+          child: Row(
+            children: [
+              LandscapeNavRail(
+                navigatorKey: navigatorKey,
+                onSelectTab: (index) => _selectTab(ref, index),
+              ),
+              const SizedBox(width: kDesktopGutter),
+              Expanded(child: DesktopPane(child: child)),
+            ],
           ),
-          VerticalDivider(width: 1, thickness: 1, color: tg.separator),
-          Expanded(child: ClipRect(child: child)),
-        ],
+        ),
       ),
     );
   }
@@ -96,7 +102,9 @@ class LandscapeNavRail extends ConsumerWidget {
       selectedIndex: tab,
       onDestinationSelected: onSelectTab,
       labelType: NavigationRailLabelType.all,
-      backgroundColor: tg.pageBackground,
+      // Let the tinted desktop canvas show through; the rail is chrome on
+      // the canvas, not another opaque column.
+      backgroundColor: Colors.transparent,
       indicatorColor: tg.accent.withValues(alpha: 0.09),
       selectedIconTheme: IconThemeData(color: tg.accent, size: 24),
       unselectedIconTheme: IconThemeData(color: tg.textPrimary, size: 24),

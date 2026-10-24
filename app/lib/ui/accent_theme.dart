@@ -72,12 +72,32 @@ enum AccentColor {
     final base = brightness == Brightness.dark
         ? const TgColors.dark()
         : const TgColors.light();
+    // Own bubbles follow the accent like the rest of the chrome. The old
+    // frozen green read as a second, unrelated theme colour (most visibly
+    // with a violet bar: green bubbles, violet header). Keep the bubble a
+    // low-alpha wash of the accent so the message text still has the page
+    // background's contrast.
+    final ownBubble = Color.alphaBlend(
+      accent.withValues(alpha: brightness == Brightness.dark ? 0.34 : 0.16),
+      base.pageBackground,
+    );
+    final ownBubbleFrom = Color.alphaBlend(
+      accent.withValues(alpha: brightness == Brightness.dark ? 0.46 : 0.24),
+      base.pageBackground,
+    );
     if (brightness == Brightness.light) {
-      return base.copyWith(barBackground: bar, accent: accent);
+      return base.copyWith(
+        barBackground: bar,
+        accent: accent,
+        ownBubble: ownBubble,
+        ownBubbleFrom: ownBubbleFrom,
+      );
     }
     return base.copyWith(
       barBackground: Color.lerp(bar, const Color(0xFF17212B), 0.45)!,
       accent: Color.lerp(accent, Colors.white, 0.12)!,
+      ownBubble: ownBubble,
+      ownBubbleFrom: ownBubbleFrom,
     );
   }
 }
