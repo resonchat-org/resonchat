@@ -68,8 +68,8 @@ class _ChatSubscriptionBannerState
     if (state == null || state.isMutual) return const SizedBox.shrink();
 
     final bareJid = resolveChatKey(widget.chatJid).jid;
-    final requests = ref.watch(subscriptionRequestsProvider).valueOrNull ??
-        const [];
+    final requests =
+        ref.watch(subscriptionRequestsProvider).valueOrNull ?? const [];
     final incoming = requests.any((r) => !r.outgoing && r.jid == bareJid);
 
     final l10n = context.l10n;

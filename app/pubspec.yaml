@@ -46,6 +46,7 @@ dependencies:
   record: ^7.1.2
   web: ^1.1.1
   flutter_slidable: ^4.0.3
+  connectivity_plus: ^6.1.4
 hooks:
   user_defines:
     sqlite3:

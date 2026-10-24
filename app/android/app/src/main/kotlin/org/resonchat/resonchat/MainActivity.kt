@@ -1,17 +1,27 @@
 package org.resonchat.resonchat
 
+import android.app.AlarmManager
+import android.app.PendingIntent
 import android.content.ContentValues
+import android.content.Intent
 import android.media.AudioManager
+import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.os.PowerManager
+import android.os.SystemClock
 import android.provider.MediaStore
+import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
+    private var keepaliveChannel: MethodChannel? = null
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        instance = this
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             "org.resonchat.resonchat/audio",
@@ -22,6 +32,43 @@ class MainActivity : FlutterActivity() {
                     result.success(am.isMicrophoneMute)
                 }
                 else -> result.notImplemented()
+            }
+        }
+        keepaliveChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "org.resonchat.resonchat/keepalive",
+        ).also { channel ->
+            channel.setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "start" -> {
+                        val title = call.argument<String>("title") ?: "ResonChat"
+                        val text = call.argument<String>("text") ?: "Connected"
+                        ConnectionKeepAliveService.start(this, title, text)
+                        result.success(null)
+                    }
+                    "stop" -> {
+                        ConnectionKeepAliveService.stop(this)
+                        result.success(null)
+                    }
+                    "isIgnoringBatteryOptimizations" -> {
+                        result.success(isIgnoringBatteryOptimizations())
+                    }
+                    "requestIgnoreBatteryOptimizations" -> {
+                        result.success(requestIgnoreBatteryOptimizations())
+                    }
+                    "scheduleWake" -> {
+                        val millis = (call.argument<Number>("millis") ?: 1000).toLong()
+                        val requestCode = call.argument<Int>("requestCode") ?: 0
+                        scheduleWake(millis, requestCode)
+                        result.success(null)
+                    }
+                    "cancelWake" -> {
+                        val requestCode = call.argument<Int>("requestCode") ?: 0
+                        cancelWake(requestCode)
+                        result.success(null)
+                    }
+                    else -> result.notImplemented()
+                }
             }
         }
         val offlineTranslator = OfflineTranslator(this)
@@ -67,6 +114,77 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+    }
+
+    private fun isIgnoringBatteryOptimizations(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true
+        val pm = getSystemService(POWER_SERVICE) as PowerManager
+        return pm.isIgnoringBatteryOptimizations(packageName)
+    }
+
+    /** Opens the system allow-list dialog when not already exempt. */
+    private fun requestIgnoreBatteryOptimizations(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true
+        if (isIgnoringBatteryOptimizations()) return true
+        val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+            data = Uri.parse("package:$packageName")
+        }
+        startActivity(intent)
+        return false
+    }
+
+    /**
+     * Conversations [XmppConnectionService.scheduleWakeUpCall]: wake the process
+     * so Dart can run processAccountState (ping due / reconnect backoff).
+     */
+    private fun scheduleWake(millis: Long, requestCode: Int) {
+        val am = getSystemService(ALARM_SERVICE) as AlarmManager
+        val triggerAt = SystemClock.elapsedRealtime() + millis.coerceAtLeast(1L)
+        val pending = wakePendingIntent(requestCode)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                am.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pending)
+            } else {
+                @Suppress("DEPRECATION")
+                am.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pending)
+            }
+        } catch (e: RuntimeException) {
+            // Some OEMs deny alarms; Dart Timer remains as fallback.
+        }
+    }
+
+    private fun cancelWake(requestCode: Int) {
+        val am = getSystemService(ALARM_SERVICE) as AlarmManager
+        am.cancel(wakePendingIntent(requestCode))
+    }
+
+    private fun wakePendingIntent(requestCode: Int): PendingIntent {
+        val intent = Intent(this, ConnectionWakeReceiver::class.java).apply {
+            action = ConnectionWakeReceiver.ACTION_PING
+            putExtra(ConnectionWakeReceiver.EXTRA_REQUEST_CODE, requestCode)
+        }
+        return PendingIntent.getBroadcast(
+            this,
+            requestCode,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+    }
+
+    companion object {
+        @Volatile private var instance: MainActivity? = null
+
+        fun notifyConnectionWake(requestCode: Int) {
+            instance?.keepaliveChannel?.invokeMethod(
+                "onWake",
+                mapOf("requestCode" to requestCode),
+            )
+        }
+    }
+
+    override fun onDestroy() {
+        if (instance === this) instance = null
+        super.onDestroy()
     }
 
     /**

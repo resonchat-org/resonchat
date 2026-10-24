@@ -27,8 +27,12 @@ import 'package:resonchat/persistence/database.dart';
 import 'package:resonchat/persistence/omemo2_device_store.dart';
 import 'package:resonchat/persistence/omemo_device_store.dart';
 import 'package:resonchat/persistence/roster_state.dart';
+import 'package:resonchat/platform/android_keepalive.dart';
+import 'package:resonchat/xmpp/account_connection_controller.dart';
+import 'package:resonchat/xmpp/account_connection_state.dart';
 import 'package:resonchat/xmpp/connect_failure.dart';
 import 'package:resonchat/xmpp/connection.dart';
+import 'package:resonchat/xmpp/connectivity_plus_manager.dart';
 import 'package:resonchat/xmpp/conversation_archive.dart';
 import 'package:resonchat/xmpp/encryption/b_track_manager.dart';
 import 'package:resonchat/xmpp/muc/muc.dart';
@@ -103,20 +107,34 @@ class AccountSession {
 
 /// Process-wide multi-account manager.
 class AccountHub extends ChangeNotifier {
-  AccountHub({AccountStore? store}) : _store = store ?? AccountStore();
+  AccountHub({AccountStore? store}) : _store = store ?? AccountStore() {
+    _connectivity = ConnectivityPlusConnectivityManager();
+    _controller = AccountConnectionController(
+      connectAccount: _controllerConnect,
+      disconnectAccount: _controllerDisconnect,
+      sendPing: _controllerPing,
+      isEnabled: (id) {
+        final i = _accounts.indexWhere((a) => a.id == id);
+        return i >= 0 && _accounts[i].enabled && _sessions.containsKey(id);
+      },
+      accountIds: () => _sessions.keys,
+      // No Jingle/calls yet — hook returns false; SEE_OTHER_HOST still aggressive.
+      hasActiveJingleRtpCall: (_) => false,
+      wakeScheduler: AndroidWakeScheduler(),
+    );
+  }
 
   final AccountStore _store;
   final _log = Logger('AccountHub');
   final Map<String, AccountSession> _sessions = {};
   List<StoredAccount> _accounts = [];
 
-  /// Pending retry of an *initial* login that never completed, keyed by
-  /// account id. moxxmpp's reconnection policy only covers an established
-  /// connection that is then lost.
-  final Map<String, Timer> _retryTimers = {};
-  final Map<String, int> _retryAttempts = {};
-  static const int _retryBaseSeconds = 15;
-  static const int _retryMaxSeconds = 300;
+  late final ConnectivityPlusConnectivityManager _connectivity;
+  late final AccountConnectionController _controller;
+  StreamSubscription<void>? _connectivitySub;
+
+  /// Conversations-style connection scheduler (sole reconnect clock).
+  AccountConnectionController get connectionController => _controller;
 
   final StreamController<void> _sessionChanges =
       StreamController<void>.broadcast();
@@ -191,9 +209,15 @@ class AccountHub extends ChangeNotifier {
   /// roster, MAM). Waits for [appNetwork] so SOCKS is applied first.
   Future<void> connectAll() async {
     await appNetwork.waitUntilReady();
+    await _connectivity.start();
+    _connectivitySub ??= _connectivity.becameOnline.listen((_) {
+      _controller.onConnectivityRestored();
+    });
+    _controller.start();
+    _syncAndroidKeepAlive();
     for (final a in _accounts.where((a) => a.enabled)) {
       if (!_sessions.containsKey(a.id)) continue;
-      unawaited(_connectAndBootstrap(a.id));
+      _controller.requestConnect(a.id);
     }
   }
 
@@ -243,6 +267,8 @@ class AccountHub extends ChangeNotifier {
       deviceStore: deviceStore,
       bTrack: bTrack,
       fingerprintTrust: fingerprintTrust,
+      accountDb: db,
+      connectivityManager: _connectivity,
     );
     xmpp.onRoomRoster = (room) =>
         db.saveRoomMembers(room.roomJid, encodeRoomMembers(room.occupants));
@@ -269,14 +295,22 @@ class AccountHub extends ChangeNotifier {
         unawaited(_applyBookmarksToDb(session));
       }),
     );
-    // TCP drop / auto-reconnect flips xmpp.state without going through
-    // connect/disconnect — keep the hub (and UI) in sync.
+    // TCP drop flips xmpp.state; controller reconnects — keep hub/UI in sync.
     session.subs.add(
       session.xmpp.stateChanges.listen((_) {
         notifyListeners();
         _sessionChanges.add(null);
       }),
     );
+    xmpp.onInboundPacket = () => _controller.notifyPacketReceived(account.id);
+    xmpp.onStreamLost = (failure) {
+      final state = failure == null
+          ? AccountConnectionState.offline
+          : accountStateFromConnectFailure(failure);
+      _controller.onConnectionLost(account.id, state);
+      notifyListeners();
+      _sessionChanges.add(null);
+    };
     // Cold-start: Contacts reads the on-disk snapshot before PEP fetch.
     // (BookmarksManager does not exist until connect — seed happens in
     // bootstrapSession.)
@@ -285,10 +319,31 @@ class AccountHub extends ChangeNotifier {
     return session;
   }
 
+  Future<bool> _controllerConnect(String accountId) async {
+    return _connectAndBootstrap(accountId);
+  }
+
+  Future<void> _controllerDisconnect(String accountId) async {
+    final session = _sessions[accountId];
+    if (session == null) return;
+    try {
+      await session.xmpp.disconnect();
+    } catch (e) {
+      _log.fine('controller disconnect $accountId: $e');
+    }
+  }
+
+  Future<bool> _controllerPing(String accountId) async {
+    final session = _sessions[accountId];
+    if (session == null) return false;
+    return session.xmpp.sendLivenessPing();
+  }
+
   Future<bool> _connectSession(String accountId) async {
     final session = _sessions[accountId];
     if (session == null) return false;
     final a = session.account;
+    _controller.setState(accountId, AccountConnectionState.connecting);
     await appNetwork.waitUntilReady();
     // RFC 6121 availability for the initial presence broadcast.
     final showWire = await session.db.ownPresenceShowWire();
@@ -301,58 +356,21 @@ class AccountHub extends ChangeNotifier {
     );
     if (!ok) {
       _log.warning('connect failed for ${a.jid}: ${session.xmpp.lastFailure}');
+      final failure = session.xmpp.lastFailure;
+      final state = failure == null
+          ? AccountConnectionState.unreachable
+          : accountStateFromConnectFailure(failure);
+      _controller.onConnectionLost(accountId, state, incrementAttempt: true);
       notifyListeners();
       _sessionChanges.add(null);
-      _scheduleConnectRetry(accountId, session.xmpp.lastFailure);
       return false;
     }
-    _cancelConnectRetry(accountId);
+    _controller.setState(accountId, AccountConnectionState.online);
     _wireTracks(session);
     notifyListeners();
     _sessionChanges.add(null);
+    _syncAndroidKeepAlive();
     return true;
-  }
-
-  /// Cancels a pending login retry (successful login, account disabled or
-  /// removed). Resets the backoff so the next failure starts from the base
-  /// delay instead of inheriting an old outage's exponent.
-  void _cancelConnectRetry(String accountId) {
-    _retryTimers.remove(accountId)?.cancel();
-    _retryAttempts.remove(accountId);
-  }
-
-  /// Schedules another login attempt after [failure].
-  ///
-  /// moxxmpp retries a *recoverable loss of an established connection*; it
-  /// does not retry a login that never finished. When the first attempt sets
-  /// up no connection at all (no network yet at launch, server down, TLS
-  /// handshake refused, …) the connection object is dropped and the account
-  /// used to stay offline until the user acted. The hub knows whether the
-  /// account is still enabled, so it is the right place to keep trying.
-  void _scheduleConnectRetry(String accountId, XmppConnectFailure? failure) {
-    _retryTimers.remove(accountId)?.cancel();
-    // Rejected credentials or an unusable SASL mechanism are not transient;
-    // retrying just hammers the server with the same wrong password.
-    if (failure == XmppConnectFailure.auth ||
-        failure == XmppConnectFailure.mechanism) {
-      _retryAttempts.remove(accountId);
-      return;
-    }
-    final attempt = _retryAttempts[accountId] ?? 0;
-    _retryAttempts[accountId] = attempt + 1;
-    final raw = _retryBaseSeconds * (1 << attempt);
-    final seconds = raw > _retryMaxSeconds ? _retryMaxSeconds : raw;
-    _log.info(
-      'account $accountId still offline (${failure?.name ?? 'unknown'}); '
-      'retry ${attempt + 1} in ${seconds}s',
-    );
-    _retryTimers[accountId] = Timer(Duration(seconds: seconds), () {
-      _retryTimers.remove(accountId);
-      final i = _accounts.indexWhere((a) => a.id == accountId);
-      if (i < 0 || !_accounts[i].enabled) return;
-      if (!_sessions.containsKey(accountId)) return;
-      unawaited(_connectAndBootstrap(accountId));
-    });
   }
 
   Future<bool> _connectAndBootstrap(String accountId) async {
@@ -369,6 +387,15 @@ class AccountHub extends ChangeNotifier {
     // ticks the UI already listens to.
     unawaited(_bootstrapInBackground(session));
     return true;
+  }
+
+  void _syncAndroidKeepAlive() {
+    if (!AndroidKeepAlive.isSupported) return;
+    if (hasEnabledAccounts) {
+      unawaited(AndroidKeepAlive.start());
+    } else {
+      unawaited(AndroidKeepAlive.stop());
+    }
   }
 
   /// Runs [bootstrapSession] off the login path and surfaces its completion.
@@ -544,7 +571,7 @@ class AccountHub extends ChangeNotifier {
       lastConnectFailure = session.xmpp.lastFailure;
       if (existing == null) {
         // Brand-new account: drop the ephemeral session; nothing to persist.
-        _cancelConnectRetry(account.id);
+        _controller.removeAccount(account.id);
         _sessions.remove(account.id);
         await session.dispose();
       } else {
@@ -581,13 +608,14 @@ class AccountHub extends ChangeNotifier {
       _accounts = [..._accounts]..[i] = updated;
     }
     if (!enabled) {
-      _cancelConnectRetry(accountId);
+      _controller.removeAccount(accountId);
       final s = _sessions.remove(accountId);
       await s?.dispose();
+      _syncAndroidKeepAlive();
     } else {
-      _cancelConnectRetry(accountId);
       await _ensureSession(updated);
-      unawaited(_connectAndBootstrap(accountId));
+      _controller.requestConnect(accountId);
+      _syncAndroidKeepAlive();
     }
     notifyListeners();
     _sessionChanges.add(null);
@@ -656,10 +684,11 @@ class AccountHub extends ChangeNotifier {
       if (!ok) return false;
     }
     final s = _sessions.remove(accountId);
-    _cancelConnectRetry(accountId);
+    _controller.removeAccount(accountId);
     await s?.dispose();
     await _store.remove(accountId);
     _accounts = await _store.loadAll();
+    _syncAndroidKeepAlive();
     notifyListeners();
     _sessionChanges.add(null);
     _chatsTick.add(null);

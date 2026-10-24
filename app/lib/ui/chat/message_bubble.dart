@@ -437,7 +437,12 @@ class MessageBubble extends StatelessWidget {
             ),
           ),
         if (replyTo.isNotEmpty && !retracted)
-          _ReplyQuote(body: replyBody, author: replyAuthor),
+          Align(
+            // Same side as the bubble — a full-width Row would pin the quote
+            // to the left even for outgoing replies.
+            alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+            child: _ReplyQuote(body: replyBody, author: replyAuthor),
+          ),
         Align(
           alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
           child: Row(
@@ -656,49 +661,57 @@ class _ReplyQuote extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tg = context.tg;
+    // Cap width like a bubble so a long quote stays above the bubble instead
+    // of stretching edge-to-edge.
+    final maxW = MediaQuery.sizeOf(context).width * 0.72;
     return Padding(
-      padding: EdgeInsets.only(left: 12, right: 12, bottom: 3),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 3,
-            // As tall as the text it labels; a fixed height either floats
-            // above a one-line quote or runs past a long one.
-            constraints: const BoxConstraints(minHeight: 18),
-            margin: const EdgeInsets.only(top: 2, right: 8),
-            color: tg.accent,
-          ),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (author.isNotEmpty)
+      padding: const EdgeInsets.only(left: 4, right: 4, bottom: 3),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: maxW),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 3,
+              // As tall as the text it labels; a fixed height either floats
+              // above a one-line quote or runs past a long one.
+              constraints: const BoxConstraints(minHeight: 18),
+              margin: const EdgeInsets.only(top: 2, right: 8),
+              color: tg.accent,
+            ),
+            Flexible(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (author.isNotEmpty)
+                    Text(
+                      author,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: TgDimens.timeFontSize,
+                        fontWeight: FontWeight.w600,
+                        color: tg.accent,
+                      ),
+                    ),
                   Text(
-                    author,
-                    maxLines: 1,
+                    body,
+                    // Two lines: enough to recognise the message being answered,
+                    // not so much that the quote competes with the reply.
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: TgDimens.timeFontSize,
-                      fontWeight: FontWeight.w600,
-                      color: tg.accent,
+                      color: tg.textSecondary,
                     ),
                   ),
-                Text(
-                  body,
-                  // Two lines: enough to recognise the message being answered,
-                  // not so much that the quote competes with the reply.
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: TgDimens.timeFontSize,
-                    color: tg.textSecondary,
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -382,8 +382,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   void _showRefusalHelp(String reason) {
     final mutual = ref.read(contactStateProvider(widget.chatJid)).value;
     final l10n = context.l10n;
-    final notMutual =
-        !(mutual?.isMutual ?? false) && _isPolicyRefusal(reason);
+    final notMutual = !(mutual?.isMutual ?? false) && _isPolicyRefusal(reason);
     final body = notMutual
         ? l10n.messageNotDeliveredBodyNotMutual(
             reason,
@@ -1820,9 +1819,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
               // Embedded panes are rounded cards now; a title flush with the
               // card's corner clipped the 40 dp avatar at the top-left arc.
               // The mobile route keeps its edge-to-edge title.
-              titleSpacing: _selectionMode
-                  ? null
-                  : (widget.embedded ? 12 : 0),
+              titleSpacing: _selectionMode ? null : (widget.embedded ? 12 : 0),
               automaticallyImplyLeading: !widget.embedded && !_selectionMode,
               leading: _selectionMode
                   ? IconButton(

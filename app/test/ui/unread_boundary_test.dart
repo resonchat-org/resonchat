@@ -134,16 +134,25 @@ void main() {
       await seed('in', 1);
       await seed('mine', 2, incoming: false);
       final list = await messages();
-      expect(firstUnreadId(list, at(1).add(const Duration(seconds: 30))), isNull);
+      expect(
+        firstUnreadId(list, at(1).add(const Duration(seconds: 30))),
+        isNull,
+      );
     });
 
-    test('the boundary is the first incoming message, skipping our own', () async {
-      await seed('in1', 1);
-      await seed('mine', 2, incoming: false);
-      await seed('in2', 3);
-      final list = await messages();
-      expect(firstUnreadId(list, at(1).add(const Duration(seconds: 30))), 'in2');
-    });
+    test(
+      'the boundary is the first incoming message, skipping our own',
+      () async {
+        await seed('in1', 1);
+        await seed('mine', 2, incoming: false);
+        await seed('in2', 3);
+        final list = await messages();
+        expect(
+          firstUnreadId(list, at(1).add(const Duration(seconds: 30))),
+          'in2',
+        );
+      },
+    );
 
     test('unread count places a boundary when the marker finds none', () async {
       // Same-second race: last_read_at equals the message timestamp so

@@ -102,11 +102,24 @@ InboundMessage? inboundFromMessageEvent(
         )
       : null;
 
+  // Wire body may include a `> `-prefixed quote fallback. Strip it for the
+  // stored row; the quote itself goes on [ReplyInfo.body] → replyBody.
+  final wireBody = body.isNotEmpty ? body : mediaUrl;
+  final reply = replyData == null
+      ? null
+      : ReplyInfo.from(
+          replyData,
+          event.get<MessageBodyData>()?.body ?? wireBody,
+        );
+  final displayBody = tombstone
+      ? ''
+      : (replyData != null ? stripFallback(replyData, wireBody) : wireBody);
+
   return InboundMessage(
     from: event.from,
     to: event.to,
     type: event.type,
-    body: tombstone ? '' : (body.isNotEmpty ? body : mediaUrl),
+    body: displayBody,
     stanzaId: event.id,
     encryptionError: error,
     isCarbonCopy: isCarbon,
@@ -128,9 +141,7 @@ InboundMessage? inboundFromMessageEvent(
     roomStanzaId: roomStanzaId,
     corrects: correction?.id,
     mediaUrl: tombstone ? '' : mediaUrl,
-    reply: replyData == null
-        ? null
-        : ReplyInfo.from(replyData, event.get<MessageBodyData>()?.body ?? ''),
+    reply: reply,
     reactions: reactionData == null
         ? null
         : ReactionUpdate(

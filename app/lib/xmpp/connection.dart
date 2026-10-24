@@ -23,6 +23,7 @@ import 'package:resonchat/crypto/dual/negotiation.dart';
 import 'package:resonchat/crypto/dual/track.dart';
 import 'package:resonchat/crypto/dual/track_resolver.dart';
 import 'package:resonchat/crypto/omemo2/protocol.dart';
+import 'package:resonchat/persistence/database.dart';
 import 'package:resonchat/persistence/omemo_device_store.dart';
 import 'package:resonchat/persistence/prefs_database.dart';
 import 'package:resonchat/xmpp/chat/replies.dart';
@@ -40,12 +41,14 @@ import 'package:resonchat/xmpp/muc/muc.dart';
 import 'package:resonchat/xmpp/muc/muc_create.dart';
 import 'package:resonchat/xmpp/muc/muc_iq.dart';
 import 'package:resonchat/xmpp/muc/room_invite.dart';
+import 'package:resonchat/xmpp/reconnect_backoff.dart';
 import 'package:resonchat/xmpp/reconnect_policy.dart';
 import 'package:resonchat/xmpp/roster/avatar.dart';
 import 'package:resonchat/xmpp/roster/blocked_inbound.dart';
 import 'package:resonchat/xmpp/roster/blocking.dart';
 import 'package:resonchat/xmpp/roster/presence_store.dart';
 import 'package:resonchat/xmpp/socket/xmpp_socket.dart';
+import 'package:resonchat/xmpp/stream_management_store.dart';
 
 export 'package:resonchat/xmpp/inbound/inbound_message.dart'
     show InboundMessage;
@@ -172,6 +175,8 @@ class XmppService {
     this.deviceStore,
     this.bTrack,
     this.fingerprintTrust,
+    this.accountDb,
+    this.connectivityManager,
   }) : _shouldEncrypt = shouldEncrypt ?? ((_) async => false);
 
   final Logger _log = Logger('XmppService');
@@ -188,6 +193,24 @@ class XmppService {
   /// Per-fingerprint trust (monocles TrustKeys). Null → encrypt to every
   /// reachable device (legacy behaviour).
   final FingerprintTrustStore? fingerprintTrust;
+
+  /// Account database used to persist XEP-0198 Stream Management state.
+  final AppDatabase? accountDb;
+
+  /// Network availability.
+  ///
+  /// The app always passes [ConnectivityPlusConnectivityManager] via
+  /// [AccountHub]. Null is only for CLI tools / one-shot registration, which
+  /// inject [AlwaysConnectedConnectivityManager] explicitly at the call site
+  /// (or accept the null→AlwaysConnected fallback below). Not a production
+  /// reconnect path.
+  final ConnectivityManager? connectivityManager;
+
+  /// Fired on any inbound socket data (Conversations lastPacketReceived).
+  void Function()? onInboundPacket;
+
+  /// Fired when a live stream is lost after login (controller reconnects).
+  void Function(XmppConnectFailure? failure)? onStreamLost;
 
   /// A B-track message we could not open, reported instead of swallowed.
   Stream<PqDecryptFailure> get pqFailures => _pqFailures.stream;
@@ -268,37 +291,12 @@ class XmppService {
 
   XmppConnectionState _state = XmppConnectionState.disconnected;
 
-  /// How often [livenessPing] asks the server for an answer, and how long it
-  /// waits before declaring the socket dead.
-  static const Duration livenessInterval = Duration(minutes: 2);
-  static const Duration livenessTimeout = Duration(seconds: 20);
-
-  /// How often an idle connection sends a whitespace keepalive.
-  ///
-  /// moxxmpp's own keepalive runs every five minutes, which is longer than the
-  /// idle timeout of many NATs and proxies: the flow is dropped while both
-  /// sides believe it is open. One whitespace byte (RFC 6120 §4.6.1) every half
-  /// minute keeps the flow warm at negligible cost. Nothing answers it, so it
-  /// cannot detect a dead socket — [_runLivenessPing] does that.
-  static const Duration keepaliveInterval = Duration(seconds: 30);
-
-  /// XEP-0199. XMPP's own ping, used only as a liveness probe.
+  /// XEP-0199. XMPP's own ping, used only as a liveness probe by
+  /// [AccountConnectionController].
   static const String pingXmlns = 'urn:xmpp:ping';
 
-  /// Periodic liveness probe.
-  ///
-  /// moxxmpp's keepalive is a *whitespace* ping: no reply is expected, so it
-  /// can never fail. That is fine while the socket reports its own errors, but
-  /// when the peer closes the TCP connection and no closure event reaches us,
-  /// the connection stays "connected" forever: every write succeeds locally,
-  /// the keepalive logs "Attempting to send ping", and nothing is ever
-  /// received. That is a silent dead account that never auto-reconnects.
-  ///
-  /// An IQ ping *does* have an answer, so a missing reply is something we can
-  /// act on.
-  Timer? _livenessTimer;
-  Timer? _keepaliveTimer;
   bool _livenessProbeRunning = false;
+  bool _streamReadyHandled = false;
 
   /// Overrides the automatic per-chat decision. Set by the settings UI.
   set shouldEncrypt(ShouldEncrypt fn) => _shouldEncrypt = fn;
@@ -1692,12 +1690,14 @@ class XmppService {
         MessageBodyData(encryptedBodyFallback),
         MessageIdData(id),
         StableIdData(id, const []),
-        if (replyTo != null)
+        if (replyTo != null && replyFallback != null)
           ReplyData(
             replyTo,
-            body: quoteBody,
-            start: replyFallback?.start,
-            end: replyFallback?.end,
+            // Metadata only — single <body/> is MessageBodyData above
+            // (vendor MessageRepliesManager no longer emits a body).
+            body: encryptedBodyFallback,
+            start: replyFallback.start,
+            end: replyFallback.end,
           ),
         const EmeData(Track.pq, name: 'OMEMO-PQ'),
         PqEncryptedData(encrypted),
@@ -1729,11 +1729,7 @@ class XmppService {
       MessageBodyData(body).toXML(),
       StableIdData(id, const []).toOriginIdElement(),
       if (replyTo != null && replyFallback != null)
-        ...replyNodes(
-          targetId: replyTo,
-          quote: quoteBody ?? '',
-          fallback: replyFallback,
-        ),
+        ...replyNodes(targetId: replyTo, fallback: replyFallback),
       if (sendReadReceipts &&
           (_privateNonAnonymous[roomBare.toBare().toString()] ?? false))
         const MarkableData(true).toXML(),
@@ -2163,18 +2159,15 @@ class XmppService {
         (host != null && (host.startsWith('wss:') || host.startsWith('ws:')))
         ? host
         : null;
-    // monocles XmppConnection.getTimeToNextAttempt: exponential backoff on
-    // stream/TCP loss. TestingReconnectionPolicy is a no-op stub — using it
-    // left the app permanently offline after the first socket error.
+    // Reconnect is owned by AccountConnectionController — never arm moxxmpp's
+    // parallel backoff clock (see plan: delete dual timers).
+    final sm = accountDb != null
+        ? DriftStreamManagementManager(accountDb!)
+        : null;
     final connection =
         XmppConnection(
-            reconnect
-                ? MonoclesBackoffReconnectionPolicy()
-                : NeverReconnectPolicy(),
-            // TODO(M7): replace with a connectivity_plus-backed manager plus
-            // XEP-0357 push so Doze-mode delivery works without a permanent
-            // radio lock (Briar's always-on lesson, docs/09).
-            AlwaysConnectedConnectivityManager(),
+            NeverReconnectPolicy(),
+            connectivityManager ?? AlwaysConnectedConnectivityManager(),
             ClientToServerNegotiator(),
             // Native: TCP (+ SOCKS5). Web: RFC 7395 WebSocket + XEP-0156.
             createXmppSocket(websocketUrl: websocketOverride),
@@ -2189,6 +2182,10 @@ class XmppService {
                 : (port ?? (host != null && host.isNotEmpty ? 5222 : null)),
           );
 
+    if (sm != null) {
+      await sm.loadState();
+    }
+
     _carbons = CarbonsManager();
     _pubsub = PubSubManager();
     _bookmarks = BookmarksManager();
@@ -2200,12 +2197,12 @@ class XmppService {
     // it looks like it worked.
     messageManager.registerMessageSendingCallback(pqSendingCallback);
     await connection.registerManagers([
+      ?sm,
       PresenceManager(),
       // XEP-0319 idle timestamp on presence (parsed in moxxmpp).
       IdleManager(),
-      // Whitespace keepalives (monocles Config.PING_MAX_INTERVAL ≈ 5 min).
-      // Without Stream Management this is what notices a half-open TCP.
-      PingManager(const Duration(minutes: 5)),
+      // Inbound data clock for Conversations-style lastPacketReceived.
+      _InboundPacketClockManager(() => onInboundPacket?.call()),
       RosterManager(
         rosterState ??
             (_rosterState = TestingRosterStateManager(null, const [])),
@@ -2292,6 +2289,8 @@ class XmppService {
       // flow does.
       RosterFeatureNegotiator(),
       ResourceBindingNegotiator(),
+      if (sm != null)
+        StreamManagementNegotiator(), // negotiator has no null form
     ]);
 
     // RFC 6121: PresenceManager sends initial presence on stream setup.
@@ -2301,11 +2300,20 @@ class XmppService {
         ?.configure(show: _ownShow);
     presence.clear();
 
+    _streamReadyHandled = false;
     _eventsSub = connection.asBroadcastStream().listen(_onEvent);
-    final result = await connection.connect(
-      shouldReconnect: reconnect,
-      waitUntilLogin: true,
-    );
+    // shouldReconnect is always false: AccountConnectionController owns retries.
+    final result = await connection
+        .connect(shouldReconnect: false, waitUntilLogin: true)
+        .timeout(
+          connectTimeout,
+          onTimeout: () {
+            _log.warning(
+              'connect timed out after ${connectTimeout.inSeconds}s',
+            );
+            return Result<bool, XmppError>(TimeoutError());
+          },
+        );
     final ok = result.isType<bool>() && result.get<bool>();
     if (!ok) {
       // The raw object goes to the log, where naming the exact class is what a
@@ -2316,9 +2324,6 @@ class XmppService {
           ? XmppConnectFailure.unknown
           : classifyConnectFailure(error);
       _log.severe('connect failed: $lastFailure ($error)');
-      // A drop before login finishes can leave the failed connection's policy
-      // with a reconnect timer armed. Nothing consumes its events any more, and
-      // it would reconnect behind the *next* attempt's back. Stop it here.
       await _eventsSub?.cancel();
       _eventsSub = null;
       try {
@@ -2331,26 +2336,41 @@ class XmppService {
     _setState(
       ok ? XmppConnectionState.connected : XmppConnectionState.disconnected,
     );
-    if (ok) {
-      await _afterStreamReady(resumed: false);
-      _startLivenessWatchdog();
+    if (ok && !_streamReadyHandled) {
+      final resumed =
+          connection
+              .getManagerById<StreamManagementManager>(smManager)
+              ?.streamResumed ??
+          false;
+      await _afterStreamReady(resumed: resumed);
+      _streamReadyHandled = true;
+    }
+    // [reconnect] kept for API compat with callers; controller ignores it.
+    if (!reconnect && ok) {
+      // Headless tools that pass reconnect:false still get a live session.
     }
     _log.info('connect($jid): $ok');
     return ok;
   }
 
-  /// Carbons + PEP after a fresh login or an automatic reconnect.
-  ///
-  /// moxxmpp reconnects inside the socket without calling [connect] again, so
-  /// [StreamNegotiationsDoneEvent] is the only place that re-runs this on a
-  /// TCP drop (monocles re-joins MUCs / flushes queue on the same signal).
+  /// Carbons + PEP after a fresh bind. Skipped on SM resume.
   Future<void> _afterStreamReady({required bool resumed}) async {
+    if (resumed) {
+      _log.info('stream resumed; skipping carbons/MAM/PEP bootstrap');
+      return;
+    }
     // Carbons, the MAM disco probe and the own-PEP subscribes do not depend on
-    // each other, and the subscribes do not depend on each other. Start all of
-    // them before awaiting any: serially this was ~9 round-trips the user paid
-    // for on every login before [connect] would even return.
+    // each other. Start all before awaiting any.
     final carbonsFuture = _enableCarbonsSafely();
-    final mamFuture = _isMamAvailable();
+    final mamFuture = _isMamAvailable().timeout(
+      connectDiscoTimeout,
+      onTimeout: () {
+        _log.warning(
+          'MAM disco timed out after ${connectDiscoTimeout.inSeconds}s',
+        );
+        return false;
+      },
+    );
     final pepFuture = _subscribeOwnPep();
     _carbonsEnabled = await carbonsFuture;
     _mamAvailable = await mamFuture;
@@ -3347,12 +3367,12 @@ class XmppService {
         MessageBodyData(encryptedBodyFallback),
         MessageIdData(id),
         StableIdData(id, const []),
-        if (replyTo != null)
+        if (replyTo != null && replyFallback != null)
           ReplyData(
             replyTo,
-            body: quoteBody,
-            start: replyFallback?.start,
-            end: replyFallback?.end,
+            body: encryptedBodyFallback,
+            start: replyFallback.start,
+            end: replyFallback.end,
           ),
         if (requestReceipt && sendDeliveryReceipts)
           const MessageDeliveryReceiptData(true),
@@ -3398,12 +3418,12 @@ class XmppService {
         MessageBodyData(body),
         MessageIdData(id),
         StableIdData(id, const []),
-        if (replyTo != null)
+        if (replyTo != null && replyFallback != null)
           ReplyData(
             replyTo,
-            body: quoteBody,
-            start: replyFallback?.start,
-            end: replyFallback?.end,
+            body: body,
+            start: replyFallback.start,
+            end: replyFallback.end,
           ),
         if (requestReceipt && sendDeliveryReceipts)
           const MessageDeliveryReceiptData(true),
@@ -3452,11 +3472,7 @@ class XmppService {
       MessageBodyData(body).toXML(),
       StableIdData(id, const []).toOriginIdElement(),
       if (replyTo != null && replyFallback != null)
-        ...replyNodes(
-          targetId: replyTo,
-          quote: quoteBody ?? '',
-          fallback: replyFallback,
-        ),
+        ...replyNodes(targetId: replyTo, fallback: replyFallback),
       if (oobUrl != null && oobUrl.isNotEmpty) OOBData(oobUrl, null).toXML(),
       // XEP-0184 receipts are 1:1. A private non-anonymous room does take
       // XEP-0333 `<markable/>` so members can answer with `<displayed/>`
@@ -3544,41 +3560,13 @@ class XmppService {
     return 'resonchat-${DateTime.now().microsecondsSinceEpoch}-$_stanzaCounter';
   }
 
-  /// Starts (or restarts) the periodic liveness probe.
-  ///
-  /// Called after a fresh login and after an automatic reconnect: both paths
-  /// end with a usable socket, and the old timer must not survive a connection
-  /// that was replaced in between.
-  void _startLivenessWatchdog() {
-    _livenessTimer?.cancel();
-    _livenessTimer = Timer.periodic(livenessInterval, (_) {
-      unawaited(_runLivenessPing());
-    });
-    _keepaliveTimer?.cancel();
-    _keepaliveTimer = Timer.periodic(keepaliveInterval, (_) {
-      if (_state != XmppConnectionState.connected) return;
-      _connection?.sendWhitespacePing();
-    });
-  }
-
-  void _stopLivenessWatchdog() {
-    _livenessTimer?.cancel();
-    _livenessTimer = null;
-    _keepaliveTimer?.cancel();
-    _keepaliveTimer = null;
-  }
-
-  /// XEP-0199 ping with a deadline; a missing answer forces a reconnect.
-  ///
-  /// An IQ error is a perfectly good sign of life — it proves the stream is
-  /// carrying stanzas in both directions — so only *no reply at all* counts as
-  /// dead.
-  Future<void> _runLivenessPing() async {
+  /// XEP-0199 ping for [AccountConnectionController]. Returns true if any
+  /// reply (including IQ error) arrived within [pingTimeout].
+  Future<bool> sendLivenessPing() async {
     final connection = _connection;
-    if (connection == null || _livenessProbeRunning) return;
-    if (_state != XmppConnectionState.connected) return;
+    if (connection == null || _livenessProbeRunning) return false;
+    if (_state != XmppConnectionState.connected) return false;
     _livenessProbeRunning = true;
-    var alive = false;
     try {
       final reply = await connection
           .sendStanza(
@@ -3593,26 +3581,18 @@ class XmppService {
               shouldEncrypt: false,
             ),
           )
-          .timeout(livenessTimeout);
-      alive = reply != null;
+          .timeout(pingTimeout);
+      return reply != null;
     } catch (e) {
       _log.warning('liveness ping failed: $e');
+      return false;
     } finally {
       _livenessProbeRunning = false;
     }
-    // A ping that threw *after* the connection object was replaced belongs to
-    // the old socket; do not drag the new one down with it.
-    if (alive || !identical(_connection, connection)) return;
-    _log.warning('liveness ping timed out; forcing a reconnect');
-    // Stop the probe before feeding the failure: the reconnection policy sets
-    // the state to notConnected, and a second probe would fire while it waits
-    // out its backoff. It is restarted on the next stream-ready event.
-    _stopLivenessWatchdog();
-    await connection.handleError(TimeoutError());
   }
 
   Future<void> disconnect() async {
-    _stopLivenessWatchdog();
+    _streamReadyHandled = false;
     await _eventsSub?.cancel();
     _eventsSub = null;
     try {
@@ -3764,25 +3744,30 @@ class XmppService {
   void _onEvent(XmppEvent event) {
     if (event is ConnectionStateChangedEvent) {
       // moxxmpp's XmppConnectionState is shadowed by ours; use .name.
+      final wasConnected = _state == XmppConnectionState.connected;
       final next = switch (event.state.name) {
         'connected' => XmppConnectionState.connected,
         'connecting' => XmppConnectionState.connecting,
         _ => XmppConnectionState.disconnected,
       };
       _setState(next);
-      // The watchdog belongs to one live socket. A drop, or the reconnect's
-      // own "connecting" interlude, must not leave a timer behind that probes
-      // a stream that is no longer there.
-      if (next != XmppConnectionState.connected) _stopLivenessWatchdog();
+      // After login, a drop must reach AccountConnectionController — moxxmpp
+      // no longer auto-reconnects (NeverReconnectPolicy).
+      if (wasConnected && next == XmppConnectionState.disconnected) {
+        onStreamLost?.call(XmppConnectFailure.unreachable);
+      }
       return;
     }
     if (event is StreamNegotiationsDoneEvent) {
-      // Automatic reconnect path: [connect] is not re-entered, so carbons /
-      // PEP must be re-armed here (monocles manageAccountConnectionStates).
-      if (_connection != null) {
+      if (_connection != null && !_streamReadyHandled) {
+        _streamReadyHandled = true;
         unawaited(_afterStreamReady(resumed: event.resumed));
-        _startLivenessWatchdog();
       }
+      return;
+    }
+    if (event is NonRecoverableErrorEvent) {
+      // Classification only — reconnect is armed once via ConnectionStateChanged.
+      lastFailure = classifyConnectFailure(event.error);
       return;
     }
     if (event is StanzaSendingCancelledEvent) {
@@ -4006,18 +3991,21 @@ class XmppService {
   }
 }
 
-/// Reconnection policy that never reconnects.
-///
-/// Used by probes and headless tools: an automatic reconnect turns a dropped
-/// stream into an unhandled socket error inside the caller's zone, which
-/// buries whatever the caller was actually measuring. Reconnecting is the
-/// app's job and is done deliberately, with backoff.
-class NeverReconnectPolicy extends ReconnectionPolicy {
-  @override
-  Future<void> onSuccess() async {}
+/// Updates [XmppService.onInboundPacket] on every chunk of socket data.
+class _InboundPacketClockManager extends XmppManagerBase {
+  _InboundPacketClockManager(this._onPacket)
+    : super('org.resonchat.inbound_packet_clock');
+
+  final void Function() _onPacket;
 
   @override
-  Future<void> onFailure() async {}
+  String get name => 'InboundPacketClockManager';
+
+  @override
+  Future<bool> isSupported() async => true;
+
+  @override
+  Future<void> onData() async => _onPacket();
 }
 
 /// Renders a stanza error as something worth showing a user.

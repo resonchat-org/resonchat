@@ -71,16 +71,16 @@ ReplyFallback buildReplyFallback(String quote, String body) {
 /// of itself.
 List<XMLNode> replyNodes({
   required String targetId,
-  required String quote,
   required ReplyFallback fallback,
 }) {
+  // Only `<reply>` + `<fallback>`. One `<body/>` (quote fallback + reply) is
+  // already on the stanza via [MessageBodyData] — same as Conversations.
   return [
     XMLNode.xmlns(
       tag: 'reply',
       xmlns: replyXmlns,
       attributes: {'id': targetId},
     ),
-    XMLNode(tag: 'body', text: quote),
     XMLNode.xmlns(
       tag: 'fallback',
       xmlns: fallbackIndicationXmlns,

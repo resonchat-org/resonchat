@@ -10,14 +10,16 @@ class ReplyInfo {
   /// Origin-id of the message being replied to.
   final String targetId;
 
-  /// The quoted text, with the `> ` fallback prefixes removed when the sender
-  /// provided the offsets that let us strip them.
+  /// The quoted text shown above the bubble ([Messages.replyBody]).
+  ///
+  /// Taken from the fallback range with `> ` markers removed — not the reply
+  /// itself. The reply body is [stripFallback] applied to the wire body.
   final String body;
 
   factory ReplyInfo.from(ReplyData data, String receivedBody) {
     return ReplyInfo(
       targetId: data.id,
-      body: stripFallback(data, receivedBody),
+      body: quoteFromReply(data, receivedBody),
     );
   }
 }
@@ -35,13 +37,41 @@ class ReplyInfo {
 /// ends, and guessing would cut the reply itself in half — so the body is left
 /// alone, which is the honest answer.
 String stripFallback(ReplyData data, String receivedBody) {
+  final range = _fallbackRange(data, receivedBody);
+  if (range == null) return receivedBody;
+  return receivedBody.replaceRange(range.start, range.end, '');
+}
+
+/// Quoted prose for [ReplyInfo.body] / the reply card (no `> ` markers).
+String quoteFromReply(ReplyData data, String receivedBody) {
+  final range = _fallbackRange(data, receivedBody);
+  if (range == null) return '';
+  return unquoteFallback(receivedBody.substring(range.start, range.end));
+}
+
+({int start, int end})? _fallbackRange(ReplyData data, String receivedBody) {
   final start = data.start;
   final end = data.end;
-  if (start == null || end == null) return receivedBody;
-  if (start < 0 || end < start || end > receivedBody.length) {
-    // Out of range. Refusing to guess is better than throwing or, worse,
-    // silently mangling a message someone actually wrote.
-    return receivedBody;
+  if (start == null || end == null) return null;
+  if (start < 0 || end < start || end > receivedBody.length) return null;
+  return (start: start, end: end);
+}
+
+/// Strips Conversations-style `> ` line prefixes from a fallback region.
+String unquoteFallback(String region) {
+  final lines = region.split('\n');
+  final out = <String>[];
+  for (var i = 0; i < lines.length; i++) {
+    final line = lines[i];
+    // Trailing empty from a final `\n` on the last quoted line.
+    if (i == lines.length - 1 && line.isEmpty) break;
+    if (line.startsWith('> ')) {
+      out.add(line.substring(2));
+    } else if (line == '>') {
+      out.add('');
+    } else {
+      out.add(line);
+    }
   }
-  return receivedBody.replaceRange(start, end, '');
+  return out.join('\n');
 }

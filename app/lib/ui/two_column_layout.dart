@@ -31,7 +31,10 @@ class TwoColumnLayout extends StatelessWidget {
       color: desktopCanvasOf(context),
       child: Row(
         children: [
-          SizedBox(width: mainWidth, child: DesktopPane(child: mainView)),
+          SizedBox(
+            width: mainWidth,
+            child: DesktopPane(child: mainView),
+          ),
           const SizedBox(width: kDesktopGutter),
           Expanded(child: DesktopPane(child: sideView)),
         ],

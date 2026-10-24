@@ -76,8 +76,10 @@ class _AppWiringState extends ConsumerState<AppWiring>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    ref.read(appForegroundProvider.notifier).state =
-        state == AppLifecycleState.resumed;
+    final foreground = state == AppLifecycleState.resumed;
+    ref.read(appForegroundProvider.notifier).state = foreground;
+    // Conversations isUiAction → PING_MIN_INTERVAL while the UI is up.
+    accountHub.connectionController.setForeground(foreground);
     // Amarok ScreenStatusReceiver: re-lock when leaving the foreground.
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden) {

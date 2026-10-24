@@ -4,8 +4,15 @@
          merges debug/profile only for flutter run — not for shipped APKs. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Required to run ConnectionKeepAliveService (typed FGS on API 34+). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Needed for Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS after a
+         UI explanation (Conversations ConversationsActivity). Not auto-requested. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
-    <!-- POST_NOTIFICATIONS / VIBRATE from flutter_local_notifications;
+    <!-- POST_NOTIFICATIONS / VIBRATE from flutter_local_notifications (merged);
+         asked on first message shade post in Dart — never at cold start.
          RECORD_AUDIO from record_android — prompted on first use in Dart.
 
          open_filex merges in gallery-scan READ_* permissions we do not need
@@ -50,6 +57,13 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <service
+            android:name=".ConnectionKeepAliveService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+        <receiver
+            android:name=".ConnectionWakeReceiver"
+            android:exported="false" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

@@ -16,6 +16,7 @@ import 'package:resonchat/l10n/locale_controller.dart';
 import 'package:resonchat/logging/dev_log.dart';
 import 'package:resonchat/logging/dev_log_prefs.dart';
 import 'package:resonchat/net/app_network.dart';
+import 'package:resonchat/platform/android_keepalive.dart';
 import 'package:resonchat/security/app_lock.dart';
 import 'package:resonchat/state/providers.dart';
 import 'package:resonchat/translate/translation_engine.dart';
@@ -130,6 +131,38 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     await devLog.setEnabled(enabled);
     if (!mounted) return;
     setState(() => _devLogEnabled = enabled);
+  }
+
+  /// Conversations-style: explain first, then open the system allow-list dialog.
+  Future<void> _requestBatteryOptimizations(BuildContext context) async {
+    final l10n = context.l10n;
+    final already = await AndroidKeepAlive.isIgnoringBatteryOptimizations();
+    if (!context.mounted) return;
+    if (already) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.ignoreBatteryOptimizationsAlready)),
+      );
+      return;
+    }
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.ignoreBatteryOptimizationsDialogTitle),
+        content: Text(l10n.ignoreBatteryOptimizationsDialogBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(l10n.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(l10n.ignoreBatteryOptimizationsDialogNext),
+          ),
+        ],
+      ),
+    );
+    if (go != true || !context.mounted) return;
+    await AndroidKeepAlive.requestIgnoreBatteryOptimizations();
   }
 
   /// Copies the newest log into Downloads. This is the whole point of the
@@ -350,6 +383,13 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 await showSocks5ProxySheet(context, ref);
                 if (mounted) setState(() {});
               },
+            ),
+          if (AndroidKeepAlive.isSupported)
+            ListTile(
+              leading: const Icon(Icons.battery_saver_outlined),
+              title: Text(l10n.ignoreBatteryOptimizations),
+              subtitle: Text(l10n.ignoreBatteryOptimizationsSummary),
+              onTap: () => unawaited(_requestBatteryOptimizations(context)),
             ),
           Builder(
             builder: (context) {

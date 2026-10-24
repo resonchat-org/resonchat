@@ -171,7 +171,15 @@ void main() {
         const ReplyData('id', body: 'quoted', start: 0, end: 65535),
         'my answer',
       );
-      expect(info.body, 'my answer');
+      // No usable range → no quote card; body stays intact via stripFallback.
+      expect(info.body, '');
+      expect(
+        stripFallback(
+          const ReplyData('id', body: 'quoted', start: 0, end: 65535),
+          'my answer',
+        ),
+        'my answer',
+      );
     });
 
     test('a negative start is refused', () {
@@ -179,7 +187,7 @@ void main() {
         const ReplyData('id', body: 'quoted', start: -5, end: 3),
         'my answer',
       );
-      expect(info.body, 'my answer');
+      expect(info.body, '');
     });
 
     test('end before start is refused', () {
@@ -187,46 +195,49 @@ void main() {
         const ReplyData('id', body: 'quoted', start: 4, end: 2),
         'my answer',
       );
-      expect(info.body, 'my answer');
+      expect(info.body, '');
     });
 
-    test('an offset inside the body is honoured', () {
-      // Not everything is refused: a well-formed quote must still come out
-      // clean, or the guard would silently break every reply.
+    test('an offset inside the body yields the quote, not the reply', () {
       final info = ReplyInfo.from(
         const ReplyData('id', body: 'quoted', start: 0, end: 9),
         '> quoted\nmy answer',
       );
-      expect(info.body, 'my answer');
+      expect(info.body, 'quoted');
+      expect(
+        stripFallback(
+          const ReplyData('id', body: 'quoted', start: 0, end: 9),
+          '> quoted\nmy answer',
+        ),
+        'my answer',
+      );
     });
   });
 
   group('parsing an inbound reply', () {
-    test('the quote is stripped off the body', () {
+    test('ReplyInfo.body is the quote; stripFallback is the reply', () {
       final fallback = buildReplyFallback('the original', 'my answer');
-      final info = ReplyInfo.from(
-        ReplyData(
-          'origin-id-1',
-          body: 'the original',
-          start: fallback.start,
-          end: fallback.end,
-        ),
-        fallback.wireBody,
+      final data = ReplyData(
+        'origin-id-1',
+        body: fallback.wireBody,
+        start: fallback.start,
+        end: fallback.end,
       );
+      final info = ReplyInfo.from(data, fallback.wireBody);
       expect(info.targetId, 'origin-id-1');
-      // What the bubble shows is the reply, not the reply plus a copy of what
-      // it answers.
-      expect(info.body, 'my answer');
+      // Quote card above the bubble (Conversations / Telegram style).
+      expect(info.body, 'the original');
+      // Bubble text is the reply alone.
+      expect(stripFallback(data, fallback.wireBody), 'my answer');
     });
 
     test('a sender that sent no offsets leaves the body alone', () {
       // There is no way to tell where the quote ends without them, and
       // guessing would cut the reply itself in half.
-      final info = ReplyInfo.from(
-        const ReplyData('origin-id-1', body: 'quoted'),
-        '> quoted\nmy answer',
-      );
-      expect(info.body, '> quoted\nmy answer');
+      final data = const ReplyData('origin-id-1', body: 'quoted');
+      final info = ReplyInfo.from(data, '> quoted\nmy answer');
+      expect(info.body, '');
+      expect(stripFallback(data, '> quoted\nmy answer'), '> quoted\nmy answer');
     });
   });
 }
