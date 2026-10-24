@@ -53,10 +53,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import 'package:resonchat/l10n/l10n.dart';
 import 'package:resonchat/platform/linux_cli_types.dart';
 import 'package:resonchat/platform/voice_recorder.dart';
 import 'package:resonchat/ui/chat/glass_panel.dart';
+import 'package:resonchat/ui/chat/send_shortcut_prefs.dart';
 import 'package:resonchat/ui/theme.dart';
 
 /// Metrics read off the reference (`ChatActivityEnterView.java`).
@@ -121,7 +124,7 @@ class _EnterView {
 /// Bottom input bar: smiley, text, paperclip, and send-or-mic — or the
 /// recording row while the mic is held (Telegram `ChatActivityEnterView`,
 /// docs/05 §4.2).
-class ChatInputBar extends StatefulWidget {
+class ChatInputBar extends ConsumerStatefulWidget {
   const ChatInputBar({
     super.key,
     required this.controller,
@@ -151,10 +154,10 @@ class ChatInputBar extends StatefulWidget {
   final bool attachEnabled;
 
   @override
-  State<ChatInputBar> createState() => _ChatInputBarState();
+  ConsumerState<ChatInputBar> createState() => _ChatInputBarState();
 }
 
-class _ChatInputBarState extends State<ChatInputBar>
+class _ChatInputBarState extends ConsumerState<ChatInputBar>
     with SingleTickerProviderStateMixin {
   /// Created on the first recording attempt: constructing [VoiceRecorder]
   /// opens a platform channel (the `record` plugin), which a chat screen that
@@ -451,8 +454,13 @@ class _ChatInputBarState extends State<ChatInputBar>
     );
   }
 
+  void _sendFromShortcut() {
+    if (widget.controller.text.trim().isEmpty) return;
+    widget.onSend();
+  }
+
   Widget _field(TgColors tg, AppLocalizations l10n) {
-    return TextField(
+    final field = TextField(
       controller: widget.controller,
       focusNode: widget.focusNode,
       minLines: 1,
@@ -479,6 +487,20 @@ class _ChatInputBarState extends State<ChatInputBar>
           _EnterView.textPadBottom,
         ),
       ),
+    );
+    if (!isDesktopSendShortcutHost) return field;
+
+    // Only the binding from settings: Ctrl+Enter (default) or Enter.
+    final sendWithEnter = ref.watch(sendWithEnterProvider);
+    return CallbackShortcuts(
+      bindings: {
+        if (sendWithEnter)
+          const SingleActivator(LogicalKeyboardKey.enter): _sendFromShortcut
+        else
+          const SingleActivator(LogicalKeyboardKey.enter, control: true):
+              _sendFromShortcut,
+      },
+      child: field,
     );
   }
 

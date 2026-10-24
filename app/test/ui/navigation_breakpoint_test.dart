@@ -15,48 +15,64 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:resonchat/ui/column_mode.dart';
 
 void main() {
-  Future<bool> railAt(WidgetTester tester, Size size) async {
+  Future<(bool rail, bool column)> wideAt(
+    WidgetTester tester,
+    Size size,
+  ) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
 
     late bool rail;
+    late bool column;
     await tester.pumpWidget(
       MaterialApp(
         home: Builder(
           builder: (context) {
             rail = usesNavigationRail(context);
+            column = isColumnMode(context);
             return const SizedBox.shrink();
           },
         ),
       ),
     );
-    return rail;
+    return (rail, column);
   }
 
   group('navigation breakpoint', () {
     testWidgets('a tall desktop window uses the side rail', (tester) async {
       // The reported layout: wide enough for the rail, taller than it is wide.
-      expect(await railAt(tester, const Size(886, 965)), isTrue);
+      final (rail, column) = await wideAt(tester, const Size(886, 965));
+      expect(rail, isTrue);
+      expect(column, isTrue);
     });
 
     testWidgets('a phone-width window keeps the floating dock', (tester) async {
-      expect(await railAt(tester, const Size(480, 900)), isFalse);
+      final (rail, column) = await wideAt(tester, const Size(480, 900));
+      expect(rail, isFalse);
+      expect(column, isFalse);
     });
 
-    testWidgets('phone landscape also gets the rail', (tester) async {
-      expect(await railAt(tester, const Size(640, 360)), isTrue);
+    testWidgets('phone landscape also gets the rail and split', (tester) async {
+      final (rail, column) = await wideAt(tester, const Size(640, 360));
+      expect(rail, isTrue);
+      expect(column, isTrue);
     });
 
-    testWidgets('the breakpoint is inclusive', (tester) async {
-      expect(
-        await railAt(tester, const Size(kNavigationRailMinWidth, 800)),
-        isTrue,
+    testWidgets('rail and column share one inclusive 600 gate', (tester) async {
+      final at = await wideAt(tester, const Size(kNavigationRailMinWidth, 800));
+      expect(at.$1, isTrue);
+      expect(at.$2, isTrue);
+      final below = await wideAt(
+        tester,
+        const Size(kNavigationRailMinWidth - 1, 800),
       );
-      expect(
-        await railAt(tester, const Size(kNavigationRailMinWidth - 1, 800)),
-        isFalse,
-      );
+      expect(below.$1, isFalse);
+      expect(below.$2, isFalse);
+      // Former 600–720 band is gone: 650 is already master/detail.
+      final mid = await wideAt(tester, const Size(650, 800));
+      expect(mid.$1, isTrue);
+      expect(mid.$2, isTrue);
     });
   });
 }

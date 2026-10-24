@@ -830,6 +830,8 @@
   "devLogExportEmpty": "还没有日志文件——请先打开该模式，再复现问题。",
   "devLogExportFailed": "导出日志失败：{reason}",
   "messageSettings": "消息",
+  "sendWithEnter": "按 Enter 发送",
+  "sendWithEnterSummary": "关闭时用 Ctrl+Enter 发送，Enter 换行。仅桌面端。",
   "historySyncTitle": "上线时拉取历史",
   "historySyncSummary": "上线或加入群聊时，按所选条数或天数拉取历史。私聊房间使用同一上限。",
   "historySyncOff": "不自动拉取",

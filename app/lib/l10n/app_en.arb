@@ -947,6 +947,8 @@
     }
   },
   "messageSettings": "Messages",
+  "sendWithEnter": "Press Enter to send",
+  "sendWithEnterSummary": "When off, Ctrl+Enter sends and Enter starts a new line. Desktop only.",
   "historySyncTitle": "Fetch history when coming online",
   "historySyncSummary": "Fetches this much history when you come online or join a group. Private rooms use the same limit.",
   "historySyncOff": "Don't fetch automatically",

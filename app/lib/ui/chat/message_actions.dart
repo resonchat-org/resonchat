@@ -11,7 +11,6 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 
 import 'package:resonchat/crypto/dual/track.dart';
 import 'package:resonchat/l10n/l10n.dart';
@@ -166,17 +165,31 @@ class _MenuItem {
   final bool danger;
 }
 
-/// Shows the menu beside [anchor] and returns what the user picked, or null.
+/// Action grid + selecting body share this so selection taps are not "outside".
+const Object messageMenuTapRegionGroup = Object();
+
+VoidCallback? _dismissActiveMessageMenu;
+
+/// Drops the open menu, if any (also used before opening another).
+void dismissActiveMessageMenu() {
+  final dismiss = _dismissActiveMessageMenu;
+  if (dismiss == null) return;
+  _dismissActiveMessageMenu = null;
+  dismiss();
+}
+
+/// Shows the menu beside [anchor]; returns the pick, or null if dismissed.
 ///
-/// [anchor] is the bubble in global coordinates. Taps outside the bubble and
-/// the menu dismiss it; taps on the bubble pass through so a text selection
-/// can be adjusted.
+/// At most one menu. Outside taps dismiss; the selecting body uses
+/// [messageMenuTapRegionGroup] so adjusting the selection does not.
 Future<MessageAction?> showMessageMenu(
   BuildContext context, {
   required MessageActions actions,
   required bool trackIsPlaintext,
   required Rect anchor,
 }) {
+  dismissActiveMessageMenu();
+
   final overlay = Overlay.of(context);
   final overlayBox = overlay.context.findRenderObject() as RenderBox?;
   final localAnchor = overlayBox == null
@@ -187,11 +200,18 @@ Future<MessageAction?> showMessageMenu(
         );
   final completer = Completer<MessageAction?>();
   late OverlayEntry entry;
+  late final VoidCallback dismissThis;
   void finish(MessageAction? action) {
     if (completer.isCompleted) return;
+    if (identical(_dismissActiveMessageMenu, dismissThis)) {
+      _dismissActiveMessageMenu = null;
+    }
     entry.remove();
     completer.complete(action);
   }
+
+  dismissThis = () => finish(null);
+  _dismissActiveMessageMenu = dismissThis;
 
   entry = OverlayEntry(
     builder: (context) => _AnchoredMessageMenu(
@@ -320,142 +340,84 @@ class _AnchoredMessageMenu extends StatelessWidget {
     final theme = Theme.of(context);
     return Stack(
       children: [
-        Positioned.fill(
-          child: _MenuBarrier(
-            hole: anchor.inflate(28),
-            onDismiss: () => onPick(null),
-          ),
-        ),
         Positioned(
           left: left,
           top: top,
           width: menuW,
-          child: Material(
-            elevation: 8,
-            color: theme.colorScheme.surfaceContainerHigh,
-            borderRadius: BorderRadius.circular(12),
-            clipBehavior: Clip.antiAlias,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                GridView.count(
-                  crossAxisCount: cols,
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  childAspectRatio: _cellW / _cellH,
-                  children: [
-                    for (final item in items)
-                      InkWell(
-                        onTap: () => onPick(item.action),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 4,
-                            vertical: 8,
-                          ),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                item.icon,
-                                size: 22,
-                                color: item.danger
-                                    ? theme.colorScheme.error
-                                    : theme.colorScheme.onSurface,
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                item.label,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  height: 1.1,
+          child: TapRegion(
+            groupId: messageMenuTapRegionGroup,
+            onTapOutside: (_) => onPick(null),
+            child: Material(
+              elevation: 8,
+              color: theme.colorScheme.surfaceContainerHigh,
+              borderRadius: BorderRadius.circular(12),
+              clipBehavior: Clip.antiAlias,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  GridView.count(
+                    crossAxisCount: cols,
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    childAspectRatio: _cellW / _cellH,
+                    children: [
+                      for (final item in items)
+                        InkWell(
+                          onTap: () => onPick(item.action),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 4,
+                              vertical: 8,
+                            ),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  item.icon,
+                                  size: 22,
                                   color: item.danger
                                       ? theme.colorScheme.error
                                       : theme.colorScheme.onSurface,
                                 ),
-                              ),
-                            ],
+                                const SizedBox(height: 4),
+                                Text(
+                                  item.label,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    height: 1.1,
+                                    color: item.danger
+                                        ? theme.colorScheme.error
+                                        : theme.colorScheme.onSurface,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                  ],
-                ),
-                if (warn)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
-                    child: Text(
-                      l10n.retractUnencryptedWarning,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: theme.colorScheme.onSurfaceVariant,
+                    ],
+                  ),
+                  if (warn)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+                      child: Text(
+                        l10n.retractUnencryptedWarning,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
                       ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
       ],
     );
   }
-}
-
-/// Full-screen tap target with a hole over the bubble.
-class _MenuBarrier extends LeafRenderObjectWidget {
-  const _MenuBarrier({required this.hole, required this.onDismiss});
-
-  final Rect hole;
-  final VoidCallback onDismiss;
-
-  @override
-  RenderObject createRenderObject(BuildContext context) {
-    return _MenuBarrierBox(hole: hole, onDismiss: onDismiss);
-  }
-
-  @override
-  void updateRenderObject(BuildContext context, _MenuBarrierBox renderObject) {
-    renderObject
-      ..hole = hole
-      ..onDismiss = onDismiss;
-  }
-}
-
-class _MenuBarrierBox extends RenderBox {
-  _MenuBarrierBox({required this._hole, required this._onDismiss});
-
-  Rect _hole;
-  VoidCallback _onDismiss;
-
-  set hole(Rect value) {
-    if (_hole == value) return;
-    _hole = value;
-    markNeedsPaint();
-  }
-
-  set onDismiss(VoidCallback value) => _onDismiss = value;
-
-  @override
-  bool get sizedByParent => true;
-
-  @override
-  Size computeDryLayout(BoxConstraints constraints) => constraints.biggest;
-
-  @override
-  bool hitTest(BoxHitTestResult result, {required Offset position}) {
-    if (_hole.contains(position)) return false;
-    result.add(BoxHitTestEntry(this, position));
-    return true;
-  }
-
-  @override
-  void handleEvent(PointerEvent event, BoxHitTestEntry entry) {
-    if (event is PointerDownEvent) _onDismiss();
-  }
-
-  @override
-  void paint(PaintingContext context, Offset offset) {}
 }
 
 /// The action bar shown while messages are selected.

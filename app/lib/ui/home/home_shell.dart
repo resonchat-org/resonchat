@@ -5,9 +5,9 @@
 //
 // The two layouts do not share navigation chrome. Narrow windows are
 // [PortraitHome] (floating dock, full-screen routes). From
-// [kNavigationRailMinWidth] up, this widget is only the tab body;
-// [LandscapeFrame] wraps the root navigator so the rail stays outside every
-// pushed page. Wide windows keep master/detail on the Chats tab either way.
+// [kNavigationRailMinWidth] up, this widget is only the tab body with
+// master/detail on Chats; [LandscapeFrame] wraps the root navigator so the
+// rail stays outside every pushed page.
 
 import 'package:flutter/material.dart';
 
@@ -33,9 +33,9 @@ class HomeShell extends ConsumerWidget {
     final wide = isColumnMode(context);
     final selected = ref.watch(selectedChatKeyProvider);
     final tab = ref.watch(homeTabIndexProvider);
-    final rail = usesNavigationRail(context);
     remindPendingRequests(context, ref);
 
+    // Same ≥600 gate as the side rail: no 600–720 transition band.
     final chatsBody = wide
         ? TwoColumnLayout(
             mainView: ChatsPage(activeChatKey: selected),
@@ -50,7 +50,7 @@ class HomeShell extends ConsumerWidget {
         : const ChatsPage();
     final pages = [chatsBody, const ContactsPage(), const MePage()];
 
-    if (rail) {
+    if (wide) {
       return IndexedStack(index: tab, children: pages);
     }
     return PortraitHome(

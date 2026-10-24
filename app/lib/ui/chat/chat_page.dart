@@ -1247,9 +1247,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     Rect anchor,
   ) async {
     if (!mounted) return;
-    // Read before the dialog opens: an await here would leave a frame where a
-    // tap lands on nothing, and the dialog is modal so the menu's own action
-    // handler is the only thing that should be doing async work.
+    // Before the pinned await, so another long-press never leaves a stale menu.
+    dismissActiveMessageMenu();
     final pinned = await _vm.isPinned(message.stanzaId);
     if (!mounted) return;
     final track = storedTrack(message.encMode);

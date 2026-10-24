@@ -208,6 +208,9 @@ List<Widget> _widgetsForBlocks(
             linkStyle: linkStyle,
             recognizerFor: recognizerFor,
           ),
+          // Long tokens (URLs) get ZWSP breaks in [plainBlockSpan]; clip any
+          // remainder so the bubble never paints a yellow/black overflow.
+          overflow: TextOverflow.clip,
         );
     }
     if (widgets.isNotEmpty) widgets.add(const SizedBox(height: 6));
@@ -236,7 +239,7 @@ InlineSpan plainBlockSpan(
   }
 
   if (block.spans.isEmpty && block.uris.isEmpty && mentionHits.isEmpty) {
-    return TextSpan(text: text, style: style);
+    return TextSpan(text: softBreakLongRuns(text), style: style);
   }
 
   final bounds = <int>{0, text.length};
@@ -271,11 +274,14 @@ InlineSpan plainBlockSpan(
       }
     }
 
+    // Display-only breaks; link targets stay the raw URL.
+    final shown = softBreakLongRuns(chunk);
+
     final link = _linkCovering(block.uris, a, b);
     if (link != null) {
       children.add(
         TextSpan(
-          text: chunk,
+          text: shown,
           style: linkStyle.merge(
             TextStyle(
               fontWeight: segStyle.fontWeight,
@@ -299,7 +305,7 @@ InlineSpan plainBlockSpan(
     if (mentioned) {
       children.add(
         TextSpan(
-          text: chunk,
+          text: shown,
           style: mentionResolved.merge(
             TextStyle(
               fontStyle: segStyle.fontStyle,
@@ -312,7 +318,7 @@ InlineSpan plainBlockSpan(
       continue;
     }
 
-    children.add(TextSpan(text: chunk, style: segStyle));
+    children.add(TextSpan(text: shown, style: segStyle));
   }
 
   return TextSpan(style: style, children: children);
@@ -339,6 +345,27 @@ StyleLink? _linkCovering(List<StyleLink> links, int a, int b) {
     if (a >= l.start && b <= l.end) return l;
   }
   return null;
+}
+
+/// Zero-width break opportunities in long runs (URLs, tokens). Not used for
+/// fenced code — that lives in [CodeSnippet] with horizontal scroll.
+String softBreakLongRuns(String text, {int every = 24}) {
+  if (text.length < every) return text;
+  final out = StringBuffer();
+  var run = 0;
+  for (final c in text.characters) {
+    out.write(c);
+    if (c == '\n' || c == '\r' || c == '\t' || c == ' ' || c == '\u200B') {
+      run = 0;
+      continue;
+    }
+    run++;
+    if (run >= every) {
+      out.write('\u200B');
+      run = 0;
+    }
+  }
+  return out.toString();
 }
 
 /// Builds spans with link taps (and optional IM styles via full pipeline).

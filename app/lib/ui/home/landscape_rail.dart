@@ -3,6 +3,9 @@
 //
 // Landscape chrome: a rail that sits *beside* the root navigator, so a
 // pushed page replaces the tab body and leaves the rail in place.
+//
+// Column-mode nesting (tray + inset chat) lives in [TwoColumnLayout] only —
+// no tinted canvas, outer gutter, or dual cards here.
 
 import 'package:flutter/material.dart';
 
@@ -34,21 +37,26 @@ class LandscapeFrame extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final tg = context.tg;
+    // Main content keeps a left-edge radius beside the rail. Same page
+    // background as the rail so the corner crescents read cleanly.
+    const contentRadius = BorderRadius.only(
+      topLeft: Radius.circular(kDesktopContentRadius),
+      bottomLeft: Radius.circular(kDesktopContentRadius),
+    );
     return _ShellOverlay(
       child: ColoredBox(
-        color: desktopCanvasOf(context),
-        child: Padding(
-          padding: const EdgeInsets.all(kDesktopGutter),
-          child: Row(
-            children: [
-              LandscapeNavRail(
-                navigatorKey: navigatorKey,
-                onSelectTab: (index) => _selectTab(ref, index),
-              ),
-              const SizedBox(width: kDesktopGutter),
-              Expanded(child: DesktopPane(child: child)),
-            ],
-          ),
+        color: tg.pageBackground,
+        child: Row(
+          children: [
+            LandscapeNavRail(
+              navigatorKey: navigatorKey,
+              onSelectTab: (index) => _selectTab(ref, index),
+            ),
+            Expanded(
+              child: ClipRRect(borderRadius: contentRadius, child: child),
+            ),
+          ],
         ),
       ),
     );
@@ -102,9 +110,7 @@ class LandscapeNavRail extends ConsumerWidget {
       selectedIndex: tab,
       onDestinationSelected: onSelectTab,
       labelType: NavigationRailLabelType.all,
-      // Let the tinted desktop canvas show through; the rail is chrome on
-      // the canvas, not another opaque column.
-      backgroundColor: Colors.transparent,
+      backgroundColor: tg.pageBackground,
       indicatorColor: tg.accent.withValues(alpha: 0.09),
       selectedIconTheme: IconThemeData(color: tg.accent, size: 24),
       unselectedIconTheme: IconThemeData(color: tg.textPrimary, size: 24),

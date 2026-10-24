@@ -14,6 +14,8 @@ import 'package:resonchat/persistence/database.dart';
 import 'package:resonchat/ui/chat/appearance.dart';
 import 'package:resonchat/ui/chat/linkified_text.dart';
 import 'package:resonchat/ui/chat/media_attachment.dart';
+import 'package:resonchat/ui/chat/message_actions.dart'
+    show messageMenuTapRegionGroup;
 import 'package:resonchat/ui/chat/read_ring.dart';
 import 'package:resonchat/ui/theme.dart';
 import 'package:resonchat/xmpp/chat/reactions.dart';
@@ -334,6 +336,8 @@ class MessageBubble extends StatelessWidget {
           TgDimens.bubblePaddingH + 4,
           TgDimens.bubblePaddingV,
         ),
+        // Body above, time/status below — avoids Row(Flexible+meta) which
+        // reserved an empty strip beside the text and often overflowed.
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.end,
           mainAxisSize: MainAxisSize.min,
@@ -343,62 +347,56 @@ class MessageBubble extends StatelessWidget {
                 padding: const EdgeInsets.only(bottom: 4),
                 child: MediaAttachment(message: message!, chatKey: chatKey),
               ),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Flexible(
-                  child: _shouldHideUrlBody(message, text)
-                      ? const SizedBox.shrink()
-                      : textSelecting
-                      ? _SelectingMessageText(
-                          text: text,
-                          style: bodyStyle,
-                          onChanged: onTextSelectionChanged,
-                        )
-                      : LinkifiedText(
-                          text: text,
-                          style: bodyStyle,
-                          highlightNicks: highlightNicks,
-                          mentionStyle: bodyStyle.copyWith(
-                            fontWeight: FontWeight.w700,
-                            color: tg.accent,
-                          ),
-                          linkStyle: bodyStyle.copyWith(
-                            color: tg.accent,
-                            decoration: TextDecoration.underline,
-                            decorationColor: tg.accent,
-                          ),
-                          quoteColor: tg.textSecondary,
+            if (!_shouldHideUrlBody(message, text) &&
+                (textSelecting || text.isNotEmpty))
+              textSelecting
+                  ? _SelectingMessageText(
+                      text: text,
+                      style: bodyStyle,
+                      onChanged: onTextSelectionChanged,
+                    )
+                  : LinkifiedText(
+                      text: text,
+                      style: bodyStyle,
+                      highlightNicks: highlightNicks,
+                      mentionStyle: bodyStyle.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: tg.accent,
+                      ),
+                      linkStyle: bodyStyle.copyWith(
+                        color: tg.accent,
+                        decoration: TextDecoration.underline,
+                        decorationColor: tg.accent,
+                      ),
+                      quoteColor: tg.textSecondary,
+                    ),
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (edited && !retracted)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: Text(
+                        context.l10n.edited,
+                        style: TextStyle(
+                          fontSize: TgDimens.timeFontSize - 1,
+                          color: tg.textSecondary,
                         ),
-                ),
-                if (!textSelecting &&
-                    !retracted &&
-                    !_shouldHideUrlBody(message, text) &&
-                    text.isNotEmpty)
-                  const SizedBox(width: 3),
-                if (edited && !retracted)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 6, bottom: 2),
-                    child: Text(
-                      context.l10n.edited,
-                      style: TextStyle(
-                        fontSize: TgDimens.timeFontSize - 1,
-                        color: tg.textSecondary,
                       ),
                     ),
+                  _MetaRow(
+                    time: time,
+                    sendStatus: sendStatus,
+                    delivered: delivered,
+                    displayed: displayed,
+                    failed: failed,
+                    mine: mine,
+                    encMode: encMode,
                   ),
-                const SizedBox(width: 8),
-                _MetaRow(
-                  time: time,
-                  sendStatus: sendStatus,
-                  delivered: delivered,
-                  displayed: displayed,
-                  failed: failed,
-                  mine: mine,
-                  encMode: encMode,
-                ),
-              ],
+                ],
+              ),
             ),
           ],
         ),
@@ -410,104 +408,118 @@ class MessageBubble extends StatelessWidget {
     const avatarRadius = 18.0;
     const avatarGutterWidth = avatarRadius * 2 + 6;
 
-    final bodyColumn = Column(
-      crossAxisAlignment: mine
-          ? CrossAxisAlignment.end
-          : CrossAxisAlignment.start,
-      children: [
-        if (senderName != null)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 2, left: 4, right: 12),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (mentionsMe) ...[
-                  Icon(Icons.alternate_email, size: 14, color: tg.accent),
-                  const SizedBox(width: 4),
-                ],
-                Text(
-                  senderName!,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: senderColor ?? tg.accent,
-                    fontWeight: FontWeight.w500,
-                  ),
+    // Cap width only (no Flexible around the bubble). Leave room for the
+    // read ring so the row cannot overflow by ring + full-width bubble.
+    final bodyColumn = LayoutBuilder(
+      builder: (context, constraints) {
+        const ringSlot = 15.0 + 4.0;
+        final hasRing = mine && readFraction != null;
+        final bubbleCap = ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: constraints.maxWidth - (hasRing ? ringSlot : 0),
+          ),
+          child: bubble,
+        );
+        return Column(
+          crossAxisAlignment: mine
+              ? CrossAxisAlignment.end
+              : CrossAxisAlignment.start,
+          children: [
+            if (senderName != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 2, left: 4, right: 12),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (mentionsMe) ...[
+                      Icon(Icons.alternate_email, size: 14, color: tg.accent),
+                      const SizedBox(width: 4),
+                    ],
+                    Text(
+                      senderName!,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: senderColor ?? tg.accent,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
+            if (replyTo.isNotEmpty && !retracted)
+              Align(
+                // Same side as the bubble — a full-width Row would pin the quote
+                // to the left even for outgoing replies.
+                alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+                child: _ReplyQuote(body: replyBody, author: replyAuthor),
+              ),
+            Align(
+              alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  if (hasRing) ...[
+                    ReadRing(fraction: readFraction!, onTap: onReadRing),
+                    const SizedBox(width: 4),
+                  ],
+                  bubbleCap,
+                ],
+              ),
             ),
-          ),
-        if (replyTo.isNotEmpty && !retracted)
-          Align(
-            // Same side as the bubble — a full-width Row would pin the quote
-            // to the left even for outgoing replies.
-            alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
-            child: _ReplyQuote(body: replyBody, author: replyAuthor),
-          ),
-        Align(
-          alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              if (mine && readFraction != null) ...[
-                ReadRing(fraction: readFraction!, onTap: onReadRing),
-                const SizedBox(width: 4),
-              ],
-              bubble,
-            ],
-          ),
-        ),
-        if (!retracted &&
-            (translating ||
-                (translation != null && translation!.trim().isNotEmpty)))
-          Padding(
-            padding: EdgeInsets.only(
-              top: 4,
-              left: mine ? 0 : 12,
-              right: mine ? 12 : 0,
-            ),
-            child: translating
-                ? SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: tg.textSecondary,
-                    ),
-                  )
-                : Text(
-                    translation!,
-                    style: TextStyle(
-                      fontSize: TgDimens.messageFontSize - 1,
-                      color: tg.textSecondary,
-                      height: 1.3,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-          ),
-        if (reactions.isNotEmpty && !retracted)
-          Padding(
-            padding: EdgeInsets.only(
-              top: 3,
-              left: mine ? 0 : 10,
-              right: mine ? 10 : 0,
-            ),
-            child: Wrap(
-              spacing: 4,
-              runSpacing: 4,
-              alignment: mine ? WrapAlignment.end : WrapAlignment.start,
-              children: [
-                for (final reaction in reactions)
-                  ReactionChip(
-                    reaction: reaction,
-                    onTap: onReact == null
-                        ? null
-                        : () => onReact!(reaction.emoji),
-                  ),
-              ],
-            ),
-          ),
-      ],
+            if (!retracted &&
+                (translating ||
+                    (translation != null && translation!.trim().isNotEmpty)))
+              Padding(
+                padding: EdgeInsets.only(
+                  top: 4,
+                  left: mine ? 0 : 12,
+                  right: mine ? 12 : 0,
+                ),
+                child: translating
+                    ? SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: tg.textSecondary,
+                        ),
+                      )
+                    : Text(
+                        translation!,
+                        style: TextStyle(
+                          fontSize: TgDimens.messageFontSize - 1,
+                          color: tg.textSecondary,
+                          height: 1.3,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+              ),
+            if (reactions.isNotEmpty && !retracted)
+              Padding(
+                padding: EdgeInsets.only(
+                  top: 3,
+                  left: mine ? 0 : 10,
+                  right: mine ? 10 : 0,
+                ),
+                child: Wrap(
+                  spacing: 4,
+                  runSpacing: 4,
+                  alignment: mine ? WrapAlignment.end : WrapAlignment.start,
+                  children: [
+                    for (final reaction in reactions)
+                      ReactionChip(
+                        reaction: reaction,
+                        onTap: onReact == null
+                            ? null
+                            : () => onReact!(reaction.emoji),
+                      ),
+                  ],
+                ),
+              ),
+          ],
+        );
+      },
     );
 
     // Selection checkbox sits leftmost (before the avatar), matching Telegram
@@ -584,7 +596,8 @@ class MessageBubble extends StatelessWidget {
 /// Body text with a live selection while the message menu is open.
 ///
 /// Starts with the whole body selected. The platform toolbar is suppressed
-/// because Copy selection lives on the menu beside the bubble.
+/// because Copy selection lives on the menu. Same [messageMenuTapRegionGroup]
+/// as the action grid so selection taps do not dismiss the menu.
 class _SelectingMessageText extends StatefulWidget {
   const _SelectingMessageText({
     required this.text,
@@ -634,15 +647,18 @@ class _SelectingMessageTextState extends State<_SelectingMessageText> {
 
   @override
   Widget build(BuildContext context) {
-    return SelectableText(
-      widget.text,
-      style: widget.style,
-      showCursor: false,
-      contextMenuBuilder: (context, editableTextState) =>
-          const SizedBox.shrink(),
-      onSelectionChanged: (selection, _) {
-        widget.onChanged?.call(selection.textInside(widget.text));
-      },
+    return TapRegion(
+      groupId: messageMenuTapRegionGroup,
+      child: SelectableText(
+        widget.text,
+        style: widget.style,
+        showCursor: false,
+        contextMenuBuilder: (context, editableTextState) =>
+            const SizedBox.shrink(),
+        onSelectionChanged: (selection, _) {
+          widget.onChanged?.call(selection.textInside(widget.text));
+        },
+      ),
     );
   }
 }

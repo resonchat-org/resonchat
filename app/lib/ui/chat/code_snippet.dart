@@ -9,7 +9,10 @@ import 'package:flutter/services.dart';
 import 'package:resonchat/l10n/l10n.dart';
 
 /// Monospace code card (Gajim conversation `CodeWidget`, no syntax highlight).
-class CodeSnippet extends StatelessWidget {
+///
+/// Lines do not wrap: a visible horizontal scrollbar pans long lines; tall
+/// scripts also scroll vertically.
+class CodeSnippet extends StatefulWidget {
   const CodeSnippet({
     super.key,
     required this.code,
@@ -22,14 +25,29 @@ class CodeSnippet extends StatelessWidget {
   final TextStyle? textStyle;
 
   @override
+  State<CodeSnippet> createState() => _CodeSnippetState();
+}
+
+class _CodeSnippetState extends State<CodeSnippet> {
+  final _horizontal = ScrollController();
+  final _vertical = ScrollController();
+
+  @override
+  void dispose() {
+    _horizontal.dispose();
+    _vertical.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final l10n = context.l10n;
-    final label = (language == null || language!.isEmpty)
+    final label = (widget.language == null || widget.language!.isEmpty)
         ? l10n.codeSnippet
-        : language!;
+        : widget.language!;
     final mono =
-        (textStyle ?? theme.textTheme.bodyMedium)?.copyWith(
+        (widget.textStyle ?? theme.textTheme.bodyMedium)?.copyWith(
           fontFamily: 'monospace',
           fontFamilyFallback: const [
             'Courier',
@@ -38,7 +56,7 @@ class CodeSnippet extends StatelessWidget {
             'Monaco',
             'Consolas',
           ],
-          fontSize: (textStyle?.fontSize ?? 14) * 0.92,
+          fontSize: (widget.textStyle?.fontSize ?? 14) * 0.92,
           height: 1.35,
         ) ??
         const TextStyle(fontFamily: 'monospace', fontSize: 13);
@@ -79,7 +97,7 @@ class CodeSnippet extends StatelessWidget {
                   icon: const Icon(Icons.copy_outlined, size: 18),
                   visualDensity: VisualDensity.compact,
                   onPressed: () async {
-                    await Clipboard.setData(ClipboardData(text: code));
+                    await Clipboard.setData(ClipboardData(text: widget.code));
                     if (!context.mounted) return;
                     ScaffoldMessenger.of(context)
                         .showSnackBar(SnackBar(content: Text(l10n.copied)));
@@ -90,9 +108,31 @@ class CodeSnippet extends StatelessWidget {
           ),
           Divider(height: 1, color: theme.colorScheme.outlineVariant),
           Flexible(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
-              child: SelectableText(code, style: mono),
+            child: Scrollbar(
+              controller: _vertical,
+              thumbVisibility: true,
+              child: SingleChildScrollView(
+                controller: _vertical,
+                padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
+                child: Scrollbar(
+                  controller: _horizontal,
+                  thumbVisibility: true,
+                  trackVisibility: true,
+                  scrollbarOrientation: ScrollbarOrientation.bottom,
+                  notificationPredicate: (notification) =>
+                      notification.metrics.axis == Axis.horizontal,
+                  child: SingleChildScrollView(
+                    controller: _horizontal,
+                    scrollDirection: Axis.horizontal,
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: SelectionArea(
+                        child: Text(widget.code, style: mono, softWrap: false),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             ),
           ),
         ],

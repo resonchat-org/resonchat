@@ -3,10 +3,8 @@
 //
 // FluffyChat `TwoColumnLayout`: fixed-width list + expanded conversation.
 //
-// The two panes are cards on a tinted canvas, with a gutter between them,
-// instead of one surface split by a vertical divider. The old 1 px line
-// looked like a hard seam at desktop widths; the gutter also gives the
-// conversation's wallpaper an edge of its own.
+// Column mode only: one deepened tray; the conversation sits inset inside it
+// (left-edge radius + border), not as a sibling card and not stretched flush.
 
 import 'package:flutter/material.dart';
 
@@ -28,15 +26,11 @@ class TwoColumnLayout extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ColoredBox(
-      color: desktopCanvasOf(context),
+      color: desktopListTrayOf(context),
       child: Row(
         children: [
-          SizedBox(
-            width: mainWidth,
-            child: DesktopPane(child: mainView),
-          ),
-          const SizedBox(width: kDesktopGutter),
-          Expanded(child: DesktopPane(child: sideView)),
+          SizedBox(width: mainWidth, child: mainView),
+          Expanded(child: DesktopChatPane(child: sideView)),
         ],
       ),
     );

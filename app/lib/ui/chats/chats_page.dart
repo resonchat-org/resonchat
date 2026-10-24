@@ -20,6 +20,8 @@ import 'package:resonchat/ui/chats/chat_row.dart';
 import 'package:resonchat/ui/chats/chats_filter_bar.dart';
 import 'package:resonchat/ui/chats/search.dart';
 import 'package:resonchat/ui/chats/unread.dart';
+import 'package:resonchat/ui/column_mode.dart';
+import 'package:resonchat/ui/desktop_surface.dart';
 import 'package:resonchat/ui/home/open_chat.dart';
 import 'package:resonchat/ui/home/shell_actions.dart';
 import 'package:resonchat/ui/theme.dart';
@@ -119,12 +121,31 @@ class _ChatsPageState extends ConsumerState<ChatsPage>
       });
     }
 
+    // Column mode: ResonChat bar matches the deepened list tray (no separate
+    // bar colour, no seam). Portrait keeps the themed accent AppBar.
+    final column = isColumnMode(context);
+    final tg = context.tg;
+    final tray = column ? desktopListTrayOf(context) : null;
     return Scaffold(
+      backgroundColor: tray,
       appBar: AppBar(
         // Filter hamburger opens the account panel; no AppBar drawer leading.
         automaticallyImplyLeading: false,
         title: Text(l10n.appName),
         actions: portraitShellActions(context),
+        backgroundColor: tray,
+        foregroundColor: column ? tg.textPrimary : null,
+        surfaceTintColor: column ? Colors.transparent : null,
+        scrolledUnderElevation: column ? 0 : null,
+        titleTextStyle: column
+            ? TextStyle(
+                color: tg.textPrimary,
+                fontSize: TgDimens.chatTitleFontSize,
+                fontWeight: FontWeight.w600,
+              )
+            : null,
+        iconTheme: column ? IconThemeData(color: tg.textPrimary) : null,
+        actionsIconTheme: column ? IconThemeData(color: tg.textPrimary) : null,
       ),
       // ClipRect: SlideTransition moves the panel by its own width to the
       // left of this body. Without clipping it paints over the landscape

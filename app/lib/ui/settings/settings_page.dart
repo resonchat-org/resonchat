@@ -23,6 +23,7 @@ import 'package:resonchat/translate/translation_engine.dart';
 import 'package:resonchat/translate/translation_prefs.dart';
 import 'package:resonchat/ui/accent_theme.dart';
 import 'package:resonchat/ui/archive/archive_page.dart';
+import 'package:resonchat/ui/chat/send_shortcut_prefs.dart';
 import 'package:resonchat/ui/settings/app_lock_pin_sheet.dart';
 import 'package:resonchat/ui/settings/auto_reply_page.dart';
 import 'package:resonchat/ui/settings/settings_viewmodel.dart';
@@ -297,6 +298,16 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           ),
 
           _header(tg, l10n.messageSettings),
+          if (isDesktopSendShortcutHost)
+            SwitchListTile(
+              secondary: const Icon(Icons.keyboard_return),
+              title: Text(l10n.sendWithEnter),
+              subtitle: Text(l10n.sendWithEnterSummary),
+              value: ref.watch(sendWithEnterProvider),
+              onChanged: (v) => unawaited(
+                ref.read(sendWithEnterProvider.notifier).setEnabled(v),
+              ),
+            ),
           SwitchListTile(
             secondary: const Icon(Icons.done),
             title: Text(l10n.deliveryReceipts),

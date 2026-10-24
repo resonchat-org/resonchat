@@ -1,8 +1,8 @@
 // Copyright (C) 2026 ResonChat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// Desktop split: the chat list and the conversation are cards on a tinted
-// canvas with a gutter, not one surface cut by a 1 px divider.
+// Desktop split: conversation nested inset in the list tray (left-edge
+// radius + border), not dual cards and not stretched flush.
 
 import 'package:flutter/material.dart';
 
@@ -25,7 +25,9 @@ Widget wrap(Widget child) => MaterialApp(
 );
 
 void main() {
-  testWidgets('the two panes are separate rounded cards', (tester) async {
+  testWidgets('the conversation is nested inset in the list tray', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(1200, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -42,23 +44,38 @@ void main() {
     );
 
     expect(find.byType(VerticalDivider), findsNothing);
-    expect(find.byType(DesktopPane), findsNWidgets(2));
+    expect(find.byType(DesktopChatPane), findsOneWidget);
 
-    final gutter = tester.widget<SizedBox>(
-      find.byWidgetPredicate(
-        (widget) => widget is SizedBox && widget.width == kDesktopGutter,
-      ),
+    final radius = BorderRadius.circular(kDesktopChatRadius);
+    expect(
+      tester
+          .widgetList<Container>(find.byType(Container))
+          .where(
+            (c) =>
+                c.clipBehavior == Clip.antiAlias &&
+                c.decoration is BoxDecoration &&
+                (c.decoration! as BoxDecoration).borderRadius == radius,
+          ),
+      isNotEmpty,
     );
-    expect(gutter.width, kDesktopGutter);
 
-    final radius = BorderRadius.circular(kDesktopPaneRadius);
-    final rounded = tester
-        .widgetList<ClipRRect>(find.byType(ClipRRect))
-        .where((clip) => clip.borderRadius == radius);
-    expect(rounded.length, greaterThanOrEqualTo(2));
+    expect(
+      tester
+          .widgetList<Padding>(find.byType(Padding))
+          .where(
+            (p) =>
+                p.padding ==
+                const EdgeInsets.only(
+                  top: kDesktopChatInset,
+                  right: kDesktopChatInset,
+                  bottom: kDesktopChatInset,
+                ),
+          ),
+      isNotEmpty,
+    );
   });
 
-  testWidgets('the desktop shell has no hard divider beside the rail', (
+  testWidgets('the main content keeps a left-edge radius beside the rail', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1200, 800);
@@ -78,12 +95,25 @@ void main() {
     await tester.pump();
 
     expect(find.byType(VerticalDivider), findsNothing);
-    expect(find.byType(DesktopPane), findsOneWidget);
+    expect(find.byType(DesktopChatPane), findsNothing);
+
+    const radius = BorderRadius.only(
+      topLeft: Radius.circular(kDesktopContentRadius),
+      bottomLeft: Radius.circular(kDesktopContentRadius),
+    );
+    expect(
+      tester
+          .widgetList<ClipRRect>(find.byType(ClipRRect))
+          .where((c) => c.borderRadius == radius),
+      isNotEmpty,
+    );
   });
 
-  testWidgets('the canvas is tinted in light and dark themes', (tester) async {
+  testWidgets('the list tray is deeper than the page background', (
+    tester,
+  ) async {
     for (final brightness in Brightness.values) {
-      late Color canvas;
+      late Color tray;
       late Color page;
       await tester.pumpWidget(
         MaterialApp(
@@ -92,14 +122,15 @@ void main() {
               : AppThemeTokens.dark(),
           home: Builder(
             builder: (context) {
-              canvas = desktopCanvasOf(context);
+              tray = desktopListTrayOf(context);
               page = context.tg.pageBackground;
               return const SizedBox.shrink();
             },
           ),
         ),
       );
-      expect(canvas, isNot(page));
+      expect(tray, isNot(page));
+      expect(tray.computeLuminance(), lessThan(page.computeLuminance()));
     }
   });
 }
