@@ -157,6 +157,16 @@ class _IncomingContactRowState extends ConsumerState<_IncomingContactRow> {
     setState(() => _busy = false);
   }
 
+  Future<void> _block() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    await ref
+        .read(pendingRequestsViewModelProvider.notifier)
+        .blockSubscription(widget.request.jid);
+    if (!mounted) return;
+    setState(() => _busy = false);
+  }
+
   @override
   Widget build(BuildContext context) {
     final tg = context.tg;
@@ -180,6 +190,12 @@ class _IncomingContactRowState extends ConsumerState<_IncomingContactRow> {
           : Row(
               mainAxisSize: MainAxisSize.min,
               children: [
+                IconButton(
+                  onPressed: () => _block(),
+                  icon: const Icon(Icons.block),
+                  tooltip: l10n.block,
+                  color: tg.danger,
+                ),
                 IconButton(
                   onPressed: () => _answer(false),
                   icon: const Icon(Icons.close),

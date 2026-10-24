@@ -22,8 +22,32 @@
 //     types must be allowed to, because refusing silently is its own kind of
 //     lie.
 
+import 'package:moxxmpp/moxxmpp.dart' show JID;
+
 import 'package:resonchat/persistence/database.dart';
 import 'package:resonchat/xmpp/connection.dart';
+
+/// One XEP-0191 push from the server (or another of our devices).
+sealed class BlocklistChange {
+  const BlocklistChange();
+}
+
+/// `<block><item jid='…'/>…</block>` — add these JIDs.
+class BlocklistBlocked extends BlocklistChange {
+  const BlocklistBlocked(this.jids);
+  final Set<String> jids;
+}
+
+/// `<unblock><item jid='…'/>…</unblock>` — remove only these JIDs.
+class BlocklistUnblocked extends BlocklistChange {
+  const BlocklistUnblocked(this.jids);
+  final Set<String> jids;
+}
+
+/// Empty `<unblock/>` — clear the entire list.
+class BlocklistCleared extends BlocklistChange {
+  const BlocklistCleared();
+}
 
 /// Why an inbound message from a blocked contact was not handled normally.
 ///
@@ -64,9 +88,16 @@ Future<bool> blockContact(
   String jid, {
   bool alsoUnfollow = true,
 }) async {
-  await db.addBlocked(jid);
+  final bare = JID.fromString(jid).toBare().toString();
+  await db.addBlocked(bare);
+  // A block means we never want their presence request either.
+  try {
+    await xmpp.rejectSubscription(JID.fromString(bare));
+  } catch (_) {}
+  xmpp.resolveIncomingRequest(JID.fromString(bare));
+  await db.resolveRequest(bare, outgoing: false);
   if (!alsoUnfollow) return false;
-  return xmpp.blockOnServer([jid]);
+  return xmpp.blockOnServer([bare]);
 }
 
 /// Unblocks [jid] locally and, if it was blocked there, on the server.
@@ -79,8 +110,23 @@ Future<void> unblockContact(
   AppDatabase db,
   String jid,
 ) async {
-  await db.removeBlocked(jid);
-  await xmpp.unblockOnServer([jid]);
+  final bare = JID.fromString(jid).toBare().toString();
+  await db.removeBlocked(bare);
+  await xmpp.unblockOnServer([bare]);
+}
+
+/// Merge the server's XEP-0191 list into the local store (add missing only).
+///
+/// Local-only blocks are kept: many servers lack Blocking and a replace would
+/// erase the user's device-side decisions.
+Future<void> mergeServerBlocklist(XmppService xmpp, AppDatabase db) async {
+  final remote = await xmpp.fetchServerBlocklist();
+  if (remote == null) return;
+  for (final jid in remote) {
+    final bare = JID.fromString(jid).toBare().toString();
+    if (bare.isEmpty) continue;
+    await db.addBlocked(bare);
+  }
 }
 
 /// Applies a block pushed by our own server (XEP-0191 push).

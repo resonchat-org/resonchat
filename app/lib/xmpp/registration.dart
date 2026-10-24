@@ -5,6 +5,9 @@
 // Opens a short-lived connection with no SASL, runs IBR, disconnects.
 // The caller then logs in normally.
 
+import 'dart:convert';
+
+import 'package:http/http.dart' as http;
 import 'package:logging/logging.dart';
 import 'package:moxxmpp/moxxmpp.dart';
 
@@ -43,10 +46,10 @@ class RegisterAccountResult {
 }
 
 /// Public providers list (Copinc `available_domains`) — all treated equally.
+/// Default queue for the registration UI; not fetched until the user asks.
 const kPublicXmppProviders = <String>[
   'monocles.de',
   'monocles.eu',
-  'conversations.im',
   'draugr.de',
   'deshalbfrei.org',
   'ubuntu-jabber.de',
@@ -62,6 +65,60 @@ const kPublicXmppProviders = <String>[
   'xmpp.party',
   'yax.im',
 ];
+
+/// Gajim `providers_list_url` default — category B (suitable for automatic
+/// registration UIs). Fetched only when the user taps the register-page button.
+const kXmppProvidersListUrl =
+    'https://data.xmpp.net/providers/v2/providers-B.json';
+
+/// Parse a providers-v2 JSON body into unique lowercase domain JIDs.
+List<String> parseXmppProvidersJson(String body) {
+  final decoded = jsonDecode(body);
+  if (decoded is! List) {
+    throw const FormatException('providers list is not an array');
+  }
+  final out = <String>[];
+  final seen = <String>{};
+  for (final item in decoded) {
+    if (item is! Map) continue;
+    final jid = item['jid'];
+    if (jid is! String) continue;
+    final domain = jid.trim().toLowerCase();
+    if (domain.isEmpty || !seen.add(domain)) continue;
+    out.add(domain);
+  }
+  return out;
+}
+
+/// Download [kXmppProvidersListUrl] (or [url]) and return domain JIDs.
+///
+/// Uses [appNetwork] so SOCKS5 applies the same as other app HTTP. Does not
+/// fall back to [kPublicXmppProviders] — callers replace their queue on
+/// success and keep the previous list on failure.
+Future<List<String>> fetchPublicXmppProviders({
+  http.Client? client,
+  Uri? url,
+  Duration timeout = const Duration(seconds: 20),
+}) async {
+  await appNetwork.waitUntilReady();
+  final httpClient = client ?? appNetwork.createHttpClient();
+  final owned = client == null;
+  try {
+    final resp = await httpClient
+        .get(url ?? Uri.parse(kXmppProvidersListUrl))
+        .timeout(timeout);
+    if (resp.statusCode < 200 || resp.statusCode >= 300) {
+      throw StateError('HTTP ${resp.statusCode}');
+    }
+    final list = parseXmppProvidersJson(resp.body);
+    if (list.isEmpty) {
+      throw StateError('empty providers list');
+    }
+    return list;
+  } finally {
+    if (owned) httpClient.close();
+  }
+}
 
 /// Run XEP-0077 registration, then disconnect.
 ///

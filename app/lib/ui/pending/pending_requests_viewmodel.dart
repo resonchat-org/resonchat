@@ -14,6 +14,7 @@ import 'package:resonchat/account/chat_ref.dart';
 import 'package:resonchat/persistence/database.dart';
 import 'package:resonchat/state/providers.dart';
 import 'package:resonchat/xmpp/muc/muc.dart';
+import 'package:resonchat/xmpp/roster/blocking.dart';
 
 /// [chatKey] is set when the room was joined. [reason] is the join failure.
 class AcceptInviteResult {
@@ -54,6 +55,16 @@ class PendingRequestsViewModel extends Notifier<void> {
     }
     xmpp.resolveIncomingRequest(jid);
     await ref.read(databaseProvider).resolveRequest(bareJid, outgoing: false);
+  }
+
+  /// Decline and block (Gajim subscription menu "Block").
+  Future<void> blockSubscription(String bareJid) async {
+    final xmpp = ref.read(xmppServiceProvider);
+    final db = ref.read(databaseProvider);
+    await blockContact(xmpp, db, bareJid);
+    xmpp.blockedJids = await db.blockedJids();
+    ref.read(blockRevisionProvider.notifier).state =
+        ref.read(blockRevisionProvider) + 1;
   }
 
   Future<void> declineInvite(RoomInvitation invite) async {

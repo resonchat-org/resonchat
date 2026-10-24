@@ -24,6 +24,7 @@ import 'package:resonchat/ui/room/invite_member_sheet.dart';
 import 'package:resonchat/ui/room/occupant_actions.dart';
 import 'package:resonchat/ui/room/occupant_matrix.dart';
 import 'package:resonchat/ui/room/room_config_page.dart';
+import 'package:resonchat/ui/room/room_outcasts_page.dart';
 import 'package:resonchat/ui/room/room_profile_viewmodel.dart';
 import 'package:resonchat/ui/theme.dart';
 import 'package:resonchat/xmpp/connection.dart';
@@ -506,6 +507,21 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
                         MaterialPageRoute<void>(
                           builder: (_) =>
                               RoomConfigPage(chatKey: widget.chatJid),
+                        ),
+                      );
+                    },
+                  ),
+                if (caps?.canManageOutcasts ?? false)
+                  ListTile(
+                    leading: const Icon(Icons.person_off_outlined),
+                    title: Text(l10n.roomOutcasts),
+                    subtitle: Text(l10n.roomOutcastsSummary),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () {
+                      Navigator.of(context).push<void>(
+                        MaterialPageRoute<void>(
+                          builder: (_) =>
+                              RoomOutcastsPage(chatKey: widget.chatJid),
                         ),
                       );
                     },

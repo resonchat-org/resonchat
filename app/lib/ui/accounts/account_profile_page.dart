@@ -19,6 +19,7 @@ import 'package:resonchat/l10n/l10n.dart';
 import 'package:resonchat/persistence/account_store.dart';
 import 'package:resonchat/ui/accounts/account_profile_viewmodel.dart';
 import 'package:resonchat/ui/accounts/account_qr_code.dart';
+import 'package:resonchat/ui/accounts/blocked_contacts_page.dart';
 import 'package:resonchat/ui/contact_avatar.dart';
 import 'package:resonchat/ui/fingerprint_box.dart';
 import 'package:resonchat/ui/theme.dart';
@@ -335,6 +336,22 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
                 subtitle: Text(l10n.changePasswordSummary),
                 enabled: !ui.busy,
                 onTap: () => unawaited(_changePassword()),
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.block),
+                title: Text(l10n.blockedContacts),
+                subtitle: Text(l10n.blockedContactsSummary),
+                trailing: const Icon(Icons.chevron_right),
+                enabled: !ui.busy,
+                onTap: () {
+                  Navigator.of(context).push<void>(
+                    MaterialPageRoute<void>(
+                      builder: (_) =>
+                          BlockedContactsPage(accountId: widget.accountId),
+                    ),
+                  );
+                },
               ),
               const SizedBox(height: 28),
               Text(

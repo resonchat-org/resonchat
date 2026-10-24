@@ -58,6 +58,7 @@ class Occupant {
     required this.role,
     this.realJid,
     this.show,
+    this.reason,
   });
 
   /// The room-local nickname. Stable for as long as they are in the room, and
@@ -80,6 +81,9 @@ class Occupant {
   ///
   /// Null when offline / unavailable — not roster presence.
   final PresenceShow? show;
+
+  /// Optional ban reason from `muc#admin` (outcast list / ban set).
+  final String? reason;
 
   bool get isModerator => role == 'moderator';
   bool get canSpeak => role == 'moderator' || role == 'participant';
@@ -121,10 +125,12 @@ class Occupant {
       other.affiliation == affiliation &&
       other.role == role &&
       other.realJid == realJid &&
-      other.show == show;
+      other.show == show &&
+      other.reason == reason;
 
   @override
-  int get hashCode => Object.hash(nick, affiliation, role, realJid, show);
+  int get hashCode =>
+      Object.hash(nick, affiliation, role, realJid, show, reason);
 }
 
 /// JSON for the saved member list. Same fields the read ring and the roster
@@ -370,6 +376,10 @@ class RoomSelfCapabilities {
   /// XEP-0045 configuration form (`muc#owner`) — owners only.
   bool get canConfigureRoom => joined && affiliation == 'owner';
 
+  /// Gajim Outcasts tab: owners and admins may view/edit the ban list.
+  bool get canManageOutcasts =>
+      joined && (affiliation == 'owner' || affiliation == 'admin');
+
   bool canKick(Occupant target) => canKickOccupant(
     selfRole: role,
     selfAffiliation: affiliation,
@@ -426,11 +436,13 @@ Occupant? occupantFromAdminItem(XMLNode item) {
   final nick = (nickAttr != null && nickAttr.isNotEmpty)
       ? nickAttr
       : bare.split('@').first;
+  final reasonRaw = item.firstTag('reason')?.innerText().trim();
   return Occupant(
     nick: nick,
     affiliation: affiliation,
     role: role,
     realJid: bare,
+    reason: (reasonRaw != null && reasonRaw.isNotEmpty) ? reasonRaw : null,
   );
 }
 

@@ -1171,7 +1171,11 @@ class XmppService {
   }
 
   /// Gajim ban: set affiliation to `outcast` (needs a real bare JID).
-  Future<bool> banOccupant(String roomJid, Occupant occupant) async {
+  Future<bool> banOccupant(
+    String roomJid,
+    Occupant occupant, {
+    String? reason,
+  }) async {
     final bare = JID.fromString(roomJid).toBare().toString();
     final caps = await roomSelfCapabilities(bare);
     final real = occupant.realJid;
@@ -1183,7 +1187,7 @@ class XmppService {
     )) {
       return false;
     }
-    return setRoomAffiliation(bare, real, 'outcast');
+    return setRoomAffiliation(bare, real, 'outcast', reason: reason);
   }
 
   /// Grant (`participant`) or revoke (`visitor`) voice — Gajim mod menu.
@@ -1267,8 +1271,9 @@ class XmppService {
   Future<bool> setRoomAffiliation(
     String roomJid,
     String userBareJid,
-    String affiliation,
-  ) async {
+    String affiliation, {
+    String? reason,
+  }) async {
     final connection = _connection;
     if (connection == null) return false;
     final bare = JID.fromString(roomJid).toBare().toString();
@@ -1283,6 +1288,7 @@ class XmppService {
               mucAdminSetAffiliationQuery(
                 userBareJid: user,
                 affiliation: affiliation,
+                reason: reason,
               ),
             ],
           ),
@@ -1294,6 +1300,34 @@ class XmppService {
       _log.warning('setAffiliation $affiliation for $user in $bare: $e');
       return false;
     }
+  }
+
+  /// Gajim Outcasts: `muc#admin` get affiliation=outcast (on demand).
+  Future<List<Occupant>> fetchRoomOutcasts(String roomJid) async {
+    final bare = JID.fromString(roomJid).toBare().toString();
+    final caps = await roomSelfCapabilities(bare);
+    if (!caps.canManageOutcasts) return const [];
+    return _queryMucAffiliation(bare, 'outcast');
+  }
+
+  /// Ban [userBareJid] without requiring a live occupant (manual add).
+  Future<bool> banJid(
+    String roomJid,
+    String userBareJid, {
+    String? reason,
+  }) async {
+    final bare = JID.fromString(roomJid).toBare().toString();
+    final caps = await roomSelfCapabilities(bare);
+    if (!caps.canManageOutcasts) return false;
+    return setRoomAffiliation(bare, userBareJid, 'outcast', reason: reason);
+  }
+
+  /// Unban: affiliation → `none` (Gajim remove from outcast list).
+  Future<bool> unbanJid(String roomJid, String userBareJid) async {
+    final bare = JID.fromString(roomJid).toBare().toString();
+    final caps = await roomSelfCapabilities(bare);
+    if (!caps.canManageOutcasts) return false;
+    return setRoomAffiliation(bare, userBareJid, 'none');
   }
 
   /// `muc#admin` set role (Conversations `setRole`).
@@ -1761,16 +1795,51 @@ class XmppService {
   /// Returns the error rather than throwing, because a room can refuse for a
   /// dozen ordinary reasons — name taken, room full, password required,
   /// banned — and each needs a different sentence in front of the user.
+  ///
+  /// Concurrent joins for the same bare room (hub rejoin vs open-chat
+  /// [loadRoom]) share one in-flight future so we do not send a second join
+  /// presence while the first is still completing.
   Future<MUCError?> joinGroupChat(
     String roomJid,
     String nick, {
     Duration timeout = const Duration(seconds: 20),
   }) async {
+    final bare = JID.fromString(roomJid).toBare().toString();
+    final key = bare.toLowerCase();
+    final inflight = _mucJoinsInFlight[key];
+    if (inflight != null) {
+      _log.fine('join $bare already in flight; awaiting');
+      return inflight;
+    }
+    // Register before any await so a concurrent open-chat join cannot start
+    // a second presence while hub rejoin is still in disco/join.
+    late final Future<MUCError?> future;
+    future = () async {
+      try {
+        final already = await groupChatState(bare);
+        if (already != null && already.joined) return null;
+        return await _joinGroupChatBody(bare, nick, timeout: timeout);
+      } finally {
+        if (identical(_mucJoinsInFlight[key], future)) {
+          _mucJoinsInFlight.remove(key);
+        }
+      }
+    }();
+    _mucJoinsInFlight[key] = future;
+    return future;
+  }
+
+  Future<MUCError?> _joinGroupChatBody(
+    String bare,
+    String nick, {
+    required Duration timeout,
+  }) async {
     final manager = muc;
     if (manager == null) return NoNicknameSpecified();
-    final bare = JID.fromString(roomJid).toBare().toString();
-    // Disco before presence so a MAM room joins with no XEP-0045 history
-    // (Conversations `history.setMaxStanzas(0)` when `mamSupport()`).
+    // Disco before presence. Always request empty XEP-0045 history
+    // (maxstanzas=0): MAM rooms catch up via [_catchUpRoomArchive]; omitting
+    // <history/> lets the MUC dump its default discussion history (Gajim
+    // always sends maxchars=0 for the same reason).
     var info = await queryRoomInformation(bare);
     var mam = _roomMam[bare.toLowerCase()] ?? false;
     // moxxmpp's joinRoom waits on a completer that its presence handler
@@ -1780,14 +1849,13 @@ class XmppService {
     // that never returns. Bounded here rather than in moxxmpp so the reason
     // reaches the user as text.
     final result = await manager
-        .joinRoom(JID.fromString(bare), nick, maxHistoryStanzas: mam ? 0 : null)
+        .joinRoom(JID.fromString(bare), nick, maxHistoryStanzas: 0)
         .timeout(
           timeout,
           // The one error type moxxmpp does not have, which is the point: a
           // service that simply did not answer is a different thing from one
           // that refused, and the user needs to be told which happened.
-          onTimeout: () =>
-              Result<bool, MUCError>(MucServiceUnresponsive(roomJid)),
+          onTimeout: () => Result<bool, MUCError>(MucServiceUnresponsive(bare)),
         );
     if (!result.isType<bool>()) return result.get<MUCError>();
     if (info == null) {
@@ -1873,6 +1941,21 @@ class XmppService {
     }
   }
 
+  /// XEP-0191 get blocklist (Gajim `request_blocking_list`). Null if unsupported.
+  Future<List<String>?> fetchServerBlocklist() async {
+    final manager = _connection?.getManagerById<BlockingManager>(
+      blockingManager,
+    );
+    if (manager == null) return null;
+    try {
+      if (!await manager.isSupported()) return null;
+      return await manager.getBlocklist();
+    } catch (e) {
+      _log.fine('could not fetch server blocklist: $e');
+      return null;
+    }
+  }
+
   /// The blocked bare JIDs, consulted on every inbound message.
   ///
   /// Held on the service rather than read from the database per stanza: this is
@@ -1889,9 +1972,9 @@ class XmppService {
   Stream<BlockedMessageDropped> get blockedMessages => _blockedDropped.stream;
   final _blockedDropped = StreamController<BlockedMessageDropped>.broadcast();
 
-  /// The JIDs currently blocked, as last pushed by the server.
-  Stream<Set<String>> get blocklistChanges => _blocklistChanges.stream;
-  final _blocklistChanges = StreamController<Set<String>>.broadcast();
+  /// Server blocklist pushes (XEP-0191), as distinct add / remove / clear-all.
+  Stream<BlocklistChange> get blocklistChanges => _blocklistChanges.stream;
+  final _blocklistChanges = StreamController<BlocklistChange>.broadcast();
 
   /// Attaches the capability resolver so [autoShouldEncrypt] works.
   void attachCapabilities(CapabilityService service) => _capabilities = service;
@@ -3665,6 +3748,9 @@ class XmppService {
   /// Room disco advertises MAM (`urn:xmpp:mam:2`). Keyed by lowercased bare JID.
   final _roomMam = <String, bool>{};
 
+  /// In-flight [joinGroupChat] by lowercased bare room JID (dedupe hub vs UI).
+  final _mucJoinsInFlight = <String, Future<MUCError?>>{};
+
   /// Room disco advertises XEP-0359 (`urn:xmpp:sid:0`). Same key as [_roomMam].
   final _roomStableIds = <String, bool>{};
 
@@ -3924,10 +4010,16 @@ class XmppService {
       // Another of our devices blocked these. As authoritative as tapping the
       // button here, which is the whole reason this is a server-side list.
       if (!_blocklistChanges.isClosed) {
-        _blocklistChanges.add(event.items.toSet());
+        _blocklistChanges.add(BlocklistBlocked(event.items.toSet()));
       }
     } else if (event is BlocklistUnblockPushEvent) {
-      if (!_blocklistChanges.isClosed) _blocklistChanges.add(const {});
+      if (!_blocklistChanges.isClosed) {
+        _blocklistChanges.add(BlocklistUnblocked(event.items.toSet()));
+      }
+    } else if (event is BlocklistUnblockAllPushEvent) {
+      if (!_blocklistChanges.isClosed) {
+        _blocklistChanges.add(const BlocklistCleared());
+      }
     } else if (event is BookmarksUpdatedEvent) {
       if (!_bookmarksChanges.isClosed) _bookmarksChanges.add(null);
     } else if (event is PubSubNotificationEvent) {
@@ -3967,9 +4059,16 @@ class XmppService {
       // test that subscribes after asking — would be lost permanently. For
       // something the user is meant to decide on, losing it is not acceptable,
       // and "we told nobody" is indistinguishable from "it never happened".
-      _pendingIncoming.add(JID.fromString('${event.from}').toBare().toString());
+      final bare = JID.fromString('${event.from}').toBare().toString();
+      // Blocked contacts: never surface a request (Gajim-style deny).
+      if (blockedJids.contains(bare)) {
+        unawaited(rejectSubscription(JID.fromString(bare)));
+        _log.info('auto-rejected subscription from blocked $bare');
+        return;
+      }
+      _pendingIncoming.add(bare);
       if (!_incomingRequests.isClosed) {
-        _incomingRequests.add(JID.fromString('${event.from}').toBare());
+        _incomingRequests.add(JID.fromString(bare));
       }
       _log.info('subscription request from ${event.from}');
     }

@@ -10,6 +10,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:logging/logging.dart';
 import 'package:moxxmpp/moxxmpp.dart' show ExtendedRegistration;
 
 import 'package:resonchat/l10n/connect_failure_label.dart';
@@ -19,6 +20,8 @@ import 'package:resonchat/ui/login/login_viewmodel.dart';
 import 'package:resonchat/ui/settings/socks5_proxy_sheet.dart';
 import 'package:resonchat/ui/theme.dart';
 import 'package:resonchat/xmpp/registration.dart';
+
+final _log = Logger('RegisterPage');
 
 class RegisterPage extends ConsumerStatefulWidget {
   const RegisterPage({super.key, this.addAccountMode = false});
@@ -37,17 +40,18 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
   final _ownDomain = TextEditingController();
   final _host = TextEditingController();
 
+  late List<String> _providers;
   late String _selectedDomain;
   bool _useOwn = false;
   bool _busy = false;
+  bool _fetchingProviders = false;
   String? _error;
 
   @override
   void initState() {
     super.initState();
-    final providers = List<String>.from(kPublicXmppProviders)
-      ..shuffle(Random());
-    _selectedDomain = providers.first;
+    _providers = List<String>.from(kPublicXmppProviders)..shuffle(Random());
+    _selectedDomain = _providers.first;
   }
 
   @override
@@ -73,6 +77,34 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
     final domain = _domain;
     if (user.isEmpty || domain == null) return null;
     return '$user@$domain';
+  }
+
+  /// Gajim-style: opt-in download of providers-B.json; replaces the default
+  /// queue entirely on success (keeps the previous list on failure).
+  Future<void> _fetchProviders() async {
+    if (_fetchingProviders || _busy) return;
+    final l10n = context.l10n;
+    setState(() {
+      _fetchingProviders = true;
+      _error = null;
+    });
+    try {
+      final fetched = await fetchPublicXmppProviders();
+      if (!mounted) return;
+      final next = List<String>.from(fetched)..shuffle(Random());
+      setState(() {
+        _providers = next;
+        _selectedDomain = next.first;
+        _fetchingProviders = false;
+      });
+    } catch (e, st) {
+      _log.warning('providers list fetch failed', e, st);
+      if (!mounted) return;
+      setState(() {
+        _fetchingProviders = false;
+        _error = l10n.fetchProvidersListFailed;
+      });
+    }
   }
 
   Future<String?> _askCaptcha(ExtendedRegistration challenge) async {
@@ -225,22 +257,44 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
               InputDecorator(
                 decoration: InputDecoration(
                   labelText: l10n.chooseYourServer,
-                  enabled: !_useOwn,
+                  enabled: !_useOwn && !_fetchingProviders,
                 ),
                 child: DropdownButtonHideUnderline(
                   child: DropdownButton<String>(
                     isExpanded: true,
-                    value: _selectedDomain,
+                    value: _providers.contains(_selectedDomain)
+                        ? _selectedDomain
+                        : null,
                     items: [
-                      for (final d in kPublicXmppProviders)
+                      for (final d in _providers)
                         DropdownMenuItem(value: d, child: Text(d)),
                     ],
-                    onChanged: _useOwn
+                    onChanged: _useOwn || _fetchingProviders
                         ? null
                         : (v) {
                             if (v == null) return;
                             setState(() => _selectedDomain = v);
                           },
+                  ),
+                ),
+              ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: _useOwn || _fetchingProviders || _busy
+                      ? null
+                      : _fetchProviders,
+                  icon: _fetchingProviders
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.cloud_download_outlined, size: 18),
+                  label: Text(
+                    _fetchingProviders
+                        ? l10n.fetchingProvidersList
+                        : l10n.fetchProvidersList,
                   ),
                 ),
               ),

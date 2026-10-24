@@ -623,16 +623,19 @@ Future<void> togglePinned(
   await r.session.db.togglePinned(r.jid, stanzaId);
 }
 
-/// The bare JIDs currently blocked (XEP-0191).
+/// Bare JIDs blocked for [accountId] (XEP-0191 is per-account / per-server).
 ///
-/// Read from the store rather than from the service's in-memory copy: this is
-/// what the UI draws, and the store is the thing that survives a restart.
-final blockedJidsProvider = FutureProvider<Set<String>>((ref) async {
-  // Invalidated by every block and unblock, so the tiles redraw.
+/// Read from that account's store rather than the in-memory copy: this is what
+/// the UI draws, and the store is what survives a restart.
+final blockedJidsProvider = FutureProvider.family<Set<String>, String>((
+  ref,
+  accountId,
+) async {
   ref.watch(blockRevisionProvider);
-  final db = ref.watch(databaseOrNullProvider);
-  if (db == null) return const {};
-  return db.blockedJids();
+  ref.watch(accountHubProvider);
+  final session = accountHub.session(accountId);
+  if (session == null) return const {};
+  return session.db.blockedJids();
 });
 
 /// Bumped whenever the block list changes.

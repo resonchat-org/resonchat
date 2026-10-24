@@ -45,10 +45,11 @@ DataForm? parseMucOwnerConfigForm(XMLNode result) {
   return parseDataForm(x);
 }
 
-/// Admin set affiliation for [userBareJid].
+/// Admin set affiliation for [userBareJid] (optional ban [reason]).
 XMLNode mucAdminSetAffiliationQuery({
   required String userBareJid,
   required String affiliation,
+  String? reason,
 }) => XMLNode.xmlns(
   tag: 'query',
   xmlns: mucAdminXmlns,
@@ -56,6 +57,10 @@ XMLNode mucAdminSetAffiliationQuery({
     XMLNode(
       tag: 'item',
       attributes: {'jid': userBareJid, 'affiliation': affiliation},
+      children: [
+        if (reason != null && reason.trim().isNotEmpty)
+          XMLNode(tag: 'reason', text: reason.trim()),
+      ],
     ),
   ],
 );

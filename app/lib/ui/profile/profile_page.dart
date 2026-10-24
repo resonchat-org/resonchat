@@ -112,20 +112,59 @@ class ProfilePage extends ConsumerWidget {
           ChatAppearanceSection(chatJid: chatJid),
 
           ChatProfileSectionTitle(l10n.actions),
-          if (contact?.inRoster == true && chat?.isGroup != true)
-            ListTile(
-              leading: Icon(Icons.person_remove, color: tg.danger),
-              title: Text(
-                l10n.deleteContact,
-                style: TextStyle(color: tg.danger),
-              ),
-              subtitle: Text(l10n.deleteContactSummary),
-              onTap: connected
-                  ? () => confirmDeleteContact(context, chatJid, peer)
-                  : () => ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(l10n.notConnectedTryAgain)),
-                    ),
+          if (chat?.isGroup != true) ...[
+            Builder(
+              builder: (context) {
+                final blocked = ref.watch(isBlockedProvider(chatJid));
+                return ListTile(
+                  leading: Icon(
+                    blocked ? Icons.lock_open : Icons.block,
+                    color: blocked ? null : tg.danger,
+                  ),
+                  title: Text(
+                    blocked
+                        ? l10n.unblockContact(peer)
+                        : l10n.blockContact(peer),
+                    style: blocked ? null : TextStyle(color: tg.danger),
+                  ),
+                  subtitle: Text(
+                    blocked
+                        ? l10n.unblockContactSubtitle
+                        : l10n.blockContactSubtitle,
+                  ),
+                  onTap: () async {
+                    await toggleBlocked(
+                      ref,
+                      chatJid,
+                      currentlyBlocked: blocked,
+                    );
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          blocked ? l10n.contactUnblocked : l10n.contactBlocked,
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
             ),
+            if (contact?.inRoster == true)
+              ListTile(
+                leading: Icon(Icons.person_remove, color: tg.danger),
+                title: Text(
+                  l10n.deleteContact,
+                  style: TextStyle(color: tg.danger),
+                ),
+                subtitle: Text(l10n.deleteContactSummary),
+                onTap: connected
+                    ? () => confirmDeleteContact(context, chatJid, peer)
+                    : () => ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(l10n.notConnectedTryAgain)),
+                      ),
+              ),
+          ],
           ChatHistoryActions(chatJid: chatJid),
         ],
       ),

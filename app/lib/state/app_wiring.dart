@@ -234,13 +234,14 @@ class _AppWiringState extends ConsumerState<AppWiring>
     );
     unawaited(_loadBlocked(ref, session));
     _subs.add(
-      xmpp.blocklistChanges.listen((pushed) async {
-        if (pushed.isEmpty) {
-          for (final jid in await db.blockedJids()) {
-            await db.removeBlocked(jid);
-          }
-        } else {
-          await applyBlockPush(db, pushed);
+      xmpp.blocklistChanges.listen((change) async {
+        switch (change) {
+          case BlocklistBlocked(:final jids):
+            await applyBlockPush(db, jids);
+          case BlocklistUnblocked(:final jids):
+            await applyUnblockPush(db, jids);
+          case BlocklistCleared():
+            await applyUnblockPush(db, const {});
         }
         await _loadBlocked(ref, session);
       }),
