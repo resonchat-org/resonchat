@@ -119,7 +119,8 @@ class AccountHub extends ChangeNotifier {
       },
       accountIds: () => _sessions.keys,
       connectFailureState: _controllerFailureState,
-      checkNetwork: _connectivity.hasConnection,
+      // Fail closed: a plugin error must not look like "network restored".
+      checkNetwork: () => _connectivity.hasConnectionStrict(failOpen: false),
       // No Jingle/calls yet — hook returns false; SEE_OTHER_HOST still aggressive.
       hasActiveJingleRtpCall: (_) => false,
       wakeScheduler: AndroidWakeScheduler(),

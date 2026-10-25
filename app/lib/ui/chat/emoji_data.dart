@@ -1,27 +1,13 @@
 // Copyright (C) 2026 ResonChat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// The emoji catalogue behind the insertion panel.
+// The emoji catalogue behind the insertion and reaction panels.
 //
-// Two questions that are constantly conflated, and that this module keeps
-// apart because they have different answers:
-//
-//   * What can the panel *display*? Anything the local font covers, including
-//     sequences: ❤️, 👨‍👩‍👧 and 🇩🇪 are in the catalogue and all render on a
-//     phone, as would a skin tone such as 👍🏽 if we cared to add it.
-//   * What can we *send*? Only a single code point, because a reaction or a
-//     sticker reply is drawn by somebody else's client. A sequence is where
-//     clients disagree: a variation selector may be honoured or dropped, a skin
-//     tone may or may not apply, and a ZWJ sequence may arrive as several
-//     loose characters. The two sides then see different pictures for the same
-//     reaction, which is the failure kQuickReactions already rules out for the
-//     six quick ones.
-//
-// So the catalogue is display-complete and the sendable set is a subset of it.
-// `sendableEmoji` is the subset (safe to send); `allEmoji` is the whole thing
-// (safe to display); `displayOnlyEmoji` is exactly where the two lists diverge,
-// and it is deliberately not empty — a data file whose two sets coincide has
-// stopped expressing a distinction nobody would notice losing.
+// What may appear as a reaction follows Gajim (`emoji.is_emoji` after stripping
+// FE0E/FE0F): flags, skin tones, and ZWJ sequences are allowed; kaomoji and
+// plain text are not. [isReactionEmoji] is that rule. [isRenderableEmoji] is
+// the looser "is this catalogue glyph built from emoji code points" check used
+// when drawing the panel.
 //
 // The full Unicode emoji table is ~3,600 characters and megabytes of Dart
 // source, which slows every build and every test in the repo to serve a panel
@@ -31,8 +17,7 @@
 // trade — a smaller table is also a table a human can review, which is what
 // keeps the bad characters out.
 //
-// This is data and logic only; the widgets that draw it live elsewhere. A panel
-// sized by TgDimens.chatsRowHeight wants a grid, not a list of thousands.
+// This is data and logic only; the widgets that draw it live elsewhere.
 
 /// The panel's tabs, in the order they are drawn.
 ///
@@ -79,10 +64,7 @@ class EmojiEntry {
 /// The same six characters as `kQuickReactions`, restated as literals. A
 /// reaction and the top of the panel ought to offer the same set, and six
 /// literals are cheaper than a dependency from a UI data module onto the XMPP
-/// layer — which would drag drift and moxxmpp into every test of this file. If
-/// that constant changes this must follow; nothing here can enforce that, which
-/// is why the six below are also exactly the entries `isCategorySendable`
-/// requires anyway.
+/// layer — which would drag drift and moxxmpp into every test of this file.
 const List<EmojiEntry> _recent = <EmojiEntry>[
   EmojiEntry('👍', 'thumbs up'),
   EmojiEntry('💗', 'growing heart'),
@@ -382,9 +364,8 @@ const List<EmojiEntry> _objects = <EmojiEntry>[
 
 const List<EmojiEntry> _symbols = <EmojiEntry>[
   EmojiEntry('❤️', 'red heart'),
-  // The same heart without its variation selector, and therefore the one worth
-  // sending. Both are catalogued because the panel is for display; only this
-  // one is in `sendableEmoji`.
+  // Text-presentation heart (no FE0F). Kept for search; pickers exclude it
+  // because Linux draws it black beside coloured emoji.
   EmojiEntry('❤', 'heart'),
   EmojiEntry('🧡', 'orange heart'),
   EmojiEntry('💗', 'growing heart'),
@@ -500,26 +481,6 @@ final List<EmojiEntry> allEmoji = List<EmojiEntry>.unmodifiable(<EmojiEntry>[
     if (category != EmojiCategory.recent) ..._catalogue[category]!,
 ]);
 
-/// The subset that is safe to *send*: one code point per entry.
-///
-/// This is the intersection of what a local font draws and what another client
-/// will draw identically, and it is what a reaction or a sticker reply must be
-/// drawn from. See `isSendableEmoji` for the rule.
-final List<EmojiEntry> sendableEmoji = List<EmojiEntry>.unmodifiable(
-  allEmoji.where((entry) => isSendableEmoji(entry.emoji)),
-);
-
-/// Entries that display here but must not be sent: a variation selector, a
-/// skin tone, a ZWJ join, or a regional-indicator pair.
-///
-/// Everything in this list renders correctly in the panel, which is exactly why
-/// it is dangerous in a *sent* reaction: we can see that it worked, and the
-/// person on the other end may not get the same picture. Nothing in the UI may
-/// quietly widen the sendable set with these.
-final List<EmojiEntry> displayOnlyEmoji = List<EmojiEntry>.unmodifiable(
-  allEmoji.where((entry) => !isSendableEmoji(entry.emoji)),
-);
-
 /// How many results a search hands back.
 ///
 /// Bounded because the panel draws every hit in one grid: a query of one letter
@@ -631,30 +592,31 @@ bool isRenderableEmoji(String value) {
   return sawGlyph;
 }
 
-/// Whether [value] is one code point, and so safe to send to someone else.
+/// Strip leading/trailing emoji presentation selectors (U+FE0E / U+FE0F).
 ///
-/// Only single code points are in the sendable set.
-///
-/// A reaction travels to another person and is drawn by their client. U+2764
-/// plus U+FE0F is two code points, and whether the trailing variation selector
-/// produces a coloured pictograph or a monochrome glyph is decided by their
-/// font — so the same reaction looks different to each of you. See
-/// kQuickReactions for the same rule applied to the six quick ones, and
-/// `displayOnlyEmoji` for the entries this rule keeps out.
-///
-/// One code point cannot disagree with itself: whatever the receiving client
-/// draws, it draws from the same bytes we sent. That the two clients may then
-/// draw it *identically as a monochrome glyph* is not a counterexample — the
-/// failure this prevents is one side seeing a colour and the other not.
-bool isSendableEmoji(String value) {
-  final runes = value.runes;
-  // `runes.length == 1` is the whole test, so it is checked first and the single
-  // code point is then taken from the iterable rather than by index: `runeAt`
-  // does not exist on String, and indexing `runes` would be a code-unit index
-  // into a sequence whose elements are code points, which is the one mistake
-  // that turns a supplementary-plane emoji into a false negative.
-  return runes.length == 1 && _isEmojiRune(runes.first);
+/// Matches Gajim's `normalize_reactions`: reactions must render as emoji, so
+/// the selectors are redundant and stripping them unifies `❤` / `❤️`.
+String stripEmojiPresentationSelectors(String value) {
+  final runes = value.runes.toList(growable: false);
+  var start = 0;
+  var end = runes.length;
+  while (start < end && (runes[start] == _vs15 || runes[start] == _vs16)) {
+    start++;
+  }
+  while (end > start && (runes[end - 1] == _vs15 || runes[end - 1] == _vs16)) {
+    end--;
+  }
+  if (start == 0 && end == runes.length) return value;
+  return String.fromCharCodes(runes.sublist(start, end));
 }
+
+/// Whether [value] may be used as a reaction (XEP-0444), Gajim-aligned.
+///
+/// Gajim accepts any `emoji.is_emoji` after stripping presentation selectors —
+/// including flags, skin tones, and ZWJ sequences — and rejects plain text /
+/// kaomoji. [isRenderableEmoji] is our catalogue-side stand-in for that check.
+bool isReactionEmoji(String value) =>
+    isRenderableEmoji(stripEmojiPresentationSelectors(value));
 
 /// The entries of [category] that are not renderable, for a failing build.
 List<String> unrenderableIn(EmojiCategory category) => <String>[
@@ -670,18 +632,11 @@ List<String> unrenderableIn(EmojiCategory category) => <String>[
 bool isCategoryRenderable(EmojiCategory category) =>
     unrenderableIn(category).isEmpty;
 
-/// Whether every entry of [category] is safe to send.
-///
-/// True for [EmojiCategory.recent] and [EmojiCategory.smileys] today, and false
-/// for the rest. Those categories happen to hold no sequences; the others file
-/// them on purpose, so this returning false is the file's central distinction
-/// rather than a defect to be fixed by deleting the sequences. A reaction
-/// picker must read from `sendableEmoji`, never from a category.
-bool isCategorySendable(EmojiCategory category) =>
-    _catalogue[category]!.every((entry) => isSendableEmoji(entry.emoji));
-
 /// U+200D. Legal Unicode, no glyph of its own.
 const int _zwj = 0x200D;
+
+/// U+FE0E. Text presentation selector.
+const int _vs15 = 0xFE0E;
 
 /// U+FE0F. The trailing code point that decides whether ❤️ is colour.
 const int _vs16 = 0xFE0F;

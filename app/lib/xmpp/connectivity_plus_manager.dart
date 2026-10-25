@@ -38,6 +38,13 @@ class ConnectivityPlusConnectivityManager extends ConnectivityManager {
 
   bool _online = true;
 
+  /// Fingerprint of the last online [ConnectivityResult] set. Used so
+  /// [networkChanges] only fires when the interface set actually changes —
+  /// connectivity_plus often re-emits the same Wi-Fi list, and treating each
+  /// echo as CONNECTIVITY_ACTION would reset backoff / schedule pings for no
+  /// reason (Conversations only acts on real network transitions).
+  String? _onlineFingerprint;
+
   /// Last state observed by the change listener (false before [start] only if
   /// the initial check found no interface).
   bool get isOnline => _online;
@@ -45,20 +52,33 @@ class ConnectivityPlusConnectivityManager extends ConnectivityManager {
   Future<void> start() async {
     if (_listening) return;
     _listening = true;
-    var hadConnection = await hasConnection();
+    List<ConnectivityResult> initial;
+    try {
+      initial = await _connectivity.checkConnectivity();
+    } catch (_) {
+      initial = const <ConnectivityResult>[ConnectivityResult.none];
+    }
+    var hadConnection = _isOnline(initial);
     _online = hadConnection;
+    _onlineFingerprint = hadConnection ? _fingerprint(initial) : null;
     _sub = _connectivity.onConnectivityChanged.listen((results) {
       final online = _isOnline(results);
       if (online) {
         _resolveWaiters();
+        final fingerprint = _fingerprint(results);
         if (!hadConnection && !_becameOnline.isClosed) {
           _becameOnline.add(null);
-        } else if (hadConnection && !_networkChanges.isClosed) {
-          // Interface changed but we stayed online. Existing sockets are not
-          // guaranteed to survive it.
+          _onlineFingerprint = fingerprint;
+        } else if (hadConnection &&
+            fingerprint != _onlineFingerprint &&
+            !_networkChanges.isClosed) {
+          // Interface set changed while staying online (Wi-Fi → cellular,
+          // VPN up/down). Existing sockets are not guaranteed to survive it.
+          _onlineFingerprint = fingerprint;
           _networkChanges.add(null);
         }
       } else if (hadConnection && !_becameOffline.isClosed) {
+        _onlineFingerprint = null;
         _becameOffline.add(null);
       }
       hadConnection = online;
@@ -84,14 +104,20 @@ class ConnectivityPlusConnectivityManager extends ConnectivityManager {
   }
 
   @override
-  Future<bool> hasConnection() async {
+  Future<bool> hasConnection() async => hasConnectionStrict(failOpen: true);
+
+  /// Like [hasConnection], but [failOpen] controls the plugin-error path.
+  ///
+  /// Login waiters use [failOpen] true so a broken plugin cannot brick sign-in.
+  /// The reconnect clock's offline recheck must use false — otherwise a probe
+  /// error every 15 s would look like "network restored" and spam connects.
+  Future<bool> hasConnectionStrict({bool failOpen = true}) async {
     try {
       final results = await _connectivity.checkConnectivity();
       return _isOnline(results);
     } catch (e) {
       _log.warning('connectivity check failed: $e');
-      // Fail open so a plugin glitch does not brick login.
-      return true;
+      return failOpen;
     }
   }
 
@@ -113,5 +139,14 @@ class ConnectivityPlusConnectivityManager extends ConnectivityManager {
   static bool _isOnline(List<ConnectivityResult> results) {
     if (results.isEmpty) return false;
     return results.any((r) => r != ConnectivityResult.none);
+  }
+
+  /// Stable key for a result set (order-independent).
+  static String _fingerprint(List<ConnectivityResult> results) {
+    final names = [
+      for (final r in results)
+        if (r != ConnectivityResult.none) r.name,
+    ]..sort();
+    return names.join('|');
   }
 }

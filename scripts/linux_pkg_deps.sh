@@ -40,13 +40,16 @@ RPM_CLI=(
 )
 
 # Soft deps: a Secret Service provider for flutter_secure_storage / libsecret
-# (libsecret itself comes from shlibdeps / AutoReq).
+# (libsecret itself comes from shlibdeps / AutoReq). Colour emoji font matches
+# Gajim (Recommends, not Depends) so Linux FontLoader can find NotoColorEmoji.
 DEBIAN_RECOMMENDS=(
   gnome-keyring
+  fonts-noto-color-emoji
 )
 
 RPM_RECOMMENDS=(
   gnome-keyring
+  google-noto-color-emoji-fonts
 )
 
 debian_cli_csv() {

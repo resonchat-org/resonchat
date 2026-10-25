@@ -150,14 +150,10 @@ void main() {
   });
 
   group('the quick set', () {
-    test('every emoji is a single code point', () {
-      // A reaction that some clients render as a monochrome glyph and others
-      // as a coloured pictograph is worse than none, and a multi-code-point
-      // character (a variation selector, a skin tone, a ZWJ join) is exactly
-      // what causes it. `❤️` is the trap: U+2764 plus U+FE0F.
-      for (final emoji in kQuickReactions) {
-        expect(emoji.runes.length, 1, reason: emoji);
-      }
+    test('defaults avoid the text-presentation heart', () {
+      // Linux draws U+2764 black beside coloured emoji; the heart slot is 💗.
+      expect(kQuickReactions, isNot(contains('❤')));
+      expect(kQuickReactions, isNot(contains('❤️')));
     });
 
     test('and they are distinct', () {

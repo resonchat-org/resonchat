@@ -1,16 +1,18 @@
 // Copyright (C) 2026 ResonChat contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// Composer panel under the input: built-in emoji and kaomoji, or saved images.
+// Composer panel under the input: emoji, kaomoji, or saved sticker images.
+// Emoji reuse the shared reaction picker; kaomoji sit beside it as a sibling
+// tab (they are not valid reactions).
 
 import 'package:flutter/material.dart';
 
 import 'package:resonchat/l10n/l10n.dart';
 import 'package:resonchat/persistence/database.dart';
-import 'package:resonchat/ui/chat/emoji_data.dart';
+import 'package:resonchat/ui/chat/emoji_picker_panel.dart';
 import 'package:resonchat/ui/theme.dart';
 
-/// Kaomoji offered next to the emoji catalogue. Text, not images.
+/// Kaomoji for the composer only — not offered as reactions.
 const List<String> kKaomoji = [
   '(＾▽＾)',
   '(｡♥‿♥｡)',
@@ -34,22 +36,9 @@ const List<String> kKaomoji = [
   '(￣ヘ￣)',
 ];
 
-const List<EmojiCategory> _emojiCategories = [
-  EmojiCategory.smileys,
-  EmojiCategory.people,
-  EmojiCategory.animals,
-  EmojiCategory.food,
-  EmojiCategory.activity,
-  EmojiCategory.travel,
-  EmojiCategory.objects,
-  EmojiCategory.symbols,
-  EmojiCategory.flags,
-];
+enum _ComposerPane { emoji, kaomoji, custom }
 
-/// 0 is kaomoji. 1 and up index [_emojiCategories].
-const int _kaomojiSection = 0;
-
-/// Two tabs under the composer. Emoji inserts text. A saved image sends.
+/// Three parallel tabs under the composer.
 class StickerPanel extends StatefulWidget {
   const StickerPanel({
     super.key,
@@ -71,10 +60,7 @@ class StickerPanel extends StatefulWidget {
 }
 
 class _StickerPanelState extends State<StickerPanel> {
-  var _images = false;
-
-  /// Smileys, not kaomoji: that is the set people open this panel for.
-  var _builtin = 1;
+  var _pane = _ComposerPane.emoji;
 
   Future<void> _confirmDelete(Sticker sticker) async {
     final l10n = context.l10n;
@@ -112,96 +98,62 @@ class _StickerPanelState extends State<StickerPanel> {
             children: [
               _Tab(
                 label: l10n.stickerEmoji,
-                selected: !_images,
-                onTap: () => setState(() => _images = false),
+                selected: _pane == _ComposerPane.emoji,
+                onTap: () => setState(() => _pane = _ComposerPane.emoji),
+              ),
+              _Tab(
+                label: l10n.stickerKaomoji,
+                selected: _pane == _ComposerPane.kaomoji,
+                onTap: () => setState(() => _pane = _ComposerPane.kaomoji),
               ),
               _Tab(
                 label: l10n.stickerCustom,
-                selected: _images,
-                onTap: () => setState(() => _images = true),
+                selected: _pane == _ComposerPane.custom,
+                onTap: () => setState(() => _pane = _ComposerPane.custom),
               ),
             ],
           ),
           Expanded(
-            child: _images ? _custom(context) : _builtinPane(context, l10n),
+            child: switch (_pane) {
+              _ComposerPane.emoji => EmojiPickerPanel(onPick: widget.onInsert),
+              _ComposerPane.kaomoji => _kaomojiMatrix(context),
+              _ComposerPane.custom => _custom(context),
+            },
           ),
         ],
       ),
     );
   }
 
-  Widget _builtinPane(BuildContext context, AppLocalizations l10n) {
+  Widget _kaomojiMatrix(BuildContext context) {
     final tg = context.tg;
-    return Column(
-      children: [
-        SizedBox(
-          height: 40,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: ChoiceChip(
-                  label: Text(l10n.stickerKaomoji),
-                  selected: _builtin == _kaomojiSection,
-                  onSelected: (_) => setState(() => _builtin = _kaomojiSection),
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          for (final value in kKaomoji)
+            Material(
+              color: tg.barBackground,
+              borderRadius: BorderRadius.circular(10),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: () => widget.onInsert(value),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 8,
+                  ),
+                  child: Text(
+                    value,
+                    style: TextStyle(fontSize: 15, color: tg.textPrimary),
+                  ),
                 ),
               ),
-              for (var i = 0; i < _emojiCategories.length; i++)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: ChoiceChip(
-                    label: Text(_emojiCategories[i].label),
-                    selected: _builtin == i + 1,
-                    onSelected: (_) => setState(() => _builtin = i + 1),
-                  ),
-                ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: _builtin == _kaomojiSection
-              ? SingleChildScrollView(
-                  padding: const EdgeInsets.all(8),
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      for (final text in kKaomoji)
-                        ActionChip(
-                          label: Text(text),
-                          onPressed: () => widget.onInsert(text),
-                        ),
-                    ],
-                  ),
-                )
-              : GridView.builder(
-                  padding: const EdgeInsets.all(4),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 8,
-                  ),
-                  itemCount: emojiIn(_emojiCategories[_builtin - 1]).length,
-                  itemBuilder: (context, index) {
-                    final emoji = emojiIn(
-                      _emojiCategories[_builtin - 1],
-                    )[index].emoji;
-                    return InkWell(
-                      onTap: () => widget.onInsert(emoji),
-                      child: Center(
-                        child: Text(
-                          emoji,
-                          style: emojiTextStyle(
-                            fontSize: 24,
-                            color: tg.textPrimary,
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-        ),
-      ],
+            ),
+        ],
+      ),
     );
   }
 

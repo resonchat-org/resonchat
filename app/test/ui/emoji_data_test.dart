@@ -67,73 +67,38 @@ void main() {
     });
   });
 
-  group('what may be sent', () {
-    test('every sendable entry is exactly one code point', () {
-      // The rule kQuickReactions already applies to six characters, extended to
-      // the whole catalogue: a reaction is drawn by somebody else's client, and
-      // a sequence — a variation selector, a skin tone, a ZWJ join — is exactly
-      // how two clients end up drawing different pictures for it.
-      for (final entry in sendableEmoji) {
-        expect(entry.emoji.runes.length, 1, reason: entry.name);
-        expect(isSendableEmoji(entry.emoji), isTrue, reason: entry.name);
+  group('what may be a reaction', () {
+    test('every catalogue entry qualifies as a reaction', () {
+      for (final entry in allEmoji) {
+        expect(isReactionEmoji(entry.emoji), isTrue, reason: entry.name);
       }
     });
 
-    test('the sendable set is a subset of the displayable one', () {
-      final displayable = allEmoji.map((e) => e.emoji).toSet();
-      expect(
-        sendableEmoji.map((e) => e.emoji).toSet(),
-        everyElement(isIn(displayable)),
-      );
-    });
-
-    test('the two lists partition the catalogue, and neither is empty', () {
-      // An empty `displayOnlyEmoji` would mean the two questions had collapsed
-      // into one, and the file would have stopped saying anything at all.
-      expect(sendableEmoji, isNotEmpty);
-      expect(displayOnlyEmoji, isNotEmpty);
-      expect(sendableEmoji.length + displayOnlyEmoji.length, allEmoji.length);
-    });
-
-    test('the heart is the trap, in both directions', () {
-      // `❤️` is U+2764 U+FE0F. Two code points, so it is fine in the panel and
-      // not fine as a sent reaction — which is why kQuickReactions uses a
-      // single-code-point heart such as 💗 instead of either form.
+    test('the heart strips FE0F and both forms are reactions', () {
       expect(isRenderableEmoji('❤️'), isTrue);
-      expect(isSendableEmoji('❤️'), isFalse);
+      expect(isReactionEmoji('❤️'), isTrue);
+      expect(stripEmojiPresentationSelectors('❤️'), '❤');
       expect(isRenderableEmoji('❤'), isTrue);
-      expect(isSendableEmoji('❤'), isTrue);
-      expect(sendableEmoji.map((e) => e.emoji), contains('❤'));
-      expect(sendableEmoji.map((e) => e.emoji), isNot(contains('❤️')));
+      expect(isReactionEmoji('❤'), isTrue);
     });
 
-    test('a skin tone and a flag are displayable, not sendable', () {
-      // A flag is two regional indicators and renders only where a flag font
-      // exists; a skin tone is two code points whose application depends on the
-      // receiver. Both look right here, which is the trap.
-      expect(isRenderableEmoji('\u{1F44D}\u{1F3FB}'), isTrue);
-      expect(isSendableEmoji('\u{1F44D}\u{1F3FB}'), isFalse);
-      expect(isRenderableEmoji('🇩🇪'), isTrue);
-      expect(isSendableEmoji('🇩🇪'), isFalse);
-      expect(isRenderableEmoji('\u{1F9D1}\u{200D}\u{1F4BB}'), isTrue);
-      expect(isSendableEmoji('\u{1F9D1}\u{200D}\u{1F4BB}'), isFalse);
+    test('a skin tone, a flag, and a ZWJ sequence are reactions', () {
+      expect(isReactionEmoji('\u{1F44D}\u{1F3FB}'), isTrue);
+      expect(isReactionEmoji('🇩🇪'), isTrue);
+      expect(isReactionEmoji('\u{1F9D1}\u{200D}\u{1F4BB}'), isTrue);
     });
 
-    test('only the categories without sequences are sendable throughout', () {
-      // Pinned because it is the whole distinction: recent and smileys happen
-      // to hold single code points only, and a reaction picker must read from
-      // `sendableEmoji` rather than from a category.
-      final sendableCategories = EmojiCategory.values.where(isCategorySendable);
-      expect(sendableCategories, [EmojiCategory.recent, EmojiCategory.smileys]);
+    test('kaomoji and plain text are not reactions', () {
+      expect(isReactionEmoji('(＾▽＾)'), isFalse);
+      expect(isReactionEmoji('test'), isFalse);
+      expect(isReactionEmoji(''), isFalse);
     });
   });
 
   group('the recent tab', () {
-    test('every entry is safe to send', () {
-      // It is what a first-run user reaches for, so it has to hold to the same
-      // rule as a reaction rather than to the rule for the panel.
+    test('every entry is a valid reaction', () {
       for (final entry in emojiIn(EmojiCategory.recent)) {
-        expect(isSendableEmoji(entry.emoji), isTrue, reason: entry.name);
+        expect(isReactionEmoji(entry.emoji), isTrue, reason: entry.name);
       }
     });
 
@@ -208,7 +173,7 @@ void main() {
 
     test('the exact name outranks a word inside another name', () {
       // `heart` is `❤`'s whole name and only a word of `red heart`, so the
-      // sendable one leads the list the user is looking at.
+      // shorter name ranks first.
       expect(searchEmoji('heart').first.emoji, '❤');
       expect(searchEmoji('red heart').map((e) => e.emoji), ['❤️']);
     });

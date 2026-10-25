@@ -22,6 +22,7 @@ import 'package:resonchat/net/app_network.dart';
 import 'package:resonchat/net/socks5_config.dart';
 import 'package:resonchat/persistence/prefs_database.dart';
 import 'package:resonchat/platform/app_notifications.dart';
+import 'package:resonchat/platform/system_color_emoji_font.dart';
 import 'package:resonchat/security/app_lock.dart';
 import 'package:resonchat/state/app_wiring.dart';
 import 'package:resonchat/ui/accent_theme.dart';
@@ -93,6 +94,10 @@ class StartupResult {
 /// (path provider, keystore, notifications) and so cannot be run under
 /// `flutter test`. Tests drive the gate with their own function instead.
 Future<StartupResult> bootApp() async {
+  // Linux: bind system Noto Color Emoji so emoji Text is not Symbola/B&W.
+  // Other platforms keep emojiTextStyle's Apple/Segoe/Noto name list.
+  await ensureSystemColorEmojiFont();
+
   // Native libsignal (PQXDH + SPQR) before any B-track crypto.
   await omemo2EnsureLibSignal();
 

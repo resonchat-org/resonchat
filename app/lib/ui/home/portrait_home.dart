@@ -8,7 +8,6 @@ import 'package:flutter/material.dart';
 
 import 'package:resonchat/l10n/l10n.dart';
 import 'package:resonchat/ui/home/navigation_dock.dart';
-import 'package:resonchat/ui/motion.dart';
 
 class PortraitHome extends StatelessWidget {
   const PortraitHome({
@@ -44,7 +43,11 @@ class PortraitHome extends StatelessWidget {
                     padding: media.padding.copyWith(bottom: inset),
                     viewPadding: media.viewPadding.copyWith(bottom: inset),
                   ),
-                  child: MotionTabStack(index: tab, children: pages),
+                  child: IndexedStack(
+                    index: tab,
+                    sizing: StackFit.expand,
+                    children: pages,
+                  ),
                 ),
               ),
               Positioned(

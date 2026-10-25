@@ -16,14 +16,16 @@ const String _prefQuickReactionsKey = 'pref_quick_reactions';
 /// How many emoji the menu's front row holds.
 const int kQuickReactionSlots = 6;
 
-/// U+2764 is a single code point, but text-presentation by default: Linux
-/// draws it as a black glyph beside the coloured emoji. It is sendable by the
-/// code-point rule, yet it is exactly the look the menu avoids, so prefs and
-/// promotions are not allowed to put it on the row.
+/// U+2764 is text-presentation by default: Linux draws it as a black glyph
+/// beside the coloured emoji. Prefs and promotions keep it off the row.
 const String _textPresentationHeart = '❤';
 
-bool _isMenuEmoji(String value) =>
-    isSendableEmoji(value) && value != _textPresentationHeart;
+/// Front-row slots: Gajim reaction rule, after stripping FE0E/FE0F, minus the
+/// black heart. Stored form is always the stripped value.
+bool _isMenuEmoji(String value) {
+  final normalized = stripEmojiPresentationSelectors(value);
+  return isReactionEmoji(normalized) && normalized != _textPresentationHeart;
+}
 
 /// The saved front row, or [kQuickReactions] when nothing usable is stored.
 ///
@@ -62,20 +64,25 @@ Future<void> saveQuickReactions(
 
 /// [emoji] moved to the front, keeping [kQuickReactionSlots] entries.
 ///
-/// The emoji is validated before it is stored: the picker already filters to
-/// sendable single code points, but the prefs row is also written from disk and
-/// must never carry an unrenderable or multi-code-point value into a chip.
+/// Presentation selectors are stripped (Gajim); the black heart is refused.
 List<String> promoteQuickReaction(List<String> current, String emoji) {
-  if (!_isMenuEmoji(emoji)) return List<String>.of(current);
-  return _normalise([emoji, ...current.where((value) => value != emoji)]);
+  final normalized = stripEmojiPresentationSelectors(emoji);
+  if (!_isMenuEmoji(normalized)) return List<String>.of(current);
+  return _normalise([
+    normalized,
+    ...current
+        .map(stripEmojiPresentationSelectors)
+        .where((v) => v != normalized),
+  ]);
 }
 
 List<String> _normalise(List<String> values) {
   final seen = <String>{};
   final result = <String>[];
   for (final value in values) {
-    if (!_isMenuEmoji(value) || !seen.add(value)) continue;
-    result.add(value);
+    final normalized = stripEmojiPresentationSelectors(value);
+    if (!_isMenuEmoji(normalized) || !seen.add(normalized)) continue;
+    result.add(normalized);
     if (result.length == kQuickReactionSlots) break;
   }
   for (final fallback in kQuickReactions) {

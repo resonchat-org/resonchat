@@ -27,16 +27,20 @@ void main() {
       expect(updated.where((emoji) => emoji == '🙏'), hasLength(1));
     });
 
-    test('a text-presentation value is refused', () {
-      // `❤` (U+2764) is one code point but Linux draws it black beside the
-      // coloured emoji, so it must not reach the front row from prefs either.
+    test('a text-presentation heart is refused', () {
+      // `❤` (U+2764) Linux draws black beside the coloured emoji.
       expect(promoteQuickReaction(kQuickReactions, '❤'), kQuickReactions);
     });
 
-    test('a multi-code-point value is refused', () {
-      // The palette and prefs may only ever hold single code points; a
-      // variation selector would render differently on the other side.
+    test('a heart with FE0F strips to the black heart and is refused', () {
       expect(promoteQuickReaction(kQuickReactions, '❤️'), kQuickReactions);
+    });
+
+    test('a flag (multi-code-point) is accepted', () {
+      // Gajim allows regional-indicator pairs as reactions.
+      final updated = promoteQuickReaction(kQuickReactions, '🇩🇪');
+      expect(updated.first, '🇩🇪');
+      expect(updated, hasLength(kQuickReactionSlots));
     });
   });
 
@@ -46,15 +50,9 @@ void main() {
     await saveQuickReactions(kQuickReactions);
   });
 
-  test(
-    'every default menu emoji is one code point and coloured by default',
-    () {
-      for (final emoji in kQuickReactions) {
-        expect(emoji.runes, hasLength(1), reason: emoji);
-      }
-      // U+2764 is text-presentation by default; Linux draws it as a black glyph
-      // beside the coloured ones.
-      expect(kQuickReactions, isNot(contains('❤')));
-    },
-  );
+  test('every default menu emoji has emoji presentation by default', () {
+    // U+2764 is text-presentation by default; Linux draws it as a black glyph
+    // beside the coloured ones.
+    expect(kQuickReactions, isNot(contains('❤')));
+  });
 }

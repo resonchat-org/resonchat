@@ -12,15 +12,14 @@
 
 import 'package:flutter/material.dart';
 
-import 'package:resonchat/ui/motion.dart';
-
 /// Colour emoji families, most specific platform first.
 ///
-/// Linux fontconfig lists Noto Sans Symbols 2 before Noto Color Emoji, so an
-/// older face such as 😀 is drawn from the monochrome outline font while a
-/// newer one such as 🥰 comes from Noto Color Emoji. That is why one row used
-/// to mix black-and-white and colour glyphs. Naming the colour families makes
-/// every emoji resolve to the same presentation on every platform we ship.
+/// On Linux, boot calls `ensureSystemColorEmojiFont` to FontLoader-register
+/// the system `NotoColorEmoji.ttf` under this first name when
+/// `fonts-noto-color-emoji` is installed — otherwise Flutter/fontconfig often
+/// picks Symbola or Noto Sans Symbols (monochrome / missing glyphs). Gajim
+/// avoids that via Pango's emoji family switch; we cannot. Apple / Segoe /
+/// Android names cover the other platforms without loading a file.
 const List<String> kColorEmojiFallback = <String>[
   'Noto Color Emoji',
   'Apple Color Emoji',
@@ -299,7 +298,6 @@ class AppThemeTokens {
       colorScheme: scheme,
       brightness: brightness,
       scaffoldBackgroundColor: tg.pageBackground,
-      pageTransitionsTheme: kMotionPageTransitionsTheme,
       // Telegram's action bar has no elevation and no shadow.
       appBarTheme: AppBarTheme(
         backgroundColor: tg.barBackground,

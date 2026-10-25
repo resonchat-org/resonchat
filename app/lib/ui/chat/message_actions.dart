@@ -15,7 +15,7 @@ import 'package:flutter/rendering.dart';
 
 import 'package:resonchat/crypto/dual/track.dart';
 import 'package:resonchat/l10n/l10n.dart';
-import 'package:resonchat/ui/chat/emoji_data.dart';
+import 'package:resonchat/ui/chat/emoji_picker_panel.dart';
 import 'package:resonchat/ui/chat/reaction_recents.dart';
 import 'package:resonchat/ui/motion.dart';
 import 'package:resonchat/ui/theme.dart';
@@ -204,34 +204,6 @@ void dismissActiveMessageMenu() {
   dismiss();
 }
 
-/// One tab in the full emoji palette.
-///
-/// Smileys and people share a tab, as they do in the reference picker: they
-/// are one browsing intent ("faces") and splitting them leaves two short
-/// grids. Flags are deliberately absent — every flag is a regional-indicator
-/// pair, so none of them is a sendable reaction.
-class _EmojiSection {
-  const _EmojiSection(this.categories, this.icon);
-
-  final List<EmojiCategory> categories;
-  final IconData icon;
-}
-
-const List<_EmojiSection> _emojiSections = <_EmojiSection>[
-  _EmojiSection(<EmojiCategory>[
-    EmojiCategory.smileys,
-    EmojiCategory.people,
-  ], Icons.emoji_emotions_outlined),
-  _EmojiSection(<EmojiCategory>[EmojiCategory.animals], Icons.pets),
-  _EmojiSection(<EmojiCategory>[EmojiCategory.food], Icons.restaurant),
-  _EmojiSection(<EmojiCategory>[EmojiCategory.activity], Icons.sports_soccer),
-  _EmojiSection(<EmojiCategory>[EmojiCategory.travel], Icons.flight),
-  _EmojiSection(<EmojiCategory>[
-    EmojiCategory.objects,
-  ], Icons.lightbulb_outline),
-  _EmojiSection(<EmojiCategory>[EmojiCategory.symbols], Icons.tag),
-];
-
 /// Shows the menu beside [anchor] and returns what the user picked, or null.
 ///
 /// [anchor] is the bubble in global coordinates. Taps outside the bubble and
@@ -323,23 +295,6 @@ class _AnchoredMessageMenuState extends State<_AnchoredMessageMenu>
   /// The full palette is a picker card, not a wider copy of the action card.
   static const double _pickerWidth = 360;
   static const double _pickerHeight = 440;
-  static const int _pickerColumns = 7;
-  static const double _pickerEmojiSize = 30;
-  static const double _pickerTabHeight = 44;
-
-  /// Single-code-point emoji without default emoji presentation. U+2764 is
-  /// sendable by the code-point rule but Linux draws it black; the front row
-  /// and the picker use 💗 instead.
-  static const String _textPresentationHeart = '❤';
-
-  /// One controller per category, so each category keeps its own scroll
-  /// position. Only the visible grid is mounted at a time; one controller may
-  /// not be attached to two scroll views at once.
-  late final List<ScrollController> _gridScrolls =
-      List<ScrollController>.generate(
-        _emojiSections.length,
-        (_) => ScrollController(),
-      );
 
   late final AnimationController _entrance = AnimationController(
     vsync: this,
@@ -356,29 +311,9 @@ class _AnchoredMessageMenuState extends State<_AnchoredMessageMenu>
 
   bool _moreReactions = false;
   bool _closing = false;
-  int _section = 0;
-
-  ScrollController get _gridScroll => _gridScrolls[_section];
 
   List<String> get _quick =>
       widget.quickReactions.take(kQuickReactionSlots).toList(growable: false);
-
-  /// The emoji shown by the selected tab.
-  ///
-  /// The catalogue is display-complete (flags, ZWJ families, variation
-  /// selectors); a reaction must be one code point, so the picker reads the
-  /// category and filters rather than showing entries that cannot be sent.
-  List<String> get _sectionEmoji {
-    final seen = <String>{};
-    return <String>[
-      for (final category in _emojiSections[_section].categories)
-        for (final entry in emojiIn(category))
-          if (_isPickerEmoji(entry.emoji) && seen.add(entry.emoji)) entry.emoji,
-    ];
-  }
-
-  static bool _isPickerEmoji(String emoji) =>
-      isSendableEmoji(emoji) && emoji != _textPresentationHeart;
 
   bool _entranceStarted = false;
 
@@ -396,9 +331,6 @@ class _AnchoredMessageMenuState extends State<_AnchoredMessageMenu>
 
   @override
   void dispose() {
-    for (final controller in _gridScrolls) {
-      controller.dispose();
-    }
     _entrance.dispose();
     super.dispose();
   }
@@ -417,36 +349,6 @@ class _AnchoredMessageMenuState extends State<_AnchoredMessageMenu>
 
   void _closePalette() {
     setState(() => _moreReactions = false);
-  }
-
-  void _selectSection(int index) {
-    if (index == _section) return;
-    setState(() => _section = index);
-    // Returning to a category starts at its first row; the old grid may have
-    // been left halfway down.
-    final controller = _gridScrolls[index];
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (controller.hasClients) controller.jumpTo(0);
-    });
-  }
-
-  String _sectionTitle(AppLocalizations l10n, int index) {
-    switch (index) {
-      case 0:
-        return l10n.emojiCategorySmileysPeople;
-      case 1:
-        return l10n.emojiCategoryAnimals;
-      case 2:
-        return l10n.emojiCategoryFood;
-      case 3:
-        return l10n.emojiCategoryActivity;
-      case 4:
-        return l10n.emojiCategoryTravel;
-      case 5:
-        return l10n.emojiCategoryObjects;
-      default:
-        return l10n.emojiCategorySymbols;
-    }
   }
 
   List<_MenuItem> _items(AppLocalizations l10n) {
@@ -582,169 +484,21 @@ class _AnchoredMessageMenuState extends State<_AnchoredMessageMenu>
     );
   }
 
-  Widget _pickerHeader(BuildContext context, String title) {
-    final tg = context.tg;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 4, 12, 2),
-      child: Row(
-        children: [
-          IconButton(
-            onPressed: _closePalette,
-            iconSize: 20,
-            tooltip: MaterialLocalizations.of(context).backButtonTooltip,
-            icon: const Icon(Icons.arrow_back),
-          ),
-          const SizedBox(width: 2),
-          Expanded(
-            child: AnimatedSwitcher(
-              duration: motionDuration(context, kMotionFast),
-              switchInCurve: kMotionEnter,
-              switchOutCurve: kMotionExit,
-              transitionBuilder: (child, animation) => FadeTransition(
-                opacity: animation,
-                child: SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(0, 0.18),
-                    end: Offset.zero,
-                  ).animate(animation),
-                  child: child,
-                ),
-              ),
-              child: Text(
-                title,
-                key: ValueKey(title),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: tg.textPrimary,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _pickerGrid(
-    BuildContext context,
-    List<String> emoji,
-    ScrollController controller,
-  ) {
-    return Scrollbar(
-      controller: controller,
-      thumbVisibility: true,
-      thickness: 3,
-      radius: const Radius.circular(2),
-      child: GridView.builder(
-        controller: controller,
-        padding: const EdgeInsets.fromLTRB(6, 2, 6, 4),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: _pickerColumns,
-          mainAxisExtent: 46,
-        ),
-        itemCount: emoji.length,
-        itemBuilder: (context, index) {
-          final value = emoji[index];
-          return InkWell(
-            borderRadius: BorderRadius.circular(10),
-            onTap: () => _pick(MessageMenuReaction(value, fromMore: true)),
-            child: Center(
-              child: Text(
-                value,
-                style: emojiTextStyle(fontSize: _pickerEmojiSize),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _pickerTabs(BuildContext context, AppLocalizations l10n) {
+  Widget _pickerCard(BuildContext context) {
     final theme = Theme.of(context);
-    final tg = context.tg;
-    return Container(
-      height: _pickerTabHeight,
-      decoration: BoxDecoration(
-        border: Border(
-          top: BorderSide(color: tg.separator.withValues(alpha: 0.6)),
-        ),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: Row(
-        children: [
-          for (var i = 0; i < _emojiSections.length; i++)
-            Expanded(
-              child: Tooltip(
-                message: _sectionTitle(l10n, i),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(18),
-                  onTap: () => _selectSection(i),
-                  child: Center(
-                    child: Container(
-                      width: 30,
-                      height: 30,
-                      decoration: i == _section
-                          ? BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: theme.colorScheme.onSurface.withValues(
-                                alpha: 0.08,
-                              ),
-                            )
-                          : null,
-                      child: Center(
-                        child: Icon(
-                          _emojiSections[i].icon,
-                          size: 18,
-                          color: i == _section
-                              ? theme.colorScheme.onSurface
-                              : theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _pickerCard(BuildContext context, AppLocalizations l10n) {
-    final theme = Theme.of(context);
-    final emoji = _sectionEmoji;
     return Material(
       elevation: 8,
       color: theme.colorScheme.surfaceContainerHigh,
       borderRadius: BorderRadius.circular(16),
       clipBehavior: Clip.antiAlias,
-      child: Column(
-        children: [
-          _pickerHeader(context, _sectionTitle(l10n, _section)),
-          Expanded(
-            // A fade-in of the new section, rather than a cross-fade that
-            // keeps the previous grid alive: the outgoing grid would still be
-            // attached to the same per-category controller if the user
-            // switched A→B→A quickly, and one ScrollController may not drive
-            // two ScrollPositions.
-            child: TweenAnimationBuilder<double>(
-              key: ValueKey('emoji-section-$_section'),
-              tween: Tween<double>(begin: 0, end: 1),
-              duration: motionDuration(context, kMotionFast),
-              curve: kMotionEnter,
-              builder: (context, t, child) => Opacity(
-                opacity: t,
-                child: Transform.scale(scale: 0.985 + 0.015 * t, child: child),
-              ),
-              child: _pickerGrid(context, emoji, _gridScroll),
-            ),
-          ),
-          _pickerTabs(context, l10n),
-        ],
+      child: EmojiPickerPanel(
+        onPick: (emoji) => _pick(MessageMenuReaction(emoji, fromMore: true)),
+        leading: IconButton(
+          onPressed: _closePalette,
+          iconSize: 20,
+          tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+          icon: const Icon(Icons.arrow_back),
+        ),
       ),
     );
   }
@@ -873,7 +627,7 @@ class _AnchoredMessageMenuState extends State<_AnchoredMessageMenu>
                       ? SizedBox(
                           key: const ValueKey('emoji-picker'),
                           height: pickerHeight,
-                          child: _pickerCard(context, l10n),
+                          child: _pickerCard(context),
                         )
                       : Material(
                           key: const ValueKey('message-actions'),

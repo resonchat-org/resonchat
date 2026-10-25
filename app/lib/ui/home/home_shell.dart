@@ -22,7 +22,6 @@ import 'package:resonchat/ui/empty_chat_pane.dart';
 import 'package:resonchat/ui/home/portrait_home.dart';
 import 'package:resonchat/ui/home/shell_actions.dart';
 import 'package:resonchat/ui/me/me_page.dart';
-import 'package:resonchat/ui/motion.dart';
 import 'package:resonchat/ui/two_column_layout.dart';
 
 /// Route `/chats`.
@@ -40,46 +39,15 @@ class HomeShell extends ConsumerWidget {
     final chatsBody = wide
         ? TwoColumnLayout(
             mainView: ChatsPage(activeChatKey: selected),
-            sideView: AnimatedSwitcher(
-              duration: motionDuration(context, kMotionBase),
-              switchInCurve: kMotionEnter,
-              switchOutCurve: kMotionExit,
-              layoutBuilder: (current, previous) => Stack(
-                fit: StackFit.expand,
-                children: [
-                  for (final child in previous)
-                    IgnorePointer(
-                      child: ExcludeFocus(
-                        child: ExcludeSemantics(child: child),
-                      ),
-                    ),
-                  ?current,
-                ],
-              ),
-              transitionBuilder: (child, animation) => FadeTransition(
-                opacity: animation,
-                child: SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(0.012, 0),
-                    end: Offset.zero,
-                  ).animate(animation),
-                  child: child,
-                ),
-              ),
-              child: selected == null || selected.isEmpty
-                  ? const EmptyChatPane(key: ValueKey('empty-chat-pane'))
-                  : ChatPage(
-                      key: ValueKey(selected),
-                      chatJid: selected,
-                      embedded: true,
-                    ),
-            ),
+            sideView: selected == null || selected.isEmpty
+                ? const EmptyChatPane()
+                : ChatPage(chatJid: selected, embedded: true),
           )
         : const ChatsPage();
     final pages = [chatsBody, const ContactsPage(), const MePage()];
 
     if (wide) {
-      return MotionTabStack(index: tab, children: pages);
+      return IndexedStack(index: tab, sizing: StackFit.expand, children: pages);
     }
     return PortraitHome(
       tab: tab,

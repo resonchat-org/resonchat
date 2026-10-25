@@ -26,15 +26,10 @@ export 'package:resonchat/xmpp/inbound/reaction_update.dart'
 
 /// The emoji offered without opening the full palette.
 ///
-/// Deliberately a short list of single-code-point characters. Reactions cross
-/// clients, so a character that one client draws as a coloured emoji and
-/// another as a monochrome glyph is a broken chip — and a sequence (a variation
-/// selector, a skin tone, a ZWJ join) is exactly how that happens.
-///
-/// Every code point here also has **emoji presentation by default**. U+2764
-/// (`❤`) does not: without U+FE0F, Linux draws it as a black glyph beside the
-/// coloured ones. The heart slot therefore uses 💗 (U+1F497), which is a single
-/// code point that still renders in colour.
+/// Curated defaults with emoji presentation by default. U+2764 (`❤`) is not
+/// used: without U+FE0F, Linux draws it as a black glyph beside the coloured
+/// ones, so the heart slot is 💗 (U+1F497). The full reaction set still follows
+/// Gajim (`isReactionEmoji`): flags and multi-code-point sequences are allowed.
 const kQuickReactions = <String>['👍', '💗', '😂', '😮', '😢', '🙏'];
 
 /// One emoji and the people who chose it, as the UI needs it.
