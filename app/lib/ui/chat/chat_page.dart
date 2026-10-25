@@ -130,6 +130,15 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   /// exits as soon as the number no longer matches.
   int _followGeneration = 0;
 
+  /// Newest row already marked read while this page is open. A scroll tick or
+  /// a rebuild must not write the same marker again; the id changes only when
+  /// something new actually arrived (or we sent it).
+  String? _lastReadMessageId;
+
+  /// A local read update is in flight. New messages that land during it are
+  /// picked up by the completion callback instead of racing the marker.
+  bool _markingRead = false;
+
   /// Older MAM page in flight. The list draws a spinner above the oldest row.
   bool _loadingOlder = false;
 
@@ -332,13 +341,12 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     _bindViewModel();
     unawaited(_loadOlderExhausted());
     unawaited(_restoreQuickReactions());
-    // Deliberately *not* marked read here. Marking on arrival would clear the
-    // unread badge before the user has read anything, and the boundary in the
-    // transcript would vanish before it had been seen. The marker advances when
-    // the page goes away, which is also the moment the badge in the chat list
-    // should stop counting these messages.
+    // Not marked read on arrival: that would clear the unread badge before the
+    // user had read anything. The marker advances once the newest row is on
+    // screen (see `_markReadIfVisible`), and [dispose] is the backstop for a
+    // reader who leaves without reaching the bottom.
     //
-    // Marking on "a message scrolled past" would be worse: a message the user
+    // Marking on "a message scrolled past" would be wrong: a message the user
     // scrolled past deliberately, on purpose, is not unread.
 
     // Conversations sends <displayed/> when the conversation is marked read
@@ -386,6 +394,12 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     // included), so switching chats just means attaching to the new one.
     if (oldWidget.chatJid != widget.chatJid) {
       _bindViewModel();
+      // The previous conversation's read marker and follow animation do not
+      // belong to the new one.
+      _lastReadMessageId = null;
+      _markingRead = false;
+      _followNewest = false;
+      _followGeneration++;
       // Defer: didUpdateWidget runs inside the parent rebuild, and writing a
       // StateProvider here re-enters Riverpod mid-notify (listener exception).
       final key = widget.chatJid;
@@ -555,6 +569,10 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final distance = position.maxScrollExtent - position.pixels;
     final atBottom = distance < 80;
     if (atBottom != _atBottom) setState(() => _atBottom = atBottom);
+    // Reaching the newest row is what "read" means while the chat is open.
+    // Without this the unread badge and divider survived until the page was
+    // left, so a reply the user was looking at still counted as unread.
+    if (atBottom) _markReadIfVisible();
 
     final towardOlder = position.pixels < _lastScrollOffset - 0.5;
     _lastScrollOffset = position.pixels;
@@ -562,6 +580,33 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     // row). Conversations loads once `firstVisibleItem < 5`.
     final atTop = position.pixels <= position.minScrollExtent + 48;
     if (atTop && towardOlder) unawaited(_maybeLoadOlder());
+  }
+
+  /// Advances the local read marker when the newest row is actually visible.
+  ///
+  /// The marker used to move only in [dispose], which meant an open chat could
+  /// show a reply while its badge and "unread messages" divider still said it
+  /// had not been read. Marking at the bottom (not on mere arrival) keeps the
+  /// boundary while the user is still reading above it, and removes both the
+  /// line and the badge as soon as the newest reply is on screen.
+  void _markReadIfVisible() {
+    if (!mounted || _markingRead || !_scroll.hasClients) return;
+    final position = _scroll.position;
+    if (position.maxScrollExtent - position.pixels >= 80) return;
+    final list = ref.read(messagesProvider(widget.chatJid)).value;
+    if (list == null || list.isEmpty) return;
+    final newest = unreadAnchorOf(list.last);
+    if (_lastReadMessageId == newest) return;
+    _lastReadMessageId = newest;
+    _markingRead = true;
+    unawaited(
+      _vm.markReadAndSendDisplayed().whenComplete(() {
+        _markingRead = false;
+        // A message can land while the marker is being written; the id check
+        // keeps this from repeating unless the newest row really changed.
+        if (mounted) _markReadIfVisible();
+      }),
+    );
   }
 
   /// A finger on the transcript wins over an auto-follow animation, otherwise
@@ -668,11 +713,13 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       final remaining = target - position.pixels;
       if (remaining <= 0.5) {
         if (!_atBottom) setState(() => _atBottom = true);
+        _markReadIfVisible();
         return;
       }
       if (pass >= 4) {
         position.jumpTo(target);
         if (!_atBottom) setState(() => _atBottom = true);
+        _markReadIfVisible();
         return;
       }
       // Small corrections stay snappy; a long trip gets a little more time
@@ -708,6 +755,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     if (!_scroll.hasClients) return;
     _scroll.jumpTo(_scroll.position.maxScrollExtent);
     if (!_atBottom) setState(() => _atBottom = true);
+    _markReadIfVisible();
   }
 
   /// Open position: search hit, else unread divider, else the latest message.
@@ -744,6 +792,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       if (_unreadDividerKey.currentContext != null) {
         _jumpToUnread(animate: false);
         if (_atBottom) setState(() => _atBottom = false);
+        // A short unread tail (the common case on a desktop window) leaves the
+        // divider at the bottom: those rows are on screen and already read.
+        _markReadIfVisible();
       } else {
         _jumpToBottom();
       }
