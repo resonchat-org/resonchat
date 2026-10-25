@@ -116,6 +116,20 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
   bool _atBottom = true;
 
+  /// The next appended row must pull the transcript down even if the user had
+  /// scrolled up: they just sent it, and a sent bubble the user cannot see is
+  /// indistinguishable from a failed send.
+  ///
+  /// Set before a send starts. The row is inserted into the database after the
+  /// track resolves, so the old "scroll after the next frame" ran before the
+  /// bubble existed and stopped at the previous bottom.
+  bool _followNewest = false;
+
+  /// Invalidates an in-flight follow animation when the user takes over or a
+  /// newer follow starts. Each follow bumps this and its animation/retry loop
+  /// exits as soon as the number no longer matches.
+  int _followGeneration = 0;
+
   /// Older MAM page in flight. The list draws a spinner above the oldest row.
   bool _loadingOlder = false;
 
@@ -550,6 +564,17 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     if (atTop && towardOlder) unawaited(_maybeLoadOlder());
   }
 
+  /// A finger on the transcript wins over an auto-follow animation, otherwise
+  /// the two fight and the list feels stuck. Older-page loading still gets the
+  /// same notification through [ScrollUpdateNotification].
+  bool _onScrollNotification(ScrollNotification notification) {
+    if (notification is ScrollStartNotification &&
+        notification.dragDetails != null) {
+      _cancelFollow();
+    }
+    return _onOlderPull(notification);
+  }
+
   /// A downward drag while already on the oldest row. Clamped scrolling does
   /// not move [ScrollPosition.pixels], so the offset listener never sees it.
   bool _onOlderPull(ScrollNotification notification) {
@@ -623,13 +648,59 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) => adjust());
   }
 
-  void _scrollToBottom() {
-    if (!_scroll.hasClients) return;
-    _scroll.animateTo(
-      _scroll.position.maxScrollExtent,
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOut,
-    );
+  /// Scrolls the transcript to the newest row after the frame that added it.
+  ///
+  /// The distance is animated rather than jumped so a sent bubble glides in.
+  /// A bubble can grow after its first layout (reply card, image, waveform),
+  /// so the animation re-aims at the live [ScrollPosition.maxScrollExtent]
+  /// instead of keeping the height it saw on the first frame. After a few
+  /// re-aims the final correction is exact — a sent message must never be
+  /// left clipped below the viewport.
+  void _followToBottom() {
+    final generation = ++_followGeneration;
+
+    void settle(int pass) {
+      if (!mounted || !_scroll.hasClients || generation != _followGeneration) {
+        return;
+      }
+      final position = _scroll.position;
+      final target = position.maxScrollExtent;
+      final remaining = target - position.pixels;
+      if (remaining <= 0.5) {
+        if (!_atBottom) setState(() => _atBottom = true);
+        return;
+      }
+      if (pass >= 4) {
+        position.jumpTo(target);
+        if (!_atBottom) setState(() => _atBottom = true);
+        return;
+      }
+      // Small corrections stay snappy; a long trip gets a little more time
+      // without feeling sluggish.
+      final duration = Duration(
+        milliseconds: (180 + remaining * 0.25).clamp(180, 360).round(),
+      );
+      _scroll
+          .animateTo(target, duration: duration, curve: Curves.easeOutCubic)
+          .then((_) {
+            if (!mounted ||
+                !_scroll.hasClients ||
+                generation != _followGeneration) {
+              return;
+            }
+            WidgetsBinding.instance.addPostFrameCallback(
+              (_) => settle(pass + 1),
+            );
+          });
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) => settle(0));
+  }
+
+  /// Stops a follow that is still animating: the user's finger wins.
+  void _cancelFollow() {
+    _followGeneration++;
+    _followNewest = false;
   }
 
   /// Instant jump used on first open (and after layout settles).
@@ -836,6 +907,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
   Future<void> _sendSticker(Sticker sticker) async {
     if (_ui.sending) return;
+    _followNewest = true;
     final result = await _vm.sendSticker(
       sticker,
       confirm: _confirm,
@@ -843,6 +915,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     );
     if (!mounted) return;
     if (result.uploadUnavailable) {
+      _followNewest = false;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(context.l10n.httpUploadUnavailable)),
       );
@@ -856,9 +929,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     } else if (result.failureReason != null) {
       _showNotSent(result.failureReason!);
     }
-    if (result.queued || result.sent) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
-    }
+    // The row is inserted before this returns; the provider listener animates
+    // once it is laid out. Only a send that left no row must drop the flag.
+    if (!result.queued && !result.sent) _followNewest = false;
   }
 
   Future<void> _attachFile() async {
@@ -894,6 +967,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(context.l10n.uploadingFile)));
+    _followNewest = true;
     final result = await _vm.sendAttachmentBytes(
       prepared,
       fileName: picked.name,
@@ -909,9 +983,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     } else if (result.failureReason != null) {
       _showNotSent(result.failureReason!);
     }
-    if (result.queued || result.sent) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
-    }
+    // The row is inserted before this returns; the provider listener animates
+    // once it is laid out. Only a send that left no row must drop the flag.
+    if (!result.queued && !result.sent) _followNewest = false;
   }
 
   /// Upload a hold-to-talk clip (Telegram MediaController → sendMessage).
@@ -927,6 +1001,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(context.l10n.uploadingFile)));
+    _followNewest = true;
     final result = await _vm.sendAttachmentBytes(
       clip.bytes,
       fileName: clip.fileName,
@@ -943,9 +1018,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     } else if (result.failureReason != null) {
       _showNotSent(result.failureReason!);
     }
-    if (result.queued || result.sent) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
-    }
+    // The row is inserted before this returns; the provider listener animates
+    // once it is laid out. Only a send that left no row must drop the flag.
+    if (!result.queued && !result.sent) _followNewest = false;
   }
 
   /// Conversations `highlightInConference`: tap an occupant avatar to address them.
@@ -1042,8 +1117,10 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
     // The bubble goes up as soon as the row is written; the send itself only
     // reports back later (a failure notice, or nothing when it worked).
+    // Watch for the row instead of scrolling now: `sendText` resolves the track
+    // first, so the bubble does not exist yet at the next frame.
+    _followNewest = true;
     _vm.onMessageSent();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
     final result = await _vm.sendText(
       body,
       confirm: _confirm,
@@ -1058,6 +1135,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     // restore the text. Only a send the user cancelled at a track dialog left
     // no row behind, and that draft must come back.
     if (!result.queued && !result.sent) {
+      _followNewest = false;
       _restoreUnsentDraft(body, reply);
       _showUnsentNotice();
     }
@@ -1841,6 +1919,24 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final l10n = context.l10n;
     final ui = ref.watch(chatViewModelProvider(widget.chatJid));
     final messages = ref.watch(messagesProvider(widget.chatJid));
+    // Follow a row that appears after a send. Doing this from the provider
+    // rather than a one-shot post-frame callback is what makes the glide start
+    // *after* the bubble is laid out: the row is written only once the track
+    // has resolved, which can be several frames after the send starts.
+    ref.listen(messagesProvider(widget.chatJid), (previous, next) {
+      final before = previous?.value;
+      final after = next.value;
+      if (before == null ||
+          after == null ||
+          before.isEmpty ||
+          after.isEmpty ||
+          after.last.id == before.last.id) {
+        return;
+      }
+      if (!_followNewest && !_atBottom) return;
+      _followNewest = false;
+      _followToBottom();
+    });
     // The chosen track, not the negotiated one. The header says what the user
     // picked; whether it can actually be used is decided at send time and
     // explained there if not.
@@ -2040,7 +2136,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                                   return NotificationListener<
                                     ScrollNotification
                                   >(
-                                    onNotification: _onOlderPull,
+                                    onNotification: _onScrollNotification,
                                     child: ChatMessageList(
                                       chatKey: widget.chatJid,
                                       messages: list,
@@ -2323,7 +2419,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       // without reading the icon.
       foregroundColor: hasUnreadDivider ? Colors.white : tg.accent,
       tooltip: hasUnreadDivider ? l10n.jumpToFirstUnread : l10n.scrollToLatest,
-      onPressed: hasUnreadDivider ? () => _jumpToUnread() : _scrollToBottom,
+      onPressed: hasUnreadDivider ? () => _jumpToUnread() : _followToBottom,
       child: Icon(
         hasUnreadDivider
             ? Icons.keyboard_double_arrow_up
