@@ -148,7 +148,7 @@ void main() {
       await tester.pumpWidget(wrap(bar(controller: controller)));
 
       controller.text = 'hello';
-      await tester.pump();
+      await tester.pumpAndSettle();
 
       expect(find.byIcon(Icons.send), findsOneWidget);
       expect(find.byIcon(Icons.mic), findsNothing);

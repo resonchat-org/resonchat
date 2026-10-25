@@ -18,6 +18,7 @@ import 'package:resonchat/ui/chat/media_attachment.dart';
 import 'package:resonchat/ui/chat/message_actions.dart'
     show messageMenuTapRegionGroup;
 import 'package:resonchat/ui/chat/read_ring.dart';
+import 'package:resonchat/ui/motion.dart';
 import 'package:resonchat/ui/theme.dart';
 import 'package:resonchat/xmpp/chat/reactions.dart';
 import 'package:resonchat/xmpp/message_send_status.dart';
@@ -152,7 +153,7 @@ class MessageBubble extends StatelessWidget {
     this.translation,
     this.translating = false,
     this.onReact,
-    this.onLongPress,
+    this.onMenu,
     this.textSelecting = false,
     this.onTextSelectionChanged,
     this.onTap,
@@ -271,8 +272,14 @@ class MessageBubble extends StatelessWidget {
 
   final bool failed;
 
-  /// Long-press on the row. [Rect] is the bubble in global coordinates.
-  final void Function(Rect anchor)? onLongPress;
+  /// Opens the message menu for this bubble. [Rect] is the bubble in global
+  /// coordinates, so the card opens beside the message rather than in the
+  /// middle of the full-width row.
+  ///
+  /// Wired to long-press on touch and to secondary (right) click on desktop:
+  /// a mouse has no long-press, and right-click is the gesture users already
+  /// reach for on a computer. Both paths are live on a touchscreen desktop.
+  final void Function(Rect anchor)? onMenu;
 
   /// While the anchored menu is open on a text message, the body is a
   /// selection the user can shrink. [onTextSelectionChanged] reports the
@@ -321,120 +328,147 @@ class MessageBubble extends StatelessWidget {
             padding: const EdgeInsets.only(right: 8),
             child: Align(
               alignment: Alignment.center,
-              child: Icon(
-                selected ? Icons.check_circle : Icons.circle_outlined,
-                size: 22,
-                color: selected ? tg.accent : tg.textSecondary,
+              child: AnimatedSwitcher(
+                duration: motionDuration(context, kMotionFast),
+                switchInCurve: kMotionEnter,
+                switchOutCurve: kMotionExit,
+                transitionBuilder: (child, animation) => FadeTransition(
+                  opacity: animation,
+                  child: ScaleTransition(
+                    scale: Tween<double>(begin: 0.7, end: 1).animate(animation),
+                    child: child,
+                  ),
+                ),
+                child: Icon(
+                  selected ? Icons.check_circle : Icons.circle_outlined,
+                  key: ValueKey(selected),
+                  size: 22,
+                  color: selected ? tg.accent : tg.textSecondary,
+                ),
               ),
             ),
           )
         : null;
 
-    final bubble = CustomPaint(
-      painter: _BubblePainter(
-        color: color,
-        side: side,
-        radius: TgDimens.bubbleRadius,
-        tail: TgDimens.bubbleTailSize,
-        style: bubbleStyle,
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(
-          TgDimens.bubblePaddingH + 4,
-          TgDimens.bubblePaddingV,
-          TgDimens.bubblePaddingH + 4,
-          TgDimens.bubblePaddingV,
-        ),
-        // Width comes only from body / media / meta. The reply card reports
-        // zero intrinsic width and then stretches to that sibling width, so a
-        // long quote never widens the bubble (monocles in-bubble card).
-        child: IntrinsicWidth(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (replyTo.isNotEmpty && !retracted)
-                _ExcludeFromIntrinsicWidth(
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: _ReplyQuote(
-                      body: replyBody,
-                      author: replyAuthor,
-                      onTap: onReplyTap,
-                    ),
-                  ),
-                ),
-              if (!retracted && message != null && message!.mediaUrl.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: MediaAttachment(message: message!, chatKey: chatKey),
-                ),
-              if (!_shouldHideUrlBody(message, text) &&
-                  (textSelecting || text.isNotEmpty))
-                textSelecting
-                    ? _SelectingMessageText(
-                        text: text,
-                        style: bodyStyle,
-                        onChanged: onTextSelectionChanged,
-                      )
-                    // SelectableText is ~3px wider than Text; keep that strip
-                    // while idle so long-press does not shift a short bubble.
-                    : Row(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Flexible(
-                            child: LinkifiedText(
-                              text: text,
-                              style: bodyStyle,
-                              highlightNicks: highlightNicks,
-                              mentionStyle: bodyStyle.copyWith(
-                                fontWeight: FontWeight.w700,
-                                color: tg.accent,
-                              ),
-                              linkStyle: bodyStyle.copyWith(
-                                color: tg.accent,
-                                decoration: TextDecoration.underline,
-                                decorationColor: tg.accent,
-                              ),
-                              quoteColor: tg.textSecondary,
-                            ),
-                          ),
-                          const SizedBox(width: 3),
-                        ],
-                      ),
-              Padding(
-                padding: const EdgeInsets.only(top: 2),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    if (edited && !retracted)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 6),
-                        child: Text(
-                          context.l10n.edited,
-                          style: TextStyle(
-                            fontSize: TgDimens.timeFontSize - 1,
-                            color: tg.textSecondary,
-                          ),
+    // Captured from the bubble itself, not the row: centring the menu on the
+    // full-width row puts it in the middle of the chat pane on desktop, far
+    // from the message the user clicked.
+    BuildContext? bubbleContext;
+    final bubble = Builder(
+      builder: (context) {
+        bubbleContext = context;
+        return CustomPaint(
+          painter: _BubblePainter(
+            color: color,
+            side: side,
+            radius: TgDimens.bubbleRadius,
+            tail: TgDimens.bubbleTailSize,
+            style: bubbleStyle,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              TgDimens.bubblePaddingH + 4,
+              TgDimens.bubblePaddingV,
+              TgDimens.bubblePaddingH + 4,
+              TgDimens.bubblePaddingV,
+            ),
+            // Width comes only from body / media / meta. The reply card reports
+            // zero intrinsic width and then stretches to that sibling width, so a
+            // long quote never widens the bubble (monocles in-bubble card).
+            child: IntrinsicWidth(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (replyTo.isNotEmpty && !retracted)
+                    _ExcludeFromIntrinsicWidth(
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: _ReplyQuote(
+                          body: replyBody,
+                          author: replyAuthor,
+                          onTap: onReplyTap,
                         ),
                       ),
-                    _MetaRow(
-                      time: time,
-                      sendStatus: sendStatus,
-                      delivered: delivered,
-                      displayed: displayed,
-                      failed: failed,
-                      mine: mine,
-                      encMode: encMode,
                     ),
-                  ],
-                ),
+                  if (!retracted &&
+                      message != null &&
+                      message!.mediaUrl.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: MediaAttachment(
+                        message: message!,
+                        chatKey: chatKey,
+                      ),
+                    ),
+                  if (!_shouldHideUrlBody(message, text) &&
+                      (textSelecting || text.isNotEmpty))
+                    textSelecting
+                        ? _SelectingMessageText(
+                            text: text,
+                            style: bodyStyle,
+                            onChanged: onTextSelectionChanged,
+                          )
+                        // SelectableText is ~3px wider than Text; keep that strip
+                        // while idle so long-press does not shift a short bubble.
+                        : Row(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Flexible(
+                                child: LinkifiedText(
+                                  text: text,
+                                  style: bodyStyle,
+                                  highlightNicks: highlightNicks,
+                                  mentionStyle: bodyStyle.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                    color: tg.accent,
+                                  ),
+                                  linkStyle: bodyStyle.copyWith(
+                                    color: tg.accent,
+                                    decoration: TextDecoration.underline,
+                                    decorationColor: tg.accent,
+                                  ),
+                                  quoteColor: tg.textSecondary,
+                                ),
+                              ),
+                              const SizedBox(width: 3),
+                            ],
+                          ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        if (edited && !retracted)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 6),
+                            child: Text(
+                              context.l10n.edited,
+                              style: TextStyle(
+                                fontSize: TgDimens.timeFontSize - 1,
+                                color: tg.textSecondary,
+                              ),
+                            ),
+                          ),
+                        _MetaRow(
+                          time: time,
+                          sendStatus: sendStatus,
+                          delivered: delivered,
+                          displayed: displayed,
+                          failed: failed,
+                          mine: mine,
+                          encMode: encMode,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
 
     // Conversations bubble_avatar_size is 48dp; keep a bit smaller so the
@@ -491,10 +525,12 @@ class MessageBubble extends StatelessWidget {
                 bubbleCap,
               ],
             ),
-            if (!retracted &&
-                (translating ||
-                    (translation != null && translation!.trim().isNotEmpty)))
-              Padding(
+            MotionCollapse(
+              visible:
+                  !retracted &&
+                  (translating ||
+                      (translation != null && translation!.trim().isNotEmpty)),
+              child: Padding(
                 padding: EdgeInsets.only(
                   top: 4,
                   left: mine ? 0 : 12,
@@ -510,7 +546,7 @@ class MessageBubble extends StatelessWidget {
                         ),
                       )
                     : Text(
-                        translation!,
+                        translation ?? '',
                         style: TextStyle(
                           fontSize: TgDimens.messageFontSize - 1,
                           color: tg.textSecondary,
@@ -519,8 +555,10 @@ class MessageBubble extends StatelessWidget {
                         ),
                       ),
               ),
-            if (reactions.isNotEmpty && !retracted)
-              Padding(
+            ),
+            MotionCollapse(
+              visible: reactions.isNotEmpty && !retracted,
+              child: Padding(
                 padding: EdgeInsets.only(
                   top: 3,
                   left: mine ? 0 : 10,
@@ -533,6 +571,7 @@ class MessageBubble extends StatelessWidget {
                   children: [
                     for (final reaction in reactions)
                       ReactionChip(
+                        key: ValueKey(reaction.emoji),
                         reaction: reaction,
                         onTap: onReact == null
                             ? null
@@ -541,6 +580,7 @@ class MessageBubble extends StatelessWidget {
                   ],
                 ),
               ),
+            ),
           ],
         );
       },
@@ -587,28 +627,38 @@ class MessageBubble extends StatelessWidget {
             children: rowChildren,
           );
 
-    final flash = highlighted
+    final selectionTint = Theme.of(context).colorScheme.primaryContainer
+        .withValues(alpha: 0.5);
+    final tint = highlighted
         ? tg.accent.withValues(alpha: 0.14)
         : selected
-        ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.5)
-        : null;
-    return Container(
+        ? selectionTint
+        : selectionTint.withValues(alpha: 0);
+    return AnimatedContainer(
       // Selection / reply-jump tint is on the row, not the bubble paint.
-      color: flash,
+      // Fading through a transparent version of the tint (rather than
+      // `Colors.transparent`) keeps the hue from flashing grey on dark themes.
+      duration: motionDuration(context, kMotionFast),
+      curve: kMotionStandard,
+      color: tint,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
       child: Builder(
         builder: (rowContext) {
+          void openMenu() {
+            final box =
+                (bubbleContext ?? rowContext).findRenderObject() as RenderBox?;
+            if (box == null || !box.hasSize) return;
+            onMenu!(box.localToGlobal(Offset.zero) & box.size);
+          }
+
           return GestureDetector(
             onTap: onTap,
             // While the body is a live selection, this detector must not take
             // the pointer or the handles cannot move.
-            onLongPress: textSelecting || onLongPress == null
+            onLongPress: textSelecting || onMenu == null ? null : openMenu,
+            onSecondaryTapUp: textSelecting || onMenu == null
                 ? null
-                : () {
-                    final box = rowContext.findRenderObject() as RenderBox?;
-                    if (box == null || !box.hasSize) return;
-                    onLongPress!(box.localToGlobal(Offset.zero) & box.size);
-                  },
+                : (_) => openMenu(),
             behavior: HitTestBehavior.opaque,
             child: row,
           );
@@ -808,7 +858,7 @@ class ReactionChip extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(reaction.emoji, style: const TextStyle(fontSize: 14)),
+              Text(reaction.emoji, style: emojiTextStyle(fontSize: 14)),
               if (reaction.count > 1) ...[
                 const SizedBox(width: 4),
                 Text(
@@ -918,7 +968,24 @@ class _MetaRow extends StatelessWidget {
         ),
         if (ticks != null) ...[
           const SizedBox(width: 3),
-          Icon(ticks, size: 14, color: tickColor),
+          AnimatedSwitcher(
+            duration: motionDuration(context, kMotionFast),
+            switchInCurve: kMotionEnter,
+            switchOutCurve: kMotionExit,
+            transitionBuilder: (child, animation) => FadeTransition(
+              opacity: animation,
+              child: ScaleTransition(
+                scale: Tween<double>(begin: 0.7, end: 1).animate(animation),
+                child: child,
+              ),
+            ),
+            child: Icon(
+              ticks,
+              key: ValueKey(ticks),
+              size: 14,
+              color: tickColor,
+            ),
+          ),
         ],
         const SizedBox(width: 5),
         Icon(encMode.icon, size: 12, color: labelColor),

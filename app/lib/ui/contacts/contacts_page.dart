@@ -19,6 +19,7 @@ import 'package:resonchat/ui/contacts/contacts_tiles.dart';
 import 'package:resonchat/ui/contacts/contacts_viewmodel.dart';
 import 'package:resonchat/ui/home/open_chat.dart';
 import 'package:resonchat/ui/home/shell_actions.dart';
+import 'package:resonchat/ui/motion.dart';
 import 'package:resonchat/ui/room/room_sheet.dart';
 import 'package:resonchat/ui/theme.dart';
 
@@ -47,14 +48,11 @@ class _ContactsPageState extends ConsumerState<ContactsPage>
   @override
   void initState() {
     super.initState();
-    _accountPanel = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 280),
-    );
-    _accountSlide = Tween<Offset>(begin: const Offset(-1, 0), end: Offset.zero)
-        .animate(
-          CurvedAnimation(parent: _accountPanel, curve: Curves.easeOutCubic),
-        );
+    _accountPanel = AnimationController(vsync: this, duration: kMotionSlow);
+    _accountSlide = Tween<Offset>(
+      begin: const Offset(-1, 0),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _accountPanel, curve: kMotionStandard));
   }
 
   @override

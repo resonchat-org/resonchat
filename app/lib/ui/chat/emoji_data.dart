@@ -85,7 +85,7 @@ class EmojiEntry {
 /// requires anyway.
 const List<EmojiEntry> _recent = <EmojiEntry>[
   EmojiEntry('👍', 'thumbs up'),
-  EmojiEntry('❤', 'heart'),
+  EmojiEntry('💗', 'growing heart'),
   EmojiEntry('😂', 'face with tears of joy'),
   EmojiEntry('😮', 'face with open mouth'),
   EmojiEntry('😢', 'crying face'),
@@ -387,6 +387,7 @@ const List<EmojiEntry> _symbols = <EmojiEntry>[
   // one is in `sendableEmoji`.
   EmojiEntry('❤', 'heart'),
   EmojiEntry('🧡', 'orange heart'),
+  EmojiEntry('💗', 'growing heart'),
   EmojiEntry('💛', 'yellow heart'),
   EmojiEntry('💚', 'green heart'),
   EmojiEntry('💙', 'blue heart'),

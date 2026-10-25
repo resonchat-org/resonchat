@@ -24,6 +24,7 @@ import 'package:resonchat/ui/column_mode.dart';
 import 'package:resonchat/ui/desktop_surface.dart';
 import 'package:resonchat/ui/home/open_chat.dart';
 import 'package:resonchat/ui/home/shell_actions.dart';
+import 'package:resonchat/ui/motion.dart';
 import 'package:resonchat/ui/theme.dart';
 
 class ChatsPage extends ConsumerStatefulWidget {
@@ -53,17 +54,20 @@ class _ChatsPageState extends ConsumerState<ChatsPage>
   late final AnimationController _accountPanel;
   late final Animation<Offset> _accountSlide;
 
+  /// Rows already painted. A sliver disposes rows outside the cache extent, so
+  /// their entrance widget must know whether this is a genuinely new chat or
+  /// the same chat scrolling back into view; only the former animates.
+  final Set<String> _seenRowKeys = <String>{};
+  bool _rowsSeeded = false;
+
   @override
   void initState() {
     super.initState();
-    _accountPanel = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 280),
-    );
-    _accountSlide = Tween<Offset>(begin: const Offset(-1, 0), end: Offset.zero)
-        .animate(
-          CurvedAnimation(parent: _accountPanel, curve: Curves.easeOutCubic),
-        );
+    _accountPanel = AnimationController(vsync: this, duration: kMotionSlow);
+    _accountSlide = Tween<Offset>(
+      begin: const Offset(-1, 0),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _accountPanel, curve: kMotionStandard));
   }
 
   @override
@@ -248,6 +252,7 @@ class _ChatsPageState extends ConsumerState<ChatsPage>
                     : chats.when(
                         data: (list) {
                           final filtered = _applyFilters(list);
+                          final enteringRows = _rowEntrances(filtered);
                           final emptyLabel = list.isEmpty
                               ? l10n.noConversationsYet
                               : (_scope == ChatsListScope.unread
@@ -275,12 +280,16 @@ class _ChatsPageState extends ConsumerState<ChatsPage>
                                     itemBuilder: (context, i) {
                                       final entry = filtered[i];
                                       final key = entry.ref.key;
-                                      return ChatRow(
-                                        key: ValueKey(key),
-                                        entry: entry,
-                                        showAccountChrome: _accountId == null,
-                                        selected: widget.activeChatKey == key,
-                                        onOpen: () => openChat(context, key),
+                                      return _ChatRowEntrance(
+                                        key: ValueKey('row-entrance-$key'),
+                                        animate: enteringRows.contains(key),
+                                        child: ChatRow(
+                                          key: ValueKey(key),
+                                          entry: entry,
+                                          showAccountChrome: _accountId == null,
+                                          selected: widget.activeChatKey == key,
+                                          onOpen: () => openChat(context, key),
+                                        ),
                                       );
                                     },
                                   ),
@@ -328,6 +337,23 @@ class _ChatsPageState extends ConsumerState<ChatsPage>
       );
     }
     return rows.toList(growable: false);
+  }
+
+  /// Keys that should play the row entrance on this frame.
+  Set<String> _rowEntrances(List<AccountChat> rows) {
+    if (!_rowsSeeded) {
+      if (rows.isEmpty) return const <String>{};
+      _rowsSeeded = true;
+      final initial = {for (final row in rows) row.ref.key};
+      _seenRowKeys.addAll(initial);
+      return initial;
+    }
+    final fresh = <String>{
+      for (final row in rows)
+        if (!_seenRowKeys.contains(row.ref.key)) row.ref.key,
+    };
+    _seenRowKeys.addAll(fresh);
+    return fresh;
   }
 
   /// Search hits store bare chat JID; resolve against the filtered account.
@@ -405,6 +431,69 @@ class _MessageSearchBar extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// One row sliding in the first time it is painted. Later rebuilds and rows
+/// scrolling back into view are static; [animate] is decided by the page.
+class _ChatRowEntrance extends StatefulWidget {
+  const _ChatRowEntrance({
+    super.key,
+    required this.animate,
+    required this.child,
+  });
+
+  final bool animate;
+  final Widget child;
+
+  @override
+  State<_ChatRowEntrance> createState() => _ChatRowEntranceState();
+}
+
+class _ChatRowEntranceState extends State<_ChatRowEntrance>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: kMotionBase,
+    value: 1,
+  );
+  bool _started = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_started) return;
+    _started = true;
+    if (!widget.animate ||
+        (MediaQuery.maybeDisableAnimationsOf(context) ?? false)) {
+      return;
+    }
+    _controller.value = 0;
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      child: widget.child,
+      builder: (context, child) {
+        final t = kMotionStandard.transform(_controller.value);
+        return Opacity(
+          opacity: t,
+          child: Transform.translate(
+            offset: Offset(0, 6 * (1 - t)),
+            child: child,
+          ),
+        );
+      },
     );
   }
 }

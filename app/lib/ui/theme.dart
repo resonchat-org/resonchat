@@ -12,6 +12,40 @@
 
 import 'package:flutter/material.dart';
 
+import 'package:resonchat/ui/motion.dart';
+
+/// Colour emoji families, most specific platform first.
+///
+/// Linux fontconfig lists Noto Sans Symbols 2 before Noto Color Emoji, so an
+/// older face such as 😀 is drawn from the monochrome outline font while a
+/// newer one such as 🥰 comes from Noto Color Emoji. That is why one row used
+/// to mix black-and-white and colour glyphs. Naming the colour families makes
+/// every emoji resolve to the same presentation on every platform we ship.
+const List<String> kColorEmojiFallback = <String>[
+  'Noto Color Emoji',
+  'Apple Color Emoji',
+  'Segoe UI Emoji',
+  'Android Emoji',
+];
+
+/// A style for strings that are only emoji.
+///
+/// The emoji families are the primary, not merely a fallback, because there is
+/// no text in the string that should win over them.
+///
+/// Do not add [kColorEmojiFallback] to mixed text (message bodies, timestamps,
+/// composers). Noto Color Emoji also covers ASCII digits, and its digits are
+/// over one em wide, so using it as a fallback makes every number look spaced
+/// out. Emoji-only widgets call this helper instead.
+TextStyle emojiTextStyle({double fontSize = 22, Color? color}) {
+  return TextStyle(
+    fontSize: fontSize,
+    color: color,
+    fontFamily: kColorEmojiFallback.first,
+    fontFamilyFallback: kColorEmojiFallback,
+  );
+}
+
 /// Telegram-like palette exposed through [ThemeExtension] so widgets read
 /// colours from the theme instead of hard-coding them.
 @immutable
@@ -265,6 +299,7 @@ class AppThemeTokens {
       colorScheme: scheme,
       brightness: brightness,
       scaffoldBackgroundColor: tg.pageBackground,
+      pageTransitionsTheme: kMotionPageTransitionsTheme,
       // Telegram's action bar has no elevation and no shadow.
       appBarTheme: AppBarTheme(
         backgroundColor: tg.barBackground,

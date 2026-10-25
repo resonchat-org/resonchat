@@ -191,7 +191,10 @@ class _StickerPanelState extends State<StickerPanel> {
                       child: Center(
                         child: Text(
                           emoji,
-                          style: TextStyle(fontSize: 24, color: tg.textPrimary),
+                          style: emojiTextStyle(
+                            fontSize: 24,
+                            color: tg.textPrimary,
+                          ),
                         ),
                       ),
                     );

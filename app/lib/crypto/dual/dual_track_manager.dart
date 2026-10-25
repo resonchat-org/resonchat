@@ -704,8 +704,20 @@ class DualTrackManager {
     JID jid,
   ) async {
     final pm = pubsubOf();
-    final items = await pm.getItems(jid, omemo2DevicesXmlns);
-    if (!items.isType<List<PubSubItem>>()) {
+    final items = await () async {
+      try {
+        // A pubsub query issued while the connection is dropping can be queued
+        // with an awaiter moxxmpp never resolves. This lookup is used to decide
+        // whether a send may proceed, so "we could not read it" must arrive in
+        // bounded time rather than pinning every later send for this contact.
+        return await pm
+            .getItems(jid, omemo2DevicesXmlns)
+            .timeout(kDeviceListDeadline);
+      } on TimeoutException {
+        return null;
+      }
+    }();
+    if (items == null || !items.isType<List<PubSubItem>>()) {
       return (devices: <int>{}, listReadable: false);
     }
     final ids = <int>{};

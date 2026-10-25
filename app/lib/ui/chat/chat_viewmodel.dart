@@ -11,6 +11,7 @@ import 'dart:typed_data';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:logging/logging.dart';
 import 'package:moxxmpp/moxxmpp.dart' show JID;
 
 import 'package:resonchat/account/resolve.dart';
@@ -239,6 +240,8 @@ final chatViewModelProvider = NotifierProvider.autoDispose
     .family<ChatViewModel, ChatUiState, String>(ChatViewModel.new);
 
 class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
+  final _log = Logger('ChatViewModel');
+
   bool _disposed = false;
 
   /// True while we have announced `composing` and not yet `paused`/`active`
@@ -731,6 +734,12 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
           requested: chosen,
         );
       }
+    } else if (chosen == Track.none) {
+      // Plaintext does not depend on what the peer publishes: there is no
+      // device list to read and nothing to encrypt. Asking the capability
+      // service here used to make a plaintext send wait on (and sometimes
+      // hang behind) a PEP lookup whenever the connection was down.
+      resolution = const TrackResolution(track: Track.none, blocked: null);
     } else {
       final caps = await xmpp.capabilitiesFor(peer);
       resolution = resolveTrack(requested: chosen, capabilities: caps);
@@ -858,7 +867,16 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
     if (state.sending) _set((s) => s.copyWith(sending: false));
 
     // Only now the part that may need the network, and may need to ask.
-    final resolved = await resolveTrackForSend(chosen, confirm);
+    final Track? resolved;
+    try {
+      resolved = await resolveTrackForSend(chosen, confirm);
+    } catch (e, st) {
+      // A lookup that throws must not strand the placeholder row on the clock.
+      // The composer has already been cleared, so the visible failure belongs
+      // to the bubble.
+      _log.warning('resolving a track for $peerStr failed', e, st);
+      return _failQueued(peerStr, stanzaId, xmpp, l10n);
+    }
     if (resolved == null) {
       // Cancelled at a track dialog. The row was only ever a placeholder, so
       // drop it: a message the user chose not to send must not linger as a
@@ -866,33 +884,44 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
       await _db.deleteOutgoingByStanzaId(peerStr, stanzaId);
       return const ChatSendResult();
     }
-    if (resolved != chosen) {
-      chosen = resolved;
-      await _db.updateEncMode(
-        peerStr,
-        stanzaId,
-        (await _xmpp.encModeForPeer(peerStr, chosen)).wire,
-      );
-    }
 
-    final outcome = reply == null
-        ? await xmpp.sendOnTrack(
-            sendTo,
-            text,
-            track: chosen,
-            messageType: messageType,
-            originId: stanzaId,
-          )
-        : await sendReply(
-            xmpp,
-            to: sendTo,
-            body: text,
-            targetId: reply.id,
-            track: chosen,
-            quoteBody: reply.body,
-            messageType: messageType,
-            originId: stanzaId,
-          );
+    final SendOutcome outcome;
+    try {
+      if (resolved != chosen) {
+        chosen = resolved;
+        await _db.updateEncMode(
+          peerStr,
+          stanzaId,
+          (await _xmpp.encModeForPeer(peerStr, chosen)).wire,
+        );
+      }
+
+      outcome = reply == null
+          ? await xmpp.sendOnTrack(
+              sendTo,
+              text,
+              track: chosen,
+              messageType: messageType,
+              originId: stanzaId,
+            )
+          : await sendReply(
+              xmpp,
+              to: sendTo,
+              body: text,
+              targetId: reply.id,
+              track: chosen,
+              quoteBody: reply.body,
+              messageType: messageType,
+              originId: stanzaId,
+            );
+    } catch (e, st) {
+      // Sending while the socket is down can throw (or the connection can be
+      // torn down between the row insert and the write). Keeping the row as
+      // `waiting` would show a clock forever with nothing left to move it, so
+      // record an actionable failure instead.
+      _log.warning('sending to $peerStr failed', e, st);
+      return _failQueued(peerStr, stanzaId, xmpp, l10n);
+    }
     if (!outcome.sent) {
       final reason =
           outcome.blocked?.localizedTitle(l10n) ?? l10n.unknownReason;
@@ -913,6 +942,43 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
     await _db.updateSendStatus(peerStr, stanzaId, MessageSendStatus.send);
     return ChatSendResult(queued: true, outcome: outcome);
   }
+
+  /// Marks the already-inserted placeholder as failed after an exception.
+  ///
+  /// The row exists, so [ChatSendResult.queued] stays true: the page must not
+  /// put the text back into the composer on top of the failed bubble.
+  Future<ChatSendResult> _failQueued(
+    String peerStr,
+    String stanzaId,
+    XmppService xmpp,
+    AppLocalizations l10n,
+  ) async {
+    final reason = xmpp.state == XmppConnectionState.connected
+        ? l10n.unknownReason
+        : l10n.notConnectedTryAgain;
+    await _db.updateSendStatus(
+      peerStr,
+      stanzaId,
+      MessageSendStatus.sendFailed,
+      deliveryError: reason,
+    );
+    return ChatSendResult(queued: true, failureReason: reason);
+  }
+
+  /// Fails any outgoing row still `waiting` from a previous run.
+  ///
+  /// Rows are inserted before the track/socket work, so a crash or a send
+  /// path that threw outside its own handler leaves one on the clock with
+  /// nothing left to advance it. Anything older than [staleAfter] cannot
+  /// belong to an in-flight send in this process.
+  Future<int> reconcileStaleWaiting({
+    required String reason,
+    Duration staleAfter = const Duration(minutes: 2),
+  }) => _db.failStaleOutgoingWaiting(
+    peerJid,
+    before: DateTime.now().subtract(staleAfter),
+    reason: reason,
+  );
 
   /// Whether the server offers XEP-0363 upload.
   Future<bool> isUploadAvailable() => _xmpp.httpFiles.isAvailable();

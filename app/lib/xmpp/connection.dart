@@ -383,18 +383,24 @@ class XmppService {
       );
     }
 
-    final caps = await capabilitiesFor(to);
-    final resolution = resolveTrack(requested: track, capabilities: caps);
-    if (!resolution.canSend) {
-      _log.info(
-        'refusing to send to $to on ${track.stored}: '
-        '${resolution.blocked?.name}',
-      );
-      return SendOutcome(
-        stanzaId: null,
-        track: track,
-        blocked: resolution.blocked,
-      );
+    // Plaintext has no capability question: nothing is encrypted, so there is
+    // no device list to read. Probing PEP here made a send wait on the network
+    // even when the user had explicitly chosen the clear, and a lookup stuck
+    // on a dying connection could keep it waiting indefinitely.
+    if (track != Track.none) {
+      final caps = await capabilitiesFor(to);
+      final resolution = resolveTrack(requested: track, capabilities: caps);
+      if (!resolution.canSend) {
+        _log.info(
+          'refusing to send to $to on ${track.stored}: '
+          '${resolution.blocked?.name}',
+        );
+        return SendOutcome(
+          stanzaId: null,
+          track: track,
+          blocked: resolution.blocked,
+        );
+      }
     }
 
     // The fallback body a plain-text reader sees. Built here because it has to

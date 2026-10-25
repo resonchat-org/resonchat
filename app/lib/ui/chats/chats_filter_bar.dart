@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:resonchat/account/account_color.dart';
 import 'package:resonchat/l10n/l10n.dart';
 import 'package:resonchat/persistence/account_store.dart';
+import 'package:resonchat/ui/motion.dart';
 import 'package:resonchat/ui/theme.dart';
 
 /// Which conversations the chats list should show.
@@ -231,7 +232,7 @@ class _SlidingScopeControlState extends State<_SlidingScopeControl> {
   List<double>? _widths;
 
   static const _pad = 2.0;
-  static const _slide = Duration(milliseconds: 220);
+  static const _slide = kMotionBase;
 
   @override
   void initState() {
@@ -301,7 +302,7 @@ class _SlidingScopeControlState extends State<_SlidingScopeControl> {
               if (widths != null)
                 AnimatedPositioned(
                   duration: _slide,
-                  curve: Curves.easeOutCubic,
+                  curve: kMotionStandard,
                   left: thumbLeft,
                   top: _pad,
                   bottom: _pad,
@@ -381,7 +382,7 @@ class _ScopeHit extends StatelessWidget {
             child: Center(
               child: AnimatedDefaultTextStyle(
                 duration: _SlidingScopeControlState._slide,
-                curve: Curves.easeOutCubic,
+                curve: kMotionStandard,
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,

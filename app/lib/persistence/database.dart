@@ -1618,6 +1618,32 @@ class AppDatabase extends _$AppDatabase {
         );
   }
 
+  /// Fails outgoing rows that have been `waiting` for longer than [before].
+  ///
+  /// A `waiting` row only exists between the local insert and the socket
+  /// write. If the process dies, or a send throws outside the paths that call
+  /// [updateSendStatus], nothing remains to move that row on — it would show a
+  /// clock forever. Reconciliation is deliberately time-bounded so a send
+  /// that is genuinely still resolving is never mistaken for a stranded one.
+  Future<int> failStaleOutgoingWaiting(
+    String chatJid, {
+    required DateTime before,
+    String reason = '',
+  }) =>
+      (update(messages)..where(
+            (m) =>
+                m.chatJid.equals(chatJid) &
+                m.incoming.equals(false) &
+                m.sendStatus.equals(MessageSendStatus.waiting) &
+                m.timestamp.isSmallerThanValue(before),
+          ))
+          .write(
+            MessagesCompanion(
+              sendStatus: const Value(MessageSendStatus.sendFailed),
+              deliveryError: Value(reason),
+            ),
+          );
+
   /// Corrects the declared track of an outgoing row.
   ///
   /// The row is written as soon as the send is queued — before the track is

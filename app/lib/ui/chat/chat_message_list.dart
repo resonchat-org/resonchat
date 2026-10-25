@@ -19,6 +19,7 @@ import 'package:resonchat/ui/chat/message_merge.dart';
 import 'package:resonchat/ui/chat/read_ring.dart';
 import 'package:resonchat/ui/chats/unread.dart';
 import 'package:resonchat/ui/contact_avatar.dart';
+import 'package:resonchat/ui/motion.dart';
 import 'package:resonchat/ui/theme.dart';
 import 'package:resonchat/xmpp/chat/reactions.dart';
 import 'package:resonchat/xmpp/group_read.dart';
@@ -27,7 +28,7 @@ import 'package:resonchat/xmpp/muc/muc.dart';
 import 'package:resonchat/xmpp/roster/avatar.dart';
 
 /// Message list with day separators and an unread marker.
-class ChatMessageList extends StatelessWidget {
+class ChatMessageList extends StatefulWidget {
   const ChatMessageList({
     super.key,
     required this.chatKey,
@@ -149,7 +150,138 @@ class ChatMessageList extends StatelessWidget {
   final bool loadingOlder;
 
   @override
+  State<ChatMessageList> createState() => _ChatMessageListState();
+}
+
+class _ChatMessageListState extends State<ChatMessageList> {
+  /// Message ids already present. Used to find the rows that are genuinely new
+  /// rather than merely rebuilt (a status tick, a reaction, a translation).
+  final Set<String> _known = <String>{};
+  Set<String> _entering = <String>{};
+  bool _seeded = false;
+
+  /// Newest timestamp seen, so loading older history above the viewport does
+  /// not make every restored row slide in.
+  DateTime? _latest;
+
+  static String _idOf(Message m) => 'row-${m.id}';
+
+  Widget _entrance(Message m, Widget child) {
+    final id = _idOf(m);
+    return _MessageEntrance(
+      key: ValueKey('message-entrance-$id'),
+      animate: _entering.contains(id),
+      child: child,
+    );
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.messages.isNotEmpty) _seed();
+  }
+
+  void _seed({bool animate = false}) {
+    _seeded = true;
+    _known.addAll(widget.messages.map(_idOf));
+    if (widget.messages.isNotEmpty) {
+      _latest = widget.messages.last.timestamp;
+    }
+    if (animate) {
+      _entering = widget.messages.map(_idOf).toSet();
+      _scheduleEntranceClear();
+    }
+  }
+
+  /// Forget an entrance after the frame that started it.
+  ///
+  /// Otherwise a row that is disposed and rebuilt later (scrolled out and
+  /// back) still carries `animate: true` and replays the slide.
+  void _scheduleEntranceClear() {
+    final scheduled = _entering;
+    if (scheduled.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !identical(_entering, scheduled)) return;
+      _entering = const <String>{};
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant ChatMessageList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.chatKey != widget.chatKey) {
+      // Normally the page carries a key per chat, but do not inherit another
+      // conversation's ids if that ever changes.
+      _known.clear();
+      _entering = const <String>{};
+      _latest = null;
+      _seeded = false;
+      if (widget.messages.isNotEmpty) {
+        _seed();
+      } else {
+        _seeded = true;
+      }
+      return;
+    }
+    if (!_seeded) {
+      if (widget.messages.isEmpty) {
+        _seeded = true;
+        return;
+      }
+      // The list was empty when it was built, so this is the first message of
+      // a new conversation, not restored history: let it arrive like every
+      // later one.
+      _seed(animate: true);
+      return;
+    }
+    final fresh = <String>{};
+    for (final m in widget.messages) {
+      final id = _idOf(m);
+      if (!_known.add(id)) continue;
+      if (_latest == null || !m.timestamp.isBefore(_latest!)) fresh.add(id);
+    }
+    var newest = _latest;
+    for (final m in widget.messages) {
+      if (newest == null || m.timestamp.isAfter(newest)) newest = m.timestamp;
+    }
+    _latest = newest;
+    _entering = fresh;
+    _scheduleEntranceClear();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final scroll = widget.scroll;
+    final messages = widget.messages;
+    final onRetryDecrypt = widget.onRetryDecrypt;
+    final onReact = widget.onReact;
+    final onMenu = widget.onMenu;
+    final selectingMessageId = widget.selectingMessageId;
+    final onTextSelectionChanged = widget.onTextSelectionChanged;
+    final onToggleSelected = widget.onToggleSelected;
+    final onMentionNick = widget.onMentionNick;
+    final onOccupantAvatarLongPress = widget.onOccupantAvatarLongPress;
+    final selectionMode = widget.selectionMode;
+    final selectedIds = widget.selectedIds;
+    final translations = widget.translations;
+    final translatingIds = widget.translatingIds;
+    final readAt = widget.readAt;
+    final unreadCount = widget.unreadCount;
+    final unreadDividerKey = widget.unreadDividerKey;
+    final focusMessageAnchor = widget.focusMessageAnchor;
+    final highlightMessageAnchor = widget.highlightMessageAnchor;
+    final onReplyTap = widget.onReplyTap;
+    final focusMessageKey = widget.focusMessageKey;
+    final bubbleStyle = widget.bubbleStyle;
+    final isGroup = widget.isGroup;
+    final groupReads = widget.groupReads;
+    final room = widget.room;
+    final highlightNicks = widget.highlightNicks;
+    final peerName = widget.peerName;
+    final selfNick = widget.selfNick;
+    final loadingOlder = widget.loadingOlder;
+    final chatKey = widget.chatKey;
+
     if (messages.isEmpty) {
       return Center(child: Text(context.l10n.noMessagesYet));
     }
@@ -217,7 +349,7 @@ class ChatMessageList extends StatelessWidget {
         if (matchesUnreadAnchor(m, focusMessageAnchor)) {
           line = KeyedSubtree(key: focusMessageKey, child: line);
         }
-        rows.add(line);
+        rows.add(_entrance(m, line));
         previousBubble = null;
         brokeMerge = true;
         continue;
@@ -241,7 +373,7 @@ class ChatMessageList extends StatelessWidget {
         if (matchesUnreadAnchor(m, focusMessageAnchor)) {
           errorRow = KeyedSubtree(key: focusMessageKey, child: errorRow);
         }
-        rows.add(errorRow);
+        rows.add(_entrance(m, errorRow));
         previousBubble = null;
         brokeMerge = false;
         continue;
@@ -285,7 +417,7 @@ class ChatMessageList extends StatelessWidget {
       if (matchesUnreadAnchor(m, focusMessageAnchor)) {
         bubble = KeyedSubtree(key: focusMessageKey, child: bubble);
       }
-      rows.add(bubble);
+      rows.add(_entrance(m, bubble));
       previousBubble = m;
     }
 
@@ -293,6 +425,70 @@ class ChatMessageList extends StatelessWidget {
       controller: scroll,
       padding: const EdgeInsets.symmetric(vertical: 8),
       children: rows,
+    );
+  }
+}
+
+/// Fades and lifts one message the first time it appears.
+///
+/// Only rows that actually arrived while the chat was open are [animate]d;
+/// rebuilding for a reaction or a receipt does not restart it, and rows that
+/// scroll back into view after being disposed stay put.
+class _MessageEntrance extends StatefulWidget {
+  const _MessageEntrance({
+    super.key,
+    required this.animate,
+    required this.child,
+  });
+
+  final bool animate;
+  final Widget child;
+
+  @override
+  State<_MessageEntrance> createState() => _MessageEntranceState();
+}
+
+class _MessageEntranceState extends State<_MessageEntrance>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: kMotionBase,
+    value: 1,
+  );
+  bool _started = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_started) return;
+    _started = true;
+    final reduceMotion = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    if (!widget.animate || reduceMotion) return;
+    _controller.value = 0;
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      child: widget.child,
+      builder: (context, child) {
+        final t = kMotionStandard.transform(_controller.value);
+        return Opacity(
+          opacity: t,
+          child: Transform.translate(
+            offset: Offset(0, 7 * (1 - t)),
+            child: child,
+          ),
+        );
+      },
     );
   }
 }
@@ -470,7 +666,7 @@ class _ChatReactionBubble extends ConsumerWidget {
       onTextSelectionChanged: onTextSelectionChanged,
       // Long-press → context menu (incl. Select). Tap toggles only while
       // already in multi-select — Select from the menu is what enters it.
-      onLongPress: message.retracted
+      onMenu: message.retracted
           ? null
           : selectionMode
           ? (message.stanzaId.isEmpty ? null : (_) => onToggleSelected())

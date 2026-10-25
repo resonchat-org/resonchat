@@ -9,9 +9,10 @@
 
 import 'package:flutter/material.dart';
 
+import 'package:resonchat/ui/motion.dart';
 import 'package:resonchat/ui/theme.dart';
 
-class DialogCell extends StatelessWidget {
+class DialogCell extends StatefulWidget {
   const DialogCell({
     super.key,
     required this.leading,
@@ -43,54 +44,88 @@ class DialogCell extends StatelessWidget {
   final bool selected;
 
   @override
+  State<DialogCell> createState() => _DialogCellState();
+}
+
+class _DialogCellState extends State<DialogCell> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
     final tg = context.tg;
-    final subtitle = this.subtitle;
-    return InkWell(
-      onTap: onTap,
-      onLongPress: onLongPress,
-      child: Container(
-        height: TgDimens.chatsRowHeight,
-        color: selected ? tg.accent.withValues(alpha: 0.12) : null,
-        padding: const EdgeInsets.symmetric(
-          horizontal: TgDimens.chatsHorizontalPadding,
-        ),
-        child: Row(
-          children: [
-            leading,
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      ...titleLeading,
-                      Expanded(
-                        child: Text(
-                          title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: TgDimens.chatTitleFontSize,
-                            fontWeight: titleWeight,
-                            color: tg.textPrimary,
+    final subtitle = widget.subtitle;
+    // A selected row in column mode has to remain findable while the pointer
+    // is elsewhere; the hover wash is a lighter, transient version of it.
+    // Fade from a transparent version of the accent, not transparent black:
+    // interpolating towards `Colors.transparent` drags the fill through a
+    // desaturated grey on a dark theme.
+    final background = widget.selected
+        ? tg.accent.withValues(alpha: 0.12)
+        : _hovered
+        ? tg.textPrimary.withValues(alpha: 0.035)
+        : tg.accent.withValues(alpha: 0);
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      cursor: widget.onTap == null
+          ? MouseCursor.defer
+          : SystemMouseCursors.click,
+      child: InkWell(
+        onTap: widget.onTap,
+        onLongPress: widget.onLongPress,
+        child: AnimatedContainer(
+          duration: motionDuration(context, kMotionFast),
+          curve: kMotionStandard,
+          height: TgDimens.chatsRowHeight,
+          color: background,
+          padding: const EdgeInsets.symmetric(
+            horizontal: TgDimens.chatsHorizontalPadding,
+          ),
+          child: Row(
+            children: [
+              widget.leading,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        ...widget.titleLeading,
+                        Expanded(
+                          child: AnimatedDefaultTextStyle(
+                            duration: motionDuration(context, kMotionFast),
+                            curve: kMotionStandard,
+                            style: TextStyle(
+                              fontSize: TgDimens.chatTitleFontSize,
+                              fontWeight: widget.titleWeight,
+                              color: tg.textPrimary,
+                            ),
+                            child: Text(
+                              widget.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         ),
-                      ),
-                      ?titleTrailing,
+                        ?widget.titleTrailing,
+                      ],
+                    ),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: TgDimens.chatsTitleGap),
+                      subtitle,
                     ],
-                  ),
-                  if (subtitle != null) ...[
-                    const SizedBox(height: TgDimens.chatsTitleGap),
-                    subtitle,
                   ],
-                ],
+                ),
               ),
-            ),
-            if (trailing != null) ...[const SizedBox(width: 8), trailing!],
-          ],
+              if (widget.trailing != null) ...[
+                const SizedBox(width: 8),
+                widget.trailing!,
+              ],
+            ],
+          ),
         ),
       ),
     );

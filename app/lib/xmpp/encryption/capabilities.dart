@@ -87,12 +87,26 @@ class CapabilityService {
   final _cache = <String, ChatCapabilities>{};
   final _inflight = <String, Future<ChatCapabilities>>{};
 
+  /// Bumped by every invalidation so a lookup started against the previous
+  /// connection cannot install its (now stale) answer afterwards.
+  int _generation = 0;
+
   /// Drops any cached answer for [jid] (call on PEP change events).
   void invalidate(JID jid) {
-    _cache.remove(jid.toBare().toString());
+    final key = jid.toBare().toString();
+    _cache.remove(key);
+    // A lookup already in flight may be waiting on the connection we just
+    // invalidated. Let the next caller start a fresh one instead of sharing a
+    // future that may never complete.
+    _inflight.remove(key);
+    _generation++;
   }
 
-  void invalidateAll() => _cache.clear();
+  void invalidateAll() {
+    _cache.clear();
+    _inflight.clear();
+    _generation++;
+  }
 
   /// Returns the cached answer if it is still fresh, else resolves.
   ///
@@ -118,6 +132,7 @@ class CapabilityService {
 
   Future<ChatCapabilities> _resolve(JID jid) async {
     final bare = jid.toBare();
+    final generation = _generation;
 
     final ourId = await ourDeviceId();
     final ourPq = await ourPqDevices();
@@ -167,7 +182,7 @@ class CapabilityService {
       'pq=${caps.pqDevices} '
       'classicOk=$classicReliable pqOk=$pqReliable',
     );
-    if (caps.reliable) {
+    if (caps.reliable && generation == _generation) {
       _cache[bare.toString()] = caps;
     }
     return caps;

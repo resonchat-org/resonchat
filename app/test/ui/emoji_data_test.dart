@@ -97,7 +97,8 @@ void main() {
 
     test('the heart is the trap, in both directions', () {
       // `❤️` is U+2764 U+FE0F. Two code points, so it is fine in the panel and
-      // not fine as a reaction — which is why kQuickReactions offers `❤`.
+      // not fine as a sent reaction — which is why kQuickReactions uses a
+      // single-code-point heart such as 💗 instead of either form.
       expect(isRenderableEmoji('❤️'), isTrue);
       expect(isSendableEmoji('❤️'), isFalse);
       expect(isRenderableEmoji('❤'), isTrue);

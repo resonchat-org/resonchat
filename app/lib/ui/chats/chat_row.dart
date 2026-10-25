@@ -28,6 +28,7 @@ import 'package:resonchat/ui/account_list_chrome.dart';
 import 'package:resonchat/ui/chats/notify_mode_sheet.dart';
 import 'package:resonchat/ui/contact_avatar.dart';
 import 'package:resonchat/ui/dialog_cell.dart';
+import 'package:resonchat/ui/motion.dart';
 import 'package:resonchat/ui/theme.dart';
 import 'package:resonchat/xmpp/chat_notify_mode.dart';
 import 'package:resonchat/xmpp/conversation_archive.dart';
@@ -108,14 +109,36 @@ class ChatRow extends ConsumerWidget {
       titleTrailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (chat.unreadMentions > 0) ...[
-            MentionBadge(muted: silenced),
-            const SizedBox(width: 4),
-          ],
-          if (chat.unreadCount > 0) ...[
-            UnreadBadge(count: chat.unreadCount, muted: silenced),
-            const SizedBox(width: 6),
-          ],
+          AnimatedSwitcher(
+            duration: motionDuration(context, kMotionFast),
+            switchInCurve: kMotionEnter,
+            switchOutCurve: kMotionExit,
+            transitionBuilder: (child, animation) => FadeTransition(
+              opacity: animation,
+              child: ScaleTransition(
+                scale: Tween<double>(begin: 0.72, end: 1).animate(animation),
+                child: child,
+              ),
+            ),
+            child: chat.unreadMentions > 0 || chat.unreadCount > 0
+                ? Row(
+                    key: ValueKey(
+                      'unread-${chat.unreadMentions}-${chat.unreadCount}',
+                    ),
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (chat.unreadMentions > 0) ...[
+                        MentionBadge(muted: silenced),
+                        const SizedBox(width: 4),
+                      ],
+                      if (chat.unreadCount > 0) ...[
+                        UnreadBadge(count: chat.unreadCount, muted: silenced),
+                        const SizedBox(width: 6),
+                      ],
+                    ],
+                  )
+                : const SizedBox.shrink(),
+          ),
           Text(
             _timeOf(chat.lastActivity),
             style: TextStyle(
@@ -145,13 +168,25 @@ class ChatRow extends ConsumerWidget {
           Row(
             children: [
               Expanded(
-                child: Text(
-                  preview.value ?? '',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: TgDimens.chatSubtitleFontSize,
-                    color: tg.textSecondary,
+                child: AnimatedSwitcher(
+                  duration: motionDuration(context, kMotionFast),
+                  // Fade the old preview out completely before the new one
+                  // starts, rather than superimposing two strings.
+                  switchInCurve: kMotionSwapIn,
+                  switchOutCurve: kMotionSwapOut,
+                  layoutBuilder: (current, previous) => Stack(
+                    alignment: Alignment.centerLeft,
+                    children: [...previous, ?current],
+                  ),
+                  child: Text(
+                    preview.value ?? '',
+                    key: ValueKey(preview.value ?? ''),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: TgDimens.chatSubtitleFontSize,
+                      color: tg.textSecondary,
+                    ),
                   ),
                 ),
               ),

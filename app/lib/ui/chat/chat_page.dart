@@ -40,12 +40,14 @@ import 'package:resonchat/ui/chat/conference_mention.dart';
 import 'package:resonchat/ui/chat/media_attachment.dart';
 import 'package:resonchat/ui/chat/message_actions.dart';
 import 'package:resonchat/ui/chat/quoted_transcript.dart';
+import 'package:resonchat/ui/chat/reaction_recents.dart';
 import 'package:resonchat/ui/chat/sticker_panel.dart';
 import 'package:resonchat/ui/chat/track_dialogs.dart';
 import 'package:resonchat/ui/chats/search.dart';
 import 'package:resonchat/ui/chats/unread.dart';
 import 'package:resonchat/ui/contact_avatar.dart';
 import 'package:resonchat/ui/home/open_chat.dart';
+import 'package:resonchat/ui/motion.dart';
 import 'package:resonchat/ui/room/occupant_actions.dart';
 import 'package:resonchat/ui/room/room_profile_page.dart';
 import 'package:resonchat/ui/room/room_sheet.dart';
@@ -279,8 +281,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   /// Stanza ids with a Translate request in flight.
   final Set<String> _translating = {};
 
-  /// Id of the message whose quick-reaction strip is open, or null.
-  String? _reactingToId;
+  /// Front reaction row, most recent first. Loaded from prefs and updated
+  /// whenever an emoji is picked from the full palette.
+  List<String> _quickReactions = kQuickReactions;
 
   /// Database id of the text message showing a live selection, or null.
   int? _selectingMessageId;
@@ -314,6 +317,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     _focus.addListener(_onComposerFocus);
     _bindViewModel();
     unawaited(_loadOlderExhausted());
+    unawaited(_restoreQuickReactions());
     // Deliberately *not* marked read here. Marking on arrival would clear the
     // unread badge before the user has read anything, and the boundary in the
     // transcript would vanish before it had been seen. The marker advances when
@@ -331,6 +335,11 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       ref.read(openChatKeyProvider.notifier).state = widget.chatJid;
       _clearShadeForOpenChat();
       unawaited(_vm.sendDisplayedForLatest());
+      // A message left on the clock by an earlier disconnected send must not
+      // stay there forever now that the app is running again.
+      unawaited(
+        _vm.reconcileStaleWaiting(reason: context.l10n.notConnectedTryAgain),
+      );
     });
   }
 
@@ -1218,6 +1227,15 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     };
   }
 
+  /// Loads the saved front row. Ignored if the user already picked an emoji
+  /// while the read was in flight: that newer choice must not be overwritten
+  /// by the one from disk.
+  Future<void> _restoreQuickReactions() async {
+    final loaded = await loadQuickReactions();
+    if (!mounted || !identical(_quickReactions, kQuickReactions)) return;
+    setState(() => _quickReactions = loaded);
+  }
+
   /// Adds or withdraws [emoji] on the message addressed by [targetId].
   Future<void> _toggleReaction(String targetId, String emoji) async {
     final ok = await _vm.toggleReaction(targetId, emoji);
@@ -1338,17 +1356,32 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       _selectedSlice = body;
       setState(() => _selectingMessageId = message.id);
     }
-    final choice = await showMessageMenu(
+    final picked = await showMessageMenu(
       context,
       actions: actions,
       trackIsPlaintext: track == Track.none,
       anchor: anchor,
+      quickReactions: _quickReactions,
     );
     final slice = _selectedSlice;
     if (mounted && _selectingMessageId != null) {
       setState(() => _selectingMessageId = null);
     }
-    if (!mounted || choice == null) return;
+    if (!mounted || picked == null) return;
+
+    if (picked is MessageMenuReaction) {
+      // An emoji from the full palette joins the front row, so reopening the
+      // menu shows it without opening the palette again. Picks from the front
+      // row are already there and keep their order.
+      if (picked.fromMore) {
+        final updated = promoteQuickReaction(_quickReactions, picked.emoji);
+        setState(() => _quickReactions = updated);
+        unawaited(saveQuickReactions(updated));
+      }
+      unawaited(_toggleReaction(message.stanzaId, picked.emoji));
+      return;
+    }
+    final choice = (picked as MessageMenuAction).action;
 
     switch (choice) {
       case MessageAction.reply:
@@ -1364,8 +1397,6 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         WidgetsBinding.instance.addPostFrameCallback(
           (_) => _focus.requestFocus(),
         );
-      case MessageAction.react:
-        setState(() => _reactingToId = message.stanzaId);
       case MessageAction.copy:
         unawaited(_copyToClipboard(body));
       case MessageAction.copySelection:
@@ -1537,12 +1568,11 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       return;
     }
     setState(() {
-      // Entering selection dismisses reply / edit / react chrome.
+      // Entering selection dismisses the reply / edit chrome.
       if (_selection.isEmpty) {
         _replyingTo = null;
         _editingId = null;
         _editingBody = '';
-        _reactingToId = null;
       }
       if (removing) {
         _selection.remove(message.stanzaId);
@@ -2084,20 +2114,54 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                               // input island and covers the send slot. Anchored
                               // here it always sits above whatever the composer
                               // is currently showing.
-                              if (!_selectionMode && !_atBottom)
-                                Positioned(
-                                  right: 16,
-                                  bottom: 12,
-                                  child: _scrollButton(tg),
+                              Positioned(
+                                right: 16,
+                                bottom: 12,
+                                child: AnimatedSwitcher(
+                                  duration: motionDuration(
+                                    context,
+                                    kMotionFast,
+                                  ),
+                                  switchInCurve: kMotionEnter,
+                                  switchOutCurve: kMotionExit,
+                                  layoutBuilder: (current, previous) => Stack(
+                                    alignment: Alignment.center,
+                                    children: [
+                                      for (final child in previous)
+                                        IgnorePointer(
+                                          child: ExcludeSemantics(child: child),
+                                        ),
+                                      ?current,
+                                    ],
+                                  ),
+                                  transitionBuilder: (child, animation) {
+                                    return FadeTransition(
+                                      opacity: animation,
+                                      child: ScaleTransition(
+                                        scale: Tween<double>(
+                                          begin: 0.75,
+                                          end: 1,
+                                        ).animate(animation),
+                                        child: child,
+                                      ),
+                                    );
+                                  },
+                                  child: !_selectionMode && !_atBottom
+                                      ? _scrollButton(tg)
+                                      : const SizedBox.shrink(
+                                          key: ValueKey('scroll-button-hidden'),
+                                        ),
                                 ),
+                              ),
                             ],
                           ),
                         ),
                         // Editing replaces the input bar rather than sitting above it: two
                         // text fields in one chat is ambiguous about which one a keystroke
                         // goes to.
-                        if (ui.mucPmNick != null)
-                          Material(
+                        MotionCollapse(
+                          visible: ui.mucPmNick != null,
+                          child: Material(
                             color: tg.accent.withValues(alpha: 0.12),
                             child: ListTile(
                               dense: true,
@@ -2107,7 +2171,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                                 size: 20,
                               ),
                               title: Text(
-                                l10n.privateMessageTo(ui.mucPmNick!),
+                                l10n.privateMessageTo(ui.mucPmNick ?? ''),
                                 style: TextStyle(
                                   color: tg.accent,
                                   fontSize: 13,
@@ -2120,49 +2184,98 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                               ),
                             ),
                           ),
-                        if (_replyingTo != null && _editingId == null)
-                          ReplyPreview(
-                            author: _replyingTo!.author,
-                            body: _replyingTo!.body,
+                        ),
+                        MotionCollapse(
+                          visible: _replyingTo != null && _editingId == null,
+                          child: ReplyPreview(
+                            author: _replyingTo?.author ?? '',
+                            body: _replyingTo?.body ?? '',
                             onCancel: () => setState(() => _replyingTo = null),
                             onTap: () => _jumpToReply(_replyingTo!.id),
                           ),
-                        if (_notice != null)
-                          _ChatNoticeBanner(
-                            message: _notice!.message,
-                            onDetails: _notice!.onDetails,
+                        ),
+                        MotionCollapse(
+                          visible: _notice != null,
+                          child: _ChatNoticeBanner(
+                            message: _notice?.message ?? '',
+                            onDetails: _notice?.onDetails,
                             onDismiss: _clearNotice,
                           ),
+                        ),
                         // Selection actions live in the AppBar (Telegram action mode).
                         // The composer stays hidden so keystrokes cannot go to a draft
                         // while the user is picking messages.
-                        if (_selectionMode)
-                          const SizedBox.shrink()
-                        else if (_editingId != null)
-                          EditComposer(
-                            initialText: _editingBody,
-                            onSubmit: _submitCorrection,
-                            onCancel: () => setState(() {
-                              _editingId = null;
-                              _editingBody = '';
-                            }),
-                          )
-                        else
-                          ChatInputBar(
-                            controller: _input,
-                            focusNode: _focus,
-                            onChanged: _vm.onInputChanged,
-                            onSend: _send,
-                            onAttach: _attachFile,
-                            onVoice: _sendVoice,
-                            onStickers: _toggleStickers,
-                            stickersOpen: _stickersOpen,
-                            attachEnabled: attachEnabled,
+                        AnimatedSwitcher(
+                          duration: motionDuration(context, kMotionBase),
+                          switchInCurve: kMotionEnter,
+                          switchOutCurve: kMotionExit,
+                          layoutBuilder: (current, previous) => Stack(
+                            alignment: Alignment.bottomCenter,
+                            children: [
+                              // While two composers overlap, only the incoming
+                              // one may take focus, taps, or semantics. The
+                              // outgoing field otherwise keeps the soft
+                              // keyboard up and lets a tap land on a control
+                              // that is visibly fading away.
+                              for (final child in previous)
+                                IgnorePointer(
+                                  child: ExcludeFocus(
+                                    child: ExcludeSemantics(child: child),
+                                  ),
+                                ),
+                              ?current,
+                            ],
                           ),
-                        if (_stickersOpen &&
-                            !_selectionMode &&
-                            _editingId == null)
-                          SizedBox(
+                          transitionBuilder: (child, animation) {
+                            return FadeTransition(
+                              opacity: animation,
+                              child: SizeTransition(
+                                sizeFactor: animation,
+                                axis: Axis.vertical,
+                                alignment: Alignment.bottomCenter,
+                                child: SlideTransition(
+                                  position: Tween<Offset>(
+                                    begin: const Offset(0, 0.06),
+                                    end: Offset.zero,
+                                  ).animate(animation),
+                                  child: child,
+                                ),
+                              ),
+                            );
+                          },
+                          child: _selectionMode
+                              ? const SizedBox.shrink(
+                                  key: ValueKey('selection-composer'),
+                                )
+                              : _editingId != null
+                              ? EditComposer(
+                                  key: const ValueKey('edit-composer'),
+                                  initialText: _editingBody,
+                                  onSubmit: _submitCorrection,
+                                  onCancel: () => setState(() {
+                                    _editingId = null;
+                                    _editingBody = '';
+                                  }),
+                                )
+                              : ChatInputBar(
+                                  key: const ValueKey('message-composer'),
+                                  controller: _input,
+                                  focusNode: _focus,
+                                  onChanged: _vm.onInputChanged,
+                                  onSend: _send,
+                                  onAttach: _attachFile,
+                                  onVoice: _sendVoice,
+                                  onStickers: _toggleStickers,
+                                  stickersOpen: _stickersOpen,
+                                  attachEnabled: attachEnabled,
+                                ),
+                        ),
+                        MotionCollapse(
+                          visible:
+                              _stickersOpen &&
+                              !_selectionMode &&
+                              _editingId == null,
+                          child: SizedBox(
                             height: 280,
                             child: StickerPanel(
                               stickers: _stickers ?? const Stream.empty(),
@@ -2174,19 +2287,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                                   unawaited(_vm.deleteSticker(sticker.id)),
                             ),
                           ),
-                        if (_reactingToId != null)
-                          QuickReactionBar(
-                            emoji: kQuickReactions,
-                            onPicked: (emoji) {
-                              final target = _reactingToId;
-                              setState(() => _reactingToId = null);
-                              if (target != null) {
-                                unawaited(_toggleReaction(target, emoji));
-                              }
-                            },
-                            onDismissed: () =>
-                                setState(() => _reactingToId = null),
-                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -2211,6 +2312,11 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final hasUnreadDivider =
         unread > 0 && _unreadDividerKey.currentContext != null;
     return FloatingActionButton.small(
+      key: ValueKey(hasUnreadDivider ? 'scroll-to-unread' : 'scroll-to-latest'),
+      // The switcher can keep two FABs mounted during a cross-fade. Two
+      // default hero tags in one route make the next push assert (and pick the
+      // wrong FAB in release), and this button never needs a hero flight.
+      heroTag: null,
       backgroundColor: hasUnreadDivider ? tg.accent : tg.peerBubble,
       // White on the accent, and the accent on the pale bubble: both pairs are
       // legible, and the colour difference is what tells the two states apart

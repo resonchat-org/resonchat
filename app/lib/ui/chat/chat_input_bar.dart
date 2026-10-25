@@ -60,6 +60,7 @@ import 'package:resonchat/platform/linux_cli_types.dart';
 import 'package:resonchat/platform/voice_recorder.dart';
 import 'package:resonchat/ui/chat/glass_panel.dart';
 import 'package:resonchat/ui/chat/send_shortcut_prefs.dart';
+import 'package:resonchat/ui/motion.dart';
 import 'package:resonchat/ui/theme.dart';
 
 /// Metrics read off the reference (`ChatActivityEnterView.java`).
@@ -383,17 +384,54 @@ class _ChatInputBarState extends ConsumerState<ChatInputBar>
                             : l10n.httpUploadUnavailable,
                         onTap: widget.attachEnabled ? widget.onAttach : null,
                       ),
-                    if (!_recording && hasText)
-                      _circleButton(
-                        tg,
-                        fill: tg.accent,
-                        onTap: widget.onSend,
-                        semanticLabel: l10n.sendMessage,
-                        icon: const Icon(
-                          Icons.send,
-                          size: _EnterView.glyph,
-                          color: Colors.white,
+                    if (!_recording)
+                      AnimatedSwitcher(
+                        duration: motionDuration(context, kMotionFast),
+                        switchInCurve: kMotionEnter,
+                        switchOutCurve: kMotionExit,
+                        // The outgoing slot is still painted for a moment.
+                        // It must not keep receiving taps: the mic listener
+                        // covers the full 44dp slot and would start a voice
+                        // recording under the send circle.
+                        layoutBuilder: (current, previous) => Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            for (final child in previous)
+                              IgnorePointer(
+                                child: ExcludeSemantics(child: child),
+                              ),
+                            ?current,
+                          ],
                         ),
+                        transitionBuilder: (child, animation) => FadeTransition(
+                          opacity: animation,
+                          child: ScaleTransition(
+                            scale: Tween<double>(
+                              begin: 0.72,
+                              end: 1,
+                            ).animate(animation),
+                            child: child,
+                          ),
+                        ),
+                        child: hasText
+                            ? KeyedSubtree(
+                                key: const ValueKey('send'),
+                                child: _circleButton(
+                                  tg,
+                                  fill: tg.accent,
+                                  onTap: widget.onSend,
+                                  semanticLabel: l10n.sendMessage,
+                                  icon: const Icon(
+                                    Icons.send,
+                                    size: _EnterView.glyph,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              )
+                            : KeyedSubtree(
+                                key: const ValueKey('microphone'),
+                                child: _endSlot(tg, l10n),
+                              ),
                       )
                     else
                       _endSlot(tg, l10n),
