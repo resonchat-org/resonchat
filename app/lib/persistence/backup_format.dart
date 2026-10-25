@@ -190,6 +190,12 @@ enum BackupTable {
   pendingCorrections,
   reactions,
 
+  /// Per-chat auto-translate target language. One row, one language.
+  chatTranslateSettings,
+
+  /// Incoming XEP-0171 translations, and the local original of a replaced send.
+  messageTranslations,
+
   /// Peer fingerprints + trust/active (public; not sealed private keys).
   omemoIdentities,
   meta;
@@ -208,6 +214,8 @@ enum BackupTable {
     subscriptionRequests => 'subscription_requests',
     pendingCorrections => 'pending_corrections',
     reactions => 'reactions',
+    chatTranslateSettings => 'chat_translate_settings',
+    messageTranslations => 'message_translations',
     omemoIdentities => 'omemo_identities',
     meta => 'meta',
   };
@@ -359,6 +367,24 @@ const Map<BackupTable, BackupTableSpec> kBackupTables = {
     BackupColumn('reactor', BackupColumnKind.text),
     BackupColumn('reacted_at', BackupColumnKind.stamp),
   ]),
+  BackupTable.chatTranslateSettings: BackupTableSpec(
+    BackupTable.chatTranslateSettings,
+    [
+      BackupColumn('chat_jid', BackupColumnKind.text),
+      BackupColumn('lang', BackupColumnKind.text),
+    ],
+  ),
+  BackupTable.messageTranslations: BackupTableSpec(
+    BackupTable.messageTranslations,
+    [
+      BackupColumn('chat_jid', BackupColumnKind.text),
+      BackupColumn('stanza_id', BackupColumnKind.text),
+      BackupColumn('lang', BackupColumnKind.text),
+      BackupColumn('body', BackupColumnKind.text),
+      BackupColumn('source_lang', BackupColumnKind.text),
+      BackupColumn('engine', BackupColumnKind.text),
+    ],
+  ),
   // Public fingerprints and local trust/active decisions — not sealed private
   // keys. Restoring them keeps verification state across reinstalls the way
   // monocles keeps the identities table with the account DB.

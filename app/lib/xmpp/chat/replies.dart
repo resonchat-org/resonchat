@@ -20,7 +20,7 @@
 // quote that empties out when its target is deleted is a broken quote.
 
 import 'package:moxxmpp/moxxmpp.dart'
-    show JID, ReplyData, XMLNode, replyXmlns, fallbackIndicationXmlns;
+    show JID, ReplyData, XMLNode, fallbackIndicationXmlns, replyXmlns;
 
 import 'package:resonchat/crypto/dual/track.dart';
 import 'package:resonchat/xmpp/connection.dart';

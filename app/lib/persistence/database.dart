@@ -114,6 +114,37 @@ class Chats extends Table {
   Set<Column> get primaryKey => {jid};
 }
 
+/// Per-conversation auto-translate target. One language; a missing row is off.
+///
+/// The send replaces the body with a translation into [lang]. The typed
+/// original is stored separately and is not put on the stanza.
+class ChatTranslateSettings extends Table {
+  TextColumn get chatJid => text()();
+
+  /// ISO 639 primary tag (`en`, `zh`).
+  TextColumn get lang => text()();
+
+  @override
+  Set<Column> get primaryKey => {chatJid};
+}
+
+/// XEP-0171 translations received on a message, one row per language.
+///
+/// Keyed by the stored stanza id (origin-id when the sender published one),
+/// the same address reactions use, so the row does not depend on the local
+/// message id.
+class MessageTranslations extends Table {
+  TextColumn get chatJid => text()();
+  TextColumn get stanzaId => text()();
+  TextColumn get lang => text()();
+  TextColumn get body => text()();
+  TextColumn get sourceLang => text().withDefault(const Constant(''))();
+  TextColumn get engine => text().withDefault(const Constant(''))();
+
+  @override
+  Set<Column> get primaryKey => {chatJid, stanzaId, lang};
+}
+
 /// One stored message. Both the ciphertext context (`encMode`) and —
 /// unless the user opts out (Q5) — the plaintext are kept so history
 /// survives restarts (M1 acceptance).
@@ -486,6 +517,8 @@ class Stickers extends Table {
     RosterEntries,
     BlockedContacts,
     PinnedMessages,
+    ChatTranslateSettings,
+    MessageTranslations,
     SubscriptionRequests,
     RoomInvitations,
     PendingCorrections,
@@ -500,11 +533,23 @@ class AppDatabase extends _$AppDatabase {
 
   @override
   // Keep in sync with [kAccountSchemaVersion] in database_connection_io.dart.
-  int get schemaVersion => 1;
+  int get schemaVersion => 3;
 
   @override
-  MigrationStrategy get migration =>
-      MigrationStrategy(onCreate: (m) async => m.createAll());
+  MigrationStrategy get migration => MigrationStrategy(
+    onCreate: (m) async => m.createAll(),
+    onUpgrade: (m, from, to) async {
+      if (from < 2) {
+        await m.createTable(chatTranslateSettings);
+        await m.createTable(messageTranslations);
+      }
+      if (from >= 2 && from < 3) {
+        await m.deleteTable('chat_translate_settings');
+        await m.deleteTable('chat_translate_langs');
+        await m.createTable(chatTranslateSettings);
+      }
+    },
+  );
 
   /// True when the user has acknowledged, for this conversation, that
   /// plaintext is readable by anyone with server access.
@@ -1028,6 +1073,143 @@ class AppDatabase extends _$AppDatabase {
     }
   }
 
+  /// Auto-translate target for [chatJid], or null when the feature is off.
+  Future<String?> chatAutoTranslate(String chatJid) async {
+    final setting = await (select(
+      chatTranslateSettings,
+    )..where((s) => s.chatJid.equals(chatJid))).getSingleOrNull();
+    final lang = setting?.lang.trim() ?? '';
+    return lang.isEmpty ? null : lang;
+  }
+
+  /// Stores one target language. A null or empty [lang] turns the feature off.
+  Future<void> setChatAutoTranslate({
+    required String chatJid,
+    required String? lang,
+  }) async {
+    final stored = lang?.trim().toLowerCase() ?? '';
+    await transaction(() async {
+      await upsertChat(chatJid);
+      await (delete(
+        chatTranslateSettings,
+      )..where((s) => s.chatJid.equals(chatJid))).go();
+      if (stored.isEmpty) return;
+      await into(chatTranslateSettings).insert(
+        ChatTranslateSettingsCompanion.insert(chatJid: chatJid, lang: stored),
+      );
+    });
+  }
+
+  Stream<List<MessageTranslation>> watchMessageTranslations(String chatJid) {
+    return (select(
+      messageTranslations,
+    )..where((t) => t.chatJid.equals(chatJid))).watch();
+  }
+
+  /// Writes [rows] for one message, leaving a locally kept original in place.
+  ///
+  /// Other language rows for this stanza are replaced, so a later copy of the
+  /// same message (a reflection, a carbon, an archive) can fill in
+  /// translations without erasing the text the user typed.
+  Future<void> upsertInboundTranslations({
+    required String chatJid,
+    required String stanzaId,
+    required List<
+      ({String lang, String body, String sourceLang, String engine})
+    >
+    rows,
+    required String keepLang,
+  }) {
+    return transaction(() async {
+      if (stanzaId.isEmpty || rows.isEmpty) return;
+      await (delete(messageTranslations)..where(
+            (t) =>
+                t.chatJid.equals(chatJid) &
+                t.stanzaId.equals(stanzaId) &
+                t.lang.equals(keepLang).not(),
+          ))
+          .go();
+      final fresh = [
+        for (final row in rows)
+          if (row.lang != keepLang &&
+              row.lang.isNotEmpty &&
+              row.body.trim().isNotEmpty)
+            row,
+      ];
+      if (fresh.isEmpty) return;
+      await batch((b) {
+        b.insertAll(messageTranslations, [
+          for (final row in fresh)
+            MessageTranslationsCompanion.insert(
+              chatJid: chatJid,
+              stanzaId: stanzaId,
+              lang: row.lang,
+              body: row.body,
+              sourceLang: Value(row.sourceLang),
+              engine: Value(row.engine),
+            ),
+        ]);
+      });
+    });
+  }
+
+  /// Replaces every translation stored for one message.
+  Future<void> replaceMessageTranslations({
+    required String chatJid,
+    required String stanzaId,
+    required List<
+      ({String lang, String body, String sourceLang, String engine})
+    >
+    rows,
+  }) {
+    return transaction(() async {
+      await (delete(messageTranslations)..where(
+            (t) => t.chatJid.equals(chatJid) & t.stanzaId.equals(stanzaId),
+          ))
+          .go();
+      if (stanzaId.isEmpty || rows.isEmpty) return;
+      await batch((b) {
+        b.insertAll(messageTranslations, [
+          for (final row in rows)
+            MessageTranslationsCompanion.insert(
+              chatJid: chatJid,
+              stanzaId: stanzaId,
+              lang: row.lang,
+              body: row.body,
+              sourceLang: Value(row.sourceLang),
+              engine: Value(row.engine),
+            ),
+        ]);
+      });
+    });
+  }
+
+  Future<void> deleteMessageTranslations(String chatJid) {
+    return (delete(
+      messageTranslations,
+    )..where((t) => t.chatJid.equals(chatJid))).go();
+  }
+
+  /// Drops stored translations and local originals for the message addressed
+  /// by [targetId] (origin-id or room stanza-id).
+  Future<void> deleteTranslationsAddressedBy(String targetId) async {
+    if (targetId.isEmpty) return;
+    final rows =
+        await (select(messages)..where(
+              (m) =>
+                  m.stanzaId.equals(targetId) | m.roomStanzaId.equals(targetId),
+            ))
+            .get();
+    for (final row in rows) {
+      if (row.stanzaId.isEmpty) continue;
+      await (delete(messageTranslations)..where(
+            (t) =>
+                t.chatJid.equals(row.chatJid) & t.stanzaId.equals(row.stanzaId),
+          ))
+          .go();
+    }
+  }
+
   /// The draft for [chatJid], or null when the box is empty.
   ///
   /// Kept in the database rather than in the text field's controller: the field
@@ -1498,6 +1680,10 @@ class AppDatabase extends _$AppDatabase {
         pinnedMessages,
       )..where((p) => p.chatJid.equals(chatJid))).go();
       await (delete(messages)..where((m) => m.chatJid.equals(chatJid))).go();
+      await deleteMessageTranslations(chatJid);
+      await (delete(
+        chatTranslateSettings,
+      )..where((s) => s.chatJid.equals(chatJid))).go();
       await (delete(chats)..where((c) => c.jid.equals(chatJid))).go();
       await deleteMetaValue('draft:$chatJid');
       await deleteMetaValue('plaintext_ack:$chatJid');
@@ -1517,6 +1703,7 @@ class AppDatabase extends _$AppDatabase {
       await (delete(
         pinnedMessages,
       )..where((p) => p.chatJid.equals(chatJid))).go();
+      await deleteMessageTranslations(chatJid);
       final n = await (delete(
         messages,
       )..where((m) => m.chatJid.equals(chatJid))).go();
@@ -1544,11 +1731,14 @@ class AppDatabase extends _$AppDatabase {
         (byChat[m.chatJid] ??= <String>{}).add(m.stanzaId);
       }
       for (final entry in byChat.entries) {
-        await (delete(pinnedMessages)..where(
-              (p) =>
-                  p.chatJid.equals(entry.key) &
-                  p.stanzaId.isIn(entry.value.toList()),
-            ))
+        final ids = entry.value.toList();
+        await (delete(
+              pinnedMessages,
+            )..where((p) => p.chatJid.equals(entry.key) & p.stanzaId.isIn(ids)))
+            .go();
+        await (delete(
+              messageTranslations,
+            )..where((t) => t.chatJid.equals(entry.key) & t.stanzaId.isIn(ids)))
             .go();
       }
       return (delete(
@@ -1659,6 +1849,24 @@ class AppDatabase extends _$AppDatabase {
                 m.incoming.equals(false),
           ))
           .write(MessagesCompanion(encMode: Value(encMode)));
+
+  /// Replaces the body of an outgoing row that has not left yet.
+  ///
+  /// Used when encrypted auto-translate substitutes the translation for the
+  /// text the user typed, so the bubble matches the stanza. The original
+  /// stays in [messageTranslations] and is not sent.
+  Future<int> updateOutgoingBody(
+    String chatJid,
+    String stanzaId,
+    String body,
+  ) =>
+      (update(messages)..where(
+            (m) =>
+                m.chatJid.equals(chatJid) &
+                m.stanzaId.equals(stanzaId) &
+                m.incoming.equals(false),
+          ))
+          .write(MessagesCompanion(body: Value(body)));
 
   /// Removes a queued outgoing row that was never sent.
   ///

@@ -9,6 +9,21 @@ import 'package:resonchat/crypto/dual/track.dart';
 import 'package:resonchat/xmpp/inbound/reaction_update.dart';
 import 'package:resonchat/xmpp/inbound/reply_info.dart';
 
+/// One XEP-0171 translation on an inbound message.
+class InboundTranslation {
+  const InboundTranslation({
+    required this.lang,
+    required this.text,
+    this.sourceLang = '',
+    this.engine = '',
+  });
+
+  final String lang;
+  final String text;
+  final String sourceLang;
+  final String engine;
+}
+
 /// Decrypted inbound chat message, either track or plaintext.
 class InboundMessage {
   InboundMessage({
@@ -37,6 +52,7 @@ class InboundMessage {
     this.mediaUrl = '',
     this.mediaMime = '',
     this.mediaName = '',
+    this.translations = const [],
   });
 
   final JID from;
@@ -135,6 +151,9 @@ class InboundMessage {
 
   /// Original file name when known.
   final String mediaName;
+
+  /// XEP-0171 translations carried on the stanza.
+  final List<InboundTranslation> translations;
 
   /// Which track the sender used, read from its EME declaration.
   ///

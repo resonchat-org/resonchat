@@ -9,6 +9,7 @@ import 'package:resonchat/crypto/dual/fingerprint_trust.dart';
 import 'package:resonchat/crypto/dual/track.dart';
 import 'package:resonchat/persistence/database.dart';
 import 'package:resonchat/persistence/prefs_database.dart';
+import 'package:resonchat/translate/chat_auto_translate.dart';
 import 'package:resonchat/xmpp/inbound/inbound_message.dart';
 import 'package:resonchat/xmpp/inbound/reaction_update.dart';
 import 'package:resonchat/xmpp/message_expiry.dart';
@@ -51,12 +52,18 @@ class MessagesService {
       targetId,
       mark,
     );
-    if (byMessageId > 0) return true;
+    if (byMessageId > 0) {
+      await _db.deleteTranslationsAddressedBy(targetId);
+      return true;
+    }
     final byRoomId = await _db.markMessageRetractedByRoomStanzaId(
       targetId,
       mark,
     );
-    if (byRoomId > 0) return true;
+    if (byRoomId > 0) {
+      await _db.deleteTranslationsAddressedBy(targetId);
+      return true;
+    }
 
     // A plain retract can land before the moderation notice. Fill the
     // moderator and the reason without moving the timestamp or replacing a
@@ -93,6 +100,7 @@ class MessagesService {
       editedAt: now,
     );
     if (updated > 0) {
+      await _db.deleteTranslationsAddressedBy(targetId);
       await _db.upsertChat(chatJid);
       return;
     }
@@ -169,7 +177,18 @@ class MessagesService {
     final isGroupchat = msg.type == 'groupchat';
     await _db.upsertChat(chatJid, isGroup: isGroupchat ? true : null);
 
-    if (msg.isCarbonCopy) return false;
+    if (msg.isCarbonCopy) {
+      // A carbon of our own message is addressed from us. The bubble lives
+      // in the peer's chat, which is `to`.
+      final carbonChat =
+          ownBare != null &&
+              msg.to != null &&
+              msg.from.toBare().toString() == ownBare
+          ? msg.to!.toBare().toString()
+          : chatJid;
+      await _keepTranslations(carbonChat, msg);
+      return false;
+    }
 
     if (msg.retracts != null) {
       await applyRetraction(
@@ -213,6 +232,7 @@ class MessagesService {
 
     if (ownMuc && remoteId.isNotEmpty) {
       if (await _db.markDelivered(chatJid, remoteId) > 0) {
+        await _keepTranslations(chatJid, msg);
         return false;
       }
     }
@@ -243,9 +263,13 @@ class MessagesService {
     if (msg.originId != null &&
         msg.originId!.isNotEmpty &&
         await _db.findByStanzaId(chatJid, msg.originId!) != null) {
+      await _keepTranslations(chatJid, msg);
       return false;
     }
-    if (await _db.findByStanzaId(chatJid, stanzaId) != null) return false;
+    if (await _db.findByStanzaId(chatJid, stanzaId) != null) {
+      await _keepTranslations(chatJid, msg);
+      return false;
+    }
     final dedupeKey = sender.isEmpty ? stanzaId : sender;
     if (await _db.findByStanzaId(chatJid, dedupeKey) != null) return false;
 
@@ -302,7 +326,28 @@ class MessagesService {
         mentionsMe: Value(mentionsMe),
       ),
     );
+    await _keepTranslations(chatJid, msg);
     return mentionsMe;
+  }
+
+  /// Stores every translation carried on [msg], including ones on our own
+  /// messages. A locally kept original is left in place.
+  Future<void> _keepTranslations(String chatJid, InboundMessage msg) {
+    final storedId = msg.originId ?? msg.stanzaId ?? '';
+    return _db.upsertInboundTranslations(
+      chatJid: chatJid,
+      stanzaId: storedId,
+      keepLang: kLocalOriginalLang,
+      rows: [
+        for (final t in msg.translations)
+          (
+            lang: t.lang,
+            body: t.text,
+            sourceLang: t.sourceLang,
+            engine: t.engine,
+          ),
+      ],
+    );
   }
 
   /// Gajim: own encrypted rows are VERIFIED; peer rows snapshot aggregate

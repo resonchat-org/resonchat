@@ -141,6 +141,20 @@ InboundMessage? inboundFromMessageEvent(
     roomStanzaId: roomStanzaId,
     corrects: correction?.id,
     mediaUrl: tombstone ? '' : mediaUrl,
+    translations: tombstone
+        ? const []
+        : [
+            for (final t
+                in event.get<LangTransData>()?.translations ??
+                    const <LanguageTranslation>[])
+              if (t.text.trim().isNotEmpty)
+                InboundTranslation(
+                  lang: t.destinationLang,
+                  text: t.text,
+                  sourceLang: t.sourceLang ?? '',
+                  engine: t.engine ?? '',
+                ),
+          ],
     reply: reply,
     reactions: reactionData == null
         ? null

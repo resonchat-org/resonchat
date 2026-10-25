@@ -26,6 +26,7 @@ import 'package:resonchat/crypto/omemo2/protocol.dart';
 import 'package:resonchat/persistence/database.dart';
 import 'package:resonchat/persistence/omemo_device_store.dart';
 import 'package:resonchat/persistence/prefs_database.dart';
+import 'package:resonchat/translate/remote_translation.dart';
 import 'package:resonchat/xmpp/chat/replies.dart';
 import 'package:resonchat/xmpp/connect_failure.dart';
 import 'package:resonchat/xmpp/encryption/b_track_manager.dart';
@@ -272,6 +273,9 @@ class XmppService {
 
   /// Conversations `chat_states` — send XEP-0085 typing notifications.
   bool sendTypingNotifications = true;
+
+  /// Translation providers found on this connection. Cleared on disconnect.
+  final _remoteTranslation = RemoteTranslationClient();
 
   /// Receipt requests deferred while a MAM catch-up is in flight
   /// (Conversations MessageArchiveManager.processPostponed).
@@ -2064,6 +2068,31 @@ class XmppService {
   DiscoManager? get disco =>
       _connection?.getManagerById<DiscoManager>(discoManager);
 
+  /// Asks a translation provider on this server to translate [text] into
+  /// [uiLanguage]. The provider list is cached until disconnect.
+  Future<RemoteTranslationOutcome> requestRemoteTranslation({
+    required String text,
+    required String uiLanguage,
+  }) async {
+    final connection = _connection;
+    final discoManager = disco;
+    final lang = connection?.getManagerById<LanguageTranslationManager>(
+      languageTranslationManager,
+    );
+    if (connection == null || discoManager == null || lang == null) {
+      return const RemoteTranslationOutcome.reject(
+        RemoteTranslationReject.notConnected,
+      );
+    }
+    return _remoteTranslation.translate(
+      disco: discoManager,
+      lang: lang,
+      server: connection.connectionSettings.jid.toDomain(),
+      text: text,
+      uiLanguage: uiLanguage,
+    );
+  }
+
   NickManager? get nick =>
       _connection?.getManagerById<NickManager>(nickManager);
 
@@ -2399,6 +2428,10 @@ class XmppService {
       // XEP-0461 replies: the quoted text travels in the body fallback, the
       // reference in a <reply> element.
       MessageRepliesManager(),
+      // XEP-0171: read `<x xmlns='urn:xmpp:langtrans'/>` on incoming
+      // messages, and request translations from a remote provider. This
+      // client does not advertise the feature or attach translations.
+      LanguageTranslationManager(),
       // XEP-0191 blocking. Push events matter: another of our devices
       // blocking someone has to take effect here too.
       BlockingManager(),
@@ -3849,6 +3882,7 @@ class XmppService {
     ];
     if (closes.isNotEmpty) await Future.wait(closes);
     presence.clear();
+    _remoteTranslation.clear();
     if (!_presenceChanges.isClosed) _presenceChanges.add(null);
     _setState(XmppConnectionState.disconnected);
   }

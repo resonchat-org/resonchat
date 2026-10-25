@@ -20,6 +20,7 @@ import 'package:moxxmpp/moxxmpp.dart' show JID;
 import 'package:resonchat/account/resolve.dart';
 import 'package:resonchat/l10n/l10n.dart';
 import 'package:resonchat/state/providers.dart';
+import 'package:resonchat/ui/chat/auto_translate_sheet.dart';
 import 'package:resonchat/ui/chat/chat_profile_sections.dart';
 import 'package:resonchat/ui/theme.dart';
 import 'package:resonchat/xmpp/connection.dart';
@@ -131,6 +132,7 @@ class ProfilePage extends ConsumerWidget {
 
           ChatEncryptionSection(chatJid: chatJid),
           ChatNotifySection(chatJid: chatJid),
+          ChatAutoTranslateSection(chatJid: chatJid),
           ChatAppearanceSection(chatJid: chatJid),
 
           ChatProfileSectionTitle(l10n.actions),

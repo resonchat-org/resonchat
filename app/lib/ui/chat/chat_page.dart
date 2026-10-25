@@ -25,6 +25,8 @@ import 'package:resonchat/persistence/media_store.dart';
 import 'package:resonchat/platform/app_notifications.dart';
 import 'package:resonchat/platform/voice_recorder.dart';
 import 'package:resonchat/state/providers.dart';
+import 'package:resonchat/translate/chat_auto_translate.dart';
+import 'package:resonchat/translate/remote_translation.dart';
 import 'package:resonchat/translate/translatable_text.dart';
 import 'package:resonchat/translate/translation_prefs.dart';
 import 'package:resonchat/translate/translation_service.dart';
@@ -300,6 +302,45 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
   /// In-memory translations for the open chat, keyed by stanza id.
   final Map<String, String> _translations = {};
+
+  /// Translations already on the stanza whose language matches the UI.
+  ///
+  /// Shown in the same place as a long-press translation, without asking the
+  /// user to translate again. A long-press result in [_translations] wins.
+  Map<String, String> _stanzaTranslations(BuildContext context) {
+    final rows =
+        ref.watch(messageTranslationsProvider(widget.chatJid)).value ??
+        const <MessageTranslation>[];
+    final uiLang = Localizations.localeOf(context).languageCode;
+    final byId = <String, List<({String lang, String text})>>{};
+    for (final row in rows) {
+      if (row.lang == kLocalOriginalLang) continue;
+      byId.putIfAbsent(row.stanzaId, () => []).add((
+        lang: row.lang,
+        text: row.body,
+      ));
+    }
+    final shown = <String, String>{};
+    for (final entry in byId.entries) {
+      final text = translationMatchingUi(entry.value, uiLang);
+      if (text != null) shown[entry.key] = text;
+    }
+    return shown;
+  }
+
+  /// Typed text kept under a message this device replaced before sending.
+  Map<String, String> _outgoingOriginals() {
+    final rows =
+        ref.watch(messageTranslationsProvider(widget.chatJid)).value ??
+        const <MessageTranslation>[];
+    final shown = <String, String>{};
+    for (final row in rows) {
+      if (row.lang != kLocalOriginalLang) continue;
+      if (row.body.trim().isEmpty) continue;
+      shown[row.stanzaId] = row.body;
+    }
+    return shown;
+  }
 
   /// Stanza ids with a Translate request in flight.
   final Set<String> _translating = {};
@@ -1454,6 +1495,12 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         message.mediaUrl.isNotEmpty || message.localPath.isNotEmpty;
     final decrypted =
         message.encMode != EncModeToken.error.wire && !message.retracted;
+    final offerTranslate = canOfferTranslate(
+      body: body,
+      decrypted: decrypted,
+      retracted: message.retracted,
+      hasMedia: isFileMessage,
+    );
     final actions = MessageActions.for_(
       mine: !message.incoming,
       moderate:
@@ -1472,12 +1519,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
           !kIsWeb && isFileMessage && mediaStore.existsSync(message.localPath),
       canSaveSticker: _canSaveSticker(message),
       canCopySelection: !isFileMessage && body.trim().isNotEmpty && decrypted,
-      canTranslate: canOfferTranslate(
-        body: body,
-        decrypted: decrypted,
-        retracted: message.retracted,
-        hasMedia: isFileMessage,
-      ),
+      canTranslate: offerTranslate,
+      canRequestTranslation: track == Track.none && offerTranslate,
     );
     if (actions.isEmpty) return;
 
@@ -1538,6 +1581,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         unawaited(_copyToClipboard(slice));
       case MessageAction.translate:
         unawaited(_translateMessage(message, body));
+      case MessageAction.requestTranslation:
+        unawaited(_requestRemoteTranslation(message, body));
       case MessageAction.select:
         _toggleSelected(message);
       case MessageAction.forward:
@@ -1596,6 +1641,38 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(l10n.translationFailed('$e'))));
     }
+  }
+
+  /// Asks a remote translation provider and shows the result under the bubble.
+  Future<void> _requestRemoteTranslation(Message message, String body) async {
+    final l10n = context.l10n;
+    final cacheKey = message.stanzaId.isNotEmpty
+        ? message.stanzaId
+        : 'body:${body.hashCode}';
+    setState(() => _translating.add(cacheKey));
+    final lang = Localizations.localeOf(context).languageCode;
+    final outcome = await _vm.requestRemoteTranslation(body, lang);
+    if (!mounted) return;
+    setState(() => _translating.remove(cacheKey));
+    if (outcome.isReady) {
+      setState(() {
+        _translations[cacheKey] = remoteTranslationLine(
+          outcome.text!,
+          outcome.engine,
+        );
+      });
+      return;
+    }
+    final messageText = switch (outcome.reject) {
+      RemoteTranslationReject.notConnected => l10n.notConnectedTryAgain,
+      RemoteTranslationReject.noLanguage => l10n.noTranslationLanguage,
+      RemoteTranslationReject.failed => l10n.translationFailed(
+        outcome.detail ?? '',
+      ),
+      _ => l10n.noTranslationService,
+    };
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(messageText)));
   }
 
   Future<void> _copyToClipboard(String text) async {
@@ -2208,6 +2285,10 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                                       selectionMode: _selectionMode,
                                       selectedIds: _selection,
                                       translations: _translations,
+                                      incomingTranslations: _stanzaTranslations(
+                                        context,
+                                      ),
+                                      outgoingOriginals: _outgoingOriginals(),
                                       translatingIds: _translating,
                                       readAt: ref
                                           .watch(

@@ -1040,5 +1040,20 @@
     }
   },
   "autoReplyDelete": "Delete",
-  "autoReplyDeleteConfirm": "Delete this rule?"
+  "autoReplyDeleteConfirm": "Delete this rule?",
+  "autoTranslate": "Auto-translate",
+  "autoTranslateOff": "Off",
+  "autoTranslateEnable": "Translate outgoing messages",
+  "autoTranslateLanguages": "Language",
+  "autoTranslateReplaceSummary": "Replace with {lang}",
+  "@autoTranslateReplaceSummary": {
+    "placeholders": {
+      "lang": { "type": "String" }
+    }
+  },
+  "autoTranslateReplaceHint": "Sends one translation instead of what you typed. The original stays on this device, under the bubble, so you can check it.",
+  "autoTranslateSave": "Save",
+  "requestTranslation": "Request from translation service",
+  "noTranslationService": "No translation service is available.",
+  "noTranslationLanguage": "The translation service does not offer a translation into this language."
 }

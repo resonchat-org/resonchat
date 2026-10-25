@@ -13,6 +13,7 @@ import 'package:resonchat/crypto/dual/dual_track_manager.dart';
 import 'package:resonchat/crypto/dual/track.dart';
 import 'package:resonchat/persistence/database.dart';
 import 'package:resonchat/persistence/prefs_database.dart';
+import 'package:resonchat/translate/chat_auto_translate.dart';
 import 'package:resonchat/ui/chat/appearance.dart';
 import 'package:resonchat/xmpp/chat/reactions.dart';
 import 'package:resonchat/xmpp/connection.dart';
@@ -494,6 +495,34 @@ Future<void> setChatAppearance(
   ref.read(chatRowRevisionProvider.notifier).state =
       ref.read(chatRowRevisionProvider) + 1;
 }
+
+/// Auto-translate target language for one conversation.
+final chatAutoTranslateProvider =
+    FutureProvider.family<ChatAutoTranslate, String>((ref, chatKey) async {
+      ref.watch(chatRowRevisionProvider);
+      final r = resolveChatKey(chatKey);
+      final stored = await r.session.db.chatAutoTranslate(r.jid);
+      return ChatAutoTranslate(lang: stored);
+    });
+
+/// Stores [setting] for [chatKey]. [ChatAutoTranslate.off] clears it.
+Future<void> setChatAutoTranslateSetting(
+  WidgetRef ref,
+  String chatKey,
+  ChatAutoTranslate setting,
+) async {
+  final r = resolveChatKey(chatKey);
+  await r.session.db.setChatAutoTranslate(chatJid: r.jid, lang: setting.lang);
+  ref.read(chatRowRevisionProvider.notifier).state =
+      ref.read(chatRowRevisionProvider) + 1;
+}
+
+/// XEP-0171 translations stored for messages in one conversation.
+final messageTranslationsProvider =
+    StreamProvider.family<List<MessageTranslation>, String>((ref, chatKey) {
+      final r = resolveChatKey(chatKey);
+      return r.session.db.watchMessageTranslations(r.jid);
+    });
 
 /// Unread count for [chatKey], or null while it is being read.
 final chatUnreadProvider = FutureProvider.family<int?, String>((

@@ -20,6 +20,7 @@ import 'package:resonchat/account/resolve.dart';
 import 'package:resonchat/l10n/l10n.dart';
 import 'package:resonchat/state/providers.dart';
 import 'package:resonchat/ui/accounts/account_qr_code.dart';
+import 'package:resonchat/ui/chat/auto_translate_sheet.dart';
 import 'package:resonchat/ui/chat/chat_profile_sections.dart';
 import 'package:resonchat/ui/contact_avatar.dart';
 import 'package:resonchat/ui/room/invite_member_sheet.dart';
@@ -494,6 +495,7 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
 
                 ChatEncryptionSection(chatJid: widget.chatJid),
                 ChatNotifySection(chatJid: widget.chatJid),
+                ChatAutoTranslateSection(chatJid: widget.chatJid),
                 ChatAppearanceSection(chatJid: widget.chatJid),
 
                 _section(

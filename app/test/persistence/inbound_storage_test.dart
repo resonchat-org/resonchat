@@ -17,8 +17,10 @@ import 'package:moxxmpp/moxxmpp.dart';
 import 'package:resonchat/crypto/dual/track.dart';
 import 'package:resonchat/domain/messages_service.dart';
 import 'package:resonchat/persistence/database.dart';
+import 'package:resonchat/translate/chat_auto_translate.dart';
 import 'package:resonchat/ui/chats/chats_viewmodel.dart';
 import 'package:resonchat/xmpp/connection.dart';
+import 'package:resonchat/xmpp/inbound/inbound_message.dart';
 
 void main() {
   group('bare JID normalisation', () {
@@ -204,6 +206,142 @@ void main() {
       );
       final rows = await db.watchMessages('peer@example.org').first;
       expect(rows.single.timestamp, when);
+    });
+
+    const both = [
+      InboundTranslation(lang: 'fr', text: 'bonjour', sourceLang: 'en'),
+      InboundTranslation(lang: 'de', text: 'hallo', sourceLang: 'en'),
+    ];
+
+    test('an incoming message stores every translation', () async {
+      await MessagesService(db).storeInbound(
+        InboundMessage(
+          from: JID.fromString('peer@example.org/phone'),
+          body: 'hello',
+          stanzaId: 'tr1',
+          translations: both,
+        ),
+      );
+      final rows = await db.watchMessageTranslations('peer@example.org').first;
+      expect(rows.map((r) => r.lang).toSet(), {'fr', 'de'});
+      expect(rows.map((r) => r.body).toSet(), {'bonjour', 'hallo'});
+    });
+
+    test('a copy we already have still keeps the translations', () async {
+      final service = MessagesService(db);
+      await service.storeInbound(
+        InboundMessage(
+          from: JID.fromString('peer@example.org/phone'),
+          body: 'hello',
+          stanzaId: 'tr2',
+        ),
+      );
+      await service.storeInbound(
+        InboundMessage(
+          from: JID.fromString('peer@example.org/phone'),
+          body: 'hello',
+          stanzaId: 'tr2',
+          translations: both,
+        ),
+      );
+      final messages = await db.watchMessages('peer@example.org').first;
+      expect(messages, hasLength(1));
+      final rows = await db.watchMessageTranslations('peer@example.org').first;
+      expect(rows.map((r) => r.lang).toSet(), {'fr', 'de'});
+    });
+
+    test('our own archived message stores its translations too', () async {
+      await MessagesService(db).storeInbound(
+        InboundMessage(
+          from: JID.fromString('me@example.org/phone'),
+          to: JID.fromString('peer@example.org'),
+          body: 'hello',
+          stanzaId: 'tr3',
+          fromArchive: true,
+          translations: both,
+        ),
+        ownBare: 'me@example.org',
+      );
+      final rows = await db.watchMessageTranslations('peer@example.org').first;
+      expect(rows.map((r) => r.lang).toSet(), {'fr', 'de'});
+    });
+
+    test(
+      'a carbon fills translations without storing another bubble',
+      () async {
+        final service = MessagesService(db);
+        await service.storeInbound(
+          InboundMessage(
+            from: JID.fromString('me@example.org/phone'),
+            to: JID.fromString('peer@example.org'),
+            body: 'hello',
+            stanzaId: 'tr4',
+            fromArchive: true,
+          ),
+          ownBare: 'me@example.org',
+        );
+        await db.replaceMessageTranslations(
+          chatJid: 'peer@example.org',
+          stanzaId: 'tr4',
+          rows: [
+            (
+              lang: kLocalOriginalLang,
+              body: 'typed',
+              sourceLang: '',
+              engine: '',
+            ),
+          ],
+        );
+        await service.storeInbound(
+          InboundMessage(
+            from: JID.fromString('me@example.org/phone'),
+            to: JID.fromString('peer@example.org'),
+            body: 'hello',
+            stanzaId: 'tr4',
+            isCarbonCopy: true,
+            translations: both,
+          ),
+          ownBare: 'me@example.org',
+        );
+        final messages = await db.watchMessages('peer@example.org').first;
+        expect(messages, hasLength(1));
+        final rows = await db
+            .watchMessageTranslations('peer@example.org')
+            .first;
+        expect(rows.map((r) => r.lang).toSet(), {
+          kLocalOriginalLang,
+          'fr',
+          'de',
+        });
+      },
+    );
+
+    test('a room reflection of our message keeps the translations', () async {
+      const room = 'room@conference.example.org';
+      await db.upsertChat(room, isGroup: true, mucNick: 'me');
+      final service = MessagesService(db);
+      await service.storeInbound(
+        InboundMessage(
+          from: JID.fromString('$room/me'),
+          body: 'hello',
+          stanzaId: 'tr5',
+          type: 'groupchat',
+        ),
+      );
+      await service.storeInbound(
+        InboundMessage(
+          from: JID.fromString('$room/me'),
+          body: 'hello',
+          stanzaId: 'tr5',
+          type: 'groupchat',
+          translations: both,
+        ),
+      );
+      final messages = await db.watchMessages(room).first;
+      expect(messages, hasLength(1));
+      expect(messages.single.incoming, isFalse);
+      final rows = await db.watchMessageTranslations(room).first;
+      expect(rows.map((r) => r.lang).toSet(), {'fr', 'de'});
     });
   });
 }

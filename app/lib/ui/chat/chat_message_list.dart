@@ -46,6 +46,8 @@ class ChatMessageList extends StatefulWidget {
     required this.selectionMode,
     required this.selectedIds,
     required this.translations,
+    this.incomingTranslations = const {},
+    this.outgoingOriginals = const {},
     required this.translatingIds,
     required this.readAt,
     required this.unreadCount,
@@ -100,6 +102,19 @@ class ChatMessageList extends StatefulWidget {
 
   /// In-memory translations for this open chat (stanza id → text).
   final Map<String, String> translations;
+
+  /// XEP-0171 text already on a stanza, keyed by stanza id.
+  ///
+  /// Shown without a long-press when the language matches the UI. On a
+  /// message this device replaced before sending, the local original wins.
+  /// A manual translation in [translations] wins over both.
+  final Map<String, String> incomingTranslations;
+
+  /// Original text of a message this device replaced before sending.
+  ///
+  /// The bubble is the translation that went out. This line sits where a
+  /// translation of somebody else's message would sit.
+  final Map<String, String> outgoingOriginals;
 
   /// Stanza ids currently waiting on a Translate response.
   final Set<String> translatingIds;
@@ -265,6 +280,8 @@ class _ChatMessageListState extends State<ChatMessageList> {
     final selectionMode = widget.selectionMode;
     final selectedIds = widget.selectedIds;
     final translations = widget.translations;
+    final incomingTranslations = widget.incomingTranslations;
+    final outgoingOriginals = widget.outgoingOriginals;
     final translatingIds = widget.translatingIds;
     final readAt = widget.readAt;
     final unreadCount = widget.unreadCount;
@@ -423,7 +440,12 @@ class _ChatMessageListState extends State<ChatMessageList> {
         room: room,
         highlightNicks: highlightNicks,
         showSenderChrome: !mergeChrome,
-        translation: translations[cacheKey],
+        translation:
+            translations[cacheKey] ??
+            (m.incoming
+                ? incomingTranslations[m.stanzaId]
+                : outgoingOriginals[m.stanzaId] ??
+                      incomingTranslations[m.stanzaId]),
         translating: translatingIds.contains(cacheKey),
         onReact: (emoji) => onReact(m.stanzaId, emoji),
         onMenu: (body, anchor) => onMenu(m, body, anchor),

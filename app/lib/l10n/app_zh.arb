@@ -923,5 +923,20 @@
     }
   },
   "autoReplyDelete": "删除",
-  "autoReplyDeleteConfirm": "删除这条规则？"
+  "autoReplyDeleteConfirm": "删除这条规则？",
+  "autoTranslate": "自动翻译",
+  "autoTranslateOff": "关闭",
+  "autoTranslateEnable": "翻译发出的消息",
+  "autoTranslateLanguages": "目标语言",
+  "autoTranslateReplaceSummary": "替换为{lang}",
+  "@autoTranslateReplaceSummary": {
+    "placeholders": {
+      "lang": { "type": "String" }
+    }
+  },
+  "autoTranslateReplaceHint": "用一种译文代替原文发送。原文只留在本机，显示在气泡下方，方便核对。",
+  "autoTranslateSave": "保存",
+  "requestTranslation": "向翻译服务请求",
+  "noTranslationService": "没有可用的翻译服务。",
+  "noTranslationLanguage": "翻译服务不提供界面语言的译文。"
 }

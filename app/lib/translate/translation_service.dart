@@ -32,16 +32,22 @@ class TranslationService {
         : uiLanguageCode.split(RegExp(r'[-_]')).first.toLowerCase();
   }
 
-  /// Translate and close the HTTP client created for this call.
-  Future<TranslationResult> translateOnce(
+  /// Translate [text] into [targetLang] and close the client for this call.
+  ///
+  /// [targetLang] is an ISO 639 tag (`zh`, `en`). DeepL's uppercase form is
+  /// applied inside the engine.
+  Future<TranslationResult> translateTo(
     String text, {
     required TranslationPrefs prefs,
-    required String uiLanguageCode,
+    required String targetLang,
   }) async {
     if (!isConfigured(prefs)) {
       throw StateError('translation_not_configured');
     }
-    final target = targetCode(prefs, uiLanguageCode);
+    final target = targetLang.trim();
+    if (target.isEmpty) {
+      throw StateError('translation_target_empty');
+    }
     http.Client? client;
     try {
       final engine = switch (prefs.engine) {
@@ -61,6 +67,21 @@ class TranslationService {
     } finally {
       client?.close();
     }
+  }
+
+  /// Translate and close the HTTP client created for this call.
+  ///
+  /// The target is the UI language.
+  Future<TranslationResult> translateOnce(
+    String text, {
+    required TranslationPrefs prefs,
+    required String uiLanguageCode,
+  }) {
+    return translateTo(
+      text,
+      prefs: prefs,
+      targetLang: targetCode(prefs, uiLanguageCode),
+    );
   }
 
   Future<void> testConnection({

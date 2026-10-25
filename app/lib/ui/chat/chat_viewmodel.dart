@@ -23,6 +23,12 @@ import 'package:resonchat/l10n/generated/app_localizations.dart';
 import 'package:resonchat/persistence/database.dart';
 import 'package:resonchat/state/app_wiring.dart';
 import 'package:resonchat/state/providers.dart';
+import 'package:resonchat/translate/chat_auto_translate.dart';
+import 'package:resonchat/translate/remote_translation.dart';
+import 'package:resonchat/translate/translatable_text.dart';
+import 'package:resonchat/translate/translation_engine.dart';
+import 'package:resonchat/translate/translation_prefs.dart';
+import 'package:resonchat/translate/translation_service.dart';
 import 'package:resonchat/xmpp/chat/forwarding.dart';
 import 'package:resonchat/xmpp/chat/reactions.dart';
 import 'package:resonchat/xmpp/chat/replies.dart';
@@ -80,6 +86,16 @@ class ChatSendResult {
   final bool queued;
 
   bool get sent => outcome?.sent ?? false;
+}
+
+/// Body that should go on the wire.
+class PreparedSend {
+  const PreparedSend(this.text, {this.failure});
+
+  final String text;
+
+  /// When set, the send stops and the queued row is marked failed.
+  final String? failure;
 }
 
 /// What [ChatViewModel.sendAttachmentBytes] did.
@@ -900,10 +916,26 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
         );
       }
 
+      final prepared = await _prepareAutoTranslate(
+        chatJid: peerStr,
+        stanzaId: stanzaId,
+        text: text,
+        l10n: l10n,
+      );
+      if (prepared.failure != null) {
+        return await _failQueued(
+          peerStr,
+          stanzaId,
+          xmpp,
+          l10n,
+          reason: prepared.failure,
+        );
+      }
+
       outcome = reply == null
           ? await xmpp.sendOnTrack(
               sendTo,
-              text,
+              prepared.text,
               track: chosen,
               messageType: messageType,
               originId: stanzaId,
@@ -911,7 +943,7 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
           : await sendReply(
               xmpp,
               to: sendTo,
-              body: text,
+              body: prepared.text,
               targetId: reply.id,
               track: chosen,
               quoteBody: reply.body,
@@ -955,18 +987,68 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
     String peerStr,
     String stanzaId,
     XmppService xmpp,
-    AppLocalizations l10n,
-  ) async {
-    final reason = xmpp.state == XmppConnectionState.connected
-        ? l10n.unknownReason
-        : l10n.notConnectedTryAgain;
+    AppLocalizations l10n, {
+    String? reason,
+  }) async {
+    final why =
+        reason ??
+        (xmpp.state == XmppConnectionState.connected
+            ? l10n.unknownReason
+            : l10n.notConnectedTryAgain);
     await _db.updateSendStatus(
       peerStr,
       stanzaId,
       MessageSendStatus.sendFailed,
-      deliveryError: reason,
+      deliveryError: why,
     );
-    return ChatSendResult(queued: true, failureReason: reason);
+    return ChatSendResult(queued: true, failureReason: why);
+  }
+
+  /// Applies the conversation's auto-translate setting.
+  ///
+  /// When it is on, the queued body becomes the translation and the typed
+  /// text is stored locally so the bubble can show it underneath. The stanza
+  /// carries only the translation. A translation that does not complete
+  /// fails the send.
+  Future<PreparedSend> _prepareAutoTranslate({
+    required String chatJid,
+    required String stanzaId,
+    required String text,
+    required AppLocalizations l10n,
+  }) async {
+    final lang = await _db.chatAutoTranslate(chatJid);
+    final setting = ChatAutoTranslate(lang: lang);
+    if (setting.isOff || !isTranslatableText(text)) {
+      return PreparedSend(text);
+    }
+    final prefs = await TranslationPrefs.load();
+    if (!translationService.isConfigured(prefs)) {
+      return PreparedSend(text, failure: l10n.translationNotConfigured);
+    }
+    try {
+      final result = await translationService.translateTo(
+        text,
+        prefs: prefs,
+        targetLang: setting.lang!,
+      );
+      await _db.updateOutgoingBody(chatJid, stanzaId, result.text);
+      await _db.replaceMessageTranslations(
+        chatJid: chatJid,
+        stanzaId: stanzaId,
+        rows: [
+          (
+            lang: kLocalOriginalLang,
+            body: text,
+            sourceLang: languageTag(result.detectedSource) ?? '',
+            engine: prefs.engine.stored,
+          ),
+        ],
+      );
+      return PreparedSend(result.text);
+    } catch (e, st) {
+      _log.warning('auto-translate for $chatJid failed', e, st);
+      return PreparedSend(text, failure: l10n.translationFailed('$e'));
+    }
   }
 
   /// Fails any outgoing row still `waiting` from a previous run.
@@ -983,6 +1065,14 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
     before: DateTime.now().subtract(staleAfter),
     reason: reason,
   );
+
+  /// Asks a translation provider on the connected server to translate [text].
+  Future<RemoteTranslationOutcome> requestRemoteTranslation(
+    String text,
+    String uiLanguage,
+  ) {
+    return _xmpp.requestRemoteTranslation(text: text, uiLanguage: uiLanguage);
+  }
 
   /// Whether the server offers XEP-0363 upload.
   Future<bool> isUploadAvailable() => _xmpp.httpFiles.isAvailable();
