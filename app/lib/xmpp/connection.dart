@@ -3300,7 +3300,11 @@ class XmppService {
     ];
   }
 
-  /// Trust snapshot for a stored message on [track] with peer [bareJid].
+  /// Trust snapshot for an *inbound* peer message (lowest active trust).
+  ///
+  /// Outgoing rows must use [EncModeToken.forOutgoing] — Gajim always
+  /// records VERIFIED on send, and does not rewrite bubbles when trust
+  /// later changes.
   Future<EncModeToken> encModeForPeer(String bareJid, Track track) async {
     if (track == Track.none) return EncModeToken.none;
     final trust = await fingerprintTrust?.aggregateActiveTrust(
@@ -3311,6 +3315,9 @@ class XmppService {
   }
 
   /// Set Gajim-style trust for one peer fingerprint.
+  ///
+  /// Does not rewrite historical `messages.enc_mode` (Gajim keeps the
+  /// snapshot taken at send/receive).
   Future<void> setPeerFingerprintTrust({
     required String bareJid,
     required String fingerprint,

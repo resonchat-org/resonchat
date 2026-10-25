@@ -127,9 +127,8 @@ enum Track {
 
 /// The token stored in `messages.enc_mode`.
 ///
-/// Track spelling is [Track.stored]. Optional Gajim trust is a `:suffix`
-/// (`om:verified`, `o2:blind`, …). Legacy rows without a suffix keep working;
-/// [trust] is then null and the bubble shows the plain track label.
+/// Wire: [Track.stored], optional `:{trust}` (`om:verified`, `o2:blind`, …).
+/// Bubble text is always NO/OM/O2; [icon] carries trust (Gajim-style).
 class EncModeToken {
   const EncModeToken._(this.track, [this.trust]);
 
@@ -154,35 +153,61 @@ class EncModeToken {
     return '$base:${t.wire}';
   }
 
-  /// Short label under the bubble (Gajim-style subdivision of OM / O2).
+  /// Short label under the bubble: always `NO` / `OM` / `O2` / `ERR`.
+  ///
+  /// Trust is carried by [icon] (one glyph), not by a text suffix — a
+  /// trailing `✓`/`?` next to a separate icon reads as two indicators.
   String get label {
     if (track == null) return 'ERR';
-    final base = track!.label;
-    if (track == Track.none) return base;
-    return switch (trust) {
-      FingerprintTrust.verified => '$base✓',
-      FingerprintTrust.blind => base,
-      FingerprintTrust.undecided => '$base?',
-      FingerprintTrust.untrusted => '$base✗',
-      null => base,
-    };
+    return track!.label;
   }
 
+  /// Display trust for an encrypted token. Missing snapshot → undecided so
+  /// the bubble never looks the same as blindly trusted.
+  FingerprintTrust? get displayTrust {
+    if (track == null || track == Track.none) return null;
+    return trust ?? FingerprintTrust.undecided;
+  }
+
+  /// One glyph: outline = standard OMEMO (OM), filled = PQ OMEMO2 (O2);
+  /// shape family = Verified / Blind / Untrusted|Undecided.
+  ///
+  /// Seven readable states without relying on colour alone.
   IconData get icon {
     if (track == null) return Icons.error_outline;
-    if (track == Track.none) return Track.none.icon;
-    return switch (trust) {
-      FingerprintTrust.verified => Icons.verified_user_outlined,
-      FingerprintTrust.blind => track!.icon,
-      FingerprintTrust.undecided => Icons.help_outline,
-      FingerprintTrust.untrusted => Icons.gpp_bad_outlined,
-      null => track!.icon,
+    if (track == Track.none) return Icons.lock_open;
+    final om = track == Track.standard;
+    return switch (displayTrust!) {
+      FingerprintTrust.verified =>
+        om ? Icons.verified_user_outlined : Icons.verified_user,
+      FingerprintTrust.blind => om ? Icons.shield_outlined : Icons.shield,
+      FingerprintTrust.undecided || FingerprintTrust.untrusted =>
+        om ? Icons.remove_moderator_outlined : Icons.remove_moderator,
     };
   }
 
-  /// Danger styling (plaintext or explicitly untrusted encryption).
-  bool get emphasizeWarning =>
-      track == Track.none || trust == FingerprintTrust.untrusted;
+  /// Plaintext, or encryption the user has not accepted (undecided /
+  /// untrusted / unknown snapshot).
+  bool get emphasizeWarning {
+    if (track == null || track == Track.none) return true;
+    final t = displayTrust;
+    return t == FingerprintTrust.untrusted || t == FingerprintTrust.undecided;
+  }
+
+  /// Tooltip: track short name + trust label (aligned with Security page).
+  String tooltip(AppLocalizations l10n) {
+    if (track == null) return l10n.unableToDecrypt;
+    if (track == Track.none) {
+      return track!.localizedShortLabel(l10n);
+    }
+    final trustLabel = switch (displayTrust!) {
+      FingerprintTrust.verified => l10n.fingerprintTrustVerified,
+      FingerprintTrust.blind => l10n.fingerprintTrustBlind,
+      FingerprintTrust.undecided => l10n.fingerprintTrustUndecided,
+      FingerprintTrust.untrusted => l10n.fingerprintTrustUntrusted,
+    };
+    return '${track!.localizedShortLabel(l10n)} — $trustLabel';
+  }
 
   /// The token for [track], optionally with a trust snapshot.
   static EncModeToken of(Track track, {FingerprintTrust? trust}) {
@@ -194,6 +219,25 @@ class EncModeToken {
       };
     }
     return EncModeToken._(track, trust);
+  }
+
+  /// Gajim `encrypt_message`: outgoing OMEMO is always VERIFIED.
+  static EncModeToken forOutgoing(Track track) {
+    if (track == Track.none) return EncModeToken.none;
+    return EncModeToken.of(track, trust: FingerprintTrust.verified);
+  }
+
+  /// Badge for a stored row. History is not rewritten when trust changes
+  /// (Gajim). Legacy own rows without a trust suffix → Verified.
+  static EncModeToken forBubble(String wire, {required bool incoming}) {
+    final parsed = EncModeToken.parse(wire);
+    if (!incoming &&
+        parsed.track != null &&
+        parsed.track != Track.none &&
+        parsed.trust == null) {
+      return EncModeToken.forOutgoing(parsed.track!);
+    }
+    return parsed;
   }
 
   /// Reads a stored value, including every spelling earlier builds wrote.

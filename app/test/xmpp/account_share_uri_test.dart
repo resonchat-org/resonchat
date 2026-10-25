@@ -45,4 +45,32 @@ void main() {
       'xmpp:user@example.com?omemo-sid-1=${'aa' * 32};omemo-sid-2=${'bb' * 32}',
     );
   });
+
+  test('room join URI is xmpp:jid?join', () {
+    expect(
+      roomJoinUri('room@conference.example'),
+      'xmpp:room@conference.example?join',
+    );
+    expect(
+      roomJoinUri('a#b@conference.example'),
+      'xmpp:a%23b@conference.example?join',
+    );
+  });
+
+  test('parseOmemoSidFingerprints keeps valid 64-hex pairs', () {
+    final parsed = parseOmemoSidFingerprints({
+      'omemo-sid-7': stripped,
+      'omemo-sid-notanumber': stripped,
+      'omemo-sid-0': stripped,
+      'body': 'hi',
+      'omemo-sid-2': '05$stripped',
+      'omemo-sid-3': 'zz' * 32,
+    });
+    expect(parsed, [(deviceId: 7, fingerprint: stripped)]);
+  });
+
+  test('fingerprintForTrustStore restores the 05 type byte', () {
+    expect(fingerprintForTrustStore(stripped), fp);
+    expect(fingerprintForTrustStore(fp), fp);
+  });
 }

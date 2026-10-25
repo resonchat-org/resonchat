@@ -849,7 +849,7 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
         stanzaId: Value(stanzaId),
         body: Value(text),
         timestamp: Value(DateTime.now()),
-        encMode: Value((await _xmpp.encModeForPeer(peerStr, chosen)).wire),
+        encMode: Value(EncModeToken.forOutgoing(chosen).wire),
         incoming: const Value(false),
         sendStatus: const Value(MessageSendStatus.waiting),
         replyTo: Value(reply?.id ?? ''),
@@ -896,7 +896,7 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
         await _db.updateEncMode(
           peerStr,
           stanzaId,
-          (await _xmpp.encModeForPeer(peerStr, chosen)).wire,
+          EncModeToken.forOutgoing(chosen).wire,
         );
       }
 
@@ -1044,7 +1044,7 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
           stanzaId: Value(stanzaId),
           body: Value(uploaded.shareUrl),
           timestamp: Value(DateTime.now()),
-          encMode: Value((await xmpp.encModeForPeer(peerStr, fileTrack)).wire),
+          encMode: Value(EncModeToken.forOutgoing(fileTrack).wire),
           incoming: const Value(false),
           sendStatus: const Value(MessageSendStatus.waiting),
           mediaUrl: Value(uploaded.shareUrl),
@@ -1199,7 +1199,7 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
           stanzaId: Value(stanzaId),
           body: Value(shareUrl),
           timestamp: Value(DateTime.now()),
-          encMode: Value((await xmpp.encModeForPeer(peerStr, fileTrack)).wire),
+          encMode: Value(EncModeToken.forOutgoing(fileTrack).wire),
           incoming: const Value(false),
           sendStatus: const Value(MessageSendStatus.waiting),
           mediaUrl: Value(shareUrl),
@@ -1374,7 +1374,7 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
       chatJid: r.jid,
       targetId: targetId,
       body: body,
-      encMode: (await r.session.xmpp.encModeForPeer(r.jid, outcome.track)).wire,
+      encMode: EncModeToken.forOutgoing(outcome.track).wire,
     );
     return null;
   }
@@ -1457,9 +1457,7 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
             stanzaId: Value(outcome.stanzaId[i]),
             body: Value(outcome.wireBodies[i]),
             timestamp: Value(now.add(Duration(milliseconds: i))),
-            encMode: Value(
-              (await dest.session.xmpp.encModeForPeer(destPeer, track)).wire,
-            ),
+            encMode: Value(EncModeToken.forOutgoing(track).wire),
             incoming: const Value(false),
             // Already on the wire from [forwardMessages].
             sendStatus: const Value(MessageSendStatus.send),

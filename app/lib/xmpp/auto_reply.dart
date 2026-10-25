@@ -218,7 +218,7 @@ Future<void> maybeSendAutoReply({
       stanzaId: Value(stanzaId),
       body: Value(reply),
       timestamp: Value(DateTime.now()),
-      encMode: Value(EncModeToken.of(track).wire),
+      encMode: Value(EncModeToken.forOutgoing(track).wire),
       incoming: const Value(false),
       sendStatus: const Value(MessageSendStatus.waiting),
     ),

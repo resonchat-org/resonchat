@@ -13,6 +13,8 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'package:resonchat/account/account_hub.dart';
 import 'package:resonchat/account/chat_ref.dart';
+import 'package:resonchat/crypto/dual/fingerprint_trust.dart';
+import 'package:resonchat/crypto/fingerprint.dart';
 import 'package:resonchat/l10n/l10n.dart';
 import 'package:resonchat/state/providers.dart';
 import 'package:resonchat/ui/chat/code_snippet.dart';
@@ -21,6 +23,7 @@ import 'package:resonchat/ui/chat/message_styling.dart';
 import 'package:resonchat/ui/chats/chats_viewmodel.dart';
 import 'package:resonchat/ui/home/open_chat.dart';
 import 'package:resonchat/ui/room/room_sheet.dart';
+import 'package:resonchat/xmpp/account_share_uri.dart';
 import 'package:resonchat/xmpp/notify_policy.dart';
 
 /// Message body with Gajim-unified styling.
@@ -445,12 +448,29 @@ Future<void> activateMessageLink(BuildContext context, String raw) async {
 }
 
 /// Gajim `MainWindow.open_xmpp_iri`: `join` / `roster` / `message`|`""`.
+///
+/// When the IRI carries `omemo-sid-*` fingerprints (Conversations share URI),
+/// ask whether to mark them [FingerprintTrust.verified]; skip keeps the
+/// usual new-device default.
 Future<void> handleXmppUri(BuildContext context, XmppUri uri) async {
   final kind = uri.knownQuerytype;
   if (kind == null) return;
 
   final container = ProviderScope.containerOf(context);
   final bare = uri.jid.toString();
+  final fingerprints = parseOmemoSidFingerprints(uri.params);
+  if (fingerprints.isNotEmpty) {
+    final markVerified = await _promptVerifyOmemoFingerprints(
+      context,
+      bare,
+      fingerprints,
+    );
+    if (!context.mounted) return;
+    if (markVerified == true) {
+      await _applyVerifiedOmemoFingerprints(bare, fingerprints);
+      if (!context.mounted) return;
+    }
+  }
 
   switch (kind) {
     case XmppUriQuerytype.join:
@@ -473,6 +493,64 @@ Future<void> handleXmppUri(BuildContext context, XmppUri uri) async {
 
     case XmppUriQuerytype.roster:
       await _startChatFromUri(context, container, bare);
+  }
+}
+
+/// Returns true when the user chose Verified; false/null → leave default trust.
+Future<bool?> _promptVerifyOmemoFingerprints(
+  BuildContext context,
+  String bare,
+  List<OmemoSidFingerprint> fingerprints,
+) {
+  final l10n = context.l10n;
+  final pretty = fingerprints
+      .map((f) => formatFingerprint(fingerprintForTrustStore(f.fingerprint)))
+      .join('\n\n');
+  return showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text(l10n.verifyOmemoKeysTitle),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(l10n.verifyOmemoKeysBody(bare)),
+            const SizedBox(height: 12),
+            SelectableText(
+              pretty,
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: Text(l10n.skipVerifyFingerprint),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, true),
+          child: Text(l10n.markFingerprintVerified),
+        ),
+      ],
+    ),
+  );
+}
+
+Future<void> _applyVerifiedOmemoFingerprints(
+  String bare,
+  List<OmemoSidFingerprint> fingerprints,
+) async {
+  final xmpp = accountHub.primarySession?.xmpp;
+  if (xmpp == null) return;
+  for (final item in fingerprints) {
+    final fp = fingerprintForTrustStore(item.fingerprint);
+    await xmpp.setPeerFingerprintTrust(
+      bareJid: bare,
+      fingerprint: fp,
+      trust: FingerprintTrust.verified,
+    );
   }
 }
 

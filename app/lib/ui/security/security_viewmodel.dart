@@ -180,14 +180,7 @@ class SecurityViewModel
           if (r.fingerprint == row.fingerprint &&
               r.omemo2 == row.omemo2 &&
               r.peerJid == row.peerJid)
-            PeerFingerprintRow(
-              peerJid: r.peerJid,
-              deviceId: r.deviceId,
-              fingerprint: r.fingerprint,
-              omemo2: r.omemo2,
-              trust: trust,
-              active: r.active,
-            )
+            r.copyWith(trust: trust)
           else
             r,
       ],

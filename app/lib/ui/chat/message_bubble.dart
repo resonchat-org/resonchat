@@ -955,7 +955,9 @@ class _MetaRow extends StatelessWidget {
     );
     final tickColor = isFailed ? tg.danger : tg.textSecondary;
     final warn = encMode.emphasizeWarning;
+    // Shape carries OM/O2 × trust; colour only reinforces warning states.
     final labelColor = warn ? tg.danger : tg.textSecondary;
+    final l10n = context.l10n;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -988,15 +990,23 @@ class _MetaRow extends StatelessWidget {
           ),
         ],
         const SizedBox(width: 5),
-        Icon(encMode.icon, size: 12, color: labelColor),
-        const SizedBox(width: 1),
-        Text(
-          encMode.label,
-          style: TextStyle(
-            fontSize: TgDimens.timeFontSize - 1,
-            fontWeight: FontWeight.w500,
-            letterSpacing: 0.3,
-            color: labelColor,
+        Tooltip(
+          message: encMode.tooltip(l10n),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(encMode.icon, size: 13, color: labelColor),
+              const SizedBox(width: 2),
+              Text(
+                encMode.label,
+                style: TextStyle(
+                  fontSize: TgDimens.timeFontSize - 1,
+                  fontWeight: FontWeight.w500,
+                  letterSpacing: 0.3,
+                  color: labelColor,
+                ),
+              ),
+            ],
           ),
         ),
       ],

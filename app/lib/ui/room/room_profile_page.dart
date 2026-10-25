@@ -11,6 +11,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -18,6 +19,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:resonchat/account/resolve.dart';
 import 'package:resonchat/l10n/l10n.dart';
 import 'package:resonchat/state/providers.dart';
+import 'package:resonchat/ui/accounts/account_qr_code.dart';
 import 'package:resonchat/ui/chat/chat_profile_sections.dart';
 import 'package:resonchat/ui/contact_avatar.dart';
 import 'package:resonchat/ui/room/invite_member_sheet.dart';
@@ -27,6 +29,7 @@ import 'package:resonchat/ui/room/room_config_page.dart';
 import 'package:resonchat/ui/room/room_outcasts_page.dart';
 import 'package:resonchat/ui/room/room_profile_viewmodel.dart';
 import 'package:resonchat/ui/theme.dart';
+import 'package:resonchat/xmpp/account_share_uri.dart';
 import 'package:resonchat/xmpp/connection.dart';
 import 'package:resonchat/xmpp/muc/muc.dart';
 import 'package:resonchat/xmpp/roster/local_nickname.dart';
@@ -90,6 +93,13 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
       if (!mounted) return;
       Navigator.of(context).pop(result);
     });
+  }
+
+  Future<void> _copyJid() async {
+    await Clipboard.setData(ClipboardData(text: _roomJid));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(context.l10n.jidCopied)));
   }
 
   Future<void> _confirmDestroy() async {
@@ -386,10 +396,50 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
                         ],
                       ),
                       const SizedBox(height: 4),
-                      Text(
-                        _roomJid,
-                        style: TextStyle(fontSize: 14, color: tg.textSecondary),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              _roomJid,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: tg.textSecondary,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: l10n.copyJid,
+                            visualDensity: VisualDensity.compact,
+                            onPressed: () => unawaited(_copyJid()),
+                            icon: Icon(
+                              Icons.copy_outlined,
+                              size: 18,
+                              color: tg.textSecondary,
+                            ),
+                          ),
+                        ],
                       ),
+                      // Anyone-can-join rooms only: hide when disco
+                      // muc_membersonly (ignore nonanonymous).
+                      if (!_xmpp.isMembersOnly(_roomJid)) ...[
+                        const SizedBox(height: 16),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 24),
+                          child: Text(
+                            l10n.roomQrJoinHint(title),
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: tg.textSecondary,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        AccountQrCode(data: roomJoinUri(_roomJid)),
+                      ],
                     ],
                   ),
                 ),

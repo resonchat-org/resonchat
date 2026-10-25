@@ -42,6 +42,45 @@ String accountShareUri({
   return 'xmpp:$jid?${params.join(';')}';
 }
 
+/// Gajim / Conversations MUC join IRI: `xmpp:room@conf?join`.
+String roomJoinUri(String bareJid) => 'xmpp:${_lightEscape(bareJid)}?join';
+
+/// One `omemo-sid-<deviceId>=<fingerprint>` pair from an `xmpp:` URI.
+typedef OmemoSidFingerprint = ({int deviceId, String fingerprint});
+
+final _omemoSidKey = RegExp(r'^omemo-sid-(\d+)$');
+final _hexFingerprint = RegExp(r'^[0-9a-f]+$');
+
+/// Conversations `XmppUri.parseFingerprints` for `omemo-sid-*` only.
+///
+/// Values are lowercase hex without spaces; classic keys are 64 chars (no
+/// leading `05`). Invalid keys or lengths are skipped.
+List<OmemoSidFingerprint> parseOmemoSidFingerprints(
+  Map<String, String> params,
+) {
+  final out = <OmemoSidFingerprint>[];
+  for (final entry in params.entries) {
+    final match = _omemoSidKey.firstMatch(entry.key);
+    if (match == null) continue;
+    final id = int.tryParse(match.group(1)!);
+    if (id == null || id <= 0) continue;
+    var fp = entry.value.replaceAll(RegExp(r'\s+'), '').toLowerCase();
+    // Reject the Conversations wire form that still has the type byte.
+    if (fp.length == 66 && fp.startsWith('05')) continue;
+    if (fp.length != 64 || !_hexFingerprint.hasMatch(fp)) continue;
+    out.add((deviceId: id, fingerprint: fp));
+  }
+  return out;
+}
+
+/// Map a URI fingerprint onto the local store form (`axolotlFingerprint`:
+/// 66 hex chars including the leading `05`).
+String fingerprintForTrustStore(String uriFingerprint) {
+  final n = uriFingerprint.replaceAll(RegExp(r'\s+'), '').toLowerCase();
+  if (n.length == 64 && _hexFingerprint.hasMatch(n)) return '05$n';
+  return n;
+}
+
 /// `MiniUri.LIGHT_URI_ESCAPER`: only `#` and `%`, as lowercase `%02x`.
 String _lightEscape(String jid) {
   final out = StringBuffer();

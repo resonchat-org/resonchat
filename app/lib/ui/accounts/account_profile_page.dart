@@ -22,6 +22,7 @@ import 'package:resonchat/ui/accounts/account_qr_code.dart';
 import 'package:resonchat/ui/accounts/blocked_contacts_page.dart';
 import 'package:resonchat/ui/contact_avatar.dart';
 import 'package:resonchat/ui/fingerprint_box.dart';
+import 'package:resonchat/ui/security/fingerprint_trust_tile.dart';
 import 'package:resonchat/ui/theme.dart';
 import 'package:resonchat/xmpp/account_share_uri.dart';
 import 'package:resonchat/xmpp/connection.dart';
@@ -434,29 +435,15 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
                   style: TextStyle(fontSize: 13, color: tg.textSecondary),
                 )
               else
-                ...ui.otherDevices.expand((row) {
-                  final label = l10n.ownOtherDeviceLabel(
-                    row.deviceId,
-                    row.omemo2
-                        ? l10n.omemo2FingerprintShort
-                        : l10n.omemoLegacyFingerprintShort,
-                  );
-                  return [
-                    Text(
-                      row.active ? label : l10n.omemoFingerprintInactive(label),
-                      style: TextStyle(fontSize: 12, color: tg.textSecondary),
-                    ),
-                    const SizedBox(height: 6),
-                    FingerprintBox(
-                      fingerprint: row.fingerprint,
-                      margin: EdgeInsets.zero,
-                      enabled: !ui.busy,
-                      onCopy: () =>
-                          unawaited(_copyFingerprint(row.fingerprint)),
-                    ),
-                    const SizedBox(height: 12),
-                  ];
-                }),
+                for (final row in ui.otherDevices)
+                  FingerprintTrustTile(
+                    row: row,
+                    margin: EdgeInsets.zero,
+                    enabled: !ui.busy,
+                    onCopy: () => unawaited(_copyFingerprint(row.fingerprint)),
+                    onTrustChanged: (v) =>
+                        unawaited(_model.setOtherDeviceTrust(row, v)),
+                  ),
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: Icon(Icons.refresh, color: tg.accent),

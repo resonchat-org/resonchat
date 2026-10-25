@@ -199,4 +199,30 @@ class AccountProfileViewModel
     await session.xmpp.setOwnPresence(show);
     await session.db.setOwnPresenceShowWire(show.wire ?? 'online');
   }
+
+  /// Gajim AccountOmemoTrustGroup: trust for other devices on our bare JID.
+  Future<void> setOtherDeviceTrust(
+    PeerFingerprintRow row,
+    FingerprintTrust trust,
+  ) async {
+    final session = _session;
+    if (session == null) return;
+    await session.xmpp.setPeerFingerprintTrust(
+      bareJid: row.peerJid,
+      fingerprint: row.fingerprint,
+      trust: trust,
+    );
+    if (_disposed) return;
+    state = state.copyWith(
+      otherDevices: [
+        for (final r in state.otherDevices)
+          if (r.fingerprint == row.fingerprint &&
+              r.omemo2 == row.omemo2 &&
+              r.deviceId == row.deviceId)
+            r.copyWith(trust: trust)
+          else
+            r,
+      ],
+    );
+  }
 }

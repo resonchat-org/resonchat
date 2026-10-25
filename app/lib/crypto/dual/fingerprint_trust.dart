@@ -402,4 +402,14 @@ class PeerFingerprintRow {
   final bool omemo2;
   final FingerprintTrust trust;
   final bool active;
+
+  PeerFingerprintRow copyWith({FingerprintTrust? trust, bool? active}) =>
+      PeerFingerprintRow(
+        peerJid: peerJid,
+        deviceId: deviceId,
+        fingerprint: fingerprint,
+        omemo2: omemo2,
+        trust: trust ?? this.trust,
+        active: active ?? this.active,
+      );
 }

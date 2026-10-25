@@ -10,9 +10,12 @@
 // A related consequence of the same rule: an inbound message's label comes
 // from what the *sender* declared, not from whether we managed to open it.
 
+import 'package:flutter/material.dart';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:moxxmpp/moxxmpp.dart' show ExplicitEncryptionType;
 
+import 'package:resonchat/crypto/dual/fingerprint_trust.dart';
 import 'package:resonchat/crypto/dual/track.dart';
 import 'package:resonchat/xmpp/encryption/eme.dart';
 
@@ -152,6 +155,61 @@ void main() {
       expect(EncModeToken.none.track, Track.none);
       expect(EncModeToken.standard.track, Track.standard);
       expect(EncModeToken.pq.track, Track.pq);
+    });
+
+    test('bubble label is only NO/OM/O2 — trust is in the icon', () {
+      expect(EncModeToken.none.label, 'NO');
+      expect(
+        EncModeToken.of(Track.standard, trust: FingerprintTrust.verified).label,
+        'OM',
+      );
+      expect(
+        EncModeToken.of(Track.pq, trust: FingerprintTrust.untrusted).label,
+        'O2',
+      );
+    });
+
+    test('Gajim: outgoing encrypted is always Verified', () {
+      expect(
+        EncModeToken.forOutgoing(Track.standard).trust,
+        FingerprintTrust.verified,
+      );
+      expect(
+        EncModeToken.forOutgoing(Track.pq).trust,
+        FingerprintTrust.verified,
+      );
+      expect(EncModeToken.forOutgoing(Track.none), EncModeToken.none);
+    });
+
+    test('legacy own rows without trust suffix show as Verified', () {
+      expect(
+        EncModeToken.forBubble('om', incoming: false).trust,
+        FingerprintTrust.verified,
+      );
+      expect(EncModeToken.forBubble('om', incoming: true).trust, isNull);
+    });
+
+    test('seven enc-mode icons are pairwise distinct', () {
+      final icons = <IconData>{
+        EncModeToken.none.icon,
+        EncModeToken.of(Track.standard, trust: FingerprintTrust.verified).icon,
+        EncModeToken.of(Track.standard, trust: FingerprintTrust.blind).icon,
+        EncModeToken.of(Track.standard, trust: FingerprintTrust.untrusted).icon,
+        EncModeToken.of(Track.pq, trust: FingerprintTrust.verified).icon,
+        EncModeToken.of(Track.pq, trust: FingerprintTrust.blind).icon,
+        EncModeToken.of(Track.pq, trust: FingerprintTrust.untrusted).icon,
+      };
+      expect(icons.length, 7);
+      // Undecided shares the untrusted glyph (not-accepted encryption).
+      expect(
+        EncModeToken.of(Track.standard, trust: FingerprintTrust.undecided).icon,
+        EncModeToken.of(Track.standard, trust: FingerprintTrust.untrusted).icon,
+      );
+      // OM vs O2 stay outline vs filled within each trust family.
+      expect(
+        EncModeToken.of(Track.standard, trust: FingerprintTrust.blind).icon,
+        isNot(EncModeToken.of(Track.pq, trust: FingerprintTrust.blind).icon),
+      );
     });
   });
 }

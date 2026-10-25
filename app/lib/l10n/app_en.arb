@@ -435,6 +435,28 @@
   "editMessageHint": "Edit message",
   "messagesNotEncrypted": "Messages in this chat are not encrypted.",
   "copied": "Copied",
+  "copyJid": "Copy address",
+  "jidCopied": "Address copied",
+  "roomQrJoinHint": "Scan this QR code to join {name}.",
+  "@roomQrJoinHint": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "verifyOmemoKeysTitle": "Verify OMEMO keys",
+  "verifyOmemoKeysBody": "This link includes an OMEMO fingerprint for {jid}. Mark it as Verified? If you skip, trust stays as usual for new devices.",
+  "@verifyOmemoKeysBody": {
+    "placeholders": {
+      "jid": { "type": "String" }
+    }
+  },
+  "markFingerprintVerified": "Mark as Verified",
+  "skipVerifyFingerprint": "Not now",
+  "scanQrCode": "Scan QR code",
+  "qrScanCameraDenied": "Camera access is needed to scan QR codes",
+  "qrScanUnrecognized": "That QR code is not a usable XMPP or web link",
+  "qrCodeContainsLink": "Open link?",
+  "openInBrowser": "Open in browser",
   "cancel": "Cancel",
   "close": "Close",
   "save": "Save",

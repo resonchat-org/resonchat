@@ -20,6 +20,8 @@ import 'package:resonchat/ui/contacts/contacts_viewmodel.dart';
 import 'package:resonchat/ui/home/open_chat.dart';
 import 'package:resonchat/ui/home/shell_actions.dart';
 import 'package:resonchat/ui/motion.dart';
+import 'package:resonchat/ui/qr/qr_scan_page.dart';
+import 'package:resonchat/ui/qr/qr_scan_result.dart';
 import 'package:resonchat/ui/room/room_sheet.dart';
 import 'package:resonchat/ui/theme.dart';
 
@@ -91,6 +93,13 @@ class _ContactsPageState extends ConsumerState<ContactsPage>
     );
     if (raw == null || raw.isEmpty || !mounted) return;
     await _addContact(raw);
+  }
+
+  Future<void> _scanQr() async {
+    final raw = await Navigator.of(context)
+        .push<String>(MaterialPageRoute(builder: (_) => const QrScanPage()));
+    if (raw == null || raw.isEmpty || !mounted) return;
+    await handleQrScanResult(context, raw);
   }
 
   Future<void> _addContact(String raw) async {
@@ -179,7 +188,15 @@ class _ContactsPageState extends ConsumerState<ContactsPage>
       appBar: AppBar(
         automaticallyImplyLeading: false,
         title: Text(l10n.tabContacts),
-        actions: portraitShellActions(context),
+        actions: [
+          if (supportsQrScan)
+            IconButton(
+              icon: const Icon(Icons.qr_code_scanner),
+              tooltip: l10n.scanQrCode,
+              onPressed: () => unawaited(_scanQr()),
+            ),
+          ...portraitShellActions(context),
+        ],
       ),
       body: AccountFilterOverlay(
         controller: _accountPanel,

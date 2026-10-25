@@ -14,6 +14,8 @@
     <!-- POST_NOTIFICATIONS / VIBRATE from flutter_local_notifications (merged);
          asked on first message shade post in Dart — never at cold start.
          RECORD_AUDIO from record_android — prompted on first use in Dart.
+         CAMERA is not declared here; mobile_scanner merges it and prompts
+         on first scan. Do not add CAMERA to this file.
 
          open_filex merges in gallery-scan READ_* permissions we do not need
          (we open via FileProvider/VIEW and pick via SAF). tools:node=remove

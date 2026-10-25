@@ -9,7 +9,10 @@
 // Everything here is read from real state. A page that shows plausible
 // values is worse than one that shows nothing.
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:moxxmpp/moxxmpp.dart' show JID;
@@ -66,9 +69,28 @@ class ProfilePage extends ConsumerWidget {
                 const SizedBox(height: 12),
                 Text(title, style: const TextStyle(fontSize: 20)),
                 const SizedBox(height: 4),
-                Text(
-                  peer,
-                  style: TextStyle(fontSize: 14, color: tg.textSecondary),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        peer,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 14, color: tg.textSecondary),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: l10n.copyJid,
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => unawaited(_copyJid(context, peer)),
+                      icon: Icon(
+                        Icons.copy_outlined,
+                        size: 18,
+                        color: tg.textSecondary,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -170,6 +192,13 @@ class ProfilePage extends ConsumerWidget {
       ),
     );
   }
+}
+
+Future<void> _copyJid(BuildContext context, String jid) async {
+  await Clipboard.setData(ClipboardData(text: jid));
+  if (!context.mounted) return;
+  ScaffoldMessenger.of(context)
+      .showSnackBar(SnackBar(content: Text(context.l10n.jidCopied)));
 }
 
 /// Conversations contact-details "Delete from roster". The transcript stays.

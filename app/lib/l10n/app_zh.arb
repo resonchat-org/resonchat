@@ -415,6 +415,28 @@
   "editMessageHint": "编辑消息",
   "messagesNotEncrypted": "此会话中的消息未加密。",
   "copied": "已复制",
+  "copyJid": "复制地址",
+  "jidCopied": "已复制地址",
+  "roomQrJoinHint": "扫描此二维码以加入 {name}。",
+  "@roomQrJoinHint": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "verifyOmemoKeysTitle": "验证 OMEMO 密钥",
+  "verifyOmemoKeysBody": "此链接包含 {jid} 的 OMEMO 指纹。是否将其标为「已验证」？若跳过，则按新设备的默认信任规则处理。",
+  "@verifyOmemoKeysBody": {
+    "placeholders": {
+      "jid": { "type": "String" }
+    }
+  },
+  "markFingerprintVerified": "标为已验证",
+  "skipVerifyFingerprint": "暂不",
+  "scanQrCode": "扫描二维码",
+  "qrScanCameraDenied": "扫描二维码需要相机权限",
+  "qrScanUnrecognized": "无法识别该二维码中的 XMPP 或网页链接",
+  "qrCodeContainsLink": "打开链接？",
+  "openInBrowser": "在浏览器中打开",
   "cancel": "取消",
   "close": "关闭",
   "save": "保存",

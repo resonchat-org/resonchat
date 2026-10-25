@@ -154,7 +154,7 @@ class MessagesService {
       chatJid: chatJid,
       targetId: targetId,
       body: body,
-      encMode: EncModeToken.of(track).wire,
+      encMode: EncModeToken.forOutgoing(track).wire,
     );
   }
 
@@ -284,7 +284,7 @@ class MessagesService {
         encMode: Value(
           msg.encryptionError != null
               ? EncModeToken.error.wire
-              : await _encWireForInbound(msg),
+              : await _encWireForInbound(msg, fromMe: fromMe),
         ),
         incoming: Value(!fromMe),
         delivered: Value(fromMe && ownMuc),
@@ -305,9 +305,15 @@ class MessagesService {
     return mentionsMe;
   }
 
-  Future<String> _encWireForInbound(InboundMessage msg) async {
+  /// Gajim: own encrypted rows are VERIFIED; peer rows snapshot aggregate
+  /// trust at receive time and are never rewritten when trust later changes.
+  Future<String> _encWireForInbound(
+    InboundMessage msg, {
+    required bool fromMe,
+  }) async {
     final track = msg.track ?? Track.none;
     if (track == Track.none) return EncModeToken.none.wire;
+    if (fromMe) return EncModeToken.forOutgoing(track).wire;
     final trust = await FingerprintTrustStore(_db).aggregateActiveTrust(
       msg.from.toBare().toString(),
       omemo2: track == Track.pq,
