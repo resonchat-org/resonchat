@@ -20,6 +20,7 @@ Flutter XMPP 客户端：**不修改服务端、不引入新 XEP**，在标准 O
 | [08-risks-open-questions.md](08-risks-open-questions.md) | 风险登记、待决问题、当前限制 |
 | [09-briar-lessons.md](09-briar-lessons.md) | 借鉴 Briar 的信任 UX / 省电设计 |
 | [10-track-selection.md](10-track-selection.md) | 三轨协调：用户选定、可行性判定、提示与标签 |
+| [11-pq-send-path.md](11-pq-send-path.md) | PQ 发送路径、设备列表缓存、群聊发送策略与 vendor 覆盖表契约（P0） |
 | [../README.dev.md](../README.dev.md) | 构建、测试、本地开发、实现状态与待办 |
 
 ---

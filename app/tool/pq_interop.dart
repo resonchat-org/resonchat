@@ -114,18 +114,8 @@ Future<void> main(List<String> args) async {
     final sessionsA = PqSessionManager();
     final sessionsB = PqSessionManager();
 
-    final bIk = await b.device.ikDh.pk.getBytes();
-    final aIk = await a.device.ikDh.pk.getBytes();
-    final layerA = PqMessageLayer(
-      ownDevice: a.device,
-      sessions: sessionsA,
-      senderIkOf: (_, _) async => bIk,
-    );
-    final layerB = PqMessageLayer(
-      ownDevice: b.device,
-      sessions: sessionsB,
-      senderIkOf: (_, _) async => aIk,
-    );
+    final layerA = PqMessageLayer(ownDevice: a.device, sessions: sessionsA);
+    final layerB = PqMessageLayer(ownDevice: b.device, sessions: sessionsB);
 
     const plaintext = 'PQ interop over XMPP 🔐';
     final outgoing = await layerA.encrypt(

@@ -88,6 +88,8 @@ DNS 非 0 状态码一律降级为「无记录」，绝不抛异常。
 6. 订阅联系人的相关 PEP 节点，接收变更通知
 7. 拉取 roster，并对账户 MAM 归档做 catch-up（XEP-0313，受设置约束：可关闭；按条数默认 500、最多 5000；按天数最长 365 天且不另设条数上限。会话内滑到顶部再按 50 条翻旧页）
 8. 初始化数据库中的会话状态
+
+经典 A 轨 bundle 的 one-time prekey 发布数量有硬上限 **100**。A 轨补池只补到目标数量，不再每次连接追加；若 PEP 上残留旧版超大 bundle，下一次对账会以有界 bundle 覆盖，避免 `XML stanza is too big` 触发断线重连循环。
 ```
 
 **设备 id**：随机 31 位正整数（与 OMEMO 一致），持久化，不随重装保留（重装即新设备）。
@@ -151,19 +153,15 @@ MessagesService.storeInbound → AppDatabase（纯 SQL）
 ## 6. 能力协商的具体实现
 
 ```
-Future<Set<int>> _getPqCapableDevices(Jid jid) async {
-  final devices = await _pep.getDevices(jid, PqOmemo.namespace);   // B 轨设备列表
-  if (devices == null) return {};
-  final result = <int>{};
-  for (final d in devices) {
-    final bundle = await _pep.getBundle(jid, PqOmemo.namespace, d.id);
-    if (bundle != null && bundle.hasPqKeys) result.add(d.id);
-  }
-  return result;
+Future<PqDeviceListSnapshot> _getPqSnapshot(Jid jid) {
+  // CapabilityService 是唯一 owner；Resolver 不直接读 PEP。
+  return _capabilities.pqSnapshotFor(jid);
 }
 ```
 
-缓存策略：订阅 PEP 通知；收到变更即失效缓存。为避免每条消息都拉网络，内存缓存 + 短 TTL，并在发送失败时强制刷新重试一次。`CapabilityService` 带并发去重与 `reliable` 标记：查询失败不得当作「可发明文」。
+缓存策略：订阅 PEP 通知，收到变更立即失效对应 peer；内存快照 TTL **5 分钟**，过期统一由 `CapabilityService` 刷新。快照带并发去重、per-peer generation 与 `reliable` 标记：查询失败不得当作「可发明文」。
+
+发送路径不再为每个设备无条件拉 bundle：有 session 的设备直接复用；只有无 session 的设备才拉取 bundle，并受并发上限与超时约束。完整契约见 [11-pq-send-path.md](11-pq-send-path.md)。
 
 ## 7. 与标准 OMEMO 的差异处理
 

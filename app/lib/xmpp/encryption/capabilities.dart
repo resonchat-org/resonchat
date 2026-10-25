@@ -7,6 +7,10 @@
 // monocles `deviceIds` vs `omemo2DeviceIds`. Separate PEP nodes, separate
 // lists, no intersection. A contact can be PQ-capable with an empty classic
 // list and vice versa.
+//
+// CapabilityService is also the sole owner of the B-track device-list cache.
+// Sending and the PqPeerResolver go through [pqSnapshotFor]; neither reads the
+// PEP node directly.
 
 import 'dart:async';
 
@@ -15,6 +19,7 @@ import 'package:moxxmpp/moxxmpp.dart';
 
 import 'package:resonchat/crypto/dual/dual_track_manager.dart';
 import 'package:resonchat/crypto/dual/negotiation.dart';
+import 'package:resonchat/crypto/dual/pq_device_list_snapshot.dart';
 
 /// Capability snapshot for one conversation.
 class ChatCapabilities {
@@ -87,24 +92,38 @@ class CapabilityService {
   final _cache = <String, ChatCapabilities>{};
   final _inflight = <String, Future<ChatCapabilities>>{};
 
-  /// Bumped by every invalidation so a lookup started against the previous
-  /// connection cannot install its (now stale) answer afterwards.
+  /// B-track device-list snapshots. Only [pqSnapshotFor] reads or writes this.
+  final _pqCache = <String, PqDeviceListSnapshot>{};
+  final _pqInflight = <String, Future<PqDeviceListSnapshot>>{};
+
+  /// Per-peer epochs. A PEP invalidation increments only the affected peer,
+  /// so an unrelated in-flight lookup can still install its answer.
+  final _peerGeneration = <String, int>{};
+
+  /// Bumped by [invalidateAll] (connection change / regenerate).
   int _generation = 0;
+
+  int _generationOf(String key) => _peerGeneration[key] ?? 0;
 
   /// Drops any cached answer for [jid] (call on PEP change events).
   void invalidate(JID jid) {
     final key = jid.toBare().toString();
     _cache.remove(key);
-    // A lookup already in flight may be waiting on the connection we just
-    // invalidated. Let the next caller start a fresh one instead of sharing a
-    // future that may never complete.
     _inflight.remove(key);
-    _generation++;
+    _pqCache.remove(key);
+    // An in-flight lookup may be waiting on the connection we just
+    // invalidated. Let the next caller start a fresh one; generation guards
+    // prevent the old future from installing its answer.
+    _pqInflight.remove(key);
+    _peerGeneration[key] = _generationOf(key) + 1;
   }
 
   void invalidateAll() {
     _cache.clear();
     _inflight.clear();
+    _pqCache.clear();
+    _pqInflight.clear();
+    _peerGeneration.clear();
     _generation++;
   }
 
@@ -125,24 +144,97 @@ class CapabilityService {
         DateTime.now().difference(cached.checkedAt) < ttl) {
       return Future.value(cached);
     }
-    return _inflight[key] ??= _resolve(jid).whenComplete(() {
-      _inflight.remove(key);
-    });
+    final existing = _inflight[key];
+    if (existing != null) return existing;
+
+    final future = _resolve(jid);
+    _inflight[key] = future;
+    unawaited(
+      future.then<void>(
+        (_) => _clearInflight(key, future),
+        onError: (Object _, StackTrace _) => _clearInflight(key, future),
+      ),
+    );
+    return future;
+  }
+
+  void _clearInflight(String key, Future<ChatCapabilities> future) {
+    if (identical(_inflight[key], future)) _inflight.remove(key);
+  }
+
+  /// The one read path for a peer's OMEMO2 device list.
+  ///
+  /// The snapshot is reused only while it is fresh *and* reliable. A failed
+  /// read is returned to the caller as `reliable == false` and never cached;
+  /// the next caller retries instead of inheriting a five-minute refusal.
+  Future<PqDeviceListSnapshot> pqSnapshotFor(JID jid) {
+    final bare = jid.toBare();
+    final key = bare.toString();
+
+    final cached = _pqCache[key];
+    if (cached != null && cached.isFresh) return Future.value(cached);
+
+    final existing = _pqInflight[key];
+    if (existing != null) return existing;
+
+    final future = _resolvePqSnapshot(bare);
+    _pqInflight[key] = future;
+    unawaited(
+      future.then<void>(
+        (_) => _clearPqInflight(key, future),
+        onError: (Object _, StackTrace _) => _clearPqInflight(key, future),
+      ),
+    );
+    return future;
+  }
+
+  void _clearPqInflight(String key, Future<PqDeviceListSnapshot> future) {
+    if (identical(_pqInflight[key], future)) _pqInflight.remove(key);
+  }
+
+  Future<PqDeviceListSnapshot> _resolvePqSnapshot(JID bare) async {
+    final key = bare.toString();
+    final generation = _generation;
+    final peerGeneration = _generationOf(key);
+
+    final result = await tracks().fetchPqDeviceIds(bare);
+    final now = DateTime.now();
+    final snapshot = PqDeviceListSnapshot(
+      devices: Set<int>.unmodifiable(result.devices),
+      fetchedAt: now,
+      expiresAt: now.add(ttl),
+      reliable: result.listReadable,
+      generation: peerGeneration,
+    );
+
+    if (result.listReadable &&
+        generation == _generation &&
+        peerGeneration == _generationOf(key)) {
+      _pqCache[key] = snapshot;
+    }
+    return snapshot;
   }
 
   Future<ChatCapabilities> _resolve(JID jid) async {
     final bare = jid.toBare();
+    final key = bare.toString();
     final generation = _generation;
+    final peerGeneration = _generationOf(key);
 
     final ourId = await ourDeviceId();
     final ourPq = await ourPqDevices();
 
-    // Two independent PEP reads — never gate one on the other.
-    final classic = await tracks().resolveOmemoDevices(bare);
-    final pqList = await tracks().fetchPqDeviceIds(bare);
+    // Two independent PEP reads — never gate one on the other. Both are
+    // started together; the PQ half is the shared snapshot, not a second read.
+    final results = await Future.wait<Object?>([
+      tracks().resolveOmemoDevices(bare),
+      pqSnapshotFor(bare),
+    ]);
+    final classic = results[0]! as ({Set<int> devices, bool listReadable});
+    final pqSnapshot = results[1]! as PqDeviceListSnapshot;
 
     final peerClassic = <int>{...classic.devices};
-    final peerPq = <int>{...pqList.devices};
+    final peerPq = <int>{...pqSnapshot.devices};
 
     final ours = <int>{};
     if (ourId != null) ours.add(ourId);
@@ -162,7 +254,7 @@ class CapabilityService {
     );
 
     final classicReliable = classic.listReadable;
-    final pqReliable = pqList.listReadable;
+    final pqReliable = pqSnapshot.reliable;
     final reliable = classicReliable || pqReliable;
 
     final caps = ChatCapabilities(
@@ -182,8 +274,10 @@ class CapabilityService {
       'pq=${caps.pqDevices} '
       'classicOk=$classicReliable pqOk=$pqReliable',
     );
-    if (caps.reliable && generation == _generation) {
-      _cache[bare.toString()] = caps;
+    if (caps.reliable &&
+        generation == _generation &&
+        peerGeneration == _generationOf(key)) {
+      _cache[key] = caps;
     }
     return caps;
   }

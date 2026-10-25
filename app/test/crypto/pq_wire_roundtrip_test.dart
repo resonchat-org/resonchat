@@ -105,7 +105,6 @@ void main() {
     final aliceLayer = PqMessageLayer(
       ownDevice: alice,
       sessions: PqSessionManager(),
-      senderIkOf: (_, _) async => [],
     );
     final outgoing = await aliceLayer.encrypt(
       plaintext: 'hello via wire',
@@ -118,7 +117,6 @@ void main() {
     final bobLayer = PqMessageLayer(
       ownDevice: bob,
       sessions: PqSessionManager(),
-      senderIkOf: (_, _) async => [],
     );
     final clear = await bobLayer.decrypt(onWire, senderBareJid: alice.jid);
     expect(clear, 'hello via wire');

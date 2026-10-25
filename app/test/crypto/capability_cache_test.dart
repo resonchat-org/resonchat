@@ -6,6 +6,8 @@
 // resolution is not cached — otherwise a transient network error would
 // pin the chat to "unencrypted" for the whole TTL.
 
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:moxxmpp/moxxmpp.dart';
 
@@ -29,6 +31,7 @@ class _FakeTracks implements DualTrackManager {
     this.pqDevices = const <int>{},
     this.pqReadable = true,
     this.onResolve,
+    this.pqFetch,
   });
 
   final Set<int> devices;
@@ -38,6 +41,9 @@ class _FakeTracks implements DualTrackManager {
 
   /// Counted on classic resolve only (one resolution = one classic lookup).
   final void Function()? onResolve;
+
+  /// Optional override for the PQ list lookup, used by the race tests.
+  final Future<({Set<int> devices, bool listReadable})> Function(JID)? pqFetch;
 
   @override
   Future<({Set<int> devices, bool listReadable})> resolveOmemoDevices(
@@ -50,7 +56,11 @@ class _FakeTracks implements DualTrackManager {
   @override
   Future<({Set<int> devices, bool listReadable})> fetchPqDeviceIds(
     JID jid,
-  ) async => (devices: pqDevices, listReadable: pqReadable);
+  ) async {
+    final override = pqFetch;
+    if (override != null) return override(jid);
+    return (devices: pqDevices, listReadable: pqReadable);
+  }
 
   @override
   Future<Set<int>> getPqCapableDevices(JID jid) async => pqDevices;
@@ -185,4 +195,110 @@ void main() {
     );
     expect(service.invalidateAll, returnsNormally);
   });
+
+  test('PQ snapshot lookups are coalesced and reused within the TTL', () async {
+    final gate = Completer<({Set<int> devices, bool listReadable})>();
+    var calls = 0;
+    final service = CapabilityService(
+      tracks: () => _FakeTracks(
+        devices: const {},
+        readable: false,
+        pqFetch: (_) {
+          calls++;
+          return gate.future;
+        },
+      ),
+      ourDeviceId: () async => 100,
+    );
+    final jid = JID.fromString('bob@example.org');
+
+    final first = service.pqSnapshotFor(jid);
+    final second = service.pqSnapshotFor(jid);
+    gate.complete((devices: const {7}, listReadable: true));
+
+    final snapshots = await Future.wait([first, second]);
+    expect(snapshots.every((s) => s.reliable), isTrue);
+    expect(calls, 1, reason: 'concurrent callers share one PEP read');
+
+    await service.pqSnapshotFor(jid);
+    expect(calls, 1, reason: 'a fresh snapshot is reused');
+  });
+
+  test('PQ snapshot TTL expiry forces a fresh read', () async {
+    var calls = 0;
+    final service = CapabilityService(
+      tracks: () => _FakeTracks(
+        devices: const {},
+        readable: false,
+        pqFetch: (_) async {
+          calls++;
+          return (devices: const {7}, listReadable: true);
+        },
+      ),
+      ourDeviceId: () async => 100,
+      ttl: Duration.zero,
+    );
+    final jid = JID.fromString('bob@example.org');
+
+    await service.pqSnapshotFor(jid);
+    await service.pqSnapshotFor(jid);
+    expect(calls, 2);
+  });
+
+  test('an unreadable PQ snapshot is not cached', () async {
+    var calls = 0;
+    final service = CapabilityService(
+      tracks: () => _FakeTracks(
+        devices: const {},
+        readable: false,
+        pqFetch: (_) async {
+          calls++;
+          return (devices: const <int>{}, listReadable: false);
+        },
+      ),
+      ourDeviceId: () async => 100,
+    );
+    final jid = JID.fromString('bob@example.org');
+
+    expect((await service.pqSnapshotFor(jid)).reliable, isFalse);
+    expect((await service.pqSnapshotFor(jid)).reliable, isFalse);
+    expect(calls, 2);
+  });
+
+  test(
+    'an invalidated in-flight PQ lookup cannot install its answer',
+    () async {
+      final gate = Completer<({Set<int> devices, bool listReadable})>();
+      var calls = 0;
+      final service = CapabilityService(
+        tracks: () => _FakeTracks(
+          devices: const {},
+          readable: false,
+          pqFetch: (_) {
+            calls++;
+            return gate.future;
+          },
+        ),
+        ourDeviceId: () async => 100,
+      );
+      final jid = JID.fromString('bob@example.org');
+
+      final stale = service.pqSnapshotFor(jid);
+      await Future<void>.delayed(Duration.zero);
+      service.invalidate(jid);
+      gate.complete((devices: const {7}, listReadable: true));
+
+      expect(
+        (await stale).reliable,
+        isTrue,
+        reason: 'the old caller still gets a usable answer',
+      );
+      expect(calls, 1);
+
+      // The invalidated answer must not have been installed. The next caller
+      // starts a new read, even though the old future was reliable.
+      await service.pqSnapshotFor(jid);
+      expect(calls, 2);
+    },
+  );
 }

@@ -60,6 +60,38 @@ class PqSessionManager {
     await _m.onDeviceListUpdate(peer.jid, _bundles[peer.jid]!.keys.toList());
   }
 
+  /// Registers a bundle without treating it as the announced device list.
+  ///
+  /// The announced list is what the server published; the bundle map is only
+  /// the subset this send resolved. Writing the latter into
+  /// [Omemo2Manager.onDeviceListUpdate] is what hid newly announced devices.
+  Future<void> registerPeerBundle(PqDevice peer) async {
+    final bundle = await peer.toBundle();
+    _bundles.putIfAbsent(peer.jid, () => {})[peer.id] = bundle;
+  }
+
+  /// Replaces the manager's cached announced list for [jid].
+  Future<void> setPeerAnnouncedDeviceIds(String jid, Iterable<int> ids) async {
+    await _m.onDeviceListUpdate(jid, ids.toList());
+  }
+
+  Future<bool> hasSession(String jid, int deviceId) async {
+    final own = _own;
+    if (own == null) return false;
+    await own.ensureStores();
+    return own.sessionStore.containsSession(
+      omemo2ProtocolAddress(jid, deviceId),
+    );
+  }
+
+  Future<void> forgetSession(String jid, int deviceId) async {
+    final own = _own;
+    if (own == null) return;
+    await own.ensureStores();
+    await own.sessionStore.deleteSession(omemo2ProtocolAddress(jid, deviceId));
+    await onCommit?.call(own);
+  }
+
   Future<void> initiate({required PqDevice own, required PqDevice peer}) async {
     if (_own?.id != own.id) await bindOwn(own);
     await registerPeer(peer);
@@ -68,9 +100,14 @@ class PqSessionManager {
   Future<Omemo2EncryptionResult> encryptOutgoing({
     required List<String> recipientJids,
     required List<int>? payload,
+    Map<String, Set<int>>? recipientDeviceIds,
   }) {
     return _m.onOutgoingStanza(
-      Omemo2OutgoingStanza(recipientJids: recipientJids, payload: payload),
+      Omemo2OutgoingStanza(
+        recipientJids: recipientJids,
+        payload: payload,
+        recipientDeviceIds: recipientDeviceIds,
+      ),
     );
   }
 

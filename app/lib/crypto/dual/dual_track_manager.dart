@@ -40,6 +40,12 @@ final Logger _log = Logger('DualTrackManager');
 /// busy server gives up on us.
 const int kBundleFetchConcurrency = 3;
 
+/// How long one B-track bundle fetch may take before that device is treated
+/// as missing material. This is a send-path budget, not the 30 s device-list
+/// budget: a message waiting on one wedged PEP IQ must fail closed in bounded
+/// time rather than hold the composer.
+const Duration kPqBundleDeadline = Duration(seconds: 8);
+
 /// How long a device list may take before we treat it as unreadable.
 ///
 /// **Thirty seconds, and twelve was a number that refused real contacts.** The
@@ -93,13 +99,26 @@ class DualTrackManager {
   /// monocles does the same. Bundle fetch belongs only here, at encrypt time.
   Future<List<PqDevice>> loadPqDevices(JID jid) async {
     final listed = await fetchPqDeviceIds(jid);
+    if (!listed.listReadable) return const <PqDevice>[];
+    return loadPqDevicesByIds(jid, listed.devices);
+  }
+
+  /// Fetches the bundles for [ids] with bounded concurrency.
+  ///
+  /// Send-path callers already have the announced list from
+  /// [CapabilityService.pqSnapshotFor]; this method deliberately does not read
+  /// the device list again. Devices whose bundle is missing or broken are
+  /// omitted, so the caller can distinguish "no bundle" from "not announced".
+  Future<List<PqDevice>> loadPqDevicesByIds(JID jid, Iterable<int> ids) async {
     final out = <PqDevice>[];
-    for (final id in listed.devices) {
+    final seen = <int>{};
+    final wanted = ids.where(seen.add).toList();
+    await forEachBounded(wanted, kBundleFetchConcurrency, (id) async {
       final bundle = await getPqBundle(jid, id);
-      if (bundle == null) continue;
+      if (bundle == null) return;
       final device = await deviceFromBundle(bundle);
       if (device != null) out.add(device);
-    }
+    });
     return out;
   }
 
@@ -739,7 +758,15 @@ class DualTrackManager {
   /// Malformed payloads never throw: they just mean "not encryptable yet".
   Future<PqBundle?> getPqBundle(JID jid, int deviceId) async {
     final pm = pubsubOf();
-    final res = await pm.getItem(jid, omemo2BundlesXmlns, '$deviceId');
+    late final dynamic res;
+    try {
+      res = await pm
+          .getItem(jid, omemo2BundlesXmlns, '$deviceId')
+          .timeout(kPqBundleDeadline);
+    } on TimeoutException {
+      _log.warning('PQ bundle for $jid:$deviceId timed out');
+      return null;
+    }
     if (!res.isType<PubSubItem>()) return null;
     try {
       final doc = XmlDocument.parse(res.get<PubSubItem>().payload.toXml());
@@ -779,6 +806,12 @@ class DualTrackManager {
     }
     if (remote.signedPreKeySignatureEncoded !=
         local.signedPreKeySignatureEncoded) {
+      return false;
+    }
+    // A legacy PEP bundle can hold thousands of prekeys after the old
+    // append-only replenish. Republish when PEP has more than the bounded
+    // local bundle so the oversized document is actually replaced.
+    if (remote.preKeysEncoded.length > local.preKeysEncoded.length) {
       return false;
     }
     var matching = 0;

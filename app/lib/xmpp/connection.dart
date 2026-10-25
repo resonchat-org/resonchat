@@ -2003,7 +2003,13 @@ class XmppService {
   final _blocklistChanges = StreamController<BlocklistChange>.broadcast();
 
   /// Attaches the capability resolver so [autoShouldEncrypt] works.
-  void attachCapabilities(CapabilityService service) => _capabilities = service;
+  void attachCapabilities(CapabilityService service) {
+    _capabilities = service;
+    // The PQ resolver must consume the same cache/refresh path; never let it
+    // read the B-track device list directly.
+    bTrack?.attachCapabilities(service);
+  }
+
   CapabilityService? _capabilities;
 
   XmppConnectionState get state => _state;
@@ -4270,6 +4276,7 @@ class XmppService {
     final owner = JID.fromString(event.from).toBare();
     _log.info('PEP change on $node by $owner; dropping cached capabilities');
     _capabilities?.invalidate(owner);
+    bTrack?.invalidatePeer(owner);
     if (!_capabilityChanges.isClosed) _capabilityChanges.add(owner);
   }
 }

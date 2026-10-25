@@ -17,12 +17,15 @@ import 'package:omemo_dart/omemo_dart_omemo2.dart';
 
 import 'package:resonchat/crypto/dual/dual_track_manager.dart';
 import 'package:resonchat/crypto/dual/fingerprint_trust.dart';
+import 'package:resonchat/crypto/dual/pq_device_list_snapshot.dart';
 import 'package:resonchat/crypto/omemo2/bundle_codec.dart';
 import 'package:resonchat/crypto/omemo2/message_codec.dart';
 import 'package:resonchat/crypto/omemo2/pq_message_layer.dart';
+import 'package:resonchat/crypto/omemo2/pq_peer_resolver.dart';
 import 'package:resonchat/crypto/omemo2/pq_session.dart';
 import 'package:resonchat/persistence/omemo2_device_store.dart';
 import 'package:resonchat/persistence/pq_identity_store.dart';
+import 'package:resonchat/xmpp/encryption/capabilities.dart';
 
 /// The local B-track device plus its session and message layer.
 class BTrackSession {
@@ -61,11 +64,33 @@ class BTrackManager {
   final FingerprintTrustStore? fingerprintTrust;
 
   BTrackSession? _session;
+  PqPeerResolver? _resolver;
+  CapabilityService? _capabilities;
 
   /// Our B-track device once it exists.
   PqDevice? get device => _session?.device;
 
   bool get ready => _session != null;
+
+  /// The single device-list owner is wired after the XmppService exists.
+  ///
+  /// The resolver is created with a callback, so attaching later still routes
+  /// every lookup through this CapabilityService.
+  void attachCapabilities(CapabilityService capabilities) {
+    _capabilities = capabilities;
+  }
+
+  /// PEP told us this peer changed. The resolver must forget its fingerprint
+  /// and announced-view caches before the next send.
+  void invalidatePeer(JID jid) => _resolver?.invalidate(jid);
+
+  Future<PqDeviceListSnapshot> _snapshotFor(JID jid) {
+    final capabilities = _capabilities;
+    if (capabilities == null) {
+      throw StateError('CapabilityService is not attached to BTrackManager');
+    }
+    return capabilities.pqSnapshotFor(jid);
+  }
 
   /// Creates (or restores) the local B-track device and publishes it.
   ///
@@ -107,20 +132,15 @@ class BTrackManager {
     // Ensure ML-DSA-87 identity exists before first publish.
     await pqIdentity.publicKey();
     final sessions = PqSessionManager(onCommit: deviceStore.save);
-    // Identity keys come from the sender's published bundle.
-    final layer = PqMessageLayer(
-      ownDevice: device,
+    // The resolver calls hasSession before it asks for bundles. Bind here so
+    // a restored session is visible before the first send (docs/11 §5.2).
+    await sessions.bindOwn(device);
+    final layer = PqMessageLayer(ownDevice: device, sessions: sessions);
+    _resolver = PqPeerResolver(
+      tracks: tracks,
       sessions: sessions,
-      senderIkOf: (senderBare, deviceId) async {
-        final ik = await tracks().deviceById(
-          JID.fromString(senderBare),
-          deviceId,
-        );
-        if (ik == null) {
-          throw StateError('no PQ bundle for $senderBare/$deviceId');
-        }
-        return ik;
-      },
+      snapshotFor: _snapshotFor,
+      fingerprintTrust: fingerprintTrust,
     );
     _session = BTrackSession(device: device, sessions: sessions, layer: layer);
 
@@ -213,52 +233,42 @@ class BTrackManager {
     required String plaintext,
   }) async {
     final session = _session;
-    if (session == null) return null;
+    final resolver = _resolver;
+    if (session == null || resolver == null) return null;
 
-    final devices = <PqDevice>[];
+    final requested = <String>[];
     final seen = <String>{};
     for (final jid in peerJids) {
       final bare = JID.fromString(jid).toBare().toString();
-      if (!seen.add(bare)) continue;
-      final peer = JID.fromString(bare);
-      final listed = await tracks().fetchPqDeviceIds(peer);
-      if (listed.listReadable) {
-        await fingerprintTrust?.syncAnnouncedDevices(
-          jid: bare,
-          announcedIds: listed.devices,
-          omemo2: true,
-        );
-      }
-      for (final device in await tracks().loadPqDevices(peer)) {
-        if (await _mayEncryptToPqDevice(bare, device)) {
-          devices.add(device);
-        }
-      }
+      if (seen.add(bare)) requested.add(bare);
     }
-    if (devices.isEmpty) return null;
+    if (requested.isEmpty) return null;
+
+    final resolution = await resolver.resolve(requestedJids: requested);
+    if (resolution.blocked) {
+      _log.warning(
+        'PQ send blocked: ${resolution.blockedReason!.name} '
+        'at ${resolution.blockedJid ?? '-'}'
+        '${resolution.blockedDeviceId == null ? '' : '/${resolution.blockedDeviceId}'}',
+      );
+      return null;
+    }
+    if (resolution.actualJids.isEmpty) {
+      _log.warning('PQ send has no actual encryption targets');
+      return null;
+    }
+    if (resolution.excluded.isNotEmpty) {
+      _log.info('PQ send excludes untrusted devices: ${resolution.excluded}');
+    }
 
     final outgoing = await session.layer.encrypt(
       plaintext: plaintext,
-      recipients: devices,
+      requestedJids: resolution.requestedJids,
+      announcedDeviceIds: resolution.announcedDeviceIds,
+      recipientDeviceIds: resolution.allowedDeviceIds,
+      recipients: resolution.newDevices,
     );
     return outgoing?.stanza;
-  }
-
-  /// BTBV + per-fingerprint distrust (monocles send gate).
-  Future<bool> _mayEncryptToPqDevice(String bare, PqDevice device) async {
-    final trust = fingerprintTrust;
-    if (trust == null) return true;
-    final pqIk = device.peerPqIdentityKey;
-    if (pqIk == null || pqIk.isEmpty) return true;
-    final ik = await device.identityPublicSerialized();
-    final fp = hybridOmemo2Fingerprint(ik, pqIk);
-    await trust.rememberDevice(
-      jid: bare,
-      deviceId: device.id,
-      fingerprint: fp,
-      omemo2: true,
-    );
-    return trust.mayEncryptToActive(bare, fp);
   }
 
   /// Decrypts an inbound PQ message; null when it is not for us (a different
