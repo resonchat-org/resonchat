@@ -25,19 +25,44 @@ class ConnectivityPlusConnectivityManager extends ConnectivityManager {
       StreamController<void>.broadcast();
   Stream<void> get becameOnline => _becameOnline.stream;
 
+  /// Fired when connectivity flips from some interface → none.
+  final StreamController<void> _becameOffline =
+      StreamController<void>.broadcast();
+  Stream<void> get becameOffline => _becameOffline.stream;
+
+  /// Fired when the interface changes while staying online (Wi-Fi → cellular).
+  /// Conversations pings on every CONNECTIVITY_ACTION for this reason.
+  final StreamController<void> _networkChanges =
+      StreamController<void>.broadcast();
+  Stream<void> get networkChanges => _networkChanges.stream;
+
+  bool _online = true;
+
+  /// Last state observed by the change listener (false before [start] only if
+  /// the initial check found no interface).
+  bool get isOnline => _online;
+
   Future<void> start() async {
     if (_listening) return;
     _listening = true;
     var hadConnection = await hasConnection();
+    _online = hadConnection;
     _sub = _connectivity.onConnectivityChanged.listen((results) {
       final online = _isOnline(results);
       if (online) {
         _resolveWaiters();
         if (!hadConnection && !_becameOnline.isClosed) {
           _becameOnline.add(null);
+        } else if (hadConnection && !_networkChanges.isClosed) {
+          // Interface changed but we stayed online. Existing sockets are not
+          // guaranteed to survive it.
+          _networkChanges.add(null);
         }
+      } else if (hadConnection && !_becameOffline.isClosed) {
+        _becameOffline.add(null);
       }
       hadConnection = online;
+      _online = online;
     });
   }
 
@@ -54,6 +79,8 @@ class ConnectivityPlusConnectivityManager extends ConnectivityManager {
   void dispose() {
     unawaited(stop());
     unawaited(_becameOnline.close());
+    unawaited(_becameOffline.close());
+    unawaited(_networkChanges.close());
   }
 
   @override

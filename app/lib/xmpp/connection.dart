@@ -217,6 +217,11 @@ class XmppService {
   final _pqFailures = StreamController<PqDecryptFailure>.broadcast();
 
   XmppConnection? _connection;
+
+  /// The socket being negotiated before [connect] returns. Kept so a timeout
+  /// or network loss can abort `connection.connect()` instead of waiting for
+  /// its own 90 s deadline while holding the controller's connect mutex.
+  XmppConnection? _pendingConnection;
   PubSubManager? _pubsub;
   BookmarksManager? _bookmarks;
   axolotl.AxolotlOmemoManager? _omemo;
@@ -295,9 +300,24 @@ class XmppService {
   /// [AccountConnectionController].
   static const String pingXmlns = 'urn:xmpp:ping';
 
+  /// A socket write/close that never completes must not hold the controller's
+  /// connect mutex forever.
+  static const Duration _socketCloseTimeout = Duration(seconds: 5);
+
   bool _livenessProbeRunning = false;
   bool _streamReadyHandled = false;
   bool _lastStreamResumed = false;
+
+  /// Increments on every connect / explicit disconnect. Asynchronous
+  /// post-login work captures it so a result from a dead connection cannot
+  /// overwrite the managers of a newer one.
+  int _connectionEpoch = 0;
+  int get connectionEpoch => _connectionEpoch;
+
+  /// Completes once the post-login bundle (carbons / MAM disco / PEP) has
+  /// finished or timed out. Login itself never waits on it.
+  Completer<void>? _streamReady;
+  bool _streamLossReported = false;
 
   /// Overrides the automatic per-chat decision. Set by the settings UI.
   set shouldEncrypt(ShouldEncrypt fn) => _shouldEncrypt = fn;
@@ -2170,6 +2190,20 @@ class XmppService {
   /// `processResumed`). Hub skips PEP republish / bookmarks / MUC rejoin.
   bool get lastStreamResumed => _lastStreamResumed;
 
+  /// Waits until the post-login carbons/MAM/PEP bundle has finished or its
+  /// deadline passed. Bootstrap uses this so it sees the MAM availability
+  /// probe, but the UI is already online by then.
+  Future<bool> waitForStreamReady() async {
+    final ready = _streamReady;
+    if (ready == null) return true;
+    try {
+      await ready.future.timeout(connectDiscoTimeout);
+      return true;
+    } on TimeoutException {
+      return false;
+    }
+  }
+
   /// Why the last [connect] failed, for the UI to put in its own words.
   ///
   /// An enum rather than a string: moxxmpp's error classes define no
@@ -2207,6 +2241,14 @@ class XmppService {
     bool reconnect = true,
   }) async {
     await disconnect();
+    final connectEpoch = ++_connectionEpoch;
+    final ready = Completer<void>();
+    _streamReady = ready;
+    _streamLossReported = false;
+    _carbonsEnabled = false;
+    _mamAvailable = false;
+    // A previous attempt's classification must not leak into this one.
+    lastFailure = null;
     _setState(XmppConnectionState.connecting);
     _rosterState = rosterState;
 
@@ -2409,9 +2451,21 @@ class XmppService {
       '$omemo2DevicesXmlns+notify',
     ]);
 
+    final eventEpoch = _connectionEpoch;
+    if (connectEpoch != eventEpoch) {
+      await _closeConnection(connection);
+      if (identical(_streamReady, ready)) _streamReady = null;
+      if (!ready.isCompleted) ready.complete();
+      _log.info('connect($jid): superseded during setup');
+      return false;
+    }
     _streamReadyHandled = false;
     _lastStreamResumed = false;
-    _eventsSub = connection.asBroadcastStream().listen(_onEvent);
+    final eventSub = connection.asBroadcastStream().listen(
+      (event) => _onEvent(event, eventEpoch),
+    );
+    _eventsSub = eventSub;
+    _pendingConnection = connection;
     // shouldReconnect is always false: AccountConnectionController owns retries.
     final result = await connection
         .connect(shouldReconnect: false, waitUntilLogin: true)
@@ -2424,6 +2478,23 @@ class XmppService {
             return Result<bool, XmppError>(TimeoutError());
           },
         );
+
+    // A timeout / network-loss teardown / newer connect invalidated this
+    // attempt while it was awaiting login. Never let it install a socket.
+    if (connectEpoch != _connectionEpoch) {
+      if (identical(_pendingConnection, connection)) {
+        _pendingConnection = null;
+      }
+      if (identical(_eventsSub, eventSub)) {
+        await _eventsSub?.cancel();
+        _eventsSub = null;
+      }
+      await _closeConnection(connection);
+      if (identical(_streamReady, ready)) _streamReady = null;
+      if (!ready.isCompleted) ready.complete();
+      _log.info('connect($jid): superseded before login completed');
+      return false;
+    }
     final ok = result.isType<bool>() && result.get<bool>();
     if (!ok) {
       // The raw object goes to the log, where naming the exact class is what a
@@ -2436,12 +2507,9 @@ class XmppService {
       _log.severe('connect failed: $lastFailure ($error)');
       await _eventsSub?.cancel();
       _eventsSub = null;
-      try {
-        await connection.disconnect();
-      } catch (e) {
-        _log.fine('failed connection teardown: $e');
-      }
+      await _closeConnection(connection);
     }
+    if (identical(_pendingConnection, connection)) _pendingConnection = null;
     _connection = ok ? connection : null;
     _setState(
       ok ? XmppConnectionState.connected : XmppConnectionState.disconnected,
@@ -2453,8 +2521,11 @@ class XmppService {
               ?.streamResumed ??
           false;
       _lastStreamResumed = resumed;
-      await _afterStreamReady(resumed: resumed);
-      _streamReadyHandled = true;
+      _startAfterStreamReady(resumed: resumed);
+    }
+    if (!ok) {
+      if (identical(_streamReady, ready)) _streamReady = null;
+      if (!ready.isCompleted) ready.complete();
     }
     // [reconnect] kept for API compat with callers; controller ignores it.
     if (!reconnect && ok) {
@@ -2464,28 +2535,80 @@ class XmppService {
     return ok;
   }
 
+  /// Starts carbons/MAM/PEP after a fresh bind without putting them on the
+  /// login path. Conversations marks the account ONLINE as soon as the session
+  /// is bound; these are post-login optimisations and can be slow or hang on a
+  /// server that never answers a PEP IQ.
+  void _startAfterStreamReady({required bool resumed}) {
+    if (_streamReadyHandled) return;
+    _streamReadyHandled = true;
+    final epoch = _connectionEpoch;
+    unawaited(() async {
+      try {
+        await _afterStreamReady(
+          resumed: resumed,
+          epoch: epoch,
+        ).timeout(connectDiscoTimeout + const Duration(seconds: 5));
+      } on TimeoutException {
+        _log.warning(
+          'stream-ready bundle timed out after '
+          '${(connectDiscoTimeout + const Duration(seconds: 5)).inSeconds}s',
+        );
+      } catch (e, st) {
+        _log.warning('stream-ready bundle failed: $e', e, st);
+      } finally {
+        if (epoch == _connectionEpoch) {
+          final ready = _streamReady;
+          if (ready != null && !ready.isCompleted) ready.complete();
+        }
+      }
+    }());
+  }
+
   /// Carbons + PEP after a fresh bind. Skipped on SM resume.
-  Future<void> _afterStreamReady({required bool resumed}) async {
+  Future<void> _afterStreamReady({
+    required bool resumed,
+    required int epoch,
+  }) async {
+    if (epoch != _connectionEpoch) return;
     if (resumed) {
       _log.info('stream resumed; skipping carbons/MAM/PEP bootstrap');
       return;
     }
     // Carbons, the MAM disco probe and the own-PEP subscribes do not depend on
-    // each other. Start all before awaiting any.
-    final carbonsFuture = _enableCarbonsSafely();
-    final mamFuture = _isMamAvailable().timeout(
-      connectDiscoTimeout,
-      onTimeout: () {
-        _log.warning(
-          'MAM disco timed out after ${connectDiscoTimeout.inSeconds}s',
-        );
-        return false;
-      },
-    );
-    final pepFuture = _subscribeOwnPep();
-    _carbonsEnabled = await carbonsFuture;
-    _mamAvailable = await mamFuture;
-    await pepFuture;
+    // each other. Start all before awaiting any, and bound each one so a
+    // single silent PEP IQ cannot delay the MAM probe's result.
+    final results = await Future.wait<Object?>([
+      _enableCarbonsSafely().timeout(
+        connectDiscoTimeout,
+        onTimeout: () {
+          _log.warning(
+            'carbons enable timed out after ${connectDiscoTimeout.inSeconds}s',
+          );
+          return false;
+        },
+      ),
+      _isMamAvailable().timeout(
+        connectDiscoTimeout,
+        onTimeout: () {
+          _log.warning(
+            'MAM disco timed out after ${connectDiscoTimeout.inSeconds}s',
+          );
+          return false;
+        },
+      ),
+      _subscribeOwnPep().timeout(
+        connectDiscoTimeout,
+        onTimeout: () {
+          _log.warning(
+            'own PEP subscribe timed out after ${connectDiscoTimeout.inSeconds}s',
+          );
+        },
+      ),
+    ]);
+    if (epoch != _connectionEpoch) return;
+    _carbonsEnabled = results[0] as bool;
+    _mamAvailable = results[1] as bool;
     _log.info(
       'stream ready (resumed=$resumed) carbons=$_carbonsEnabled '
       'mam=$_mamAvailable',
@@ -3694,10 +3817,36 @@ class XmppService {
 
   Future<void> disconnect() async {
     _streamReadyHandled = false;
+    // Invalidate in-flight post-login work before tearing down the managers it
+    // reads.
+    _connectionEpoch++;
+    final ready = _streamReady;
+    _streamReady = null;
+    if (ready != null && !ready.isCompleted) ready.complete();
     await _eventsSub?.cancel();
     _eventsSub = null;
+    final live = _connection;
+    _connection = null;
+    final pending = _pendingConnection;
+    _pendingConnection = null;
+    final closes = <Future<void>>[
+      if (live != null) _closeConnection(live),
+      if (pending != null && !identical(pending, live))
+        _closeConnection(pending),
+    ];
+    if (closes.isNotEmpty) await Future.wait(closes);
+    presence.clear();
+    if (!_presenceChanges.isClosed) _presenceChanges.add(null);
+    _setState(XmppConnectionState.disconnected);
+  }
+
+  Future<void> _closeConnection(XmppConnection connection) async {
     try {
-      await _connection?.disconnect();
+      await connection.disconnect().timeout(_socketCloseTimeout);
+    } on TimeoutException {
+      _log.warning(
+        'socket close timed out after ${_socketCloseTimeout.inSeconds}s',
+      );
     } catch (e, st) {
       // moxxmpp's graceful close writes `</stream:stream>` before closing the
       // socket. When the peer has already gone, that write throws
@@ -3705,13 +3854,8 @@ class XmppService {
       // escaped the socket wrapper's own guard. Letting it escape here aborted
       // AccountSession.dispose before the database was closed and left the
       // account half torn down.
-      _log.warning('disconnect failed (socket already gone): $e', e, st);
-    } finally {
-      _connection = null;
+      _log.warning('socket close failed (already gone): $e', e, st);
     }
-    presence.clear();
-    if (!_presenceChanges.isClosed) _presenceChanges.add(null);
-    _setState(XmppConnectionState.disconnected);
   }
 
   /// Republishes a room's state after any presence event for it.
@@ -3845,7 +3989,19 @@ class XmppService {
     return _includeOfflineAffiliates[bare] ?? false;
   }
 
-  void _onEvent(XmppEvent event) {
+  void _reportStreamLoss(int epoch) {
+    if (epoch != _connectionEpoch || _streamLossReported) return;
+    if (_state == XmppConnectionState.connected) return;
+    _streamLossReported = true;
+    // Null means an ordinary socket drop / TLS read failure: Conversations
+    // maps that to OFFLINE and reconnects immediately. A classified
+    // non-recoverable stream error keeps its backoff state.
+    onStreamLost?.call(lastFailure);
+  }
+
+  void _onEvent(XmppEvent event, int epoch) {
+    // An event queued by the previous socket must be inert after a reconnect.
+    if (epoch != _connectionEpoch) return;
     if (event is ConnectionStateChangedEvent) {
       // moxxmpp's XmppConnectionState is shadowed by ours; use .name.
       final wasConnected = _state == XmppConnectionState.connected;
@@ -3856,23 +4012,32 @@ class XmppService {
       };
       _setState(next);
       // After login, a drop must reach AccountConnectionController — moxxmpp
-      // no longer auto-reconnects (NeverReconnectPolicy).
+      // no longer auto-reconnects (NeverReconnectPolicy). Defer one turn so a
+      // NonRecoverableErrorEvent that follows the state change can supply the
+      // classification first.
       if (wasConnected && next == XmppConnectionState.disconnected) {
-        onStreamLost?.call(XmppConnectFailure.unreachable);
+        // A zero timer (not a microtask) lets the NonRecoverableErrorEvent
+        // that follows the state change arrive first with its classification.
+        Timer.run(() => _reportStreamLoss(epoch));
       }
       return;
     }
     if (event is StreamNegotiationsDoneEvent) {
       if (_connection != null && !_streamReadyHandled) {
         _lastStreamResumed = event.resumed;
-        _streamReadyHandled = true;
-        unawaited(_afterStreamReady(resumed: event.resumed));
+        _startAfterStreamReady(resumed: event.resumed);
       }
       return;
     }
     if (event is NonRecoverableErrorEvent) {
-      // Classification only — reconnect is armed once via ConnectionStateChanged.
       lastFailure = classifyConnectFailure(event.error);
+      // The state event may have arrived just before this one. Report now with
+      // the classified reason for a session that had already finished login.
+      if (_streamReadyHandled &&
+          !_streamLossReported &&
+          _state != XmppConnectionState.connected) {
+        _reportStreamLoss(_connectionEpoch);
+      }
       return;
     }
     if (event is StanzaSendingCancelledEvent) {

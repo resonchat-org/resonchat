@@ -118,6 +118,8 @@ class AccountHub extends ChangeNotifier {
         return i >= 0 && _accounts[i].enabled && _sessions.containsKey(id);
       },
       accountIds: () => _sessions.keys,
+      connectFailureState: _controllerFailureState,
+      checkNetwork: _connectivity.hasConnection,
       // No Jingle/calls yet — hook returns false; SEE_OTHER_HOST still aggressive.
       hasActiveJingleRtpCall: (_) => false,
       wakeScheduler: AndroidWakeScheduler(),
@@ -131,7 +133,9 @@ class AccountHub extends ChangeNotifier {
 
   late final ConnectivityPlusConnectivityManager _connectivity;
   late final AccountConnectionController _controller;
-  StreamSubscription<void>? _connectivitySub;
+  StreamSubscription<void>? _connectivityOnlineSub;
+  StreamSubscription<void>? _connectivityOfflineSub;
+  StreamSubscription<void>? _connectivityChangedSub;
 
   /// Conversations-style connection scheduler (sole reconnect clock).
   AccountConnectionController get connectionController => _controller;
@@ -210,7 +214,17 @@ class AccountHub extends ChangeNotifier {
   Future<void> connectAll() async {
     await appNetwork.waitUntilReady();
     await _connectivity.start();
-    _connectivitySub ??= _connectivity.becameOnline.listen((_) {
+    _controller.setNetworkAvailable(await _connectivity.hasConnection());
+    _connectivityOnlineSub ??= _connectivity.becameOnline.listen((_) {
+      _controller.onConnectivityRestored();
+    });
+    _connectivityOfflineSub ??= _connectivity.becameOffline.listen((_) {
+      _controller.onConnectivityLost();
+    });
+    // Wi-Fi → cellular: the interface stays "online" but every existing TCP
+    // socket is usually gone. Conversations pings on CONNECTIVITY_ACTION, so
+    // treat the type change as a connectivity restore for scheduling purposes.
+    _connectivityChangedSub ??= _connectivity.networkChanges.listen((_) {
       _controller.onConnectivityRestored();
     });
     _controller.start();
@@ -320,7 +334,17 @@ class AccountHub extends ChangeNotifier {
   }
 
   Future<bool> _controllerConnect(String accountId) async {
-    return _connectAndBootstrap(accountId);
+    // AccountConnectionController owns the state transition and retry
+    // decision. Keeping this path from writing "connecting"/"online" itself is
+    // what makes a late result after a timeout inert.
+    return _connectAndBootstrap(accountId, manageControllerState: false);
+  }
+
+  AccountConnectionState _controllerFailureState(String accountId) {
+    final failure = _sessions[accountId]?.xmpp.lastFailure;
+    return failure == null
+        ? AccountConnectionState.unreachable
+        : accountStateFromConnectFailure(failure);
   }
 
   Future<void> _controllerDisconnect(String accountId) async {
@@ -339,11 +363,16 @@ class AccountHub extends ChangeNotifier {
     return session.xmpp.sendLivenessPing();
   }
 
-  Future<bool> _connectSession(String accountId) async {
+  Future<bool> _connectSession(
+    String accountId, {
+    bool manageControllerState = true,
+  }) async {
     final session = _sessions[accountId];
     if (session == null) return false;
     final a = session.account;
-    _controller.setState(accountId, AccountConnectionState.connecting);
+    if (manageControllerState) {
+      _controller.setState(accountId, AccountConnectionState.connecting);
+    }
     await appNetwork.waitUntilReady();
     // RFC 6121 availability for the initial presence broadcast.
     final showWire = await session.db.ownPresenceShowWire();
@@ -356,16 +385,23 @@ class AccountHub extends ChangeNotifier {
     );
     if (!ok) {
       _log.warning('connect failed for ${a.jid}: ${session.xmpp.lastFailure}');
-      final failure = session.xmpp.lastFailure;
-      final state = failure == null
-          ? AccountConnectionState.unreachable
-          : accountStateFromConnectFailure(failure);
-      _controller.onConnectionLost(accountId, state, incrementAttempt: true);
+      // The controller path classifies through _controllerFailureState after
+      // the future returns; direct callers (add account / password change)
+      // still need the state and retry clock moved here.
+      if (manageControllerState) {
+        _controller.onConnectionLost(
+          accountId,
+          _controllerFailureState(accountId),
+          incrementAttempt: true,
+        );
+      }
       notifyListeners();
       _sessionChanges.add(null);
       return false;
     }
-    _controller.setState(accountId, AccountConnectionState.online);
+    if (manageControllerState) {
+      _controller.setState(accountId, AccountConnectionState.online);
+    }
     _wireTracks(session);
     notifyListeners();
     _sessionChanges.add(null);
@@ -373,8 +409,14 @@ class AccountHub extends ChangeNotifier {
     return true;
   }
 
-  Future<bool> _connectAndBootstrap(String accountId) async {
-    final ok = await _connectSession(accountId);
+  Future<bool> _connectAndBootstrap(
+    String accountId, {
+    bool manageControllerState = true,
+  }) async {
+    final ok = await _connectSession(
+      accountId,
+      manageControllerState: manageControllerState,
+    );
     if (!ok) return false;
     final session = _sessions[accountId];
     if (session == null) return false;
@@ -403,11 +445,22 @@ class AccountHub extends ChangeNotifier {
   /// [bootstrapSession] already swallows and logs its own failures, so this
   /// only has to make sure listeners hear about the finished state.
   Future<void> _bootstrapInBackground(AccountSession session) async {
+    final epoch = session.xmpp.connectionEpoch;
     try {
+      final ready = await session.xmpp.waitForStreamReady();
+      if (epoch != session.xmpp.connectionEpoch) return;
+      if (!ready) {
+        _log.fine(
+          'stream-ready bundle timed out for ${session.account.jid}; '
+          'bootstrapping anyway',
+        );
+      }
       await bootstrapSession(session);
     } finally {
-      notifyListeners();
-      _sessionChanges.add(null);
+      if (epoch == session.xmpp.connectionEpoch) {
+        notifyListeners();
+        _sessionChanges.add(null);
+      }
     }
   }
 
@@ -952,6 +1005,16 @@ class AccountHub extends ChangeNotifier {
 
   @override
   void dispose() {
+    // Stop the reconnect clock and connectivity listeners before closing the
+    // databases: a late connect callback must never touch a disposed session.
+    _controller.dispose();
+    unawaited(_connectivityOnlineSub?.cancel());
+    unawaited(_connectivityOfflineSub?.cancel());
+    unawaited(_connectivityChangedSub?.cancel());
+    _connectivityOnlineSub = null;
+    _connectivityOfflineSub = null;
+    _connectivityChangedSub = null;
+    _connectivity.dispose();
     for (final s in _sessions.values) {
       unawaited(s.dispose());
     }
