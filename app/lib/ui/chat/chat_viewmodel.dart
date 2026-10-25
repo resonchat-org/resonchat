@@ -294,18 +294,21 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
     });
     _adviceSub = trackAdvice.listen(onAdvice);
     _typingSub = xmpp.typingStates.listen(onPeerTyping);
-    // While this chat is open, a new inbound markable message is already
+    // While this 1:1 chat is open, a new inbound markable message is already
     // being read — send <displayed/> like Conversations markRead on open.
+    // A group marker needs the room stanza-id and type='groupchat', so those
+    // go through markReadAndSendDisplayed() / sendDisplayedForLatest().
     _inboundReadSub = xmpp.inbound.listen((msg) {
+      if (state.isGroup) return;
       if (msg.from.toBare().toString() != peer) return;
       if (!msg.markable || msg.fromArchive) return;
       final id = msg.originId ?? msg.stanzaId;
       if (id == null || id.isEmpty) return;
       unawaited(xmpp.sendDisplayedMarker(JID.fromString(peer), id));
     });
-    // Deliberately *not* marked read here: marking on arrival would clear the
-    // unread badge before the user has read anything. The page marks read when
-    // it goes away.
+    // Not marked read here: marking on arrival would clear the unread badge
+    // before the user has read anything. The page marks read once the newest
+    // row is visible, and again when it goes away.
 
     ref.onDispose(() {
       _disposed = true;
@@ -563,8 +566,9 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
   /// Marks the chat read locally and sends XEP-0333 `<displayed/>`
   /// (Conversations `markRead` → `DisplayedManager.displayed`).
   ///
-  /// Safe to call as the page goes away: everything that needs `ref` is read
-  /// before the first await.
+  /// Called when the newest row becomes visible and again as the page goes
+  /// away. Safe in both places: everything that needs `ref` is read before the
+  /// first await.
   Future<void> markReadAndSendDisplayed() async {
     final r = resolveChatKey(arg);
     final bump = ref.read(chatRowRevisionProvider.notifier);

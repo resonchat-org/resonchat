@@ -24,6 +24,7 @@ import 'package:resonchat/xmpp/connection.dart';
 import 'package:resonchat/xmpp/encryption/capabilities.dart';
 import 'package:resonchat/xmpp/message_expiry.dart';
 import 'package:resonchat/xmpp/notify_policy.dart';
+import 'package:resonchat/xmpp/read_marker_target.dart';
 import 'package:resonchat/xmpp/roster/blocking.dart';
 
 /// Connects the connection's streams to persistent state for the app's
@@ -131,12 +132,17 @@ class _AppWiringState extends ConsumerState<AppWiring>
   ) async {
     final bare = receipt.from.toBare().toString();
     final nick = receipt.from.resource;
-    if (nick.isEmpty) {
+    final chat = await session.db.getChat(bare);
+    // 1:1 markers arrive from the peer's full JID as often as from its bare
+    // JID (Gajim, for one, always adds its resource). The resource is only a
+    // room nick inside an actual room, so a non-group chat takes the same
+    // path either way. A missing row cannot be a room we have joined.
+    if (readMarkerTarget(chatIsGroup: chat?.isGroup) ==
+        ReadMarkerTarget.direct) {
       await session.db.markDisplayed(bare, receipt.stanzaId);
       return;
     }
-    final chat = await session.db.getChat(bare);
-    if (chat == null || !chat.isGroup || !chat.mucPrivateNonAnonymous) return;
+    if (chat == null || nick.isEmpty || !chat.mucPrivateNonAnonymous) return;
     if (nick == chat.mucNick) return;
     final members = await session.xmpp.roomDisplayMembers(bare);
     String? real;
