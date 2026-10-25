@@ -26,7 +26,7 @@ import 'package:resonchat/crypto/dual/track.dart';
 import 'package:resonchat/xmpp/connection.dart';
 
 export 'package:resonchat/xmpp/inbound/reply_info.dart'
-    show ReplyInfo, stripFallback;
+    show ReplyInfo, quoteFromReply, stripFallback;
 
 /// The quoted text plus the offsets that say where the quote ends.
 ///
@@ -49,14 +49,22 @@ class ReplyFallback {
 }
 
 /// Builds the fallback for a reply quoting [quote].
+///
+/// Matches monocles/Conversations: each quoted line is trimmed, every line is
+/// prefixed with `> `, and a blank line separates the quote from the reply.
+/// The returned offsets are code points (XEP-0461), not UTF-16 code units.
 ReplyFallback buildReplyFallback(String quote, String body) {
   if (quote.isEmpty) {
     // `''.split('\n')` is `['']`, which would emit a bare "> " line: a quote
     // of nothing, reading as a truncation of the message above it.
     return ReplyFallback(wireBody: body, start: 0, end: 0);
   }
-  final quoted = quote.split('\n').map((line) => '> $line\n').join();
-  return ReplyFallback(wireBody: '$quoted$body', start: 0, end: quoted.length);
+  final quoted = quote.split('\n').map((line) => '> ${line.trim()}\n').join();
+  return ReplyFallback(
+    wireBody: '$quoted\n$body',
+    start: 0,
+    end: quoted.runes.length,
+  );
 }
 
 /// Builds the XEP-0461 elements for a reply.

@@ -17,6 +17,7 @@ import 'package:resonchat/ui/chat/chat_nicks.dart';
 import 'package:resonchat/ui/chat/message_bubble.dart';
 import 'package:resonchat/ui/chat/message_merge.dart';
 import 'package:resonchat/ui/chat/read_ring.dart';
+import 'package:resonchat/ui/chat/reply_quote.dart';
 import 'package:resonchat/ui/chats/unread.dart';
 import 'package:resonchat/ui/contact_avatar.dart';
 import 'package:resonchat/ui/motion.dart';
@@ -281,9 +282,18 @@ class _ChatMessageListState extends State<ChatMessageList> {
     final selfNick = widget.selfNick;
     final loadingOlder = widget.loadingOlder;
     final chatKey = widget.chatKey;
+    final selfLabel = selfNick.isNotEmpty ? selfNick : context.l10n.you;
 
     if (messages.isEmpty) {
       return Center(child: Text(context.l10n.noMessagesYet));
+    }
+
+    // Reply cards name the quoted message, so keep the rows we can resolve by
+    // the id `replyTo` points at (origin-id or, for older rows, the room id).
+    final quotedById = <String, Message>{};
+    for (final m in messages) {
+      if (m.stanzaId.isNotEmpty) quotedById[m.stanzaId] = m;
+      if (m.roomStanzaId.isNotEmpty) quotedById[m.roomStanzaId] = m;
     }
 
     final rows = <Widget>[
@@ -389,9 +399,21 @@ class _ChatMessageListState extends State<ChatMessageList> {
       final cacheKey = m.stanzaId.isNotEmpty
           ? m.stanzaId
           : 'body:${m.body.hashCode}';
+      final reply = m.replyTo.isEmpty
+          ? ReplyPresentation(body: m.body, quote: '', author: '')
+          : replyPresentation(
+              m,
+              quoted: quotedById[m.replyTo],
+              isGroup: isGroup,
+              peerName: peerName,
+              selfLabel: selfLabel,
+            );
       Widget bubble = _ChatReactionBubble(
         chatKey: chatKey,
         message: m,
+        text: reply.body,
+        replyBody: reply.quote,
+        replyAuthor: reply.author,
         selectionMode: selectionMode,
         selected: selectedIds.contains(m.stanzaId),
         highlighted: matchesUnreadAnchor(m, highlightMessageAnchor),
@@ -501,6 +523,9 @@ class _ChatReactionBubble extends ConsumerWidget {
   const _ChatReactionBubble({
     required this.chatKey,
     required this.message,
+    required this.text,
+    required this.replyBody,
+    required this.replyAuthor,
     required this.selectionMode,
     required this.selected,
     this.highlighted = false,
@@ -524,6 +549,17 @@ class _ChatReactionBubble extends ConsumerWidget {
 
   final String chatKey;
   final Message message;
+
+  /// The bubble text after removing the reply's leading quote block.
+  final String text;
+
+  /// Quote text for the reply card. May come from the body fallback or the
+  /// row's stored copy when a target is gone.
+  final String replyBody;
+
+  /// Display name of the quoted message's author.
+  final String replyAuthor;
+
   final bool selectionMode;
   final bool selected;
   final bool highlighted;
@@ -618,7 +654,7 @@ class _ChatReactionBubble extends ConsumerWidget {
             colorKey: message.sender,
           );
     return MessageBubble(
-      text: message.body,
+      text: text,
       time: message.timestamp,
       side: message.incoming ? BubbleSide.incoming : BubbleSide.outgoing,
       senderName: chromeNick,
@@ -645,8 +681,8 @@ class _ChatReactionBubble extends ConsumerWidget {
       message: message,
       chatKey: chatKey,
       replyTo: message.replyTo,
-      replyBody: message.replyBody,
-      replyAuthor: message.replyAuthor,
+      replyBody: replyBody,
+      replyAuthor: replyAuthor,
       onReplyTap: onReplyTap,
       mentionsMe: message.mentionsMe,
       highlightNicks: isGroup ? highlightNicks : const [],
@@ -670,7 +706,7 @@ class _ChatReactionBubble extends ConsumerWidget {
           ? null
           : selectionMode
           ? (message.stanzaId.isEmpty ? null : (_) => onToggleSelected())
-          : (anchor) => onMenu(message.body, anchor),
+          : (anchor) => onMenu(text, anchor),
       onTap: message.retracted || !selectionMode || message.stanzaId.isEmpty
           ? null
           : onToggleSelected,

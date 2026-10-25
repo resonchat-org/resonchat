@@ -49,7 +49,7 @@ void main() {
   group('the fallback body', () {
     test('quotes every line and keeps the reply after it', () {
       final fallback = buildReplyFallback('first\nsecond', 'my answer');
-      expect(fallback.wireBody, '> first\n> second\nmy answer');
+      expect(fallback.wireBody, '> first\n> second\n\nmy answer');
     });
 
     test('the offsets cover exactly the quote', () {
@@ -63,7 +63,7 @@ void main() {
         fallback.wireBody.substring(fallback.start, fallback.end),
         '> quoted\n',
       );
-      expect(fallback.wireBody.substring(fallback.end), 'reply');
+      expect(fallback.wireBody.substring(fallback.end), '\nreply');
     });
 
     test('a multi-line quote ends after its last line', () {
@@ -83,7 +83,28 @@ void main() {
       // A blank line in the middle of a quoted message is part of the quote;
       // leaving it bare makes the reply look two messages long.
       final fallback = buildReplyFallback('a\n\nb', 'r');
-      expect(fallback.wireBody, '> a\n> \n> b\nr');
+      expect(fallback.wireBody, '> a\n> \n> b\n\nr');
+    });
+
+    test('offsets count code points, not UTF-16 units', () {
+      // XEP-0461 offsets are code points. An emoji is one code point and two
+      // Dart code units; using `length` would ask the receiver to cut one
+      // character too far.
+      final fallback = buildReplyFallback('hi 😀', 'reply');
+      expect(fallback.end, '> hi 😀\n'.runes.length);
+      final data = ReplyData(
+        'id',
+        body: fallback.wireBody,
+        start: fallback.start,
+        end: fallback.end,
+      );
+      expect(quoteFromReply(data, fallback.wireBody), 'hi 😀');
+      expect(stripFallback(data, fallback.wireBody), 'reply');
+    });
+
+    test('quoted lines are trimmed like monocles', () {
+      final fallback = buildReplyFallback('  spaced  \n  twice ', 'r');
+      expect(fallback.wireBody, '> spaced\n> twice\n\nr');
     });
   });
 
@@ -229,6 +250,14 @@ void main() {
       expect(info.body, 'the original');
       // Bubble text is the reply alone.
       expect(stripFallback(data, fallback.wireBody), 'my answer');
+    });
+
+    test('a monocles-style emoji offset is read as code points', () {
+      // '> hi 😀\n' is seven code points but eight Dart code units.
+      const wire = '> hi 😀\n\nanswer';
+      const data = ReplyData('id', body: wire, start: 0, end: 7);
+      expect(quoteFromReply(data, wire), 'hi 😀');
+      expect(stripFallback(data, wire), 'answer');
     });
 
     test('a sender that sent no offsets leaves the body alone', () {
