@@ -57,42 +57,6 @@ String quoteFromReply(ReplyData data, String receivedBody) {
   return (start: start, end: end);
 }
 
-/// The body and quote recovered from a row written by the pre-fix reply code.
-class LegacyReplyQuote {
-  const LegacyReplyQuote({required this.body, required this.quote});
-
-  /// The reply text, with the fallback quote removed.
-  final String body;
-
-  /// The quoted text, with the `> ` markers removed.
-  final String quote;
-}
-
-/// Recovers a reply stored by the build that had `replyBody` and `body` mixed up.
-///
-/// That build wrote the raw `> `-prefixed fallback into `Messages.body` and the
-/// *reply* text into `Messages.replyBody`. On screen that made the quote card
-/// quote the message itself, while the bubble showed the actual quote as part
-/// of its text.
-///
-/// Only a row whose shape matches is rewritten: the body starts with quoted
-/// lines and everything after them is exactly [storedReply]. A message that
-/// merely begins with `> ` is left alone. Null means nothing to repair.
-LegacyReplyQuote? repairLegacyReplyQuote(String body, String storedReply) {
-  if (!body.startsWith('> ')) return null;
-  final lines = body.split('\n');
-  var end = 0;
-  while (end < lines.length &&
-      (lines[end].startsWith('> ') || lines[end] == '>')) {
-    end++;
-  }
-  if (end == 0) return null;
-  final remainder = lines.sublist(end).join('\n');
-  if (remainder != storedReply) return null;
-  final quoted = lines.sublist(0, end).join('\n');
-  return LegacyReplyQuote(body: remainder, quote: unquoteFallback('$quoted\n'));
-}
-
 /// Strips Conversations-style `> ` line prefixes from a fallback region.
 String unquoteFallback(String region) {
   final lines = region.split('\n');

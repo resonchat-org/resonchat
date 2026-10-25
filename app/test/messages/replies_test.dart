@@ -214,58 +214,6 @@ void main() {
     });
   });
 
-  group('repairing rows written before the quote/reply split', () {
-    test('recovers the quote and strips it from the body', () {
-      final fixed = repairLegacyReplyQuote('> 999\n后量子测试收到', '后量子测试收到');
-      expect(fixed, isNotNull);
-      expect(fixed!.quote, '999');
-      expect(fixed.body, '后量子测试收到');
-    });
-
-    test('handles a multi-line quote', () {
-      final fixed = repairLegacyReplyQuote(
-        '> first\n> second\nanswer',
-        'answer',
-      );
-      expect(fixed!.quote, 'first\nsecond');
-      expect(fixed.body, 'answer');
-    });
-
-    test('leaves a genuine message starting with > alone', () {
-      // The reply text does not match the tail, so this is not the old shape.
-      expect(repairLegacyReplyQuote('> 999\nreply', 'other text'), isNull);
-    });
-
-    test('leaves an ordinary row alone', () {
-      expect(repairLegacyReplyQuote('plain', 'plain'), isNull);
-    });
-
-    test('the repair rewrites only matching stored rows', () async {
-      await insert(
-        stanzaId: 'legacy',
-        body: '> 999\n后量子测试收到',
-        replyTo: 'target',
-        replyBody: '后量子测试收到',
-        replyAuthor: 'peer@example.org',
-      );
-      await insert(
-        stanzaId: 'real-quote',
-        body: '> not quoted\njust text',
-        replyTo: 'target',
-        replyBody: 'the real quote',
-      );
-      await db.repairLegacyReplyQuotes();
-      final rows = await db.watchMessages(chat).first;
-      final legacy = rows.firstWhere((m) => m.stanzaId == 'legacy');
-      expect(legacy.body, '后量子测试收到');
-      expect(legacy.replyBody, '999');
-      // An ordinary reply is untouched.
-      final real = rows.firstWhere((m) => m.stanzaId == 'real-quote');
-      expect(real.body, '> not quoted\njust text');
-      expect(real.replyBody, 'the real quote');
-    });
-  });
-
   group('parsing an inbound reply', () {
     test('ReplyInfo.body is the quote; stripFallback is the reply', () {
       final fallback = buildReplyFallback('the original', 'my answer');

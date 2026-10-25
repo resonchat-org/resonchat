@@ -26,7 +26,7 @@ import 'package:resonchat/crypto/dual/track.dart';
 import 'package:resonchat/xmpp/connection.dart';
 
 export 'package:resonchat/xmpp/inbound/reply_info.dart'
-    show LegacyReplyQuote, ReplyInfo, repairLegacyReplyQuote, stripFallback;
+    show ReplyInfo, stripFallback;
 
 /// The quoted text plus the offsets that say where the quote ends.
 ///
