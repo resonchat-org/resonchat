@@ -646,7 +646,10 @@ class _ChatReactionBubble extends ConsumerWidget {
       chatKey: chatKey,
       replyTo: message.replyTo,
       replyBody: message.replyBody,
-      replyAuthor: message.replyAuthor,
+      // In a 1:1 the quote's author is either the peer or us, so a name adds
+      // nothing and a bare JID (the stored inbound value) actively clutters the
+      // card. Groups keep the nick that places the quote.
+      replyAuthor: isGroup ? message.replyAuthor : '',
       onReplyTap: onReplyTap,
       mentionsMe: message.mentionsMe,
       highlightNicks: isGroup ? highlightNicks : const [],

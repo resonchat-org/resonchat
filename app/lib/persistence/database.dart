@@ -9,6 +9,7 @@ import 'package:drift/drift.dart';
 
 import 'package:resonchat/crypto/dual/track.dart';
 import 'package:resonchat/persistence/database_connection.dart';
+import 'package:resonchat/xmpp/chat/replies.dart' show repairLegacyReplyQuote;
 import 'package:resonchat/xmpp/chat/sticker_link.dart';
 import 'package:resonchat/xmpp/chat_notify_mode.dart';
 import 'package:resonchat/xmpp/group_read.dart';
@@ -500,11 +501,39 @@ class AppDatabase extends _$AppDatabase {
 
   @override
   // Keep in sync with [kAccountSchemaVersion] in database_connection_io.dart.
-  int get schemaVersion => 1;
+  //
+  // 2 is a data-only migration: it repairs reply rows written before the quote
+  // and the reply body were stored separately.
+  int get schemaVersion => 2;
 
   @override
-  MigrationStrategy get migration =>
-      MigrationStrategy(onCreate: (m) async => m.createAll());
+  MigrationStrategy get migration => MigrationStrategy(
+    onCreate: (m) async => m.createAll(),
+    onUpgrade: (m, from, to) async {
+      if (from < 2) await repairLegacyReplyQuotes();
+    },
+  );
+
+  /// One-time repair of reply rows saved by the build that swapped the quote
+  /// and the reply text ([repairLegacyReplyQuote] documents the shape).
+  ///
+  /// Public so the repair itself can be tested without opening a database at
+  /// an older schema version.
+  Future<void> repairLegacyReplyQuotes() async {
+    final stale = await (select(
+      messages,
+    )..where((m) => m.replyTo.isNotValue('') & m.body.like('> %'))).get();
+    for (final row in stale) {
+      final fixed = repairLegacyReplyQuote(row.body, row.replyBody);
+      if (fixed == null) continue;
+      await (update(messages)..where((m) => m.id.equals(row.id))).write(
+        MessagesCompanion(
+          body: Value(fixed.body),
+          replyBody: Value(fixed.quote),
+        ),
+      );
+    }
+  }
 
   /// True when the user has acknowledged, for this conversation, that
   /// plaintext is readable by anyone with server access.
