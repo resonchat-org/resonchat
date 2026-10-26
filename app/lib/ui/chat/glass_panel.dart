@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // The blurred card the current Telegram design floats over the transcript:
 // the chat header's back/menu blobs, its title pill and the composer island

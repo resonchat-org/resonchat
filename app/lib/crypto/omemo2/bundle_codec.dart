@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // monocles OMEMO2 bundle model + XML codec (proto-XEP §4.3 / IqGenerator).
 

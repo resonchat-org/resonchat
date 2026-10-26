@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Contact rows share one height: one-line shortcuts and two-line rows
 // (title plus a single second line) both use the chat-list row height.

@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // MUC configuration (XEP-0045 §10.2 / Copinc RoomConfigAdapter).
 // Fetches the server's data form, translates Prosody-style English labels,

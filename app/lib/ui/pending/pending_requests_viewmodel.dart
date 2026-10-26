@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Answer a contact subscription or a room invitation. The page keeps the
 // nickname dialog and opens the chat after a successful join.

@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // XMPP connection + baseline messaging (M1) with the A-track OMEMO
 // manager attached (M2). All stanza crypto stays inside moxxmpp /
@@ -41,7 +41,6 @@ import 'package:resonchat/xmpp/media/http_files.dart';
 import 'package:resonchat/xmpp/muc/muc.dart';
 import 'package:resonchat/xmpp/muc/muc_create.dart';
 import 'package:resonchat/xmpp/muc/muc_iq.dart';
-import 'package:resonchat/xmpp/muc/room_invite.dart';
 import 'package:resonchat/xmpp/reconnect_backoff.dart';
 import 'package:resonchat/xmpp/reconnect_policy.dart';
 import 'package:resonchat/xmpp/roster/avatar.dart';
@@ -289,6 +288,21 @@ class XmppService {
   /// can be dropped instead of waiting out the TTL.
   final _capabilityChanges = StreamController<JID>.broadcast();
   Stream<JID> get capabilityChanges => _capabilityChanges.stream;
+
+  /// MUC invitations (XEP-0045 mediated and XEP-0249 direct).
+  ///
+  /// Stable across reconnects. The stanza managers are recreated with each
+  /// socket; they only emit [MucInvitationReceivedEvent].
+  final _roomInvites = StreamController<MucInvitation>.broadcast();
+  Stream<MucInvitation> get roomInvites => _roomInvites.stream;
+
+  /// Full JID (`room/nick`) whose XEP-0153 photo hash just changed.
+  ///
+  /// Occupant avatars wait for this: a fetch issued before presence arrives
+  /// has no hash to check the vCard against, and must run again once the
+  /// occupant advertises one.
+  final _vcardAvatarUpdates = StreamController<String>.broadcast();
+  Stream<String> get vcardAvatarUpdates => _vcardAvatarUpdates.stream;
 
   /// Stanzas that carried a reaction broadcast (XEP-0444).
   ///
@@ -1271,25 +1285,10 @@ class XmppService {
     if (_membersOnly[bare] ?? false) {
       await setRoomAffiliation(bare, invitee, 'member');
     }
+    final manager = muc;
+    if (manager == null) return false;
     try {
-      await connection.sendStanza(
-        StanzaDetails(
-          Stanza.message(
-            to: bare,
-            children: [
-              XMLNode.xmlns(
-                tag: 'x',
-                xmlns: mucUserXmlns,
-                children: [
-                  XMLNode(tag: 'invite', attributes: {'to': invitee}),
-                ],
-              ),
-            ],
-          ),
-          awaitable: false,
-          shouldEncrypt: false,
-        ),
-      );
+      await manager.invite(JID.fromString(bare), JID.fromString(invitee));
       return true;
     } catch (e) {
       _log.warning('invite to $bare failed: $e');
@@ -2145,37 +2144,18 @@ class XmppService {
     return true;
   }
 
-  /// Incoming MUC invitations (mediated or direct).
-  Stream<RoomInvite> get roomInvites =>
-      _roomInviteManager?.invites ?? const Stream.empty();
-
-  RoomInviteManager? _roomInviteManager;
-
   /// XEP-0045 `<decline/>` for a mediated invite we are rejecting.
   Future<void> declineRoomInvite({
     required String roomJid,
     String toInviter = '',
   }) async {
-    final conn = _connection;
-    if (conn == null) return;
-    final children = <XMLNode>[
-      XMLNode(
-        tag: 'decline',
-        attributes: {if (toInviter.isNotEmpty) 'to': toInviter},
-      ),
-    ];
+    final manager = muc;
+    if (manager == null) return;
+    final inviter = toInviter.trim();
     try {
-      await conn.sendStanza(
-        StanzaDetails(
-          Stanza.message(
-            to: JID.fromString(roomJid).toBare().toString(),
-            children: [
-              XMLNode.xmlns(tag: 'x', xmlns: mucUserXmlns, children: children),
-            ],
-          ),
-          awaitable: false,
-          shouldEncrypt: false,
-        ),
+      await manager.declineInvitation(
+        JID.fromString(roomJid).toBare(),
+        inviter: inviter.isEmpty ? null : JID.fromString(inviter).toBare(),
       );
     } catch (e) {
       _log.warning('decline invite to $roomJid failed: $e');
@@ -2417,10 +2397,11 @@ class XmppService {
       NickManager(),
       // XEP-0054 vCard-temp (MUC room avatars via PHOTO).
       VCardManager(),
-      // XEP-0045 group chats.
+      // XEP-0045 group chats. Mediated invites are consumed here.
       MUCManager(),
-      // Incoming room invites before MessageManager (empty-bubble prevention).
-      _roomInviteManager = RoomInviteManager(),
+      // XEP-0249 direct invites. Same consumption as the mediated form:
+      // the stanza is the invitation, not a chat message.
+      DirectMucInvitationManager(),
       // XEP-0444 reactions, plus the stable-id manager they depend on: a
       // reaction addresses a message by its origin-id.
       StableIdManager(),
@@ -4224,6 +4205,15 @@ class XmppService {
         event is MemberChangedNickEvent ||
         event is OwnDataChangedEvent) {
       unawaited(_publishRoomState(event));
+    } else if (event is MucInvitationReceivedEvent) {
+      if (!_roomInvites.isClosed) _roomInvites.add(event.invitation);
+    } else if (event is VCardAvatarUpdatedEvent) {
+      // Bare-JID hashes are the contact's own XEP-0153 advertisement. Those
+      // faces are loaded with XEP-0084. Only `room/nick` needs a refetch,
+      // and only when the hash actually changed (the manager drops repeats).
+      if (event.jid.resource.isNotEmpty && !_vcardAvatarUpdates.isClosed) {
+        _vcardAvatarUpdates.add(event.jid.toString());
+      }
     } else if (event is BlocklistBlockPushEvent) {
       // Another of our devices blocked these. As authoritative as tapping the
       // button here, which is the whole reason this is a server-side list.

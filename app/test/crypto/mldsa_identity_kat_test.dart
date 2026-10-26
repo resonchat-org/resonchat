@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Offline, CI-enforced known-answer test for the OMEMO2 PQ identity
 // (ML-DSA-87, FIPS 204). It covers the two-way boundary that the other

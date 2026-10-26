@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Gajim `omemo_blind_trust`: when on, new devices default to Blind Trust;
 // when off, they default to Undecided (not encrypted to until the user picks).

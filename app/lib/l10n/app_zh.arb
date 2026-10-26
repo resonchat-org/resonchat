@@ -159,7 +159,7 @@
       "when": { "type": "String" }
     }
   },
-  "aboutBody": "ResonChat — 支持双轨 OMEMO 的 XMPP 客户端。\n采用 GPL-3.0-or-later 许可。\n\n独立项目，与任何其他即时通讯产品均无关联、背书或派生关系。\n\n后量子轨道为自定义扩展，尚未经过独立审计。使用风险自负。",
+  "aboutBody": "ResonChat — 支持双轨 OMEMO 的 XMPP 客户端。\n采用 AGPL-3.0-or-later 许可。\n\n独立项目，与任何其他即时通讯产品均无关联、背书或派生关系。\n\n后量子轨道为自定义扩展，尚未经过独立审计。使用风险自负。",
   "jid": "JID",
   "password": "密码",
   "hostOptional": "主机（可选）",
@@ -262,6 +262,22 @@
   "changeAvatar": "更换头像",
   "avatarPublished": "头像已发布",
   "avatarPublishFailed": "无法发布头像",
+  "conversationDisplayName": "显示名",
+  "conversationDisplayNameHelper": "只有你能看到这个名称。它只保存在这台设备上，不会发送出去。",
+  "conversationDisplayNameEmpty": "留空则继续使用{name}。",
+  "@conversationDisplayNameEmpty": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "conversationDisplayNameInvalid": "这个名称无法显示。",
+  "conversationDisplayNameTooLong": "最多 {count} 个字符。",
+  "@conversationDisplayNameTooLong": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "resetToOriginalName": "恢复原名",
   "editRoomName": "编辑群名称",
   "roomNameHint": "群名称",
   "roomNameSaved": "群名称已保存",

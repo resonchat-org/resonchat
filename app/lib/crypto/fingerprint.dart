@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Shared fingerprint *display* helpers (both tracks). Digests themselves live
 // in omemo_dart: legacy → `axolotlFingerprint` / `AxolotlDevice.fingerprint`;

@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Floating MUC subject under the AppBar: tap for detail, dismiss only after
 // opening the detail; dismissed text is stored so a later subject change

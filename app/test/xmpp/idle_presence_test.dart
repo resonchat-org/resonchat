@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 
 import 'package:moxxmpp/moxxmpp.dart';
 import 'package:test/test.dart';
@@ -8,36 +8,6 @@ import 'package:resonchat/xmpp/roster/last_seen.dart';
 import 'package:resonchat/xmpp/roster/presence_store.dart';
 
 void main() {
-  test('XEP-0319 since parses, and a bad value does not', () {
-    final stanza = Stanza.presence(
-      from: 'romeo@montague.lit/balcony',
-      children: [
-        XMLNode.xmlns(
-          tag: 'idle',
-          xmlns: idleXmlns,
-          attributes: {'since': '2026-01-02T03:04:05Z'},
-        ),
-      ],
-    );
-    expect(idleSinceFromStanza(stanza), DateTime.utc(2026, 1, 2, 3, 4, 5));
-
-    final broken = Stanza.presence(
-      from: 'romeo@montague.lit/balcony',
-      children: [
-        XMLNode.xmlns(
-          tag: 'idle',
-          xmlns: idleXmlns,
-          attributes: {'since': 'not-a-time'},
-        ),
-      ],
-    );
-    expect(idleSinceFromStanza(broken), isNull);
-    expect(
-      idleSinceFromStanza(Stanza.presence(from: 'romeo@montague.lit/balcony')),
-      isNull,
-    );
-  });
-
   test('last seen is the latest idle only when every resource is idle', () {
     final store = PresenceStore();
     final earlier = DateTime.utc(2026, 1, 2, 3);

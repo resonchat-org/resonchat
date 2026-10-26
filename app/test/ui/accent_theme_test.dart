@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Outgoing bubbles follow the accent instead of a frozen green: with a violet
 // header the old bubbles read as a second theme colour.

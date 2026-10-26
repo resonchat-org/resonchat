@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Copinc `RoomConfigTranslator`: Prosody (and similar) return English form
 // labels; map them to app l10n. Servers that honor `xml:lang` (ejabberd) may

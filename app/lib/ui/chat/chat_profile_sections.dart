@@ -1,8 +1,8 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Shared blocks for 1:1 [ProfilePage] and MUC [RoomProfilePage]: encryption
-// entry, notification mode, appearance, and local history actions.
+// Shared blocks for 1:1 [ProfilePage] and MUC [RoomProfilePage]: display
+// name, encryption entry, notification mode, appearance, and local history.
 
 import 'dart:async';
 
@@ -22,6 +22,165 @@ import 'package:resonchat/ui/chats/notify_mode_sheet.dart';
 import 'package:resonchat/ui/theme.dart';
 import 'package:resonchat/xmpp/chat_notify_mode.dart';
 import 'package:resonchat/xmpp/encryption/capabilities.dart';
+import 'package:resonchat/xmpp/roster/local_nickname.dart';
+
+/// Display name for a contact or a group chat (Gajim's name row).
+///
+/// The pencil that edits a room's published name stays on the room header.
+/// This row is the name only this user sees, for both contacts and rooms.
+class ConversationDisplayNameTile extends ConsumerWidget {
+  const ConversationDisplayNameTile({
+    super.key,
+    required this.chatKey,
+    required this.jid,
+    required this.isRoom,
+    this.roomTitle = '',
+  });
+
+  final String chatKey;
+  final String jid;
+  final bool isRoom;
+
+  /// Disco / roomconfig name, used when the stored title is still empty.
+  final String roomTitle;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = context.l10n;
+    final chat = ref.watch(chatProvider(chatKey)).value;
+    final storedTitle = chat?.title ?? '';
+    final title = isRoom
+        ? (storedTitle.trim().isNotEmpty ? storedTitle : roomTitle)
+        : storedTitle;
+    final shown = conversationDisplayName(
+      storedLocalNickname: chat?.localNickname,
+      title: title,
+      jid: jid,
+      isRoom: isRoom,
+    );
+    final original = conversationDisplayName(
+      storedLocalNickname: null,
+      title: title,
+      jid: jid,
+      isRoom: isRoom,
+    );
+    final custom = LocalNickname.decode(chat?.localNickname);
+    return ListTile(
+      leading: const Icon(Icons.drive_file_rename_outline),
+      title: Text(l10n.conversationDisplayName),
+      subtitle: Text(custom == null ? original : shown),
+      onTap: () => unawaited(
+        showDialog<void>(
+          context: context,
+          builder: (context) => _DisplayNameDialog(
+            initial: custom?.value ?? '',
+            originalName: original,
+            onSubmit: (raw) => setConversationDisplayName(ref, chatKey, raw),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DisplayNameDialog extends StatefulWidget {
+  const _DisplayNameDialog({
+    required this.initial,
+    required this.originalName,
+    required this.onSubmit,
+  });
+
+  /// The display name already stored, or empty when the original name is in use.
+  final String initial;
+
+  /// Roster name or room name, shown so an empty field has an obvious result.
+  final String originalName;
+  final Future<bool> Function(String raw) onSubmit;
+
+  @override
+  State<_DisplayNameDialog> createState() => _DisplayNameDialogState();
+}
+
+class _DisplayNameDialogState extends State<_DisplayNameDialog> {
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.initial,
+  );
+  String? _error;
+  var _busy = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _commit(String raw) async {
+    final l10n = context.l10n;
+    final problem = _problem(l10n, raw);
+    if (problem != null) {
+      setState(() => _error = problem);
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    final ok = await widget.onSubmit(raw);
+    if (!mounted) return;
+    if (!ok) {
+      setState(() {
+        _busy = false;
+        _error = l10n.conversationDisplayNameInvalid;
+      });
+      return;
+    }
+    Navigator.of(context).pop();
+  }
+
+  String? _problem(AppLocalizations l10n, String raw) {
+    if (LocalNickname.tryParse(raw) != null || raw.trim().isEmpty) return null;
+    if (raw.trim().runes.length > LocalNickname.maxRunes) {
+      return l10n.conversationDisplayNameTooLong(LocalNickname.maxRunes);
+    }
+    return l10n.conversationDisplayNameInvalid;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    return AlertDialog(
+      title: Text(l10n.conversationDisplayName),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        enabled: !_busy,
+        textInputAction: TextInputAction.done,
+        onSubmitted: (raw) => unawaited(_commit(raw)),
+        decoration: InputDecoration(
+          helperText: l10n.conversationDisplayNameHelper,
+          helperMaxLines: 3,
+          hintText: l10n.conversationDisplayNameEmpty(widget.originalName),
+          errorText: _error,
+          errorMaxLines: 3,
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _busy ? null : () => unawaited(_commit('')),
+          child: Text(l10n.resetToOriginalName),
+        ),
+        TextButton(
+          onPressed: _busy ? null : () => Navigator.of(context).pop(),
+          child: Text(l10n.cancel),
+        ),
+        TextButton(
+          onPressed: _busy ? null : () => unawaited(_commit(_controller.text)),
+          child: Text(l10n.save),
+        ),
+      ],
+    );
+  }
+}
 
 /// Section title used on chat detail / profile lists.
 class ChatProfileSectionTitle extends StatelessWidget {

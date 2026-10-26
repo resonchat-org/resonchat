@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Contacts tab shell: search field + idle roster or grouped search results.
 // Matching, tiles, and side effects live in sibling files.
@@ -12,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:resonchat/account/account_hub.dart';
 import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/persistence/database.dart';
 import 'package:resonchat/state/providers.dart';
 import 'package:resonchat/ui/account_filter_overlay.dart';
 import 'package:resonchat/ui/contacts/contacts_match.dart';
@@ -24,6 +25,7 @@ import 'package:resonchat/ui/qr/qr_scan_page.dart';
 import 'package:resonchat/ui/qr/qr_scan_result.dart';
 import 'package:resonchat/ui/room/room_sheet.dart';
 import 'package:resonchat/ui/theme.dart';
+import 'package:resonchat/xmpp/roster/local_nickname.dart';
 
 class ContactsPage extends ConsumerStatefulWidget {
   const ContactsPage({super.key});
@@ -313,7 +315,7 @@ class _ContactsPageState extends ConsumerState<ContactsPage>
   }
 }
 
-class _SearchResults extends StatelessWidget {
+class _SearchResults extends ConsumerWidget {
   const _SearchResults({
     required this.contacts,
     required this.bookmarks,
@@ -343,25 +345,44 @@ class _SearchResults extends StatelessWidget {
   final bool showAccountColor;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.l10n;
     final tg = context.tg;
+    final chats = ref.watch(chatsProvider).value ?? const <AccountChat>[];
 
     final contactHits = contacts
         .where(
-          (c) => matchesNameOrJid(
-            name: c.displayName,
+          (c) => _matchesEither(
+            shown: conversationDisplayName(
+              storedLocalNickname: _chatOf(
+                chats,
+                c.account.id,
+                c.entry.jid,
+              )?.localNickname,
+              title: c.entry.name,
+              jid: c.entry.jid,
+              isRoom: false,
+            ),
+            also: c.displayName,
             jid: c.entry.jid,
-            needle: needle,
           ),
         )
         .toList();
     final groupHits = bookmarks
         .where(
-          (g) => matchesNameOrJid(
-            name: g.bookmark.displayName,
+          (g) => _matchesEither(
+            shown: conversationDisplayName(
+              storedLocalNickname: _chatOf(
+                chats,
+                g.account.id,
+                g.bookmark.jid,
+              )?.localNickname,
+              title: g.bookmark.displayName,
+              jid: g.bookmark.jid,
+              isRoom: true,
+            ),
+            also: g.bookmark.displayName,
             jid: g.bookmark.jid,
-            needle: needle,
           ),
         )
         .toList();
@@ -453,6 +474,25 @@ class _SearchResults extends StatelessWidget {
       itemBuilder: (context, i) => rows[i],
     );
   }
+
+  /// A display name hides the roster or bookmark name from the row, not from
+  /// search. Either string is a hit.
+  bool _matchesEither({
+    required String shown,
+    required String also,
+    required String jid,
+  }) {
+    if (matchesNameOrJid(name: shown, jid: jid, needle: needle)) return true;
+    if (also == shown) return false;
+    return matchesNameOrJid(name: also, jid: jid, needle: needle);
+  }
+}
+
+Chat? _chatOf(List<AccountChat> chats, String accountId, String jid) {
+  for (final row in chats) {
+    if (row.account.id == accountId && row.chat.jid == jid) return row.chat;
+  }
+  return null;
 }
 
 /// Same shape as the join-room sheet: a short form pulled up from the bottom.

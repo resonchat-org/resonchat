@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Developer log mode: tee every `package:logging` record into a file in the
 // app's private support directory, and copy the newest one into the user's

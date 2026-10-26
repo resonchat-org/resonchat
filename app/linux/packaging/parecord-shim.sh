@@ -1,7 +1,7 @@
 #!/bin/sh
 # resonchat-parecord-shim
 # Copyright (C) 2026 ResonChat contributors.
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: AGPL-3.0-or-later
 #
 # record_linux always execs `parecord`. Prefer host `pw-record` (PipeWire);
 # otherwise the next real `parecord` on PATH (PulseAudio). Used from the

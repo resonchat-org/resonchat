@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 
 import 'dart:convert';
 import 'dart:io';
@@ -24,7 +24,7 @@ Future<QueryExecutor> openPrefsDatabaseConnection() =>
 ///
 /// A file written by a newer build is deleted; nothing older is migrated from
 /// the documents directory.
-const int kAccountSchemaVersion = 2;
+const int kAccountSchemaVersion = 4;
 
 /// Per-account DB (`resonchat_<accountId>.sqlite3`). [accountId] is required.
 Future<QueryExecutor> openAccountDatabaseConnection(String accountId) {

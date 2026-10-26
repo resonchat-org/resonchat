@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright (C) 2026 ResonChat contributors.
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: AGPL-3.0-or-later
 #
 # Build a Linux x86_64 AppImage from the Flutter release bundle.
 #

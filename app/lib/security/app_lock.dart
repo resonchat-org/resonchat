@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // App lock + disguise gate (Amarok-Hider SecurityUtil / PrivacyCategory).
 // Disguise UI is 2048, not a calendar; PIN digits map to the 4×4 board.

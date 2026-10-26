@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // One peer's OMEMO2 / PQ device-list snapshot. The cache and its refresh
 // policy live in CapabilityService (docs/11 §4); this type only carries the

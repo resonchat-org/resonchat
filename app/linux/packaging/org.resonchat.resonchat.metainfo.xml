@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Copyright (C) 2026 ResonChat contributors -->
-<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <component type="desktop-application">
   <id>org.resonchat.resonchat</id>
   <name>ResonChat</name>
   <summary>XMPP client with dual-track OMEMO</summary>
   <metadata_license>FSFAP</metadata_license>
-  <project_license>GPL-3.0-or-later</project_license>
+  <project_license>AGPL-3.0-or-later</project_license>
   <developer_name>ResonChat contributors</developer_name>
   <description>
     <p>

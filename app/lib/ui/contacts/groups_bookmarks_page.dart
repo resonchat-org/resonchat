@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Full MUC bookmark list (XEP-0402 / legacy). Opened from the single
 // "Groups" entry on Contacts — never interleaved with roster rows.
@@ -19,6 +19,7 @@ import 'package:resonchat/ui/contact_avatar.dart';
 import 'package:resonchat/ui/dialog_cell.dart';
 import 'package:resonchat/ui/home/open_chat.dart';
 import 'package:resonchat/ui/theme.dart';
+import 'package:resonchat/xmpp/roster/local_nickname.dart';
 
 class GroupsBookmarksPage extends ConsumerStatefulWidget {
   const GroupsBookmarksPage({super.key, this.initialAccountId});
@@ -161,6 +162,13 @@ class _BookmarkTile extends ConsumerWidget {
         colorAccounts && ref.watch(accountHubProvider).accounts.length > 1;
     final accent = row.accent;
     final b = row.bookmark;
+    final chat = ref.watch(chatProvider(row.ref.key)).value;
+    final title = conversationDisplayName(
+      storedLocalNickname: chat?.localNickname,
+      title: b.displayName,
+      jid: b.jid,
+      isRoom: true,
+    );
     final detail = b.autoJoin ? '${b.jid} · ${l10n.bookmarkAutoJoin}' : b.jid;
     final detailStyle = TextStyle(
       color: tg.textSecondary,
@@ -187,13 +195,13 @@ class _BookmarkTile extends ConsumerWidget {
         if (!context.mounted) return;
         openChat(context, row.ref.key);
       },
-      onLongPress: () => _confirmRemove(context, ref),
+      onLongPress: () => _confirmRemove(context, ref, title),
       leading: accountAvatarRing(
         show: multi,
         accent: accent,
-        child: ContactAvatar(jid: b.jid, title: b.displayName),
+        child: ContactAvatar(jid: b.jid, title: title),
       ),
-      title: b.displayName,
+      title: title,
       subtitle: Row(
         children: [
           if (multi) ...[
@@ -213,13 +221,17 @@ class _BookmarkTile extends ConsumerWidget {
     );
   }
 
-  Future<void> _confirmRemove(BuildContext context, WidgetRef ref) async {
+  Future<void> _confirmRemove(
+    BuildContext context,
+    WidgetRef ref,
+    String title,
+  ) async {
     final l10n = context.l10n;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(l10n.removeBookmark),
-        content: Text(l10n.removeBookmarkConfirm(row.bookmark.displayName)),
+        content: Text(l10n.removeBookmarkConfirm(title)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),

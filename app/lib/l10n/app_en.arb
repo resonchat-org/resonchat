@@ -159,7 +159,7 @@
       "when": { "type": "String" }
     }
   },
-  "aboutBody": "ResonChat — a dual-track OMEMO client for XMPP.\nLicensed GPL-3.0-or-later.\n\nIndependent project. Not affiliated with, endorsed by, or derived from any other messaging product.\n\nThe post-quantum track is a custom extension and has not been independently audited. Use at your own risk.",
+  "aboutBody": "ResonChat — a dual-track OMEMO client for XMPP.\nLicensed AGPL-3.0-or-later.\n\nIndependent project. Not affiliated with, endorsed by, or derived from any other messaging product.\n\nThe post-quantum track is a custom extension and has not been independently audited. Use at your own risk.",
   "jid": "JID",
   "password": "Password",
   "hostOptional": "Host (optional)",
@@ -267,6 +267,22 @@
   "changeAvatar": "Change avatar",
   "avatarPublished": "Avatar published",
   "avatarPublishFailed": "Could not publish avatar",
+  "conversationDisplayName": "Display name",
+  "conversationDisplayNameHelper": "Only you see this name. It stays on this device and is not sent.",
+  "conversationDisplayNameEmpty": "Leave empty to keep using {name}.",
+  "@conversationDisplayNameEmpty": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "conversationDisplayNameInvalid": "That name cannot be shown.",
+  "conversationDisplayNameTooLong": "Use at most {count} characters.",
+  "@conversationDisplayNameTooLong": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "resetToOriginalName": "Reset to original name",
   "editRoomName": "Edit group name",
   "roomNameHint": "Group name",
   "roomNameSaved": "Group name saved",

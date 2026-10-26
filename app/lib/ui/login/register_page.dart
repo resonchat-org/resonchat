@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Account creation UI. Protocol follows Conversations (XEP-0077); server
 // choice follows Copinc — every provider is equal, no conversations.im hero.

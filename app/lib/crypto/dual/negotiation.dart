@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Dual-track negotiation state machine (docs/02 §6). Pure function so the
 // core invariant is unit-testable: never emit a message a recipient device

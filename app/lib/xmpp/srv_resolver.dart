@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // DNS SRV for XMPP — RFC 6120 §3.2 (`_xmpp-client._tcp`) and XEP-0368
 // (`_xmpps-client._tcp`) — resolved over DNS-over-HTTPS.

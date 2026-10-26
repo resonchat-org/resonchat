@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Me tab: accounts management. Settings is a list row here; AppBar has none
 // (Chats / Contacts keep settings in the top-right).

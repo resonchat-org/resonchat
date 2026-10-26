@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Sealed OMEMO2 (PQ) device blob — same wrapping pattern as [OmemoDeviceStore].
 // Without this, every connect minted a new classical IK and the hybrid

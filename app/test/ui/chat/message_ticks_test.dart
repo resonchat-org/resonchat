@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Receipt ticks. Outgoing only: a clock while queued or still in flight,
 // one tick once the stanza is on the socket, two on delivery. Read is the ring.

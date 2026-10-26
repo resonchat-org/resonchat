@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // The backup format, read as a list of things that must not happen.
 //
@@ -195,6 +195,25 @@ void main() {
       );
       expect(rejection?.kind, BackupRejectionKind.unknownColumn);
       expect(rejection?.column, 'password');
+    });
+
+    test('a chat row from before display names still reads as unset', () {
+      // Empty is what "the column did not exist" means. Filling any other
+      // missing column would invent history; this one invents nothing.
+      final row = _chatJson('juliet@example.org')..remove('local_nickname');
+      final outcome = _adopt({
+        'tables': {
+          'chats': <Object?>[row],
+        },
+        'manifest': _manifestJson(counts: const {'chats': 1}),
+      });
+      expect(outcome, isA<BackupOk>(), reason: outcome.problem);
+      final cell = outcome.archive!.cell(
+        BackupTable.chats,
+        0,
+        'local_nickname',
+      );
+      expect((cell! as BackupText).value, isEmpty);
     });
 
     test('a missing column is refused rather than defaulted', () {
@@ -657,6 +676,7 @@ BackupRow _chatRow(String jid, {int unread = 0}) => {
   'is_group': false.cell,
   'muc_nick': ''.cell,
   'muc_private_non_anonymous': false.cell,
+  'local_nickname': ''.cell,
 };
 
 BackupRow _messageRow(
@@ -781,6 +801,7 @@ Map<String, Object?> _chatJson(String jid) => {
   'is_group': false,
   'muc_nick': '',
   'muc_private_non_anonymous': false,
+  'local_nickname': '',
 };
 
 /// What a migration hook looks like when written properly: typed against the

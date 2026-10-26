@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Whether developer log mode is on. Separate from `dev_log_io.dart` because
 // the web stub shares it and the settings page reads it on every platform.

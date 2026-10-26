@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Chats-list filter strip under the search field: account drawer trigger +
 // Messages / Unread segments. Filters only change what the list shows.

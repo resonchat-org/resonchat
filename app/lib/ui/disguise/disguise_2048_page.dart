@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Launch disguise: looks like 2048 (gabrielecirulli/2048). Swipe plays;
 // tap a cell appends a PIN digit (0–9A–F); tap score submits; tap best clears.

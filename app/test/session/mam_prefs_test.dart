@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // How much of the user's history the *server* is allowed to keep
 // (XEP-0414, `urn:xmpp:mam:prefs:0`).

@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // App-path PQ round-trip: publish-shaped XML → fromXml(PEP item id) →
 // deviceFromBundle → PqMessageLayer encrypt/decrypt.

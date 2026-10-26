@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Unified message-body styling modelled on Gajim `common/styling.py`
 // (XEP-0393 blocks + spans + URI/JID linkify).

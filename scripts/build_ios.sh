@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright (C) 2026 ResonChat contributors.
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: AGPL-3.0-or-later
 #
 # CI/packaging wrapper: one 1024 icon from assets/icons/app_icon.png, then
 # flutter build ios. Xcode generates the smaller iOS slots from that image.
@@ -63,4 +63,5 @@ if [[ "$PREPARE_ONLY" -eq 1 ]]; then
 fi
 
 echo "==> flutter build ios --${MODE}"
-exec flutter build ios "--${MODE}" "${FLUTTER_ARGS[@]}"
+# ${arr[@]+...} keeps an empty array from tripping `set -u` on macOS bash 3.2.
+exec flutter build ios "--${MODE}" ${FLUTTER_ARGS[@]+"${FLUTTER_ARGS[@]}"}

@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Portrait home: tab body, with the floating dock over the bottom.
 // Secondary pages are full-screen routes on the root navigator.

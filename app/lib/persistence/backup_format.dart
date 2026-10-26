@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // What a backup is, and — more to the point — what it may never contain.
 //
@@ -295,6 +295,11 @@ const Map<BackupTable, BackupTableSpec> kBackupTables = {
     BackupColumn('is_group', BackupColumnKind.flag),
     BackupColumn('muc_nick', BackupColumnKind.text),
     BackupColumn('muc_private_non_anonymous', BackupColumnKind.flag),
+    // Display name. Empty when the user has not set one. Archives written
+    // before the column existed are filled with that empty value on read —
+    // see [_fillAbsentDisplayName] — because "no display name" is the only
+    // thing those rows can mean. Other missing columns stay refused.
+    BackupColumn('local_nickname', BackupColumnKind.text),
   ]),
   // `id` is deliberately absent. It is a storage artefact of the device the
   // backup came from: nothing in this schema references a message by row id —
@@ -1191,6 +1196,7 @@ BackupOutcome _adoptChecked(
         }
         row[column.name] = cellFromJson(column, cell.value);
       }
+      _fillAbsentDisplayName(table, row);
       rows.add(row);
     }
     tables[table] = rows;
@@ -1224,6 +1230,16 @@ BackupOutcome _adoptChecked(
 /// recognise our own file before trying to parse a header that may be half a
 /// file.
 const String _markerPrefix = '{"magic":"$kBackupMagic"';
+
+/// An archive from before display names has no `local_nickname` cell.
+///
+/// Filling it with the empty string is not inventing a name: the column
+/// means "the user set this", and a file that predates the column is one
+/// where they had not. Every other missing column is still refused.
+void _fillAbsentDisplayName(BackupTable table, BackupRow row) {
+  if (table != BackupTable.chats || row.containsKey('local_nickname')) return;
+  row['local_nickname'] = const BackupText('');
+}
 
 BackupTable? _tableNamed(String name) {
   for (final table in BackupTable.values) {

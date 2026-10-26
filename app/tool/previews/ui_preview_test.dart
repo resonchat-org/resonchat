@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Renders the Telegram-like UI to PNGs so the layout can be reviewed
 // without a device (docs/05). Uses the golden-file mechanism purely as a

@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Web persistence: same Drift schema as native, hosted by sqlite3.wasm.
 // Storage is OPFS when available, otherwise IndexedDB (Drift's fallbacks).

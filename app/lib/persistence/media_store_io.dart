@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Chat media lives under the app support directory (private), matching Copinc
 // `getExternalFilesDir`. A permanent copy in Downloads / Pictures only happens

@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Storage behaviour that the chat UI depends on: stanza-id dedup
 // (carbons must not double-insert) and XEP-0184 delivery receipts.
@@ -15,6 +15,7 @@ import 'package:resonchat/persistence/database.dart';
 import 'package:resonchat/xmpp/chat/sticker_link.dart';
 import 'package:resonchat/xmpp/chat_notify_mode.dart';
 import 'package:resonchat/xmpp/message_send_status.dart';
+import 'package:resonchat/xmpp/roster/local_nickname.dart';
 
 void main() {
   late AppDatabase db;
@@ -250,6 +251,38 @@ void main() {
     expect(chat.title, 'Bob');
     expect(chat.lastActivity, clock(50));
   });
+
+  test(
+    'a display name survives a roster title update and can be cleared',
+    () async {
+      // The title column is rewritten from the roster and from bookmarks.
+      // The display name is the name the user set, so that rewrite must not
+      // take it with it.
+      await db.upsertChat('bob@example.org', title: 'Bob');
+      await db.setLocalNickname(
+        'bob@example.org',
+        LocalNickname.tryParse('Bobby'),
+      );
+      await db.upsertChat('bob@example.org', title: 'Robert');
+      final kept = await db.getChat('bob@example.org');
+      expect(kept!.title, 'Robert');
+      expect(kept.conversationName, 'Bobby');
+      expect(LocalNickname.decode(kept.localNickname)?.value, 'Bobby');
+
+      await db.setLocalNickname(
+        'carol@example.org',
+        LocalNickname.tryParse('C'),
+      );
+      final created = await db.getChat('carol@example.org');
+      expect(created, isNotNull);
+      expect(created!.conversationName, 'C');
+
+      await db.setLocalNickname('bob@example.org', null);
+      final cleared = await db.getChat('bob@example.org');
+      expect(cleared!.localNickname, isEmpty);
+      expect(cleared.conversationName, 'Robert');
+    },
+  );
 
   test('syncChatLastActivity repairs login-stamped rows', () async {
     await db.upsertChat('empty@example.org', at: clock(999));

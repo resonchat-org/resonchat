@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Android process keepalive (lives under lib/platform/, same as other
 // MethodChannel / OS-specific Dart): foreground service, battery-optimization

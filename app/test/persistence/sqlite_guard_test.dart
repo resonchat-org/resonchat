@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // The `execmem` guard around Drift's database opening. See
 // `lib/persistence/sqlite_guard.dart` and flutter/flutter#191385.

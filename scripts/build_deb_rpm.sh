@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright (C) 2026 ResonChat contributors.
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: AGPL-3.0-or-later
 #
 # Build Debian (.deb) and Fedora/RHEL (.rpm) packages from the Flutter Linux
 # release bundle.
@@ -230,7 +230,7 @@ Name:           ResonChat
 Version:        ${VERSION}
 Release:        1%{?dist}
 Summary:        XMPP client with dual-track OMEMO
-License:        GPL-3.0-or-later
+License:        AGPL-3.0-or-later
 URL:            https://github.com/resonchat-org/resonchat
 Source0:        resonchat-${VERSION}.tar.gz
 BuildArch:      ${PKG_ARCH}

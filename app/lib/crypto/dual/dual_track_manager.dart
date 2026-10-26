@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Dual-track manager: A track (standard OMEMO via moxxmpp) plus B track
 // (PQ-OMEMO via our own PEP nodes). See docs/02 and docs/03.

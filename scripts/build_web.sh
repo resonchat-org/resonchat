@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright (C) 2026 ResonChat contributors.
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: AGPL-3.0-or-later
 #
 # Fetch Drift WASM assets into web/ (not committed), then flutter build web
 # with Dart→Wasm (--wasm). Pass --no-wasm for JS-only.

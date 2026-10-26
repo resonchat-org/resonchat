@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Conversations-compatible aesgcm:// URLs for HTTP File Upload (XEP-0363)
 // with on-the-wire AES-256-GCM (see Conversations AesGcmURL / TransportSecurity).

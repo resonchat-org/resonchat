@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // View model for the chat page: UI state plus the domain logic that used to
 // live in `_ChatPageState`. Everything that needs a `BuildContext` (dialogs,

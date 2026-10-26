@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Column-mode chrome: conversation nested in the list tray — not dual cards
 // on a tinted canvas, and not stretched flush to the tray edges.

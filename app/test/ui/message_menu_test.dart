@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // The message menu is a vertical list with the reaction row on top, not a grid
 // of two-line cells. The trailing arrow swaps the action list for a full emoji

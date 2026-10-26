@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Offline Translator (dev.davidv.translator) on Android. The other app
 // exposes ITranslationService over a binder; this is the Dart side of

@@ -1,5 +1,5 @@
 # Copyright (C) 2026 ResonChat contributors.
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: AGPL-3.0-or-later
 #
 # Manual runtime Depends / Requires — only what packaging tools cannot infer.
 # Sourced by build_deb_rpm.sh — do not execute directly.

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright (C) 2026 ResonChat contributors.
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: AGPL-3.0-or-later
 #
 # CI/packaging wrapper: macOS icon slots from assets/icons/app_icon.png, then
 # flutter build macos, then a compressed DMG for this machine's CPU.
@@ -76,7 +76,8 @@ if [[ "$PREPARE_ONLY" -eq 1 ]]; then
 fi
 
 echo "==> flutter build macos --${MODE}"
-flutter build macos "--${MODE}" "${FLUTTER_ARGS[@]}"
+# ${arr[@]+...} keeps an empty array from tripping `set -u` on macOS bash 3.2.
+flutter build macos "--${MODE}" ${FLUTTER_ARGS[@]+"${FLUTTER_ARGS[@]}"}
 
 case "$(uname -m)" in
   arm64) ARCH_NAME=arm64 ;;

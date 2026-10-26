@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Chat bubble translated from Telegram for Android's `ChatMessageCell`
 // (GPL-2.0-or-later): rounded body with a corner tail, timestamp sitting

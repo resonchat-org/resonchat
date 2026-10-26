@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // App-only ML-KEM wire predicate. serialize/parse live in omemo_dart
 // (`omemo_dart_omemo2`); import those there, not via this file.

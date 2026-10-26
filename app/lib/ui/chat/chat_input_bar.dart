@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Composer bar, translated from Telegram for Android's
 // `ChatActivityEnterView` (GPL-2.0-or-later); see docs/05 §3.1.

@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // One row of the chat list. The shared layout lives in [DialogCell]; this
 // file adds the conversation's encryption track, unread count, and flags.
@@ -32,7 +32,6 @@ import 'package:resonchat/ui/motion.dart';
 import 'package:resonchat/ui/theme.dart';
 import 'package:resonchat/xmpp/chat_notify_mode.dart';
 import 'package:resonchat/xmpp/conversation_archive.dart';
-import 'package:resonchat/xmpp/roster/local_nickname.dart';
 
 class ChatRow extends ConsumerWidget {
   const ChatRow({
@@ -59,13 +58,7 @@ class ChatRow extends ConsumerWidget {
     final chatKey = entry.ref.key;
     final accent = entry.accent;
     final multi = ref.watch(accountHubProvider).accounts.length > 1;
-    final title = displayName(
-      localNickname: null,
-      rosterTitle: chat.title,
-      roomTitle: chat.isGroup ? chat.title : '',
-      jid: chat.jid,
-      isRoom: chat.isGroup,
-    );
+    final title = chat.conversationName;
     final track = chat.isGroup && !chat.mucPrivateNonAnonymous
         ? Track.none
         : ref.watch(chatTrackProvider(chatKey)).value ?? Track.standard;

@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Renders [processMessageStyling] output (Gajim MessageWidget pipeline):
 // fenced code, nested quotes, XEP-0393 spans, URI/JID links, emoji size.

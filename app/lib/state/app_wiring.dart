@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 
 import 'dart:async';
 
@@ -231,8 +231,8 @@ class _AppWiringState extends ConsumerState<AppWiring>
     _subs.add(
       xmpp.roomInvites.listen((invite) async {
         await db.upsertRoomInvitation(
-          roomJid: invite.roomJid,
-          fromJid: invite.fromJid,
+          roomJid: invite.roomJid.toBare().toString(),
+          fromJid: invite.inviter?.toBare().toString() ?? '',
           password: invite.password,
           reason: invite.reason,
         );
@@ -385,7 +385,7 @@ Future<void> _acceptInbound(
   }
   final request = notificationFor(policy, chatJid: chatJid);
   if (request != null) {
-    final title = (chat?.title.isNotEmpty == true) ? chat!.title : chatJid;
+    final title = chat?.conversationName ?? chatJid;
     unawaited(
       AppNotifications.instance.post(
         accountId: session.account.id,

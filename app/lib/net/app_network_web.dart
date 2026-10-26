@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Browser network path: HTTP uses the browser stack. XMPP TCP/SOCKS is not
 // available — connect uses WebSocket + host-meta (see [createXmppSocket]).

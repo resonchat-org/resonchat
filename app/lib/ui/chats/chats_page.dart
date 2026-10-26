@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Chat list translated from Telegram for Android's `DialogsActivity`
 // (GPL-2.0-or-later): 54dp avatar, two-line text column, unread badge,
@@ -14,6 +14,7 @@ import 'package:flutter_slidable/flutter_slidable.dart';
 
 import 'package:resonchat/account/account_hub.dart';
 import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/persistence/database.dart';
 import 'package:resonchat/state/providers.dart';
 import 'package:resonchat/ui/chat/chat_page.dart';
 import 'package:resonchat/ui/chats/chat_row.dart';
@@ -367,10 +368,7 @@ class _ChatsPageState extends ConsumerState<ChatsPage>
 
   Map<String, String> _chatTitles(WidgetRef ref) {
     final list = ref.read(chatsProvider).asData?.value ?? const [];
-    return {
-      for (final c in list)
-        c.chat.jid: c.chat.title.isEmpty ? c.chat.jid : c.chat.title,
-    };
+    return {for (final c in list) c.chat.jid: c.chat.conversationName};
   }
 }
 

@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // List rows for the Contacts tab (idle roster, search hits, section chrome).
 
@@ -21,6 +21,7 @@ import 'package:resonchat/ui/room/create_group_sheet.dart';
 import 'package:resonchat/ui/room/room_sheet.dart';
 import 'package:resonchat/ui/theme.dart';
 import 'package:resonchat/xmpp/roster/last_seen.dart';
+import 'package:resonchat/xmpp/roster/local_nickname.dart';
 
 TextStyle _detailStyle(Color color) {
   return TextStyle(color: color, fontSize: TgDimens.timeFontSize, height: 1.15);
@@ -262,7 +263,14 @@ class ContactRosterTile extends ConsumerWidget {
     final accent = entry.accent;
     final presence = ref.watch(contactPresenceProvider(entry.ref.key)).value;
     final seen = lastSeenLine(context.l10n, presence?.idleSince);
-    final jid = entry.displayName == entry.entry.jid ? null : entry.entry.jid;
+    final chat = ref.watch(chatProvider(entry.ref.key)).value;
+    final title = conversationDisplayName(
+      storedLocalNickname: chat?.localNickname,
+      title: entry.entry.name,
+      jid: entry.entry.jid,
+      isRoom: false,
+    );
+    final jid = title == entry.entry.jid ? null : entry.entry.jid;
     return DialogCell(
       onTap: () async {
         final key = await ref
@@ -276,12 +284,12 @@ class ContactRosterTile extends ConsumerWidget {
         accent: accent,
         child: ContactAvatar(
           jid: entry.entry.jid,
-          title: entry.displayName,
+          title: title,
           showPresence: true,
           presence: presence?.show,
         ),
       ),
-      title: entry.displayName,
+      title: title,
       subtitle: _secondLine(
         leading: seen,
         leadingColor: tg.textSecondary,
@@ -321,14 +329,21 @@ class GroupBookmarkTile extends ConsumerWidget {
         showAccountColor && ref.watch(accountHubProvider).accounts.length > 1;
     final accent = row.accent;
     final b = row.bookmark;
+    final chat = ref.watch(chatProvider(row.ref.key)).value;
+    final title = conversationDisplayName(
+      storedLocalNickname: chat?.localNickname,
+      title: b.displayName,
+      jid: b.jid,
+      isRoom: true,
+    );
     return DialogCell(
       onTap: onTap,
       leading: accountAvatarRing(
         show: multi,
         accent: accent,
-        child: ContactAvatar(jid: b.jid, title: b.displayName),
+        child: ContactAvatar(jid: b.jid, title: title),
       ),
-      title: b.displayName,
+      title: title,
       subtitle: _secondLine(
         leadingColor: tg.textSecondary,
         rest: [

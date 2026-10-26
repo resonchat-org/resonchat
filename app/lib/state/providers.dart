@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 
 import 'dart:async';
 import 'dart:typed_data';
@@ -22,6 +22,7 @@ import 'package:resonchat/xmpp/encryption/capabilities.dart';
 import 'package:resonchat/xmpp/muc/muc.dart';
 import 'package:resonchat/xmpp/roster/avatar.dart';
 import 'package:resonchat/xmpp/roster/blocking.dart';
+import 'package:resonchat/xmpp/roster/local_nickname.dart';
 import 'package:resonchat/xmpp/roster/presence_store.dart';
 
 /// Multi-account hub (installed in `main()`).
@@ -183,6 +184,7 @@ final bookmarksProvider = StreamProvider<List<AccountBookmark>>((ref) {
 
 /// One chat row, or null while loading / unknown ([ChatRef.key]).
 final chatProvider = FutureProvider.family<Chat?, String>((ref, chatKey) {
+  ref.watch(chatRowRevisionProvider);
   final r = resolveChatKey(chatKey);
   return r.session.db.watchChats().first.then(
     (all) => all.where((c) => c.jid == r.jid).firstOrNull,
@@ -366,19 +368,32 @@ final contactAvatarProvider = FutureProvider.family<Uint8List?, String>((
   // No live session (all accounts disabled): keep seeded cache / initials.
   final xmpp = ref.watch(xmppServiceOrNullProvider);
   final db = ref.watch(databaseOrNullProvider);
+  final parsed = JID.fromString(jid);
+  final bare = parsed.toBare();
+  // Gajim GroupchatParticipant: full room/nick is the occupant address.
+  // A public room hides real JIDs, so this is the path those members take.
+  final isOccupantAddress = parsed.resource.isNotEmpty;
+  if (isOccupantAddress) {
+    // Presence often arrives after the first paint. Without this, the
+    // provider keeps the "no hash yet" result until something else bumps
+    // [avatarRevisionProvider].
+    for (final session in accountHub.sessions) {
+      final sub = session.xmpp.vcardAvatarUpdates.listen((updated) {
+        if (updated == parsed.toString()) ref.invalidateSelf();
+      });
+      ref.onDispose(sub.cancel);
+    }
+    return _loadOccupantAvatar(parsed, jid);
+  }
+
   final seeded = _avatarBlobCache[jid];
   if (xmpp == null) {
     return (seeded != null && seeded.isNotEmpty) ? seeded : null;
   }
   final manager = xmpp.avatarManager;
-  final parsed = JID.fromString(jid);
-  final bare = parsed.toBare();
-  // Gajim GroupchatParticipant: full room/nick is the occupant address;
-  // never bare it for vCard or we paint the room photo on every member.
-  final isOccupantAddress = parsed.resource.isNotEmpty;
 
   // XEP-0084 (own / contact PEP) — bare JIDs only; occupants use vCard.
-  if (!isOccupantAddress && manager != null && db != null) {
+  if (manager != null && db != null) {
     final id = await latestAvatarId(manager, bare);
     if (id != null) {
       // Same item id as last time means the bytes are the same, and the fetch
@@ -399,13 +414,11 @@ final contactAvatarProvider = FutureProvider.family<Uint8List?, String>((
   // even when PEP metadata is empty (rooms never publish XEP-0084).
   if (seeded != null && seeded.isNotEmpty) return seeded;
 
-  // Room (bare) or occupant (full) vCard-temp PHOTO.
+  // Room vCard-temp PHOTO. Occupants return above: their IQ goes to
+  // room/nick and is accepted only when it matches the presence hash.
   final vcard = xmpp.vcard;
   if (vcard == null) return null;
-  final fromVcard = await fetchVCardAvatar(
-    vcard,
-    isOccupantAddress ? parsed : bare,
-  );
+  final fromVcard = await fetchVCardAvatar(vcard, bare);
   if (fromVcard == null) return null;
   _avatarBlobCache[jid] = fromVcard.bytes;
   if (db != null) {
@@ -424,6 +437,59 @@ final _avatarBlobCache = <String, Uint8List>{};
 /// Seed the in-memory avatar cache after a local publish (own / MUC).
 void seedAvatarCache(String jid, Uint8List bytes) {
   _avatarBlobCache[jid] = bytes;
+}
+
+/// Occupant face for [cacheKey] (`room@server/nick`).
+///
+/// XEP-0153, the way Gajim loads a GroupchatParticipant: presence on that
+/// full JID carries `<x xmlns='vcard-temp:x:update'><photo>sha1</photo></x>`.
+/// No hash, or an empty `<photo/>`, means there is nothing to fetch — a
+/// query without one is answered by the room, and the room's PHOTO is what
+/// then shows up on every anonymous member. A photo is kept only when its
+/// SHA-1 equals the hash that presence advertised.
+Future<Uint8List?> _loadOccupantAvatar(JID occupant, String cacheKey) async {
+  AccountSession? owner;
+  String? advertised;
+  for (final session in accountHub.sessions) {
+    final hash = session.xmpp.vcard?.photoHashFor(occupant);
+    if (hash == null) continue;
+    owner = session;
+    advertised = hash;
+    break;
+  }
+  final seeded = _avatarBlobCache[cacheKey];
+  if (advertised == null || advertised.isEmpty) {
+    // Drop a room photo cached under this nick by an earlier bare-JID query.
+    if (seeded != null) _avatarBlobCache.remove(cacheKey);
+    return null;
+  }
+  if (seeded != null && seeded.isNotEmpty) {
+    final seededHash = await AvatarData(
+      bytes: seeded,
+      mimeType: 'image/png',
+    ).hash;
+    if (occupantAvatarAccepted(
+      advertisedSha1: advertised,
+      photoSha1: seededHash,
+    )) {
+      return seeded;
+    }
+    _avatarBlobCache.remove(cacheKey);
+  }
+  final vcard = owner!.xmpp.vcard;
+  if (vcard == null) return null;
+  final avatar = await fetchVCardAvatar(vcard, occupant);
+  if (avatar == null) return null;
+  final got = await avatar.hash;
+  // Presence can move the hash while the IQ is in flight. The bytes have to
+  // match what is advertised now, not what was advertised when we asked.
+  final current = owner.xmpp.vcard?.photoHashFor(occupant);
+  if (!occupantAvatarAccepted(advertisedSha1: current, photoSha1: got)) {
+    return null;
+  }
+  _avatarBlobCache[cacheKey] = avatar.bytes;
+  await noteAvatarChanged(owner.db, cacheKey, got);
+  return avatar.bytes;
 }
 
 /// The room we are currently in, or null.
@@ -483,6 +549,25 @@ final chatAppearanceProvider = FutureProvider.family<ChatAppearance, String>((
   }
   return const ChatAppearance();
 });
+
+/// Stores [raw] as the display name for [chatKey].
+///
+/// Blank clears it. A name [LocalNickname] refuses is not written, and the
+/// caller is told so it can explain why. A roster sync does not touch this
+/// column: the display name outranks the roster name and the room name.
+Future<bool> setConversationDisplayName(
+  WidgetRef ref,
+  String chatKey,
+  String raw,
+) async {
+  final nick = LocalNickname.tryParse(raw);
+  if (nick == null && raw.trim().isNotEmpty) return false;
+  final r = resolveChatKey(chatKey);
+  await r.session.db.setLocalNickname(r.jid, nick);
+  ref.read(chatRowRevisionProvider.notifier).state =
+      ref.read(chatRowRevisionProvider) + 1;
+  return true;
+}
 
 /// Stores [appearance] for [chatKey], or clears it when null.
 Future<void> setChatAppearance(

@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Local nicknames: the name *this user* gives somebody, with nothing sent to
 // anybody and nothing asked of anybody.
@@ -207,6 +207,43 @@ const String unknownName = '?';
 /// different rows: the slug is often an opaque token, and the domain is the
 /// only part of the address that tells two same-named rooms apart.
 ///
+/// The name to draw for one stored conversation.
+///
+/// [storedLocalNickname] is the chats column ([LocalNickname.encode]), not the
+/// name. [displayName] would otherwise treat the version byte as text, and
+/// "Bobby" would be drawn as "1Bobby".
+///
+/// [title] is the roster name for a contact and the bookmark or disco name
+/// for a room. [roomTitle] overrides that for a room when the page already
+/// has a fresher disco name than the row.
+String conversationDisplayName({
+  required String? storedLocalNickname,
+  required String title,
+  required String jid,
+  required bool isRoom,
+  String roomTitle = '',
+}) {
+  final room = roomTitle.trim().isNotEmpty ? roomTitle : title;
+  return displayName(
+    localNickname: LocalNickname.decode(storedLocalNickname)?.value,
+    rosterTitle: isRoom ? '' : title,
+    roomTitle: isRoom ? room : '',
+    jid: jid,
+    isRoom: isRoom,
+  );
+}
+
+/// The name on a contact or group-chat details page.
+///
+/// Gajim's name row shows `chosen (original)` when the display name differs
+/// from the roster name or the room name, so the name underneath stays
+/// visible. The chat list and the conversation title stay the chosen name
+/// alone.
+String displayNameHeading(String shown, String original) {
+  if (shown == original || original.trim().isEmpty) return shown;
+  return '$shown ($original)';
+}
+
 /// The result is never empty. A conversation row with no address at all is not
 /// something the app can normally produce, and when it happens the user needs to
 /// see *that* rather than a blank title.

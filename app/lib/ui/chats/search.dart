@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Search UI: the results list, the empty states, and jumping to a hit.
 //
@@ -15,6 +15,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:resonchat/account/account_hub.dart';
 import 'package:resonchat/l10n/l10n.dart';
+import 'package:resonchat/persistence/database.dart';
 import 'package:resonchat/state/providers.dart';
 import 'package:resonchat/ui/chat/chat_page.dart';
 import 'package:resonchat/ui/chats/unread.dart';
@@ -251,10 +252,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   Map<String, String> _titles(WidgetRef ref) {
     final chats = ref.watch(chatsProvider).value;
     if (chats == null) return const {};
-    return {
-      for (final c in chats)
-        c.chat.jid: c.chat.title.isEmpty ? c.chat.jid : c.chat.title,
-    };
+    return {for (final c in chats) c.chat.jid: c.chat.conversationName};
   }
 }
 
@@ -310,9 +308,7 @@ class ForwardTargetSheet extends ConsumerWidget {
                         itemBuilder: (context, i) {
                           final entry = list[i];
                           final chat = entry.chat;
-                          final title = chat.title.isEmpty
-                              ? chat.jid
-                              : chat.title;
+                          final title = chat.conversationName;
                           return ListTile(
                             leading: CircleAvatar(
                               backgroundColor: tg.accent.withValues(

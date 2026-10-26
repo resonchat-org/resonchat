@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Room profile page — description, subject/topic, encryption, notifications,
 // members, leave/destroy. Shared blocks live in chat_profile_sections.dart.
@@ -315,12 +315,23 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
     final caps = ui.caps;
 
     final storedTitle = chatRow?.title ?? '';
-    final title = displayName(
-      localNickname: null,
-      rosterTitle: storedTitle,
-      roomTitle: storedTitle.isNotEmpty ? storedTitle : (ui.roomTitle ?? ''),
+    final roomTitle = storedTitle.trim().isNotEmpty
+        ? storedTitle
+        : (ui.roomTitle ?? '');
+    final shown = conversationDisplayName(
+      storedLocalNickname: chatRow?.localNickname,
+      title: roomTitle,
       jid: _roomJid,
       isRoom: true,
+    );
+    final heading = displayNameHeading(
+      shown,
+      conversationDisplayName(
+        storedLocalNickname: null,
+        title: roomTitle,
+        jid: _roomJid,
+        isRoom: true,
+      ),
     );
     final desc = ui.description?.trim();
     final canEditDescription = caps?.canConfigureRoom ?? false;
@@ -331,7 +342,7 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
     final rosterGroups = groupOccupantsForRoster(room?.occupants ?? const []);
 
     return Scaffold(
-      appBar: AppBar(title: Text(title)),
+      appBar: AppBar(title: Text(shown)),
       body: roomAsync.isLoading && room == null
           ? const Center(child: CircularProgressIndicator())
           : ListView(
@@ -358,7 +369,7 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
                                   )
                                 : ContactAvatar(
                                     jid: _roomJid,
-                                    title: title,
+                                    title: shown,
                                     radius: 44,
                                   ),
                             if ((caps?.canConfigureRoom ?? false) &&
@@ -378,7 +389,7 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
                         children: [
                           Flexible(
                             child: Text(
-                              title,
+                              heading,
                               textAlign: TextAlign.center,
                               style: const TextStyle(fontSize: 20),
                             ),
@@ -430,7 +441,7 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 24),
                           child: Text(
-                            l10n.roomQrJoinHint(title),
+                            l10n.roomQrJoinHint(shown),
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               fontSize: 13,
@@ -443,6 +454,13 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
                       ],
                     ],
                   ),
+                ),
+
+                ConversationDisplayNameTile(
+                  chatKey: widget.chatJid,
+                  jid: _roomJid,
+                  isRoom: true,
+                  roomTitle: ui.roomTitle ?? '',
                 ),
 
                 _section(tg, l10n.roomDescription),

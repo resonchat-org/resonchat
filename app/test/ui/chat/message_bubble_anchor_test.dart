@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // The menu is anchored to the bubble, not to the full-width row. A row anchor
 // puts the card in the middle of the pane, far from a right-hand message.

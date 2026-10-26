@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Whether the home shell (`/chats`) is still in the root stack.
 // Landscape draws its rail outside that stack, so the flag has to live on

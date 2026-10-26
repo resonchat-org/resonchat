@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Contact profile page.
 //
@@ -25,6 +25,7 @@ import 'package:resonchat/ui/chat/chat_profile_sections.dart';
 import 'package:resonchat/ui/theme.dart';
 import 'package:resonchat/xmpp/connection.dart';
 import 'package:resonchat/xmpp/roster/last_seen.dart';
+import 'package:resonchat/xmpp/roster/local_nickname.dart';
 
 class ProfilePage extends ConsumerWidget {
   const ProfilePage({super.key, required this.chatJid});
@@ -45,10 +46,24 @@ class ProfilePage extends ConsumerWidget {
     final connected = xmpp.state == XmppConnectionState.connected;
     final seen = lastSeenLine(l10n, presence?.idleSince);
 
-    final title = (chat?.title.isNotEmpty ?? false) ? chat!.title : peer;
+    final shown = conversationDisplayName(
+      storedLocalNickname: chat?.localNickname,
+      title: chat?.title ?? '',
+      jid: peer,
+      isRoom: false,
+    );
+    final heading = displayNameHeading(
+      shown,
+      conversationDisplayName(
+        storedLocalNickname: null,
+        title: chat?.title ?? '',
+        jid: peer,
+        isRoom: false,
+      ),
+    );
 
     return Scaffold(
-      appBar: AppBar(title: Text(title)),
+      appBar: AppBar(title: Text(shown)),
       body: ListView(
         children: [
           Padding(
@@ -59,7 +74,7 @@ class ProfilePage extends ConsumerWidget {
                   radius: 44,
                   backgroundColor: tg.accent.withValues(alpha: 0.18),
                   child: Text(
-                    title.isEmpty ? '?' : title[0].toUpperCase(),
+                    firstInitial(shown, peer),
                     style: TextStyle(
                       fontSize: 34,
                       color: tg.accent,
@@ -68,7 +83,7 @@ class ProfilePage extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(height: 12),
-                Text(title, style: const TextStyle(fontSize: 20)),
+                Text(heading, style: const TextStyle(fontSize: 20)),
                 const SizedBox(height: 4),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -95,6 +110,12 @@ class ProfilePage extends ConsumerWidget {
                 ),
               ],
             ),
+          ),
+
+          ConversationDisplayNameTile(
+            chatKey: chatJid,
+            jid: peer,
+            isRoom: false,
           ),
 
           ListTile(

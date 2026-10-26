@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Chat page. Layout and interactions follow Telegram for Android's
 // `ChatActivity` (GPL-2.0-or-later), translated to Flutter.
@@ -64,7 +64,6 @@ import 'package:resonchat/xmpp/chat/sticker_link.dart';
 import 'package:resonchat/xmpp/connection.dart';
 import 'package:resonchat/xmpp/muc/muc.dart';
 import 'package:resonchat/xmpp/roster/last_seen.dart';
-import 'package:resonchat/xmpp/roster/local_nickname.dart';
 import 'package:resonchat/xmpp/roster/presence_store.dart';
 
 class ChatPage extends ConsumerStatefulWidget {
@@ -1988,15 +1987,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
   QuotedTranscriptItem _transcriptItemFor(Message m) {
     final isGroup = _ui.isGroup;
-    final storedTitle =
-        ref.read(chatProvider(widget.chatJid)).value?.title ?? '';
-    final peerLabel = displayName(
-      localNickname: null,
-      rosterTitle: storedTitle,
-      roomTitle: isGroup ? storedTitle : '',
-      jid: _peerJid,
-      isRoom: isGroup,
-    );
+    final peerLabel =
+        ref.read(chatProvider(widget.chatJid)).value?.conversationName ??
+        _peerJid;
     return QuotedTranscriptItem(
       id: m.stanzaId,
       body: m.body,
@@ -2137,14 +2130,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final backgroundEpoch = ref.watch(chatRowRevisionProvider);
     final attachEnabled = ref.watch(httpUploadAvailableProvider).value ?? false;
     final chatRow = ref.watch(chatProvider(widget.chatJid)).value;
-    final storedTitle = chatRow?.title ?? '';
-    final title = displayName(
-      localNickname: null,
-      rosterTitle: storedTitle,
-      roomTitle: ui.isGroup ? storedTitle : '',
-      jid: _peerJid,
-      isRoom: ui.isGroup,
-    );
+    final title = chatRow?.conversationName ?? _peerJid;
     // Watched so a draft saved here is read back into the field; see
     // _restoreDraft for why it only happens once.
     ref.watch(draftProvider(widget.chatJid));

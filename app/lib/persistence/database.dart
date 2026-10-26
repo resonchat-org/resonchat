@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Local persistence. Schema + queries are shared; the executor is swapped:
 //   native → SQLCipher / SQLite file (`database_connection_io.dart`)
@@ -13,6 +13,7 @@ import 'package:resonchat/xmpp/chat/sticker_link.dart';
 import 'package:resonchat/xmpp/chat_notify_mode.dart';
 import 'package:resonchat/xmpp/group_read.dart';
 import 'package:resonchat/xmpp/message_send_status.dart';
+import 'package:resonchat/xmpp/roster/local_nickname.dart';
 
 part 'database.g.dart';
 
@@ -110,8 +111,26 @@ class Chats extends Table {
   BoolColumn get mucPrivateNonAnonymous =>
       boolean().withDefault(const Constant(false))();
 
+  /// Display name (Gajim): the name this user gives the conversation.
+  ///
+  /// Stored as [LocalNickname.encode], or empty when unset. Not the roster
+  /// name, the bookmark name, the room's own name, or the nick we join a
+  /// room with — those live in [title] and [mucNick] and are rewritten when
+  /// roster, bookmarks, or disco sync. Nothing here is sent.
+  TextColumn get localNickname => text().withDefault(const Constant(''))();
+
   @override
   Set<Column> get primaryKey => {jid};
+}
+
+/// The name lists, the conversation title, and notifications draw.
+extension ConversationNaming on Chat {
+  String get conversationName => conversationDisplayName(
+    storedLocalNickname: localNickname,
+    title: title,
+    jid: jid,
+    isRoom: isGroup,
+  );
 }
 
 /// Per-conversation auto-translate target. One language; a missing row is off.
@@ -533,7 +552,7 @@ class AppDatabase extends _$AppDatabase {
 
   @override
   // Keep in sync with [kAccountSchemaVersion] in database_connection_io.dart.
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -547,6 +566,9 @@ class AppDatabase extends _$AppDatabase {
         await m.deleteTable('chat_translate_settings');
         await m.deleteTable('chat_translate_langs');
         await m.createTable(chatTranslateSettings);
+      }
+      if (from < 4) {
+        await m.addColumn(chats, chats.localNickname);
       }
     },
   );
@@ -1046,6 +1068,23 @@ class AppDatabase extends _$AppDatabase {
     } catch (_) {
       return const {};
     }
+  }
+
+  /// Stores [nickname] as [chatJid]'s display name, or clears it when null.
+  ///
+  /// A row that does not exist yet is created, the same way pinning a chat
+  /// before its first message is. The value is [LocalNickname.encode]; an
+  /// empty column means unset, so a later roster or bookmark sync can still
+  /// supply [Chats.title].
+  Future<void> setLocalNickname(String chatJid, LocalNickname? nickname) async {
+    final value = nickname?.encode() ?? '';
+    final changed = await (update(chats)..where((c) => c.jid.equals(chatJid)))
+        .write(ChatsCompanion(localNickname: Value(value)));
+    if (changed != 0) return;
+    await upsertChat(chatJid);
+    await (update(chats)..where((c) => c.jid.equals(chatJid))).write(
+      ChatsCompanion(localNickname: Value(value)),
+    );
   }
 
   /// Stores [raw] as [chatJid]'s appearance, or clears it when null.

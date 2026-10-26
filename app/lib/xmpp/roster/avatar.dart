@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Avatars (XEP-0084) on the pubsub avatar node, plus helpers shared with
 // MUC vCard PHOTO publishing.
@@ -211,11 +211,26 @@ Future<bool> publishOwnAvatar(
   return meta.isType<bool>();
 }
 
+/// Whether [photoSha1] is the image XEP-0153 presence advertised.
+///
+/// Gajim treats an empty `<photo/>` as "no avatar" and discards a vCard whose
+/// SHA-1 is not the hash on that occupant's presence. The mismatch case is
+/// how a public room's own PHOTO used to be stored under `room/nick`.
+bool occupantAvatarAccepted({
+  required String? advertisedSha1,
+  required String photoSha1,
+}) {
+  final advertised = advertisedSha1?.trim().toLowerCase() ?? '';
+  if (!RegExp(r'^[0-9a-f]{40}$').hasMatch(advertised)) return false;
+  return advertised == photoSha1.trim().toLowerCase();
+}
+
 /// vCard-temp PHOTO for a contact or MUC occupant (XEP-0153 / Gajim).
 ///
 /// Pass a bare JID for a contact or the room itself. Pass a full
 /// `room@server/nick` for an occupant — Gajim keys participant avatars that
-/// way; baring would fetch the room photo instead.
+/// way; baring would fetch the room photo instead. Occupant bytes still have
+/// to pass [occupantAvatarAccepted] before they are shown.
 Future<AvatarData?> fetchVCardAvatar(VCardManager manager, JID jid) async {
   final result = await manager.requestVCard(jid);
   if (!result.isType<VCard>()) return null;

@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Opening a chat by JID must create a *real* conversation.
 //
@@ -19,7 +19,6 @@ import 'package:resonchat/domain/messages_service.dart';
 import 'package:resonchat/persistence/database.dart';
 import 'package:resonchat/translate/chat_auto_translate.dart';
 import 'package:resonchat/ui/chats/chats_viewmodel.dart';
-import 'package:resonchat/xmpp/connection.dart';
 import 'package:resonchat/xmpp/inbound/inbound_message.dart';
 
 void main() {

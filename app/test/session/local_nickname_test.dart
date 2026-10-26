@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Local nicknames.
 //
@@ -288,6 +288,57 @@ void main() {
   });
 
   group('which name a conversation is drawn with', () {
+    test('the stored column is drawn without its version byte', () {
+      // The column holds the version byte in front of the name. Drawing that
+      // string as text would rename Bobby to 1Bobby.
+      final stored = LocalNickname.tryParse('Bobby')!.encode();
+      expect(
+        conversationDisplayName(
+          storedLocalNickname: stored,
+          title: 'Alex Chen',
+          jid: 'alex@x.example',
+          isRoom: false,
+        ),
+        'Bobby',
+      );
+    });
+
+    test(
+      'a value this build cannot read falls through to the roster title',
+      () {
+        expect(
+          conversationDisplayName(
+            storedLocalNickname: '404 Gang',
+            title: 'Alex Chen',
+            jid: 'alex@x.example',
+            isRoom: false,
+          ),
+          'Alex Chen',
+        );
+      },
+    );
+
+    test('a room the user named is drawn from the stored column', () {
+      final stored = LocalNickname.tryParse('The Team')!.encode();
+      expect(
+        conversationDisplayName(
+          storedLocalNickname: stored,
+          title: 'Bob',
+          roomTitle: 'Engineering',
+          jid: 'team@muc.example.org',
+          isRoom: true,
+        ),
+        'The Team',
+      );
+    });
+
+    test('a details heading keeps the original name visible', () {
+      // Gajim's contact-information name row. The list itself stays "Bobby".
+      expect(displayNameHeading('Bobby', 'Alex Chen'), 'Bobby (Alex Chen)');
+      expect(displayNameHeading('Alex Chen', 'Alex Chen'), 'Alex Chen');
+      expect(displayNameHeading('Bobby', '   '), 'Bobby');
+    });
+
     test('a local nickname outranks the roster title and the address', () {
       // A roster title is a name the other party chose and can change at any
       // moment without warning. A user who named somebody locally has said

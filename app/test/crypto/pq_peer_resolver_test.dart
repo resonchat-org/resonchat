@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // P0 send-path policy tests (docs/11): session-aware bundle needs, group A
 // exclusion, fail-closed blocking, stale-generation races and stable identity

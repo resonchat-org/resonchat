@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Process-wide shared preferences (SOCKS, locale, global track). Opened at
 // app start. Account credentials stay in the keystore; chat data lives in

@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Owns the local B-track (PQ-OMEMO) device and wires it into the message
 // path: publish our bundle, encrypt on the B track when the chat qualifies,

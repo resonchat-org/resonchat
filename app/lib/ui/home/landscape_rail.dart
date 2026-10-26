@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Landscape chrome: a rail that sits *beside* the root navigator, so a
 // pushed page replaces the tab body and leaves the rail in place.

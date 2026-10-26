@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Avatars (XEP-0084).
 //
@@ -98,6 +98,62 @@ void main() {
 
     test('empty input is handled', () {
       expect(sniffMimeType(const []), 'application/octet-stream');
+    });
+  });
+
+  group('an occupant avatar', () {
+    test('is the photo whose hash presence advertised', () async {
+      // XEP-0153: the <photo> text is the SHA-1 of the image bytes.
+      final face = Uint8List.fromList(utf8.encode('alice-face'));
+      final hash = await AvatarData(bytes: face, mimeType: 'image/png').hash;
+      expect(
+        occupantAvatarAccepted(advertisedSha1: hash, photoSha1: hash),
+        isTrue,
+      );
+      expect(
+        occupantAvatarAccepted(
+          advertisedSha1: hash.toUpperCase(),
+          photoSha1: hash,
+        ),
+        isTrue,
+      );
+    });
+
+    test('a room photo is not that occupant', () async {
+      // The bug: an IQ addressed to the bare room returns the room vCard,
+      // and that image was cached under room/nick. The hashes differ, so
+      // the room photo must be refused.
+      final room = Uint8List.fromList(utf8.encode('room-photo'));
+      final face = Uint8List.fromList(utf8.encode('alice-face'));
+      final roomHash = await AvatarData(
+        bytes: room,
+        mimeType: 'image/png',
+      ).hash;
+      final faceHash = await AvatarData(
+        bytes: face,
+        mimeType: 'image/png',
+      ).hash;
+      expect(
+        occupantAvatarAccepted(advertisedSha1: faceHash, photoSha1: roomHash),
+        isFalse,
+      );
+    });
+
+    test('no advertised hash means no avatar, not a guess', () {
+      // Empty <photo/> is "this occupant has no avatar". Querying anyway
+      // is what fetched the room photo.
+      expect(
+        occupantAvatarAccepted(advertisedSha1: null, photoSha1: 'a' * 40),
+        isFalse,
+      );
+      expect(
+        occupantAvatarAccepted(advertisedSha1: '', photoSha1: 'a' * 40),
+        isFalse,
+      );
+      expect(
+        occupantAvatarAccepted(advertisedSha1: 'not-a-sha1', photoSha1: 'ab'),
+        isFalse,
+      );
     });
   });
 

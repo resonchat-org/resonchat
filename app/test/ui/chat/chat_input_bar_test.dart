@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // The composer mirrors Telegram's `ChatActivityEnterView` inside its floating
 // "input island" (docs/05 §3.1), so these lock the geometry both layers use:

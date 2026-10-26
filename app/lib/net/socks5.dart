@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // SOCKS5 CONNECT (RFC 1928), Conversations `SocksSocketFactory` style:
 // no authentication, domain/IP destination, DNS at the proxy when given a name.

@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Multi-account credentials (Conversations `accounts` table), held in the
 // platform keystore. Passwords never go into SQLite.

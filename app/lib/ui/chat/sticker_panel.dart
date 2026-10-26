@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Composer panel under the input: emoji, kaomoji, or saved sticker images.
 // Emoji reuse the shared reaction picker; kaomoji sit beside it as a sibling

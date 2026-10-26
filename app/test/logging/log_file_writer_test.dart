@@ -1,5 +1,5 @@
 // Copyright (C) 2026 ResonChat contributors.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // The file side of developer log mode: where lines land, when a file is
 // replaced, and which old ones get deleted. All of it runs against a temp
