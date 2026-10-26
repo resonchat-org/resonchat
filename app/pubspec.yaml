@@ -36,6 +36,7 @@ dependencies:
   sqlite3: ^3.5.2
   http: ^1.2.0
   file_picker: ^13.1.0
+  desktop_drop: ^0.8.4
   mime: ^2.0.0
   open_filex: ^4.7.0
   url_launcher: ^6.3.1

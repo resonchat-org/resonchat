@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // Best-effort "will this capture be silent?" before hold-to-talk.
-// Linux: wpctl, else pactl. Android / Windows: MethodChannel. Others: skip.
+// Linux: wpctl, else pactl. Android / Windows: MethodChannel.
+// macOS / iOS have no soft-mute query here; the system permission prompt
+// in the recorder is the gate, and an unknown probe is skipped.
 
 import 'dart:io';
 

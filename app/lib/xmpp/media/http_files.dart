@@ -40,6 +40,36 @@ class UploadedFile {
   final bool encrypted;
 }
 
+/// PUT whose body is yielded in chunks so [onProgress] tracks the upload.
+///
+/// [http.Client.send] pulls this stream while writing the socket, so each
+/// yield is bytes the client has accepted rather than the whole buffer at once.
+class _ChunkedPut extends http.BaseRequest {
+  _ChunkedPut(this.body, this.onProgress, Uri url) : super('PUT', url);
+
+  final Uint8List body;
+  final void Function(int sent, int total)? onProgress;
+
+  @override
+  http.ByteStream finalize() {
+    super.finalize();
+    return http.ByteStream(_chunks());
+  }
+
+  Stream<List<int>> _chunks() async* {
+    const size = 16 * 1024;
+    final total = body.length;
+    var sent = 0;
+    onProgress?.call(0, total);
+    for (var i = 0; i < total; i += size) {
+      final end = i + size < total ? i + size : total;
+      yield Uint8List.sublistView(body, i, end);
+      sent = end;
+      onProgress?.call(sent, total);
+    }
+  }
+}
+
 /// Opaque local media handle (native file path or web memory key).
 class CachedMedia {
   const CachedMedia(this.path);
@@ -77,11 +107,15 @@ class HttpFileService {
   }
 
   /// Slot via XEP-0363, then HTTP PUT. When [encrypt], Conversations aesgcm.
+  ///
+  /// [onProgress] is `(sent, total)` of the bytes handed to the PUT body.
+  /// The total is the ciphertext length when [encrypt] is set.
   Future<UploadedFile> uploadBytes(
     Uint8List clear, {
     required String fileName,
     required bool encrypt,
     String? mimeOverride,
+    void Function(int sent, int total)? onProgress,
   }) async {
     final m = _upload;
     if (m == null) throw StateError('HttpFileUploadManager not registered');
@@ -112,15 +146,10 @@ class HttpFileService {
     final client = appNetwork.createHttpClient();
     late final http.Response put;
     try {
-      put = await client.put(
-        Uri.parse(slot.putUrl),
-        headers: {
-          'Content-Type': mime,
-          'Content-Length': '${body.length}',
-          ...slot.headers,
-        },
-        body: body,
-      );
+      final request = _ChunkedPut(body, onProgress, Uri.parse(slot.putUrl))
+        ..contentLength = body.length
+        ..headers.addAll({'Content-Type': mime, ...slot.headers});
+      put = await http.Response.fromStream(await client.send(request));
     } finally {
       client.close();
     }

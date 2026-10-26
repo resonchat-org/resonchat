@@ -25,11 +25,25 @@ import 'package:resonchat/xmpp/message_send_status.dart';
 
 enum BubbleSide { incoming, outgoing }
 
-/// Hide the raw share URL when the media chrome already represents the file.
+/// Hide the raw share URL, or the filename shown while an upload is in
+/// flight, when the media chrome already represents the file.
 bool _shouldHideUrlBody(Message? message, String text) {
-  if (message == null || message.mediaUrl.isEmpty) return false;
-  return text.trim() == message.mediaUrl.trim() ||
-      text.trim().split('\n').first.trim() == message.mediaUrl.trim();
+  if (message == null) return false;
+  final trimmed = text.trim();
+  if (trimmed.isEmpty) return false;
+  if (message.mediaUrl.isNotEmpty &&
+      (trimmed == message.mediaUrl.trim() ||
+          trimmed.split('\n').first.trim() == message.mediaUrl.trim())) {
+    return true;
+  }
+  return message.localPath.isNotEmpty &&
+      message.mediaName.isNotEmpty &&
+      trimmed == message.mediaName.trim();
+}
+
+bool _showsAttachment(Message? message) {
+  if (message == null) return false;
+  return message.mediaUrl.isNotEmpty || message.localPath.isNotEmpty;
 }
 
 /// Paints a rounded rectangle whose one corner is squared off, forming the
@@ -391,9 +405,7 @@ class MessageBubble extends StatelessWidget {
                         ),
                       ),
                     ),
-                  if (!retracted &&
-                      message != null &&
-                      message!.mediaUrl.isNotEmpty)
+                  if (!retracted && _showsAttachment(message))
                     Padding(
                       padding: const EdgeInsets.only(bottom: 4),
                       child: MediaAttachment(
@@ -1129,7 +1141,7 @@ class RetractedNotice extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (!failed && message.mediaUrl.isNotEmpty)
+            if (!failed && _showsAttachment(message))
               MediaAttachment(message: message, chatKey: chatKey),
             if (failed)
               Text(l10n.unableToDecrypt)

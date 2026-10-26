@@ -1,8 +1,13 @@
+<div align="center">
+
 # ResonChat
 
-[![CI](https://github.com/resonchat-org/resonchat/actions/workflows/ci.yml/badge.svg)](https://github.com/resonchat-org/resonchat/actions/workflows/ci.yml)
+[![License: GPL v3](https://img.shields.io/badge/license-GNU/GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![Build Status](https://github.com/resonchat-org/resonchat/actions/workflows/ci.yml/badge.svg)](https://github.com/resonchat-org/resonchat/actions)
 
 [English](README.md) | 中文
+
+</div>
 
 一个基于 Flutter 的 XMPP 客户端：在**不修改服务端、不引入新 XEP** 的前提下，实现与 OMEMO 同构的**后量子加密**（X25519 + ML-KEM-1024），同时**保持与标准 OMEMO 客户端互通**；UI 为自有设计，输入栏等局部组件移植自 Telegram Android。Android 优先。
 

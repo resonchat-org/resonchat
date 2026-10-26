@@ -15,8 +15,8 @@ import 'package:resonchat/xmpp/notify_policy.dart';
 /// only. A null preview becomes [kNoPreviewText] so the shade never shows an
 /// empty body line.
 ///
-/// Android 13+ [POST_NOTIFICATIONS] is requested only on the first [post],
-/// never at cold start.
+/// Android 13+ [POST_NOTIFICATIONS], and the iOS / macOS alert prompt, are
+/// requested only on the first [post], never at cold start.
 final class AppNotifications {
   AppNotifications._();
 
@@ -60,8 +60,16 @@ final class AppNotifications {
       appUserModelId: 'org.resonchat.resonchat',
       guid: _windowsNotificationGuid,
     );
+    // Same deferral as Android: init must not pop the system prompt.
+    const darwin = DarwinInitializationSettings(
+      requestAlertPermission: false,
+      requestBadgePermission: false,
+      requestSoundPermission: false,
+    );
     const settings = InitializationSettings(
       android: android,
+      iOS: darwin,
+      macOS: darwin,
       linux: linux,
       windows: windows,
     );
@@ -95,19 +103,46 @@ final class AppNotifications {
     _ready = true;
   }
 
-  /// Android 13+ runtime prompt, once, when we actually need the shade.
+  /// Runtime prompt, once, when we actually need the shade.
   Future<void> _ensurePermission() {
     return _permission ??= _doRequestPermission();
   }
 
   Future<void> _doRequestPermission() async {
-    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
-    final androidPlugin = _plugin
-        .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin
-        >();
+    if (kIsWeb) return;
     try {
-      await androidPlugin?.requestNotificationsPermission();
+      switch (defaultTargetPlatform) {
+        case TargetPlatform.android:
+          final androidPlugin = _plugin
+              .resolvePlatformSpecificImplementation<
+                AndroidFlutterLocalNotificationsPlugin
+              >();
+          await androidPlugin?.requestNotificationsPermission();
+        case TargetPlatform.iOS:
+          final iosPlugin = _plugin
+              .resolvePlatformSpecificImplementation<
+                IOSFlutterLocalNotificationsPlugin
+              >();
+          await iosPlugin?.requestPermissions(
+            alert: true,
+            badge: false,
+            sound: true,
+          );
+        case TargetPlatform.macOS:
+          final macPlugin = _plugin
+              .resolvePlatformSpecificImplementation<
+                MacOSFlutterLocalNotificationsPlugin
+              >();
+          await macPlugin?.requestPermissions(
+            alert: true,
+            badge: false,
+            sound: true,
+          );
+        case TargetPlatform.linux:
+        case TargetPlatform.windows:
+        case TargetPlatform.fuchsia:
+          return;
+      }
     } catch (e, st) {
       _log.fine('notification permission request failed: $e', e, st);
     }
@@ -162,6 +197,20 @@ final class AppNotifications {
         styleInformation: BigTextStyleInformation(body),
       ),
       linux: LinuxNotificationDetails(suppressSound: !request.decision.sound),
+      iOS: DarwinNotificationDetails(
+        presentAlert: request.decision.banner,
+        presentBanner: request.decision.banner,
+        presentList: true,
+        presentSound: request.decision.sound,
+        presentBadge: false,
+      ),
+      macOS: DarwinNotificationDetails(
+        presentAlert: request.decision.banner,
+        presentBanner: request.decision.banner,
+        presentList: true,
+        presentSound: request.decision.sound,
+        presentBadge: false,
+      ),
       windows: WindowsNotificationDetails(
         audio: request.decision.sound
             ? null

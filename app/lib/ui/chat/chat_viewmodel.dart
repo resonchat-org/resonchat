@@ -12,6 +12,7 @@ import 'dart:typed_data';
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logging/logging.dart';
+import 'package:mime/mime.dart';
 import 'package:moxxmpp/moxxmpp.dart' show JID;
 
 import 'package:resonchat/account/resolve.dart';
@@ -29,6 +30,7 @@ import 'package:resonchat/translate/translatable_text.dart';
 import 'package:resonchat/translate/translation_engine.dart';
 import 'package:resonchat/translate/translation_prefs.dart';
 import 'package:resonchat/translate/translation_service.dart';
+import 'package:resonchat/ui/chat/upload_progress.dart';
 import 'package:resonchat/xmpp/chat/forwarding.dart';
 import 'package:resonchat/xmpp/chat/reactions.dart';
 import 'package:resonchat/xmpp/chat/replies.dart';
@@ -1095,6 +1097,7 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
     final isGroup = state.isGroup;
     final plainRoom = isGroup && !state.mucEncryptable;
     _set((s) => s.copyWith(sending: true));
+    String? placedId;
     try {
       final track = plainRoom
           ? Track.none
@@ -1107,15 +1110,15 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
       if (outcomeTrack == null) return const ChatAttachResult();
 
       final data = Uint8List.fromList(bytes);
-      final uploaded = await xmpp.httpFiles.uploadBytes(
-        data,
-        fileName: fileName,
-        encrypt: outcomeTrack != Track.none,
-        mimeOverride: mimeOverride,
-      );
+      final name = fileName.split(RegExp(r'[/\\]')).last;
+      final fileLabel = name.isEmpty ? 'file' : name;
+      final mime =
+          mimeOverride ??
+          lookupMimeType(fileName) ??
+          'application/octet-stream';
       final cached = await xmpp.httpFiles.cacheLocalBytes(
         data,
-        preferredName: uploaded.fileName,
+        preferredName: fileLabel,
       );
       final pmNick = state.mucPmNick;
       final mucPm = isGroup && pmNick != null && pmNick.isNotEmpty;
@@ -1125,23 +1128,46 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
       final fileTrack = mucPm ? Track.none : outcomeTrack;
       final messageType = mucPm ? 'chat' : (isGroup ? 'groupchat' : 'chat');
 
-      // Same insert-first path as text (Conversations).
+      // The bubble exists before the PUT so progress can be drawn on it.
       final stanzaId = xmpp.allocateStanzaId();
       await MessagesService(_db).insertMessage(
         MessagesCompanion(
           chatJid: Value(peerStr),
           sender: const Value('me'),
           stanzaId: Value(stanzaId),
-          body: Value(uploaded.shareUrl),
+          body: Value(fileLabel),
           timestamp: Value(DateTime.now()),
           encMode: Value(EncModeToken.forOutgoing(fileTrack).wire),
           incoming: const Value(false),
           sendStatus: const Value(MessageSendStatus.waiting),
-          mediaUrl: Value(uploaded.shareUrl),
-          mediaMime: Value(uploaded.mime),
-          mediaName: Value(uploaded.fileName),
+          mediaMime: Value(mime),
+          mediaName: Value(fileLabel),
           localPath: Value(cached.path),
         ),
+      );
+      placedId = stanzaId;
+      var lastPercent = -1;
+      ref.read(fileUploadProgressProvider(stanzaId).notifier).state =
+          FileUploadProgress(sent: 0, total: data.length);
+
+      final uploaded = await xmpp.httpFiles.uploadBytes(
+        data,
+        fileName: fileName,
+        encrypt: outcomeTrack != Track.none,
+        mimeOverride: mimeOverride,
+        onProgress: (sent, total) {
+          final percent = total <= 0 ? 0 : sent * 100 ~/ total;
+          if (percent == lastPercent) return;
+          lastPercent = percent;
+          ref.read(fileUploadProgressProvider(stanzaId).notifier).state =
+              FileUploadProgress(sent: sent, total: total);
+        },
+      );
+      await _db.updateOutgoingFileUrl(
+        peerStr,
+        stanzaId,
+        body: uploaded.shareUrl,
+        mediaUrl: uploaded.shareUrl,
       );
 
       final outcome = await xmpp.sendOnTrack(
@@ -1167,8 +1193,21 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
       await _db.updateSendStatus(peerStr, stanzaId, MessageSendStatus.send);
       return const ChatAttachResult(sent: true, queued: true);
     } catch (e) {
+      final id = placedId;
+      if (id != null) {
+        await _db.updateSendStatus(
+          peerStr,
+          id,
+          MessageSendStatus.sendFailed,
+          deliveryError: '$e',
+        );
+      }
       return ChatAttachResult(error: '$e');
     } finally {
+      final id = placedId;
+      if (id != null) {
+        ref.read(fileUploadProgressProvider(id).notifier).state = null;
+      }
       _set((s) => s.copyWith(sending: false));
     }
   }

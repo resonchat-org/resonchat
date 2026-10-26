@@ -1,5 +1,6 @@
 # Build release APKs (arm + x86) + Linux AppImage/deb/rpm + Windows setup
-# + Web (WASM) tar.gz, and attach them to the GitHub Release.
+# + unsigned macOS DMGs (arm64 and x86_64) + Web (WASM) tar.gz, and attach them to the GitHub Release.
+# iOS is not built: an unsigned device .app cannot be installed or launched.
 #
 # Trigger: publish a Release in the GitHub UI (or `gh release create`).
 # Assets land on that Release page — the usual place for downloadable binaries.
@@ -222,6 +223,62 @@ jobs:
           path: dist/resonchat-*-x86_64-setup.exe
           if-no-files-found: error
 
+  build-macos:
+    name: Build macOS (${{ matrix.name }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: arm64
+            runner: macos-latest
+            artifact: arm64
+          - name: x86_64
+            runner: macos-15-intel
+            artifact: x86_64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install ffmpeg
+        run: brew install ffmpeg
+
+      - name: Generate submodule code
+        run: ./scripts/generate_submodule_code.sh
+
+      - name: Resolve app dependencies
+        working-directory: app
+        run: flutter pub get
+
+      - name: Generate drift code
+        working-directory: app
+        run: dart run build_runner build
+
+      - name: Build macOS DMG
+        # Unsigned. A Developer ID cert would be required to notarize.
+        # The script packages whichever CPU this runner is.
+        run: ./scripts/build_macos.sh --release
+
+      - name: Stage macOS DMG
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          src="app/build/resonchat-${{ matrix.artifact }}.dmg"
+          test -f "$src"
+          cp "$src" "dist/resonchat-${TAG}-${{ matrix.artifact }}.dmg"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.artifact }}
+          path: dist/resonchat-*-${{ matrix.artifact }}.dmg
+          if-no-files-found: error
+
   build-web:
     name: Build Web
     runs-on: ubuntu-latest
@@ -265,7 +322,7 @@ jobs:
 
   upload-release:
     name: Attach to GitHub Release
-    needs: [build-apk, build-linux, build-windows, build-web]
+    needs: [build-apk, build-linux, build-windows, build-macos, build-web]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -287,5 +344,7 @@ jobs:
             dist/resonchat-*-x86_64.deb
             dist/resonchat-*-x86_64.rpm
             dist/resonchat-*-x86_64-setup.exe
+            dist/resonchat-*-arm64.dmg
+            dist/resonchat-*-x86_64.dmg
             dist/resonchat-*-wasm.tar.gz
           fail_on_unmatched_files: true

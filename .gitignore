@@ -23,6 +23,8 @@ coverage/
 **/generated/
 **/l10n/generated/
 app/android/app/src/main/res/mipmap-*/ic_launcher.png
+app/assets/icons/macos/AppIcon.xcassets/AppIcon.appiconset/*.png
+app/assets/icons/ios/AppIcon.xcassets/AppIcon.appiconset/*.png
 
 # Symbolication / obfuscation
 app.*.symbols

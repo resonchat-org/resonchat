@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mime/mime.dart';
@@ -289,6 +290,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
     WidgetsBinding.instance.addPostFrameCallback((_) => jump(attempt: 0));
   }
+
+  /// A file drag is over this chat. The overlay is the only thing shown then.
+  bool _draggingFile = false;
 
   /// True after the first open has positioned the transcript.
   ///
@@ -1057,14 +1061,24 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     );
     if (!mounted || prepared == null) return;
 
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(context.l10n.uploadingFile)));
+    await _uploadAndSend(prepared, fileName: picked.name);
+  }
+
+  /// Uploads [bytes] and sends them as a file message.
+  ///
+  /// Shared by the attach button, voice clips, and a desktop file drop.
+  Future<void> _uploadAndSend(
+    List<int> bytes, {
+    required String fileName,
+    String? mimeOverride,
+  }) async {
     _followNewest = true;
     final result = await _vm.sendAttachmentBytes(
-      prepared,
-      fileName: picked.name,
+      bytes,
+      fileName: fileName,
       confirm: _confirm,
       l10n: context.l10n,
+      mimeOverride: mimeOverride,
     );
     if (!mounted) return;
     final error = result.error;
@@ -1080,6 +1094,69 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     if (!result.queued && !result.sent) _followNewest = false;
   }
 
+  /// Files dragged onto the chat. Confirmed before anything is uploaded,
+  /// the same way FluffyChat opens a send dialog on drop.
+  Future<void> _onFilesDropped(DropDoneDetails details) async {
+    setState(() => _draggingFile = false);
+    final files = details.files;
+    if (files.isEmpty || _ui.sending) return;
+    if (!await _vm.isUploadAvailable()) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.httpUploadUnavailable)),
+      );
+      return;
+    }
+    if (!mounted) return;
+    final send = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(ctx.l10n.sendDroppedFiles),
+        content: SizedBox(
+          width: 360,
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              for (final file in files)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.insert_drive_file_outlined),
+                  title: Text(
+                    file.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(ctx.l10n.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(ctx.l10n.sendFiles),
+          ),
+        ],
+      ),
+    );
+    if (send != true || !mounted) return;
+    for (final file in files) {
+      if (!mounted || _ui.sending) return;
+      final bytes = await file.readAsBytes();
+      if (!mounted || bytes.isEmpty) continue;
+      final name = file.name.trim().isEmpty ? 'file' : file.name;
+      final prepared = await _prepareImageBytesForSend(
+        Uint8List.fromList(bytes),
+        fileName: name,
+      );
+      if (!mounted || prepared == null) return;
+      await _uploadAndSend(prepared, fileName: name);
+    }
+  }
+
   /// Upload a hold-to-talk clip (Telegram MediaController → sendMessage).
   Future<void> _sendVoice(VoiceClip clip) async {
     if (_ui.sending) return;
@@ -1091,28 +1168,11 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       return;
     }
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(context.l10n.uploadingFile)));
-    _followNewest = true;
-    final result = await _vm.sendAttachmentBytes(
+    await _uploadAndSend(
       clip.bytes,
       fileName: clip.fileName,
-      confirm: _confirm,
-      l10n: context.l10n,
       mimeOverride: clip.mime,
     );
-    if (!mounted) return;
-    final error = result.error;
-    if (error != null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(context.l10n.uploadFailed(error))));
-    } else if (result.failureReason != null) {
-      _showNotSent(result.failureReason!);
-    }
-    // The row is inserted before this returns; the provider listener animates
-    // once it is laid out. Only a send that left no row must drop the flag.
-    if (!result.queued && !result.sent) _followNewest = false;
   }
 
   /// Conversations `highlightInConference`: tap an occupant avatar to address them.
@@ -2227,299 +2287,330 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                       ),
                     ],
             ),
-            body: BackdropGroup(
-              // One blurred snapshot of the transcript, shared by the composer
-              // island (see `GlassPanel`).
-              child: Stack(
-                children: [
-                  ChatWallpaper(
-                    chatJid: _peerJid,
-                    appearance: appearance,
-                    base: tg.pageBackground,
-                    // Theme accent tints the pattern (per-chat colour was
-                    // removed; the app theme colour already covers that).
-                    accent: tg.accent,
-                    imageEpoch: backgroundEpoch,
-                    child: const SizedBox.expand(),
-                  ),
-                  Positioned.fill(
-                    child: Column(
-                      children: [
-                        // Rooms are not roster contacts — no subscription banner.
-                        if (!ui.isGroup)
-                          ChatSubscriptionBanner(chatJid: widget.chatJid),
-                        if (ui.advice != null)
-                          TrackAdviceBanner(
-                            advice: ui.advice!,
-                            onSwitch: _vm.adoptAdvice,
-                            onDismiss: _vm.dismissAdvice,
-                          ),
-                        Expanded(
-                          child: Stack(
-                            clipBehavior: Clip.none,
-                            children: [
-                              messages.when(
-                                data: (list) {
-                                  if (list.isNotEmpty) _ensureInitialScroll();
-                                  return NotificationListener<
-                                    ScrollNotification
-                                  >(
-                                    onNotification: _onScrollNotification,
-                                    child: ChatMessageList(
-                                      chatKey: widget.chatJid,
-                                      messages: list,
-                                      scroll: _scroll,
-                                      onRetryDecrypt: () => _loadHistory(),
-                                      onReact: _toggleReaction,
-                                      onMenu: _showMessageMenu,
-                                      onToggleSelected: _toggleSelected,
-                                      selectingMessageId: _selectingMessageId,
-                                      onTextSelectionChanged: (slice) {
-                                        _selectedSlice = slice;
-                                      },
-                                      onMentionNick: _mentionOccupant,
-                                      onOccupantAvatarLongPress: (nick) =>
-                                          unawaited(
-                                            _onOccupantAvatarLongPress(nick),
-                                          ),
-                                      selectionMode: _selectionMode,
-                                      selectedIds: _selection,
-                                      translations: _translations,
-                                      incomingTranslations: _stanzaTranslations(
-                                        context,
-                                      ),
-                                      outgoingOriginals: _outgoingOriginals(),
-                                      translatingIds: _translating,
-                                      readAt: ref
-                                          .watch(
-                                            chatLastReadProvider(
-                                              widget.chatJid,
-                                            ),
-                                          )
-                                          .value,
-                                      unreadCount: _unreadCountHere ?? 0,
-                                      unreadDividerKey: _unreadDividerKey,
-                                      focusMessageAnchor: _activeFocusAnchor,
-                                      focusMessageKey: _focusMessageKey,
-                                      highlightMessageAnchor:
-                                          _replyHighlightAnchor,
-                                      onReplyTap: _jumpToReply,
-                                      bubbleStyle: appearance.bubble,
-                                      isGroup: ui.isGroup,
-                                      groupReads:
-                                          ui.isGroup && ui.mucEncryptable,
-                                      room: ui.room,
-                                      highlightNicks: highlightNicksFor(
-                                        mucNick: ui.mucNick,
+            body: DropTarget(
+              onDragEntered: (_) {
+                if (_draggingFile) return;
+                setState(() => _draggingFile = true);
+              },
+              onDragExited: (_) {
+                if (!_draggingFile) return;
+                setState(() => _draggingFile = false);
+              },
+              onDragDone: (details) => unawaited(_onFilesDropped(details)),
+              child: BackdropGroup(
+                // One blurred snapshot of the transcript, shared by the composer
+                // island (see `GlassPanel`).
+                child: Stack(
+                  children: [
+                    ChatWallpaper(
+                      chatJid: _peerJid,
+                      appearance: appearance,
+                      base: tg.pageBackground,
+                      // Theme accent tints the pattern (per-chat colour was
+                      // removed; the app theme colour already covers that).
+                      accent: tg.accent,
+                      imageEpoch: backgroundEpoch,
+                      child: const SizedBox.expand(),
+                    ),
+                    Positioned.fill(
+                      child: Column(
+                        children: [
+                          // Rooms are not roster contacts — no subscription banner.
+                          if (!ui.isGroup)
+                            ChatSubscriptionBanner(chatJid: widget.chatJid),
+                          if (ui.advice != null)
+                            TrackAdviceBanner(
+                              advice: ui.advice!,
+                              onSwitch: _vm.adoptAdvice,
+                              onDismiss: _vm.dismissAdvice,
+                            ),
+                          Expanded(
+                            child: Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                messages.when(
+                                  data: (list) {
+                                    if (list.isNotEmpty) _ensureInitialScroll();
+                                    return NotificationListener<
+                                      ScrollNotification
+                                    >(
+                                      onNotification: _onScrollNotification,
+                                      child: ChatMessageList(
                                         chatKey: widget.chatJid,
-                                      ),
-                                      peerName: title,
-                                      selfNick: ui.mucNick,
-                                      loadingOlder: _loadingOlder,
-                                    ),
-                                  );
-                                },
-                                loading: () => const Center(
-                                  child: CircularProgressIndicator(),
-                                ),
-                                error: (e, _) => Center(child: Text('$e')),
-                              ),
-                              if (ui.isGroup &&
-                                  (ui.room?.subject?.trim().isNotEmpty ??
-                                      false))
-                                Positioned(
-                                  top: 6,
-                                  left: 10,
-                                  right: 10,
-                                  child: ChatTopicBanner(
-                                    chatJid: widget.chatJid,
-                                    subject: ui.room!.subject!.trim(),
-                                  ),
-                                ),
-                              // Inside the transcript, not the Scaffold's
-                              // floatingActionButton: the composer is part of
-                              // the body, so a scratch-level FAB lands on the
-                              // input island and covers the send slot. Anchored
-                              // here it always sits above whatever the composer
-                              // is currently showing.
-                              Positioned(
-                                right: 16,
-                                bottom: 12,
-                                child: AnimatedSwitcher(
-                                  duration: motionDuration(
-                                    context,
-                                    kMotionFast,
-                                  ),
-                                  switchInCurve: kMotionEnter,
-                                  switchOutCurve: kMotionExit,
-                                  layoutBuilder: (current, previous) => Stack(
-                                    alignment: Alignment.center,
-                                    children: [
-                                      for (final child in previous)
-                                        IgnorePointer(
-                                          child: ExcludeSemantics(child: child),
+                                        messages: list,
+                                        scroll: _scroll,
+                                        onRetryDecrypt: () => _loadHistory(),
+                                        onReact: _toggleReaction,
+                                        onMenu: _showMessageMenu,
+                                        onToggleSelected: _toggleSelected,
+                                        selectingMessageId: _selectingMessageId,
+                                        onTextSelectionChanged: (slice) {
+                                          _selectedSlice = slice;
+                                        },
+                                        onMentionNick: _mentionOccupant,
+                                        onOccupantAvatarLongPress: (nick) =>
+                                            unawaited(
+                                              _onOccupantAvatarLongPress(nick),
+                                            ),
+                                        selectionMode: _selectionMode,
+                                        selectedIds: _selection,
+                                        translations: _translations,
+                                        incomingTranslations:
+                                            _stanzaTranslations(context),
+                                        outgoingOriginals: _outgoingOriginals(),
+                                        translatingIds: _translating,
+                                        readAt: ref
+                                            .watch(
+                                              chatLastReadProvider(
+                                                widget.chatJid,
+                                              ),
+                                            )
+                                            .value,
+                                        unreadCount: _unreadCountHere ?? 0,
+                                        unreadDividerKey: _unreadDividerKey,
+                                        focusMessageAnchor: _activeFocusAnchor,
+                                        focusMessageKey: _focusMessageKey,
+                                        highlightMessageAnchor:
+                                            _replyHighlightAnchor,
+                                        onReplyTap: _jumpToReply,
+                                        bubbleStyle: appearance.bubble,
+                                        isGroup: ui.isGroup,
+                                        groupReads:
+                                            ui.isGroup && ui.mucEncryptable,
+                                        room: ui.room,
+                                        highlightNicks: highlightNicksFor(
+                                          mucNick: ui.mucNick,
+                                          chatKey: widget.chatJid,
                                         ),
-                                      ?current,
-                                    ],
-                                  ),
-                                  transitionBuilder: (child, animation) {
-                                    return FadeTransition(
-                                      opacity: animation,
-                                      child: ScaleTransition(
-                                        scale: Tween<double>(
-                                          begin: 0.75,
-                                          end: 1,
-                                        ).animate(animation),
-                                        child: child,
+                                        peerName: title,
+                                        selfNick: ui.mucNick,
+                                        loadingOlder: _loadingOlder,
                                       ),
                                     );
                                   },
-                                  child: !_selectionMode && !_atBottom
-                                      ? _scrollButton(tg)
-                                      : const SizedBox.shrink(
-                                          key: ValueKey('scroll-button-hidden'),
+                                  loading: () => const Center(
+                                    child: CircularProgressIndicator(),
+                                  ),
+                                  error: (e, _) => Center(child: Text('$e')),
+                                ),
+                                if (ui.isGroup &&
+                                    (ui.room?.subject?.trim().isNotEmpty ??
+                                        false))
+                                  Positioned(
+                                    top: 6,
+                                    left: 10,
+                                    right: 10,
+                                    child: ChatTopicBanner(
+                                      chatJid: widget.chatJid,
+                                      subject: ui.room!.subject!.trim(),
+                                    ),
+                                  ),
+                                // Inside the transcript, not the Scaffold's
+                                // floatingActionButton: the composer is part of
+                                // the body, so a scratch-level FAB lands on the
+                                // input island and covers the send slot. Anchored
+                                // here it always sits above whatever the composer
+                                // is currently showing.
+                                Positioned(
+                                  right: 16,
+                                  bottom: 12,
+                                  child: AnimatedSwitcher(
+                                    duration: motionDuration(
+                                      context,
+                                      kMotionFast,
+                                    ),
+                                    switchInCurve: kMotionEnter,
+                                    switchOutCurve: kMotionExit,
+                                    layoutBuilder: (current, previous) => Stack(
+                                      alignment: Alignment.center,
+                                      children: [
+                                        for (final child in previous)
+                                          IgnorePointer(
+                                            child: ExcludeSemantics(
+                                              child: child,
+                                            ),
+                                          ),
+                                        ?current,
+                                      ],
+                                    ),
+                                    transitionBuilder: (child, animation) {
+                                      return FadeTransition(
+                                        opacity: animation,
+                                        child: ScaleTransition(
+                                          scale: Tween<double>(
+                                            begin: 0.75,
+                                            end: 1,
+                                          ).animate(animation),
+                                          child: child,
                                         ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        // Editing replaces the input bar rather than sitting above it: two
-                        // text fields in one chat is ambiguous about which one a keystroke
-                        // goes to.
-                        MotionCollapse(
-                          visible: ui.mucPmNick != null,
-                          child: Material(
-                            color: tg.accent.withValues(alpha: 0.12),
-                            child: ListTile(
-                              dense: true,
-                              leading: Icon(
-                                Icons.lock_outline,
-                                color: tg.accent,
-                                size: 20,
-                              ),
-                              title: Text(
-                                l10n.privateMessageTo(ui.mucPmNick ?? ''),
-                                style: TextStyle(
-                                  color: tg.accent,
-                                  fontSize: 13,
-                                ),
-                              ),
-                              trailing: IconButton(
-                                icon: const Icon(Icons.close, size: 18),
-                                tooltip: l10n.cancel,
-                                onPressed: () => _vm.setMucPmNick(null),
-                              ),
-                            ),
-                          ),
-                        ),
-                        MotionCollapse(
-                          visible: _replyingTo != null && _editingId == null,
-                          child: ReplyPreview(
-                            author: _replyingTo?.author ?? '',
-                            body: _replyingTo?.body ?? '',
-                            onCancel: () => setState(() => _replyingTo = null),
-                            onTap: () => _jumpToReply(_replyingTo!.id),
-                          ),
-                        ),
-                        MotionCollapse(
-                          visible: _notice != null,
-                          child: _ChatNoticeBanner(
-                            message: _notice?.message ?? '',
-                            onDetails: _notice?.onDetails,
-                            onDismiss: _clearNotice,
-                          ),
-                        ),
-                        // Selection actions live in the AppBar (Telegram action mode).
-                        // The composer stays hidden so keystrokes cannot go to a draft
-                        // while the user is picking messages.
-                        AnimatedSwitcher(
-                          duration: motionDuration(context, kMotionBase),
-                          switchInCurve: kMotionEnter,
-                          switchOutCurve: kMotionExit,
-                          layoutBuilder: (current, previous) => Stack(
-                            alignment: Alignment.bottomCenter,
-                            children: [
-                              // While two composers overlap, only the incoming
-                              // one may take focus, taps, or semantics. The
-                              // outgoing field otherwise keeps the soft
-                              // keyboard up and lets a tap land on a control
-                              // that is visibly fading away.
-                              for (final child in previous)
-                                IgnorePointer(
-                                  child: ExcludeFocus(
-                                    child: ExcludeSemantics(child: child),
+                                      );
+                                    },
+                                    child: !_selectionMode && !_atBottom
+                                        ? _scrollButton(tg)
+                                        : const SizedBox.shrink(
+                                            key: ValueKey(
+                                              'scroll-button-hidden',
+                                            ),
+                                          ),
                                   ),
                                 ),
-                              ?current,
-                            ],
+                              ],
+                            ),
                           ),
-                          transitionBuilder: (child, animation) {
-                            return FadeTransition(
-                              opacity: animation,
-                              child: SizeTransition(
-                                sizeFactor: animation,
-                                axis: Axis.vertical,
-                                alignment: Alignment.bottomCenter,
-                                child: SlideTransition(
-                                  position: Tween<Offset>(
-                                    begin: const Offset(0, 0.06),
-                                    end: Offset.zero,
-                                  ).animate(animation),
-                                  child: child,
+                          // Editing replaces the input bar rather than sitting above it: two
+                          // text fields in one chat is ambiguous about which one a keystroke
+                          // goes to.
+                          MotionCollapse(
+                            visible: ui.mucPmNick != null,
+                            child: Material(
+                              color: tg.accent.withValues(alpha: 0.12),
+                              child: ListTile(
+                                dense: true,
+                                leading: Icon(
+                                  Icons.lock_outline,
+                                  color: tg.accent,
+                                  size: 20,
+                                ),
+                                title: Text(
+                                  l10n.privateMessageTo(ui.mucPmNick ?? ''),
+                                  style: TextStyle(
+                                    color: tg.accent,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                                trailing: IconButton(
+                                  icon: const Icon(Icons.close, size: 18),
+                                  tooltip: l10n.cancel,
+                                  onPressed: () => _vm.setMucPmNick(null),
                                 ),
                               ),
-                            );
-                          },
-                          child: _selectionMode
-                              ? const SizedBox.shrink(
-                                  key: ValueKey('selection-composer'),
-                                )
-                              : _editingId != null
-                              ? EditComposer(
-                                  key: const ValueKey('edit-composer'),
-                                  initialText: _editingBody,
-                                  onSubmit: _submitCorrection,
-                                  onCancel: () => setState(() {
-                                    _editingId = null;
-                                    _editingBody = '';
-                                  }),
-                                )
-                              : ChatInputBar(
-                                  key: const ValueKey('message-composer'),
-                                  controller: _input,
-                                  focusNode: _focus,
-                                  onChanged: _vm.onInputChanged,
-                                  onSend: _send,
-                                  onAttach: _attachFile,
-                                  onVoice: _sendVoice,
-                                  onStickers: _toggleStickers,
-                                  stickersOpen: _stickersOpen,
-                                  attachEnabled: attachEnabled,
+                            ),
+                          ),
+                          MotionCollapse(
+                            visible: _replyingTo != null && _editingId == null,
+                            child: ReplyPreview(
+                              author: _replyingTo?.author ?? '',
+                              body: _replyingTo?.body ?? '',
+                              onCancel: () =>
+                                  setState(() => _replyingTo = null),
+                              onTap: () => _jumpToReply(_replyingTo!.id),
+                            ),
+                          ),
+                          MotionCollapse(
+                            visible: _notice != null,
+                            child: _ChatNoticeBanner(
+                              message: _notice?.message ?? '',
+                              onDetails: _notice?.onDetails,
+                              onDismiss: _clearNotice,
+                            ),
+                          ),
+                          // Selection actions live in the AppBar (Telegram action mode).
+                          // The composer stays hidden so keystrokes cannot go to a draft
+                          // while the user is picking messages.
+                          AnimatedSwitcher(
+                            duration: motionDuration(context, kMotionBase),
+                            switchInCurve: kMotionEnter,
+                            switchOutCurve: kMotionExit,
+                            layoutBuilder: (current, previous) => Stack(
+                              alignment: Alignment.bottomCenter,
+                              children: [
+                                // While two composers overlap, only the incoming
+                                // one may take focus, taps, or semantics. The
+                                // outgoing field otherwise keeps the soft
+                                // keyboard up and lets a tap land on a control
+                                // that is visibly fading away.
+                                for (final child in previous)
+                                  IgnorePointer(
+                                    child: ExcludeFocus(
+                                      child: ExcludeSemantics(child: child),
+                                    ),
+                                  ),
+                                ?current,
+                              ],
+                            ),
+                            transitionBuilder: (child, animation) {
+                              return FadeTransition(
+                                opacity: animation,
+                                child: SizeTransition(
+                                  sizeFactor: animation,
+                                  axis: Axis.vertical,
+                                  alignment: Alignment.bottomCenter,
+                                  child: SlideTransition(
+                                    position: Tween<Offset>(
+                                      begin: const Offset(0, 0.06),
+                                      end: Offset.zero,
+                                    ).animate(animation),
+                                    child: child,
+                                  ),
                                 ),
-                        ),
-                        MotionCollapse(
-                          visible:
-                              _stickersOpen &&
-                              !_selectionMode &&
-                              _editingId == null,
-                          child: SizedBox(
-                            height: 280,
-                            child: StickerPanel(
-                              stickers: _stickers ?? const Stream.empty(),
-                              onInsert: _insertStickerText,
-                              onSend: (sticker) =>
-                                  unawaited(_sendSticker(sticker)),
-                              onAdd: () => unawaited(_addStickerFromFile()),
-                              onDelete: (sticker) =>
-                                  unawaited(_vm.deleteSticker(sticker.id)),
+                              );
+                            },
+                            child: _selectionMode
+                                ? const SizedBox.shrink(
+                                    key: ValueKey('selection-composer'),
+                                  )
+                                : _editingId != null
+                                ? EditComposer(
+                                    key: const ValueKey('edit-composer'),
+                                    initialText: _editingBody,
+                                    onSubmit: _submitCorrection,
+                                    onCancel: () => setState(() {
+                                      _editingId = null;
+                                      _editingBody = '';
+                                    }),
+                                  )
+                                : ChatInputBar(
+                                    key: const ValueKey('message-composer'),
+                                    controller: _input,
+                                    focusNode: _focus,
+                                    onChanged: _vm.onInputChanged,
+                                    onSend: _send,
+                                    onAttach: _attachFile,
+                                    onVoice: _sendVoice,
+                                    onStickers: _toggleStickers,
+                                    stickersOpen: _stickersOpen,
+                                    attachEnabled: attachEnabled,
+                                  ),
+                          ),
+                          MotionCollapse(
+                            visible:
+                                _stickersOpen &&
+                                !_selectionMode &&
+                                _editingId == null,
+                            child: SizedBox(
+                              height: 280,
+                              child: StickerPanel(
+                                stickers: _stickers ?? const Stream.empty(),
+                                onInsert: _insertStickerText,
+                                onSend: (sticker) =>
+                                    unawaited(_sendSticker(sticker)),
+                                onAdd: () => unawaited(_addStickerFromFile()),
+                                onDelete: (sticker) =>
+                                    unawaited(_vm.deleteSticker(sticker.id)),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (_draggingFile)
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          child: ColoredBox(
+                            color: tg.pageBackground.withValues(alpha: 0.9),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(Icons.upload_outlined, size: 100),
+                                const SizedBox(height: 12),
+                                Text(l10n.dropFilesHere),
+                              ],
                             ),
                           ),
                         ),
-                      ],
-                    ),
-                  ),
-                ],
+                      ),
+                  ],
+                ),
               ),
             ),
           ),

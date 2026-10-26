@@ -1868,6 +1868,24 @@ class AppDatabase extends _$AppDatabase {
           ))
           .write(MessagesCompanion(body: Value(body)));
 
+  /// Fills in the share URL once an HTTP upload that already has a bubble
+  /// finishes. The row is inserted first so the file can show upload progress.
+  Future<int> updateOutgoingFileUrl(
+    String chatJid,
+    String stanzaId, {
+    required String body,
+    required String mediaUrl,
+  }) =>
+      (update(messages)..where(
+            (m) =>
+                m.chatJid.equals(chatJid) &
+                m.stanzaId.equals(stanzaId) &
+                m.incoming.equals(false),
+          ))
+          .write(
+            MessagesCompanion(body: Value(body), mediaUrl: Value(mediaUrl)),
+          );
+
   /// Removes a queued outgoing row that was never sent.
   ///
   /// Used when the user cancels at a track dialog: the row existed only so the

@@ -21,6 +21,7 @@ import 'package:resonchat/persistence/media_store.dart';
 import 'package:resonchat/platform/linux_cli_io.dart'
     if (dart.library.js_interop) 'package:resonchat/platform/linux_cli_stub.dart';
 import 'package:resonchat/platform/linux_cli_types.dart';
+import 'package:resonchat/ui/chat/upload_progress.dart';
 import 'package:resonchat/ui/theme.dart';
 import 'package:resonchat/xmpp/media/file_preview.dart';
 import 'package:resonchat/xmpp/media/http_files.dart';
@@ -203,6 +204,7 @@ class _MediaAttachmentState extends ConsumerState<MediaAttachment> {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
+    final progress = ref.watch(fileUploadProgressProvider(m.stanzaId));
     final name = m.mediaName.isNotEmpty
         ? m.mediaName
         : (m.mediaUrl.isNotEmpty ? l10n.fileAttachment : '');
@@ -211,23 +213,26 @@ class _MediaAttachmentState extends ConsumerState<MediaAttachment> {
     final audio = isAudioMime(m.mediaMime, pathOrName);
 
     if (_hasLocal && image && _imageBytes != null) {
-      return Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: () => _openInApp(context),
+      return _withUploadProgress(
+        progress,
+        Material(
+          color: Colors.transparent,
           borderRadius: BorderRadius.circular(8),
-          child: Image.memory(
-            _imageBytes!,
-            width: 220,
-            fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) => _FileRow(
-              name: name,
-              busy: false,
-              error: _error ?? l10n.couldNotOpenFile,
-              subtitle: l10n.tapToOpen,
-              onTap: _openLocal,
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: () => _openInApp(context),
+            borderRadius: BorderRadius.circular(8),
+            child: Image.memory(
+              _imageBytes!,
+              width: 220,
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) => _FileRow(
+                name: name,
+                busy: false,
+                error: _error ?? l10n.couldNotOpenFile,
+                subtitle: l10n.tapToOpen,
+                onTap: _openLocal,
+              ),
             ),
           ),
         ),
@@ -235,23 +240,73 @@ class _MediaAttachmentState extends ConsumerState<MediaAttachment> {
     }
 
     if (_hasLocal) {
-      return _FileRow(
-        name: name,
-        busy: false,
-        error: _error,
-        subtitle: l10n.tapToOpen,
-        onTap: _openLocal,
-        audio: audio,
+      return _withUploadProgress(
+        progress,
+        _FileRow(
+          name: name,
+          busy: false,
+          error: _error,
+          subtitle: l10n.tapToOpen,
+          onTap: _openLocal,
+          audio: audio,
+        ),
       );
     }
 
-    return _FileRow(
-      name: name.isEmpty ? l10n.fileAttachment : name,
-      busy: _busy,
-      error: _error,
-      subtitle: _tooBig ? l10n.fileTooBigForPreview : l10n.tapToDownload,
-      onTap: _busy ? null : () => _download(),
-      audio: audio,
+    return _withUploadProgress(
+      progress,
+      _FileRow(
+        name: name.isEmpty ? l10n.fileAttachment : name,
+        busy: _busy,
+        error: _error,
+        subtitle: _tooBig ? l10n.fileTooBigForPreview : l10n.tapToDownload,
+        onTap: _busy ? null : () => _download(),
+        audio: audio,
+      ),
+    );
+  }
+
+  /// Determinate bar and percent across the bottom of the file, the same
+  /// idea as Gajim's preview progress (`progress / total` and "42 %").
+  Widget _withUploadProgress(FileUploadProgress? progress, Widget child) {
+    if (progress == null) return child;
+    final percent = (progress.fraction * 100).round();
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Stack(
+        alignment: Alignment.bottomCenter,
+        children: [
+          child,
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: ColoredBox(
+              color: const Color(0xCC000000),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: LinearProgressIndicator(
+                        value: progress.total <= 0 ? null : progress.fraction,
+                        minHeight: 4,
+                        color: Colors.white,
+                        backgroundColor: Colors.white24,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '$percent %',
+                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

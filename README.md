@@ -1,8 +1,13 @@
+<div align="center">
+
 # ResonChat
 
-[![CI](https://github.com/resonchat-org/resonchat/actions/workflows/ci.yml/badge.svg)](https://github.com/resonchat-org/resonchat/actions/workflows/ci.yml)
+[![License: GPL v3](https://img.shields.io/badge/license-GNU/GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![Build Status](https://github.com/resonchat-org/resonchat/actions/workflows/ci.yml/badge.svg)](https://github.com/resonchat-org/resonchat/actions)
 
 English | [中文](README.zh.md)
+
+</div>
 
 A Flutter XMPP client that implements **post-quantum encryption isomorphic to OMEMO** — X25519 + ML-KEM-1024 — with **no server changes and no new XEP**, while staying **interoperable with standard OMEMO clients**. The UI is ResonChat's own; the composer is ported from Telegram for Android. Android first.
 

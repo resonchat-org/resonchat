@@ -95,6 +95,8 @@ flutter test                         # test/{crypto,rooms,store,messages,session
 
 # CI / 打包包装（在仓库根目录）
 ./scripts/build_android.sh           # mipmap + flutter build apk
+./scripts/build_ios.sh               # 1024 图标 + flutter build ios
+./scripts/build_macos.sh             # 各档图标 + flutter build macos + 本机架构 DMG
 ./scripts/build_web.sh               # tool/prepare_web_assets + flutter build web --wasm
 ./scripts/build_appimage.sh          # Linux AppImage（需 GTK 3 等桌面依赖）
 .\scripts\build_windows.ps1          # Windows Inno Setup（需 VS C++ + Inno Setup 6）
@@ -104,14 +106,17 @@ flutter test                         # test/{crypto,rooms,store,messages,session
 
 GitHub 上 **Publish a release**（或 `gh release create vX.Y.Z`）会触发
 `.github/workflows/cd.yml`：打两份 release APK（arm64 / x86_64）+ x86_64
-AppImage / .deb / .rpm + Windows setup + Web（`--wasm`）tar.gz，并挂到该
-Release 的 Assets。产物名形如
+AppImage / .deb / .rpm + Windows setup + 未签名的 macOS DMG（arm64 与 x86_64）+
+Web（`--wasm`）tar.gz，并挂到该 Release 的 Assets。iOS 不打：未签名的真机包
+不能安装也不能运行。产物名形如
 `resonchat-<tag>-arm64.apk` /
 `resonchat-<tag>-x86_64.apk` /
 `resonchat-<tag>-x86_64.AppImage` /
 `resonchat-<tag>-x86_64.deb` /
 `resonchat-<tag>-x86_64.rpm` /
 `resonchat-<tag>-x86_64-setup.exe` /
+`resonchat-<tag>-arm64.dmg` /
+`resonchat-<tag>-x86_64.dmg` /
 `resonchat-<tag>-wasm.tar.gz`。
 
 本地单 ABI：`./scripts/build_android.sh --release --abi arm` 或 `--abi x86`。
@@ -133,9 +138,13 @@ runner 内本地 `commandcode-proxy` 经 `opencode.json` 的 `ccproxy` provider 
 
 ### 应用图标
 
-单一源：`assets/icons/`。web / Linux 窗口直接读该目录；AppImage 打包时生成
-hicolor；Windows 用 `app_icon.ico`（`Runner.rc` / Inno Setup）。Android mipmap 在
-`./scripts/build_android.sh` 里从 `app_icon.png` 生成。
+单一源：`assets/icons/app_icon.png`，正式图用 **1024×1024**。web / Linux
+窗口直接读 `assets/icons/`；AppImage 打包时生成 hicolor；Windows 用
+`app_icon.ico`（`Runner.rc` / Inno Setup）。其余平台在打包脚本里从这张图缩放，
+生成物不进仓库：Android mipmap 在 `./scripts/build_android.sh`；iOS 只放这一张
+1024（`./scripts/build_ios.sh`，Xcode 再缩小图标）；macOS 各档尺寸在
+`./scripts/build_macos.sh`。Xcode 工程引用 `assets/icons/ios` 与
+`assets/icons/macos` 下的 `AppIcon.xcassets`，不在 `ios/`、`macos/` 里再放一份。
 
 ### Web 存储
 
