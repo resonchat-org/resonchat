@@ -47,6 +47,12 @@ final prefsDatabaseProvider = Provider<PrefsDatabase>((ref) => appPrefs);
 /// Phone layout ignores this and uses stacked `/chat` routes instead.
 final selectedChatKeyProvider = StateProvider<String?>((ref) => null);
 
+/// Message to focus when opening a chat in column mode ([openChat]).
+///
+/// Portrait passes the same value via [OpenChatArgs] on the `/chat` route.
+/// Cleared by [ChatPage] after it is applied.
+final selectedChatFocusAnchorProvider = StateProvider<String?>((ref) => null);
+
 /// Home shell tab: 0 = Chats, 1 = Contacts, 2 = Me.
 ///
 /// Shared so [openChat] can switch back to Chats when opening from Contacts

@@ -2,7 +2,7 @@
 
 # ResonChat
 
-[![License: GPL v3](https://img.shields.io/badge/license-GNU/GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![License: AGPL v3](https://img.shields.io/badge/license-GNU/AGPLv3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Build Status](https://github.com/resonchat-org/resonchat/actions/workflows/ci.yml/badge.svg)](https://github.com/resonchat-org/resonchat/actions)
 
 [English](README.md) | 中文
@@ -174,13 +174,9 @@ Web（Drift `sqlite3.wasm` + Dart→Wasm；产物在 `app/build/web/`）：
 | [Briar 借鉴](docs/09-briar-lessons.md) | 信任 UX、省电设计 |
 | [三轨选择](docs/10-track-selection.md) | 用户选定、可行性判定、标签一致性 |
 
-## 许可证
-
-[GNU GPL-3.0-or-later](LICENSE)。
-
 ## 第三方代码声明
 
-本项目以 GPL-3.0-or-later 发布，并包含以下第三方代码。完整矩阵见 [`docs/07-licensing-compliance.md`](docs/07-licensing-compliance.md)。
+本项目以 AGPL-3.0-or-later 发布，并包含以下第三方代码。完整矩阵见 [`docs/07-licensing-compliance.md`](docs/07-licensing-compliance.md)。
 
 ### 仓库内上游 fork（`vendor/`，git 子模块）
 
@@ -209,7 +205,7 @@ Web（Drift `sqlite3.wasm` + Dart→Wasm；产物在 `app/build/web/`）：
 | flutter_secure_storage | BSD-3-Clause |
 | riverpod / flutter_riverpod | MIT |
 
-> 自有源文件均带 `SPDX-License-Identifier: GPL-3.0-or-later` 文件头。
+> 自有源文件均带 `SPDX-License-Identifier: AGPL-3.0-or-later` 文件头。
 
 ## 免责声明
 

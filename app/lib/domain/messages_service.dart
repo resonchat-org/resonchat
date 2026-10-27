@@ -303,6 +303,11 @@ class MessagesService {
               ? msg.from.resource
               : msg.from.toBare().toString(),
         ),
+        forwardFromJid: Value(msg.forward?.fromJid ?? ''),
+        forwardAuthor: Value(msg.forward?.author ?? ''),
+        forwardBody: Value(msg.forward?.body ?? ''),
+        forwardOriginId: Value(msg.forward?.originId ?? ''),
+        forwardStamp: Value(msg.forward?.stamp),
         body: Value(msg.encryptionError != null ? '' : msg.body),
         timestamp: Value(msg.archiveTimestamp ?? DateTime.now()),
         encMode: Value(

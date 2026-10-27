@@ -385,6 +385,37 @@ class FingerprintTrustStore {
   }
 }
 
+/// Paint rows from local storage, then replace them after a network refresh.
+///
+/// Gajim's trust UI reads SQLite (`get_fingerprints`) and lets PEP updates
+/// arrive separately. [loadLocal] must not hit the network; [refresh] may.
+Future<void> loadFingerprintsLocalThenRefresh({
+  required Future<List<PeerFingerprintRow>> Function() loadLocal,
+  required Future<List<PeerFingerprintRow>> Function() refresh,
+  required void Function(List<PeerFingerprintRow> rows) onLocal,
+  required void Function(List<PeerFingerprintRow> rows) onRefreshed,
+  void Function(Object error)? onRefreshError,
+  required bool Function() disposed,
+}) async {
+  var rows = const <PeerFingerprintRow>[];
+  try {
+    rows = await loadLocal();
+  } catch (_) {
+    // Empty local list is fine; refresh may still fill it.
+  }
+  if (disposed()) return;
+  onLocal(rows);
+  try {
+    rows = await refresh();
+  } catch (e) {
+    if (disposed()) return;
+    onRefreshError?.call(e);
+    return;
+  }
+  if (disposed()) return;
+  onRefreshed(rows);
+}
+
 /// One peer device row for the security / trust UI.
 class PeerFingerprintRow {
   const PeerFingerprintRow({

@@ -274,6 +274,23 @@ class Messages extends Table {
   /// Nickname of the quoted message's author, for the same reason.
   TextColumn get replyAuthor => text().withDefault(const Constant(''))();
 
+  /// Origin chat/room bare JID for a XEP-0297 user forward (empty if none).
+  ///
+  /// Tapping the forward card opens or joins this conversation.
+  TextColumn get forwardFromJid => text().withDefault(const Constant(''))();
+
+  /// Display label for the original author of a forwarded message.
+  TextColumn get forwardAuthor => text().withDefault(const Constant(''))();
+
+  /// Inner plaintext body of a XEP-0297 user forward.
+  TextColumn get forwardBody => text().withDefault(const Constant(''))();
+
+  /// MUC room stanza-id of the original (empty for 1:1 — no cross-client jump).
+  TextColumn get forwardOriginId => text().withDefault(const Constant(''))();
+
+  /// When the forwarder received the original (XEP-0203 on `<forwarded/>`).
+  DateTimeColumn get forwardStamp => dateTime().nullable()();
+
   /// Set once this message was corrected (XEP-0308).
   ///
   /// Null for an uncorrected message so "edited" is only claimed when it
@@ -552,7 +569,7 @@ class AppDatabase extends _$AppDatabase {
 
   @override
   // Keep in sync with [kAccountSchemaVersion] in database_connection_io.dart.
-  int get schemaVersion => 4;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -569,6 +586,15 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 4) {
         await m.addColumn(chats, chats.localNickname);
+      }
+      if (from < 5) {
+        await m.addColumn(messages, messages.forwardFromJid);
+        await m.addColumn(messages, messages.forwardAuthor);
+        await m.addColumn(messages, messages.forwardBody);
+        await m.addColumn(messages, messages.forwardStamp);
+      }
+      if (from < 6) {
+        await m.addColumn(messages, messages.forwardOriginId);
       }
     },
   );

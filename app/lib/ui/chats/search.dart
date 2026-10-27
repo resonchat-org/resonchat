@@ -17,10 +17,9 @@ import 'package:resonchat/account/account_hub.dart';
 import 'package:resonchat/l10n/l10n.dart';
 import 'package:resonchat/persistence/database.dart';
 import 'package:resonchat/state/providers.dart';
-import 'package:resonchat/ui/chat/chat_page.dart';
 import 'package:resonchat/ui/chats/unread.dart';
+import 'package:resonchat/ui/home/open_chat.dart';
 import 'package:resonchat/ui/theme.dart';
-import 'package:resonchat/xmpp/chat/forwarding.dart';
 
 /// One hit in a search result list.
 class SearchHit {
@@ -173,12 +172,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     final match = chats.where((c) => c.chat.jid == hit.chatJid).firstOrNull;
     final key = match?.ref.key ?? hit.chatJid;
     if (!mounted) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) =>
-            ChatPage(chatJid: key, focusMessageAnchor: hit.messageAnchor),
-      ),
-    );
+    openChat(context, key, focusMessageAnchor: hit.messageAnchor);
   }
 
   @override
@@ -260,21 +254,22 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 class ForwardTargetSheet extends ConsumerWidget {
   const ForwardTargetSheet({
     super.key,
-    required this.items,
-    this.selectionCount,
+    required this.selectionCount,
+    required this.subtitle,
   });
 
-  final List<ForwardItem> items;
+  /// How many messages the user is forwarding (may be 1 after merge).
+  final int selectionCount;
 
-  /// How many messages the user selected (may differ from [items] when merged).
-  final int? selectionCount;
+  /// Resend vs XEP-0297 explanation under the title.
+  final String subtitle;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tg = context.tg;
     final l10n = context.l10n;
     final chats = ref.watch(chatsProvider);
-    final count = selectionCount ?? items.length;
+    final count = selectionCount;
     return DraggableScrollableSheet(
       expand: false,
       initialChildSize: 0.6,
@@ -293,7 +288,7 @@ class ForwardTargetSheet extends ConsumerWidget {
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
               child: Text(
-                l10n.forwardSubtitle,
+                subtitle,
                 style: TextStyle(fontSize: 12, color: tg.textSecondary),
               ),
             ),

@@ -33,6 +33,7 @@ import 'package:resonchat/ui/column_mode_sync.dart';
 import 'package:resonchat/ui/disguise/disguise_2048_page.dart';
 import 'package:resonchat/ui/home/home_shell.dart';
 import 'package:resonchat/ui/home/landscape_rail.dart';
+import 'package:resonchat/ui/home/open_chat.dart';
 import 'package:resonchat/ui/home/shell_chrome.dart';
 import 'package:resonchat/ui/login/login_page.dart';
 import 'package:resonchat/ui/login/register_page.dart';
@@ -459,12 +460,22 @@ class _AppState extends ConsumerState<App> {
                 );
               case '/chat':
                 final arg = settings.arguments;
-                final key = arg is ChatRef
-                    ? arg.key
-                    : (arg is String ? arg : '');
+                final String key;
+                String? focus;
+                if (arg is OpenChatArgs) {
+                  key = arg.chatKey;
+                  focus = arg.focusMessageAnchor;
+                } else if (arg is ChatRef) {
+                  key = arg.key;
+                } else if (arg is String) {
+                  key = arg;
+                } else {
+                  key = '';
+                }
                 return MaterialPageRoute<void>(
                   settings: settings,
-                  builder: (_) => ChatPage(chatJid: key),
+                  builder: (_) =>
+                      ChatPage(chatJid: key, focusMessageAnchor: focus),
                 );
               case '/profile':
                 return MaterialPageRoute<void>(

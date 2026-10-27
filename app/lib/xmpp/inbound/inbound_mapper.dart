@@ -6,6 +6,7 @@
 import 'package:moxxmpp/moxxmpp.dart';
 
 import 'package:resonchat/crypto/dual/track.dart';
+import 'package:resonchat/xmpp/inbound/forward_info.dart';
 import 'package:resonchat/xmpp/inbound/inbound_message.dart';
 import 'package:resonchat/xmpp/inbound/reaction_update.dart';
 import 'package:resonchat/xmpp/inbound/reply_info.dart';
@@ -34,6 +35,8 @@ InboundMessage? inboundFromMessageEvent(
   final reactionData = event.get<MessageReactionsData>();
   final stable = event.get<StableIdData>();
   final replyData = event.get<ReplyData>();
+  final forwardData = event.get<UserForwardedData>();
+  final forward = ForwardInfo.fromUserForwarded(forwardData);
   final retraction = event.get<MessageRetractionData>();
   final moderation = event.get<MessageModerationData>();
   if (moderation?.spoofed ?? false) return null;
@@ -56,6 +59,7 @@ InboundMessage? inboundFromMessageEvent(
   final hasContent =
       body.isNotEmpty ||
       mediaUrl.isNotEmpty ||
+      forward != null ||
       error != null ||
       reactionData != null ||
       retraction != null ||
@@ -156,6 +160,7 @@ InboundMessage? inboundFromMessageEvent(
                 ),
           ],
     reply: reply,
+    forward: tombstone ? null : forward,
     reactions: reactionData == null
         ? null
         : ReactionUpdate(
@@ -175,6 +180,7 @@ bool messageEventHasContent(MessageEvent event) {
   final retraction = event.get<MessageRetractionData>();
   final moderation = event.get<MessageModerationData>();
   final correction = event.get<LastMessageCorrectionData>();
+  final forward = ForwardInfo.fromUserForwarded(event.get<UserForwardedData>());
   final body = error != null
       ? ''
       : (reactionData != null
@@ -192,6 +198,7 @@ bool messageEventHasContent(MessageEvent event) {
   }();
   return body.isNotEmpty ||
       mediaUrl.isNotEmpty ||
+      forward != null ||
       error != null ||
       reactionData != null ||
       retraction != null ||

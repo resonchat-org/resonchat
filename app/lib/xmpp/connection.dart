@@ -2409,6 +2409,8 @@ class XmppService {
       // XEP-0461 replies: the quoted text travels in the body fallback, the
       // reference in a <reply> element.
       MessageRepliesManager(),
+      // XEP-0297 user forwards (plaintext). Carbons/MAM keep using unpack.
+      StanzaForwardingManager(),
       // XEP-0171: read `<x xmlns='urn:xmpp:langtrans'/>` on incoming
       // messages, and request translations from a remote provider. This
       // client does not advertise the feature or attach translations.
@@ -3299,12 +3301,20 @@ class XmppService {
 
   /// Other devices on *our* bare JID (carbons recipients), excluding this
   /// installation's classic / OMEMO2 ids — monocles EditAccount own-keys list.
-  Future<List<PeerFingerprintRow>> ownOtherDeviceFingerprintRows() async {
+  ///
+  /// Pass [refreshFromNetwork]: false to read [OmemoIdentities] only (Gajim
+  /// `get_fingerprints`); the account profile refreshes in the background.
+  Future<List<PeerFingerprintRow>> ownOtherDeviceFingerprintRows({
+    bool refreshFromNetwork = true,
+  }) async {
     final bare = myJid;
     if (bare == null) return const [];
     final classicId = _omemo == null ? null : await _omemo!.getDeviceId();
     final pqId = bTrack?.device?.id;
-    final all = await peerFingerprintRows(bare);
+    final all = await peerFingerprintRows(
+      bare,
+      refreshFromNetwork: refreshFromNetwork,
+    );
     return [
       for (final r in all)
         if (r.omemo2
@@ -3685,14 +3695,48 @@ class XmppService {
     return id;
   }
 
-  /// Sends a chat message in the clear, requesting a delivery receipt
-  /// (XEP-0184).
+  /// Sends a plaintext XEP-0297 user forward to [to].
   ///
-  /// Only reachable once the user has chosen [Track.none] and been told what
-  /// it means. There is no capability check here and deliberately no
-  /// encryption attempt: this method does exactly one thing, so there is no
-  /// path where calling it "for safety" quietly encrypts, and none where
-  /// failing to encrypt produces something that looks protected.
+  /// Outer body is empty (XEP allows it); the payload is [original] wrapped
+  /// in `<forwarded/>`. Never encrypts.
+  Future<String?> sendPlaintextForward(
+    JID to, {
+    required Stanza original,
+    DateTime? receivedAt,
+    String messageType = 'chat',
+    String? originId,
+    String outerBody = '',
+  }) async {
+    final connection = _connection;
+    if (connection == null) throw StateError('not connected');
+    final id = originId ?? _nextStanzaId();
+    final isGroup = messageType == 'groupchat';
+    final children = <XMLNode>[
+      // XEP-0297 §3.2: outer message SHOULD contain a body (may be empty).
+      MessageBodyData(outerBody).toXML(),
+      StableIdData(id, const []).toOriginIdElement(),
+      packForwardedMessage(original: original, receivedAt: receivedAt),
+      if (sendDeliveryReceipts && !isGroup)
+        MessageDeliveryReceiptData(true).toXML(),
+      if (sendReadReceipts &&
+          (!isGroup || (_privateNonAnonymous[to.toBare().toString()] ?? false)))
+        const MarkableData(true).toXML(),
+    ];
+    await connection.sendStanza(
+      StanzaDetails(
+        Stanza.message(
+          to: to.toString(),
+          id: id,
+          type: messageType,
+          children: children,
+        ),
+        awaitable: false,
+        shouldEncrypt: false,
+      ),
+    );
+    return id;
+  }
+
   Future<String?> sendUnencryptedMessage(
     JID to,
     String body, {

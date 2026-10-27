@@ -6,6 +6,7 @@
 import 'package:moxxmpp/moxxmpp.dart' show JID;
 
 import 'package:resonchat/crypto/dual/track.dart';
+import 'package:resonchat/xmpp/inbound/forward_info.dart';
 import 'package:resonchat/xmpp/inbound/reaction_update.dart';
 import 'package:resonchat/xmpp/inbound/reply_info.dart';
 
@@ -49,6 +50,7 @@ class InboundMessage {
     this.roomStanzaId,
     this.corrects,
     this.reply,
+    this.forward,
     this.mediaUrl = '',
     this.mediaMime = '',
     this.mediaName = '',
@@ -108,6 +110,11 @@ class InboundMessage {
   /// be retracted, and a quote that empties out when its target is deleted is
   /// worse than no quote.
   final ReplyInfo? reply;
+
+  /// Plaintext XEP-0297 user-forward payload, or null.
+  ///
+  /// Distinct from [reply]: a forward may point at another conversation.
+  final ForwardInfo? forward;
 
   /// The id of an earlier message this stanza retracts (XEP-0424).
   ///

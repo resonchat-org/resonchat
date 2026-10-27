@@ -96,29 +96,20 @@ class SecurityViewModel
     final chat = await session.db.getChat(_peerBare);
     final isGroup = chat?.isGroup ?? false;
 
-    // 1) Local identities immediately — do not block the spinner on PEP.
-    List<PeerFingerprintRow> localPeers = const [];
-    try {
-      if (isGroup) {
-        final room = await ref.read(roomStateProvider(arg).future);
-        final ownBare = session.xmpp.myJid?.toLowerCase();
-        final members = <String>{
-          for (final o in room?.occupants ?? const [])
-            if (o.realJid != null &&
-                o.realJid!.isNotEmpty &&
-                o.realJid!.toLowerCase() != ownBare)
-              o.realJid!,
-        };
-        localPeers = await session.xmpp.groupFingerprintRows(
-          members,
-          refreshFromNetwork: false,
-        );
-      } else {
-        localPeers = await session.xmpp.peerFingerprintRowsLocal(_peerBare);
-      }
-    } catch (_) {
-      // Empty local list is fine; refresh may still fill it.
+    Future<Set<String>> memberBares() async {
+      final room = await ref.read(roomStateProvider(arg).future);
+      final ownBare = session.xmpp.myJid?.toLowerCase();
+      return {
+        for (final o in room?.occupants ?? const [])
+          if (o.realJid != null &&
+              o.realJid!.isNotEmpty &&
+              o.realJid!.toLowerCase() != ownBare)
+            o.realJid!,
+      };
     }
+
+    // Own fingerprints first. Peer rows: SQLite immediately, then PEP
+    // (Gajim `get_fingerprints` then live device-list updates).
     if (_disposed) return;
     state = SecurityUiState(
       deviceId: id,
@@ -127,38 +118,46 @@ class SecurityViewModel
           ? hybridFromTrack
           : (fps.hybrid.isEmpty ? null : fps.hybrid),
       legacyFingerprint: fps.legacy,
-      peerRows: localPeers,
-      peerLoading: false,
-      peerRefreshing: true,
+      peerRows: const [],
+      peerLoading: true,
     );
 
-    // 2) Background PEP refresh; update the list when it finishes.
-    try {
-      final List<PeerFingerprintRow> refreshed;
-      if (isGroup) {
-        final room = await ref.read(roomStateProvider(arg).future);
-        final ownBare = session.xmpp.myJid?.toLowerCase();
-        final members = <String>{
-          for (final o in room?.occupants ?? const [])
-            if (o.realJid != null &&
-                o.realJid!.isNotEmpty &&
-                o.realJid!.toLowerCase() != ownBare)
-              o.realJid!,
-        };
-        refreshed = await session.xmpp.groupFingerprintRows(members);
-      } else {
-        refreshed = await session.xmpp.peerFingerprintRows(_peerBare);
-      }
-      if (_disposed) return;
-      state = state.copyWith(
-        peerRows: refreshed,
-        peerRefreshing: false,
-        clearPeerError: true,
-      );
-    } catch (e) {
-      if (_disposed) return;
-      state = state.copyWith(peerRefreshing: false, peerError: e.toString());
-    }
+    await loadFingerprintsLocalThenRefresh(
+      loadLocal: () async {
+        if (isGroup) {
+          return session.xmpp.groupFingerprintRows(
+            await memberBares(),
+            refreshFromNetwork: false,
+          );
+        }
+        return session.xmpp.peerFingerprintRowsLocal(_peerBare);
+      },
+      refresh: () async {
+        if (isGroup) {
+          return session.xmpp.groupFingerprintRows(await memberBares());
+        }
+        return session.xmpp.peerFingerprintRows(_peerBare);
+      },
+      onLocal: (rows) {
+        state = state.copyWith(
+          peerRows: rows,
+          peerLoading: false,
+          peerRefreshing: true,
+          clearPeerError: true,
+        );
+      },
+      onRefreshed: (rows) {
+        state = state.copyWith(
+          peerRows: rows,
+          peerRefreshing: false,
+          clearPeerError: true,
+        );
+      },
+      onRefreshError: (e) {
+        state = state.copyWith(peerRefreshing: false, peerError: e.toString());
+      },
+      disposed: () => _disposed,
+    );
   }
 
   Future<void> setPeerTrust(

@@ -2,7 +2,7 @@
 
 # ResonChat
 
-[![License: GPL v3](https://img.shields.io/badge/license-GNU/GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![License: AGPL v3](https://img.shields.io/badge/license-GNU/AGPLv3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Build Status](https://github.com/resonchat-org/resonchat/actions/workflows/ci.yml/badge.svg)](https://github.com/resonchat-org/resonchat/actions)
 
 English | [中文](README.zh.md)
@@ -174,13 +174,9 @@ The full design documentation lives in [`docs/`](docs/README.md) (Chinese):
 | [Briar lessons](docs/09-briar-lessons.md) | Trust UX, power-saving design |
 | [Track selection](docs/10-track-selection.md) | User choice, feasibility, label consistency |
 
-## License
-
-[GNU GPL-3.0-or-later](LICENSE).
-
 ## Third-party code
 
-This project is released under GPL-3.0-or-later and contains the following third-party code. The full matrix is in [`docs/07-licensing-compliance.md`](docs/07-licensing-compliance.md).
+This project is released under AGPL-3.0-or-later and contains the following third-party code. The full matrix is in [`docs/07-licensing-compliance.md`](docs/07-licensing-compliance.md).
 
 ### Upstream forks in the repository (`vendor/`, Git submodules)
 
@@ -209,7 +205,7 @@ The interface under `app/lib/ui/` is ResonChat's own design. Specific components
 | flutter_secure_storage | BSD-3-Clause |
 | riverpod / flutter_riverpod | MIT |
 
-> Our own source files all carry an `SPDX-License-Identifier: GPL-3.0-or-later` header.
+> Our own source files all carry an `SPDX-License-Identifier: AGPL-3.0-or-later` header.
 
 ## Disclaimer
 

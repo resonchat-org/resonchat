@@ -37,21 +37,27 @@ class AccountProfileUiState {
   AccountProfileUiState copyWith({
     bool? busy,
     int? deviceId,
-    String? hybridFingerprint,
-    String? legacyFingerprint,
+    Object? hybridFingerprint = _unset,
+    Object? legacyFingerprint = _unset,
     List<PeerFingerprintRow>? otherDevices,
     Uint8List? avatarPreview,
   }) {
     return AccountProfileUiState(
       busy: busy ?? this.busy,
       deviceId: deviceId ?? this.deviceId,
-      hybridFingerprint: hybridFingerprint ?? this.hybridFingerprint,
-      legacyFingerprint: legacyFingerprint ?? this.legacyFingerprint,
+      hybridFingerprint: identical(hybridFingerprint, _unset)
+          ? this.hybridFingerprint
+          : hybridFingerprint as String?,
+      legacyFingerprint: identical(legacyFingerprint, _unset)
+          ? this.legacyFingerprint
+          : legacyFingerprint as String?,
       otherDevices: otherDevices ?? this.otherDevices,
       avatarPreview: avatarPreview ?? this.avatarPreview,
     );
   }
 }
+
+const Object _unset = Object();
 
 final accountProfileViewModelProvider = NotifierProvider.autoDispose
     .family<AccountProfileViewModel, AccountProfileUiState, String>(
@@ -103,22 +109,32 @@ class AccountProfileViewModel
         pqStore: store.pqIdentity,
         omemo2IkSerialized: omemo2Ik,
       );
-      List<PeerFingerprintRow> others = const [];
-      try {
-        others = await session.xmpp.ownOtherDeviceFingerprintRows();
-      } catch (_) {
-        // Device list / bundles may be unavailable offline.
-      }
-      if (_disposed) return;
-      state = AccountProfileUiState(
-        busy: state.busy,
-        avatarPreview: state.avatarPreview,
-        deviceId: id,
-        hybridFingerprint: (hybridFromTrack?.isNotEmpty ?? false)
-            ? hybridFromTrack
-            : (fps.hybrid.isEmpty ? null : fps.hybrid),
-        legacyFingerprint: fps.legacy,
-        otherDevices: others,
+      final hybrid = (hybridFromTrack?.isNotEmpty ?? false)
+          ? hybridFromTrack
+          : (fps.hybrid.isEmpty ? null : fps.hybrid);
+      final legacy = fps.legacy;
+      // Own fingerprints + rows already in OmemoIdentities (Gajim SQLite
+      // read). PEP for other devices refreshes afterwards and must not
+      // delay that paint.
+      await loadFingerprintsLocalThenRefresh(
+        loadLocal: () => session.xmpp.ownOtherDeviceFingerprintRows(
+          refreshFromNetwork: false,
+        ),
+        refresh: session.xmpp.ownOtherDeviceFingerprintRows,
+        onLocal: (rows) {
+          state = AccountProfileUiState(
+            busy: state.busy,
+            avatarPreview: state.avatarPreview,
+            deviceId: id,
+            hybridFingerprint: hybrid,
+            legacyFingerprint: legacy,
+            otherDevices: rows,
+          );
+        },
+        onRefreshed: (rows) {
+          state = state.copyWith(otherDevices: rows);
+        },
+        disposed: () => _disposed,
       );
     } catch (_) {
       // No device yet.

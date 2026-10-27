@@ -39,6 +39,16 @@ bool matchesUnreadAnchor(Message m, String? anchor) {
   return unreadAnchorOf(m) == anchor;
 }
 
+/// True when [m] is the deep-link / forward focus target identified by [anchor].
+///
+/// Accepts [unreadAnchorOf] keys and room stanza-ids (group forwards jump by
+/// the MUC-assigned id, which may differ from the stored origin-id).
+bool matchesFocusAnchor(Message m, String? anchor) {
+  if (anchor == null || anchor.isEmpty) return false;
+  if (matchesUnreadAnchor(m, anchor)) return true;
+  return messageMatchesReplyId(m, anchor);
+}
+
 /// True when [m] is the XEP-0461 target identified by [replyId].
 ///
 /// Matches origin-id ([Message.stanzaId]) or the room-assigned stanza-id

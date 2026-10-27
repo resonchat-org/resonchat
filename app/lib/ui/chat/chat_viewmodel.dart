@@ -1540,20 +1540,13 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
 
   // --- Forwarding -----------------------------------------------------------
 
-  /// Forwards [items] into the conversation [targetKey].
-  ///
-  /// Sent again as a new, re-encrypted message rather than reusing the
-  /// original stanza: a wrapped stanza carries encryption meant for somebody
-  /// else, so forwarding by reuse would either fail silently or hand the new
-  /// recipient the previous conversation's keys.
+  /// Multi-select resend: new messages on the destination track (not XEP-0297).
   Future<ChatForwardResult> forwardToChat({
     required List<ForwardItem> items,
     required String targetKey,
   }) async {
     final dest = resolveChatKey(targetKey);
     final destPeer = dest.jid;
-    // Refuse to forward into a blocked conversation: the user blocked them,
-    // and the act of forwarding is a message to them.
     if (ref.read(isBlockedProvider(targetKey))) {
       return ChatForwardResult(destPeer: destPeer, blocked: true);
     }
@@ -1563,7 +1556,6 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
     final chat = await dest.session.db.getChat(destPeer);
     final isGroup = chat?.isGroup ?? false;
     final mucEncryptable = chat?.mucPrivateNonAnonymous ?? false;
-    // Public / anonymous rooms: plaintext only (same as sendText).
     if (isGroup && !mucEncryptable) track = Track.none;
     final messageType = isGroup ? 'groupchat' : 'chat';
 
@@ -1574,8 +1566,6 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
       track: track,
       messageType: messageType,
     );
-    // Persist what went out into the destination chat — otherwise the sender
-    // sees an empty history and assumes nothing was delivered.
     if (outcome.ok) {
       final now = DateTime.now();
       for (var i = 0; i < outcome.stanzaId.length; i++) {
@@ -1588,7 +1578,57 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
             timestamp: Value(now.add(Duration(milliseconds: i))),
             encMode: Value(EncModeToken.forOutgoing(track).wire),
             incoming: const Value(false),
-            // Already on the wire from [forwardMessages].
+            sendStatus: const Value(MessageSendStatus.send),
+          ),
+        );
+      }
+    }
+    return ChatForwardResult(destPeer: destPeer, outcome: outcome);
+  }
+
+  /// Long-press: plaintext XEP-0297 `<forwarded/>` on [Track.none].
+  Future<ChatForwardResult> forwardStanzaToChat({
+    required List<StanzaForwardItem> items,
+    required String targetKey,
+    String comment = '',
+  }) async {
+    final dest = resolveChatKey(targetKey);
+    final destPeer = dest.jid;
+    if (ref.read(isBlockedProvider(targetKey))) {
+      return ChatForwardResult(destPeer: destPeer, blocked: true);
+    }
+    if (_disposed) return ChatForwardResult(destPeer: destPeer);
+
+    final chat = await dest.session.db.getChat(destPeer);
+    final isGroup = chat?.isGroup ?? false;
+    final messageType = isGroup ? 'groupchat' : 'chat';
+    final outerBody = comment.trim();
+
+    final outcome = await forwardStanzaMessages(
+      dest.session.xmpp,
+      toJid: JID.fromString(destPeer).toBare(),
+      items: items,
+      messageType: messageType,
+      outerBody: outerBody,
+    );
+    if (outcome.ok) {
+      final now = DateTime.now();
+      for (var i = 0; i < outcome.stanzaId.length; i++) {
+        final persisted = outcome.persisted[i];
+        await dest.session.messages.insertMessage(
+          MessagesCompanion(
+            chatJid: Value(destPeer),
+            sender: const Value('me'),
+            stanzaId: Value(outcome.stanzaId[i]),
+            body: Value(persisted.outerBody),
+            forwardFromJid: Value(persisted.forwardFromJid),
+            forwardAuthor: Value(persisted.forwardAuthor),
+            forwardBody: Value(persisted.forwardBody),
+            forwardOriginId: Value(persisted.forwardOriginId),
+            forwardStamp: Value(persisted.forwardStamp),
+            timestamp: Value(now.add(Duration(milliseconds: i))),
+            encMode: Value(EncModeToken.forOutgoing(Track.none).wire),
+            incoming: const Value(false),
             sendStatus: const Value(MessageSendStatus.send),
           ),
         );

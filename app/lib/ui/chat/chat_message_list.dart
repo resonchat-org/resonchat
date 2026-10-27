@@ -18,6 +18,7 @@ import 'package:resonchat/ui/chat/message_bubble.dart';
 import 'package:resonchat/ui/chat/message_merge.dart';
 import 'package:resonchat/ui/chat/read_ring.dart';
 import 'package:resonchat/ui/chat/reply_quote.dart';
+import 'package:resonchat/ui/chat/transcript_rows.dart';
 import 'package:resonchat/ui/chats/unread.dart';
 import 'package:resonchat/ui/contact_avatar.dart';
 import 'package:resonchat/ui/motion.dart';
@@ -56,6 +57,7 @@ class ChatMessageList extends StatefulWidget {
     required this.focusMessageKey,
     this.highlightMessageAnchor,
     required this.onReplyTap,
+    required this.onForwardTap,
     required this.bubbleStyle,
     required this.isGroup,
     required this.groupReads,
@@ -140,6 +142,9 @@ class ChatMessageList extends StatefulWidget {
 
   /// Tap an in-bubble reply card → jump to the quoted message id.
   final void Function(String replyToId) onReplyTap;
+
+  /// Tap a forward card → open/join origin; [roomStanzaId] only for MUC jump.
+  final void Function(String forwardFromJid, String roomStanzaId) onForwardTap;
 
   /// Corner shape of the bubbles, from this conversation's appearance.
   final BubbleStyle bubbleStyle;
@@ -265,45 +270,40 @@ class _ChatMessageListState extends State<ChatMessageList> {
     _scheduleEntranceClear();
   }
 
+  /// Prior bubble for merge chrome, or null when a separator broke the group.
+  Message? _previousBubbleForMerge(List<TranscriptRow> rows, int index) {
+    for (var i = index - 1; i >= 0; i--) {
+      final row = rows[i];
+      if (row.kind == TranscriptRowKind.date ||
+          row.kind == TranscriptRowKind.unread ||
+          row.kind == TranscriptRowKind.loadingOlder) {
+        return null;
+      }
+      if (row.kind == TranscriptRowKind.message) {
+        final m = row.message!;
+        if (m.retracted ||
+            EncModeToken.parse(m.encMode) == EncModeToken.error) {
+          return null;
+        }
+        return m;
+      }
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final scroll = widget.scroll;
     final messages = widget.messages;
-    final onRetryDecrypt = widget.onRetryDecrypt;
-    final onReact = widget.onReact;
-    final onMenu = widget.onMenu;
-    final selectingMessageId = widget.selectingMessageId;
-    final onTextSelectionChanged = widget.onTextSelectionChanged;
-    final onToggleSelected = widget.onToggleSelected;
-    final onMentionNick = widget.onMentionNick;
-    final onOccupantAvatarLongPress = widget.onOccupantAvatarLongPress;
-    final selectionMode = widget.selectionMode;
-    final selectedIds = widget.selectedIds;
-    final translations = widget.translations;
-    final incomingTranslations = widget.incomingTranslations;
-    final outgoingOriginals = widget.outgoingOriginals;
-    final translatingIds = widget.translatingIds;
-    final readAt = widget.readAt;
-    final unreadCount = widget.unreadCount;
-    final unreadDividerKey = widget.unreadDividerKey;
-    final focusMessageAnchor = widget.focusMessageAnchor;
-    final highlightMessageAnchor = widget.highlightMessageAnchor;
-    final onReplyTap = widget.onReplyTap;
-    final focusMessageKey = widget.focusMessageKey;
-    final bubbleStyle = widget.bubbleStyle;
-    final isGroup = widget.isGroup;
-    final groupReads = widget.groupReads;
-    final room = widget.room;
-    final highlightNicks = widget.highlightNicks;
-    final peerName = widget.peerName;
-    final selfNick = widget.selfNick;
-    final loadingOlder = widget.loadingOlder;
-    final chatKey = widget.chatKey;
-    final selfLabel = selfNick.isNotEmpty ? selfNick : context.l10n.you;
-
     if (messages.isEmpty) {
       return Center(child: Text(context.l10n.noMessagesYet));
     }
+
+    final rows = buildTranscriptRows(
+      messages,
+      readAt: widget.readAt,
+      unreadCount: widget.unreadCount,
+      loadingOlder: widget.loadingOlder,
+    );
 
     // Reply cards name the quoted message, so keep the rows we can resolve by
     // the id `replyTo` points at (origin-id or, for older rows, the room id).
@@ -313,163 +313,174 @@ class _ChatMessageListState extends State<ChatMessageList> {
       if (m.roomStanzaId.isNotEmpty) quotedById[m.roomStanzaId] = m;
     }
 
-    final rows = <Widget>[
-      if (loadingOlder)
-        const Padding(
-          padding: EdgeInsets.symmetric(vertical: 12),
-          child: Center(
-            child: SizedBox(
-              width: 24,
-              height: 24,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-          ),
-        ),
-    ];
-    DateTime? lastDay;
-    // The first message the user had not read when they last read this chat.
-    // Null when everything here has been read, or when the marker is newer than
-    // everything we hold (a chat read on another device) — in which case no
-    // divider is drawn at all, because a divider with nothing above it is a
-    // line across the top of an empty conversation.
-    final firstUnread = firstUnreadId(
-      messages,
-      readAt,
-      unreadCount: unreadCount,
-    );
-    bool unreadMarked = firstUnread == null;
-    Message? previousBubble;
-    var brokeMerge = false;
+    final selfLabel = widget.selfNick.isNotEmpty
+        ? widget.selfNick
+        : context.l10n.you;
 
-    for (final m in messages) {
-      final day = DateTime(
-        m.timestamp.year,
-        m.timestamp.month,
-        m.timestamp.day,
-      );
-      if (lastDay == null || day != lastDay) {
-        rows.add(DateSeparator(date: m.timestamp));
-        lastDay = day;
-        brokeMerge = true;
-      }
-      // Drawn before the message, so it separates "read" from "not read" rather
-      // than sitting under the last read one. The comparison is on the row's
-      // own id rather than on a flag, because a MAM import can insert messages
-      // in the middle and a one-shot flag would end up in the wrong place.
-      if (!unreadMarked && matchesUnreadAnchor(m, firstUnread)) {
-        rows.add(UnreadDivider(key: unreadDividerKey));
-        unreadMarked = true;
-        brokeMerge = true;
-      }
-      if (m.retracted) {
-        Widget line = RetractedNotice(
-          message: m,
-          chatKey: chatKey,
-          label: _retractionLabel(
-            context.l10n,
-            message: m,
-            isGroup: isGroup,
-            peerName: peerName,
-            selfNick: selfNick,
-          ),
-        );
-        if (matchesUnreadAnchor(m, focusMessageAnchor)) {
-          line = KeyedSubtree(key: focusMessageKey, child: line);
-        }
-        rows.add(_entrance(m, line));
-        previousBubble = null;
-        brokeMerge = true;
-        continue;
-      }
-      if (EncModeToken.parse(m.encMode) == EncModeToken.error) {
-        Widget errorRow = ListTile(
-          dense: true,
-          leading: Icon(Icons.lock_outline, size: 18, color: context.tg.danger),
-          title: Text(
-            context.l10n.unableToDecrypt,
-            style: TextStyle(
-              fontStyle: FontStyle.italic,
-              color: context.tg.textSecondary,
-            ),
-          ),
-          trailing: TextButton(
-            onPressed: onRetryDecrypt,
-            child: Text(context.l10n.retry),
-          ),
-        );
-        if (matchesUnreadAnchor(m, focusMessageAnchor)) {
-          errorRow = KeyedSubtree(key: focusMessageKey, child: errorRow);
-        }
-        rows.add(_entrance(m, errorRow));
-        previousBubble = null;
-        brokeMerge = false;
-        continue;
-      }
-      // Conversations merge: hide avatar/nick on continuing rows; each message
-      // stays its own bubble (we do not collapse bodies the way Conversations
-      // can).
-      final mergeChrome =
-          !brokeMerge &&
-          previousBubble != null &&
-          messagesMergeAcrossList(previousBubble, m);
-      brokeMerge = false;
-      final cacheKey = m.stanzaId.isNotEmpty
-          ? m.stanzaId
-          : 'body:${m.body.hashCode}';
-      final reply = m.replyTo.isEmpty
-          ? ReplyPresentation(body: m.body, quote: '', author: '')
-          : replyPresentation(
-              m,
-              quoted: quotedById[m.replyTo],
-              isGroup: isGroup,
-              peerName: peerName,
-              selfLabel: selfLabel,
+    // reverse: index 0 = newest (visual bottom). Ascending [rows] are mapped
+    // with length-1-i so open paints from the latest end immediately.
+    return ListView.builder(
+      controller: widget.scroll,
+      reverse: true,
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      itemCount: rows.length,
+      itemBuilder: (context, index) {
+        final ascendingIndex = rows.length - 1 - index;
+        final row = rows[ascendingIndex];
+        switch (row.kind) {
+          case TranscriptRowKind.loadingOlder:
+            return const Padding(
+              key: ValueKey('transcript-loading-older'),
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Center(
+                child: SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
             );
-      Widget bubble = _ChatReactionBubble(
-        chatKey: chatKey,
+          case TranscriptRowKind.date:
+            return DateSeparator(
+              key: ValueKey('date-${row.date!.toIso8601String()}'),
+              date: row.date!,
+            );
+          case TranscriptRowKind.unread:
+            return UnreadDivider(key: widget.unreadDividerKey);
+          case TranscriptRowKind.message:
+            final m = row.message!;
+            return KeyedSubtree(
+              key: ValueKey(
+                m.stanzaId.isNotEmpty ? 'msg-${m.stanzaId}' : 'msg-db-${m.id}',
+              ),
+              child: _buildMessageRow(
+                context,
+                m: m,
+                previousBubble: _previousBubbleForMerge(rows, ascendingIndex),
+                quotedById: quotedById,
+                selfLabel: selfLabel,
+              ),
+            );
+        }
+      },
+    );
+  }
+
+  Widget _buildMessageRow(
+    BuildContext context, {
+    required Message m,
+    required Message? previousBubble,
+    required Map<String, Message> quotedById,
+    required String selfLabel,
+  }) {
+    final focusMessageAnchor = widget.focusMessageAnchor;
+    final focusMessageKey = widget.focusMessageKey;
+    final isGroup = widget.isGroup;
+    final peerName = widget.peerName;
+    final selfNick = widget.selfNick;
+    final chatKey = widget.chatKey;
+
+    if (m.retracted) {
+      Widget line = RetractedNotice(
         message: m,
-        text: reply.body,
-        replyBody: reply.quote,
-        replyAuthor: reply.author,
-        selectionMode: selectionMode,
-        selected: selectedIds.contains(m.stanzaId),
-        highlighted: matchesUnreadAnchor(m, highlightMessageAnchor),
-        bubbleStyle: bubbleStyle,
-        isGroup: isGroup,
-        groupReads: groupReads,
-        room: room,
-        highlightNicks: highlightNicks,
-        showSenderChrome: !mergeChrome,
-        translation:
-            translations[cacheKey] ??
-            (m.incoming
-                ? incomingTranslations[m.stanzaId]
-                : outgoingOriginals[m.stanzaId] ??
-                      incomingTranslations[m.stanzaId]),
-        translating: translatingIds.contains(cacheKey),
-        onReact: (emoji) => onReact(m.stanzaId, emoji),
-        onMenu: (body, anchor) => onMenu(m, body, anchor),
-        onReplyTap: selectionMode ? null : () => onReplyTap(m.replyTo),
-        textSelecting: selectingMessageId == m.id,
-        onTextSelectionChanged: selectingMessageId == m.id
-            ? onTextSelectionChanged
-            : null,
-        onToggleSelected: () => onToggleSelected(m),
-        onMentionNick: onMentionNick,
-        onOccupantAvatarLongPress: onOccupantAvatarLongPress,
+        chatKey: chatKey,
+        label: _retractionLabel(
+          context.l10n,
+          message: m,
+          isGroup: isGroup,
+          peerName: peerName,
+          selfNick: selfNick,
+        ),
       );
-      if (matchesUnreadAnchor(m, focusMessageAnchor)) {
-        bubble = KeyedSubtree(key: focusMessageKey, child: bubble);
+      if (matchesFocusAnchor(m, focusMessageAnchor)) {
+        line = KeyedSubtree(key: focusMessageKey, child: line);
       }
-      rows.add(_entrance(m, bubble));
-      previousBubble = m;
+      return _entrance(m, line);
     }
 
-    return ListView(
-      controller: scroll,
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      children: rows,
+    if (EncModeToken.parse(m.encMode) == EncModeToken.error) {
+      Widget errorRow = ListTile(
+        dense: true,
+        leading: Icon(Icons.lock_outline, size: 18, color: context.tg.danger),
+        title: Text(
+          context.l10n.unableToDecrypt,
+          style: TextStyle(
+            fontStyle: FontStyle.italic,
+            color: context.tg.textSecondary,
+          ),
+        ),
+        trailing: TextButton(
+          onPressed: widget.onRetryDecrypt,
+          child: Text(context.l10n.retry),
+        ),
+      );
+      if (matchesFocusAnchor(m, focusMessageAnchor)) {
+        errorRow = KeyedSubtree(key: focusMessageKey, child: errorRow);
+      }
+      return _entrance(m, errorRow);
+    }
+
+    final mergeChrome =
+        previousBubble != null && messagesMergeAcrossList(previousBubble, m);
+    final cacheKey = m.stanzaId.isNotEmpty
+        ? m.stanzaId
+        : 'body:${m.body.hashCode}';
+    final reply = m.replyTo.isEmpty
+        ? ReplyPresentation(body: m.body, quote: '', author: '')
+        : replyPresentation(
+            m,
+            quoted: quotedById[m.replyTo],
+            isGroup: isGroup,
+            peerName: peerName,
+            selfLabel: selfLabel,
+          );
+    final hasForward = m.forwardBody.trim().isNotEmpty;
+    Widget bubble = _ChatReactionBubble(
+      chatKey: chatKey,
+      message: m,
+      text: hasForward ? m.body : reply.body,
+      replyBody: hasForward ? '' : reply.quote,
+      replyAuthor: hasForward ? '' : reply.author,
+      forwardFromJid: hasForward ? m.forwardFromJid : '',
+      forwardAuthor: hasForward ? m.forwardAuthor : '',
+      forwardBody: hasForward ? m.forwardBody : '',
+      forwardOriginId: hasForward ? m.forwardOriginId : '',
+      selectionMode: widget.selectionMode,
+      selected: widget.selectedIds.contains(m.stanzaId),
+      highlighted: matchesFocusAnchor(m, widget.highlightMessageAnchor),
+      bubbleStyle: widget.bubbleStyle,
+      isGroup: isGroup,
+      groupReads: widget.groupReads,
+      room: widget.room,
+      highlightNicks: widget.highlightNicks,
+      showSenderChrome: !mergeChrome,
+      translation:
+          widget.translations[cacheKey] ??
+          (m.incoming
+              ? widget.incomingTranslations[m.stanzaId]
+              : widget.outgoingOriginals[m.stanzaId] ??
+                    widget.incomingTranslations[m.stanzaId]),
+      translating: widget.translatingIds.contains(cacheKey),
+      onReact: (emoji) => widget.onReact(m.stanzaId, emoji),
+      onMenu: (body, anchor) => widget.onMenu(m, body, anchor),
+      onReplyTap: widget.selectionMode || hasForward
+          ? null
+          : () => widget.onReplyTap(m.replyTo),
+      onForwardTap: widget.selectionMode || !hasForward
+          ? null
+          : () => widget.onForwardTap(m.forwardFromJid, m.forwardOriginId),
+      textSelecting: widget.selectingMessageId == m.id,
+      onTextSelectionChanged: widget.selectingMessageId == m.id
+          ? widget.onTextSelectionChanged
+          : null,
+      onToggleSelected: () => widget.onToggleSelected(m),
+      onMentionNick: widget.onMentionNick,
+      onOccupantAvatarLongPress: widget.onOccupantAvatarLongPress,
     );
+    if (matchesFocusAnchor(m, focusMessageAnchor)) {
+      bubble = KeyedSubtree(key: focusMessageKey, child: bubble);
+    }
+    return _entrance(m, bubble);
   }
 }
 
@@ -548,6 +559,10 @@ class _ChatReactionBubble extends ConsumerWidget {
     required this.text,
     required this.replyBody,
     required this.replyAuthor,
+    this.forwardFromJid = '',
+    this.forwardAuthor = '',
+    this.forwardBody = '',
+    this.forwardOriginId = '',
     required this.selectionMode,
     required this.selected,
     this.highlighted = false,
@@ -562,6 +577,7 @@ class _ChatReactionBubble extends ConsumerWidget {
     required this.onReact,
     required this.onMenu,
     this.onReplyTap,
+    this.onForwardTap,
     required this.onToggleSelected,
     required this.textSelecting,
     this.onTextSelectionChanged,
@@ -582,6 +598,11 @@ class _ChatReactionBubble extends ConsumerWidget {
   /// Display name of the quoted message's author.
   final String replyAuthor;
 
+  final String forwardFromJid;
+  final String forwardAuthor;
+  final String forwardBody;
+  final String forwardOriginId;
+
   final bool selectionMode;
   final bool selected;
   final bool highlighted;
@@ -599,6 +620,7 @@ class _ChatReactionBubble extends ConsumerWidget {
   final void Function(String emoji) onReact;
   final void Function(String body, Rect anchor) onMenu;
   final VoidCallback? onReplyTap;
+  final VoidCallback? onForwardTap;
   final bool textSelecting;
   final ValueChanged<String>? onTextSelectionChanged;
   final void Function() onToggleSelected;
@@ -707,6 +729,10 @@ class _ChatReactionBubble extends ConsumerWidget {
       replyBody: replyBody,
       replyAuthor: replyAuthor,
       onReplyTap: onReplyTap,
+      forwardFromJid: forwardFromJid,
+      forwardAuthor: forwardAuthor,
+      forwardBody: forwardBody,
+      onForwardTap: onForwardTap,
       mentionsMe: message.mentionsMe,
       highlightNicks: isGroup ? highlightNicks : const [],
       translation: translation,
@@ -729,7 +755,12 @@ class _ChatReactionBubble extends ConsumerWidget {
           ? null
           : selectionMode
           ? (message.stanzaId.isEmpty ? null : (_) => onToggleSelected())
-          : (anchor) => onMenu(text, anchor),
+          : (anchor) => onMenu(
+              text.trim().isNotEmpty
+                  ? text
+                  : (forwardBody.isNotEmpty ? forwardBody : text),
+              anchor,
+            ),
       onTap: message.retracted || !selectionMode || message.stanzaId.isEmpty
           ? null
           : onToggleSelected,

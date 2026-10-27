@@ -115,7 +115,7 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
           .showSnackBar(SnackBar(content: Text(l10n.omemoConnectRequired)));
       return;
     }
-    final title = pq ? l10n.regenerateOmemo2Key : l10n.regenerateOmemoKey;
+    final title = l10n.regenerateKey;
     final desc = pq
         ? l10n.regenerateOmemo2KeyDesc
         : l10n.regenerateOmemoKeyDesc;
@@ -384,13 +384,14 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
                 leading: const Icon(Icons.smartphone),
                 title: Text(l10n.thisDeviceId('${ui.deviceId ?? '—'}')),
               ),
-              // monocles EditAccount: both stacks shown side-by-side, never merged.
-              if (ui.hybridFingerprint != null) ...[
-                Text(
-                  l10n.omemo2Fingerprint,
-                  style: TextStyle(fontSize: 12, color: tg.textSecondary),
-                ),
-                const SizedBox(height: 6),
+              // monocles EditAccount: both stacks shown separately, never merged.
+              // Regenerate sits under the fingerprint it replaces.
+              Text(
+                l10n.omemo2Fingerprint,
+                style: TextStyle(fontSize: 12, color: tg.textSecondary),
+              ),
+              const SizedBox(height: 6),
+              if (ui.hybridFingerprint != null)
                 FingerprintBox(
                   fingerprint: ui.hybridFingerprint!,
                   margin: EdgeInsets.zero,
@@ -398,14 +399,20 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
                   onCopy: () =>
                       unawaited(_copyFingerprint(ui.hybridFingerprint)),
                 ),
-              ],
-              if (ui.legacyFingerprint != null) ...[
-                const SizedBox(height: 12),
-                Text(
-                  l10n.omemoLegacyFingerprint,
-                  style: TextStyle(fontSize: 12, color: tg.textSecondary),
-                ),
-                const SizedBox(height: 6),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.refresh, color: tg.accent),
+                title: Text(l10n.regenerateKey),
+                enabled: !ui.busy,
+                onTap: () => unawaited(_confirmRegenerate(pq: true)),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                l10n.omemoLegacyFingerprint,
+                style: TextStyle(fontSize: 12, color: tg.textSecondary),
+              ),
+              const SizedBox(height: 6),
+              if (ui.legacyFingerprint != null)
                 FingerprintBox(
                   fingerprint: ui.legacyFingerprint!,
                   margin: EdgeInsets.zero,
@@ -413,7 +420,13 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
                   onCopy: () =>
                       unawaited(_copyFingerprint(ui.legacyFingerprint)),
                 ),
-              ],
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.refresh, color: tg.accent),
+                title: Text(l10n.regenerateKey),
+                enabled: !ui.busy,
+                onTap: () => unawaited(_confirmRegenerate(pq: false)),
+              ),
               const SizedBox(height: 20),
               Text(
                 l10n.otherOwnDevices,
@@ -444,20 +457,6 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
                     onTrustChanged: (v) =>
                         unawaited(_model.setOtherDeviceTrust(row, v)),
                   ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: Icon(Icons.refresh, color: tg.accent),
-                title: Text(l10n.regenerateOmemoKey),
-                enabled: !ui.busy,
-                onTap: () => unawaited(_confirmRegenerate(pq: false)),
-              ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: Icon(Icons.refresh, color: tg.accent),
-                title: Text(l10n.regenerateOmemo2Key),
-                enabled: !ui.busy,
-                onTap: () => unawaited(_confirmRegenerate(pq: true)),
-              ),
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: Icon(Icons.devices_other, color: tg.accent),

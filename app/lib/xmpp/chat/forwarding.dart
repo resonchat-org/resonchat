@@ -1,25 +1,16 @@
 // Copyright (C) 2026 ResonChat contributors.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Forwarding a message to another conversation.
+// Two forwarding modes:
 //
-// Why this does not use XEP-0297's `<forwarded/>` wrapper, which exists
-// precisely for this and which moxxmpp can parse and build:
+//   1. **Resend** (multi-select): a new message on the destination track —
+//      quoted / attributed body, or a preformatted transcript. Same as before
+//      XEP-0297. Encrypted chats stay on their track.
 //
-//   A wrapped stanza carries the *original* encryption. Its payload was
-//   encrypted to the original recipient's keys, so wrapping it and sending it
-//   to a third party hands that third party a ciphertext they cannot open —
-//   and the wrapper's metadata still names the original recipient, which tells
-//   the new one who they were talking to.
-//
-//   That is not a cosmetic difference. Forwarding by reuse would mean the
-//   forward either fails silently or leaks who else was in the conversation.
-//
-// So a forward is a **new message**, re-encrypted for the new recipient on the
-// new conversation's track. Classic items use a `> `-quoted body plus a short
-// attribution line; preformatted items (quoted transcripts) are sent as-is.
+//   2. **XEP-0297** (long-press one message): plaintext `<forwarded/>` only.
+//      Ciphertext must not be wrapped (wrong keys + leaks original peers).
 
-import 'package:moxxmpp/moxxmpp.dart' show JID;
+import 'package:moxxmpp/moxxmpp.dart';
 
 import 'package:resonchat/crypto/dual/track.dart';
 import 'package:resonchat/xmpp/chat/replies.dart';
@@ -30,17 +21,21 @@ enum ForwardRefusal {
   /// Nothing was selected to forward.
   nothingSelected,
 
-  /// The destination conversation's track is blocked for this peer.
+  /// XEP-0297 path: at least one selected message is not plaintext.
+  notPlaintext,
+
+  /// The destination conversation rejected the send.
   trackBlocked,
 }
 
-/// The outcome of one forward.
+/// The outcome of one forward (resend or XEP-0297).
 class ForwardOutcome {
   const ForwardOutcome({
     required this.forwarded,
     this.refused,
     this.stanzaId = const [],
     this.wireBodies = const [],
+    this.persisted = const [],
   });
 
   /// How many messages actually went out.
@@ -49,16 +44,21 @@ class ForwardOutcome {
   /// Null when everything was sent.
   final ForwardRefusal? refused;
 
-  /// Stanza ids of what was sent, so the caller can store or roll back.
+  /// Stanza ids of what was sent.
   final List<String> stanzaId;
 
-  /// Wire bodies matching [stanzaId] (for local persistence).
+  /// Wire bodies for resend persistence (parallel to [stanzaId]).
   final List<String> wireBodies;
+
+  /// XEP-0297 rows to insert locally (parallel to [stanzaId]).
+  final List<ForwardPersisted> persisted;
 
   bool get ok => refused == null;
 }
 
-/// One message chosen for forwarding.
+// --- Resend (multi-select) ---------------------------------------------------
+
+/// One message chosen for resend-style forwarding.
 class ForwardItem {
   const ForwardItem({
     required this.body,
@@ -96,18 +96,13 @@ String forwardWireBody(ForwardItem item) {
   ).wireBody;
 }
 
-/// Sends one message of a forward. Injected so the loop can be tested without
-/// a connection.
+/// Sends one message of a resend forward. Injected for tests.
 typedef ForwardSender = Future<SendOutcome> Function(
   String wireBody,
   Track track,
 );
 
-/// Runs the forward loop.
-///
-/// Stops at the first refusal and reports how many went out: a partial forward
-/// the user is not told about is indistinguishable from one that failed
-/// outright, and they are the only one who can tell the difference.
+/// Runs the resend forward loop.
 Future<ForwardOutcome> runForward({
   required List<ForwardItem> items,
   required Track track,
@@ -144,7 +139,7 @@ Future<ForwardOutcome> runForward({
   );
 }
 
-/// Forwards [items] into the conversation with [toJid].
+/// Forwards [items] into the conversation with [toJid] as new messages.
 Future<ForwardOutcome> forwardMessages(
   XmppService xmpp, {
   required JID toJid,
@@ -157,5 +152,175 @@ Future<ForwardOutcome> forwardMessages(
     track: track,
     send: (wireBody, t) =>
         xmpp.sendOnTrack(toJid, wireBody, track: t, messageType: messageType),
+  );
+}
+
+// --- XEP-0297 (long-press) ---------------------------------------------------
+
+/// What the sender's own history should store for one XEP-0297 forward.
+class ForwardPersisted {
+  const ForwardPersisted({
+    required this.forwardFromJid,
+    required this.forwardAuthor,
+    required this.forwardBody,
+    this.forwardOriginId = '',
+    this.forwardStamp,
+    this.outerBody = '',
+  });
+
+  final String forwardFromJid;
+  final String forwardAuthor;
+  final String forwardBody;
+  final String forwardOriginId;
+  final DateTime? forwardStamp;
+
+  /// Optional comment on the outer message (shown under the forward card).
+  final String outerBody;
+}
+
+/// One plaintext message chosen for XEP-0297 `<forwarded/>`.
+class StanzaForwardItem {
+  const StanzaForwardItem({
+    required this.body,
+    required this.originChatJid,
+    required this.author,
+    this.messageType = 'chat',
+    this.originId,
+    this.fromFull,
+    this.toFull,
+    this.receivedAt,
+    this.plaintext = true,
+  });
+
+  final String body;
+  final String originChatJid;
+  final String author;
+  final String messageType;
+  final String? originId;
+  final String? fromFull;
+  final String? toFull;
+  final DateTime? receivedAt;
+  final bool plaintext;
+}
+
+/// Bare JID to open when the user taps a forward card.
+String forwardOriginJid({
+  required String? from,
+  required String? type,
+  String fallback = '',
+}) {
+  if (from == null || from.isEmpty) return fallback;
+  final jid = JID.fromString(from);
+  return jid.toBare().toString();
+}
+
+/// Returns a refusal before any XEP-0297 send, or null when [items] may go out.
+ForwardRefusal? refuseStanzaForward(List<StanzaForwardItem> items) {
+  if (items.isEmpty) return ForwardRefusal.nothingSelected;
+  for (final item in items) {
+    if (!item.plaintext || item.body.trim().isEmpty) {
+      return ForwardRefusal.notPlaintext;
+    }
+  }
+  return null;
+}
+
+/// Builds the inner stanza snapshot for one [item].
+Stanza stanzaForwardInner(StanzaForwardItem item) {
+  final from =
+      item.fromFull ??
+      (item.messageType == 'groupchat'
+          ? '${item.originChatJid}/${item.author}'
+          : item.author);
+  return Stanza.message(
+    from: from,
+    to: item.toFull,
+    id: item.originId,
+    type: item.messageType,
+    children: [MessageBodyData(item.body).toXML()],
+  );
+}
+
+/// Sends one XEP-0297 forward. Injected so the loop can be tested without a
+/// live connection.
+typedef PlaintextForwardSender = Future<String?> Function({
+  required Stanza original,
+  required DateTime? receivedAt,
+  required String outerBody,
+});
+
+/// Runs the XEP-0297 forward loop with an injected [send].
+Future<ForwardOutcome> runPlaintextForward({
+  required List<StanzaForwardItem> items,
+  required PlaintextForwardSender send,
+  String outerBody = '',
+}) async {
+  final refusal = refuseStanzaForward(items);
+  if (refusal != null) {
+    return ForwardOutcome(forwarded: 0, refused: refusal);
+  }
+
+  final sent = <String>[];
+  final persisted = <ForwardPersisted>[];
+  for (final item in items) {
+    final original = stanzaForwardInner(item);
+    final stanzaId = await send(
+      original: original,
+      receivedAt: item.receivedAt,
+      outerBody: outerBody,
+    );
+    if (stanzaId == null) {
+      return ForwardOutcome(
+        forwarded: sent.length,
+        refused: ForwardRefusal.trackBlocked,
+        stanzaId: sent,
+        persisted: persisted,
+      );
+    }
+    sent.add(stanzaId);
+    final from = original.from;
+    persisted.add(
+      ForwardPersisted(
+        forwardFromJid: forwardOriginJid(
+          from: from,
+          type: item.messageType,
+          fallback: item.originChatJid,
+        ),
+        forwardAuthor: item.author,
+        forwardBody: item.body,
+        forwardOriginId: item.messageType == 'groupchat'
+            ? (item.originId?.trim() ?? '')
+            : '',
+        forwardStamp: item.receivedAt,
+        outerBody: outerBody,
+      ),
+    );
+  }
+  return ForwardOutcome(
+    forwarded: sent.length,
+    stanzaId: sent,
+    persisted: persisted,
+  );
+}
+
+/// Sends [items] as plaintext XEP-0297 forwards to [toJid].
+Future<ForwardOutcome> forwardStanzaMessages(
+  XmppService xmpp, {
+  required JID toJid,
+  required List<StanzaForwardItem> items,
+  String messageType = 'chat',
+  String outerBody = '',
+}) {
+  return runPlaintextForward(
+    items: items,
+    outerBody: outerBody,
+    send: ({required original, required receivedAt, required outerBody}) =>
+        xmpp.sendPlaintextForward(
+          toJid,
+          original: original,
+          receivedAt: receivedAt,
+          messageType: messageType,
+          outerBody: outerBody,
+        ),
   );
 }

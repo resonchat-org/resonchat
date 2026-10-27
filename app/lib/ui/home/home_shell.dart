@@ -41,7 +41,13 @@ class HomeShell extends ConsumerWidget {
             mainView: ChatsPage(activeChatKey: selected),
             sideView: selected == null || selected.isEmpty
                 ? const EmptyChatPane()
-                : ChatPage(chatJid: selected, embedded: true),
+                : ChatPage(
+                    chatJid: selected,
+                    embedded: true,
+                    focusMessageAnchor: ref.watch(
+                      selectedChatFocusAnchorProvider,
+                    ),
+                  ),
           )
         : const ChatsPage();
     final pages = [chatsBody, const ContactsPage(), const MePage()];

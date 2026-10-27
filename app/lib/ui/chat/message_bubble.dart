@@ -159,6 +159,10 @@ class MessageBubble extends StatelessWidget {
     this.replyBody = '',
     this.replyAuthor = '',
     this.onReplyTap,
+    this.forwardFromJid = '',
+    this.forwardAuthor = '',
+    this.forwardBody = '',
+    this.onForwardTap,
     this.highlighted = false,
     this.message,
     this.chatKey,
@@ -269,6 +273,18 @@ class MessageBubble extends StatelessWidget {
   /// Tap the monocles-style reply card → jump to the original (when found).
   final VoidCallback? onReplyTap;
 
+  /// Origin chat bare JID for a XEP-0297 forward (empty when none).
+  final String forwardFromJid;
+
+  /// Original author label on a forward card.
+  final String forwardAuthor;
+
+  /// Inner plaintext of a forwarded message.
+  final String forwardBody;
+
+  /// Tap the forward card → open/join the origin conversation.
+  final VoidCallback? onForwardTap;
+
   /// Brief flash after jumping here from a reply card (monocles scale flash).
   final bool highlighted;
 
@@ -334,31 +350,30 @@ class MessageBubble extends StatelessWidget {
       height: 1.3,
     );
 
-    // Telegram ChatMessageCell checkbox: visible in action mode, left of the
-    // bubble for both sides so the row still reads left-to-right. Centered on
-    // the row (not bottom-aligned with the avatar).
+    // Telegram ChatMessageCell checkbox: left of the bubble for both sides.
+    // Bottom-aligned with the row (same as the avatar gutter). Do not wrap the
+    // row in IntrinsicHeight to "center" this — bodyColumn is a LayoutBuilder,
+    // and IntrinsicHeight + LayoutBuilder yields zero-size rows (hit-test /
+    // semantics / Tooltip ticker failures on every visible bubble).
     final checkbox = selectionMode
         ? Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: Align(
-              alignment: Alignment.center,
-              child: AnimatedSwitcher(
-                duration: motionDuration(context, kMotionFast),
-                switchInCurve: kMotionEnter,
-                switchOutCurve: kMotionExit,
-                transitionBuilder: (child, animation) => FadeTransition(
-                  opacity: animation,
-                  child: ScaleTransition(
-                    scale: Tween<double>(begin: 0.7, end: 1).animate(animation),
-                    child: child,
-                  ),
+            padding: const EdgeInsets.only(right: 8, bottom: 2),
+            child: AnimatedSwitcher(
+              duration: motionDuration(context, kMotionFast),
+              switchInCurve: kMotionEnter,
+              switchOutCurve: kMotionExit,
+              transitionBuilder: (child, animation) => FadeTransition(
+                opacity: animation,
+                child: ScaleTransition(
+                  scale: Tween<double>(begin: 0.7, end: 1).animate(animation),
+                  child: child,
                 ),
-                child: Icon(
-                  selected ? Icons.check_circle : Icons.circle_outlined,
-                  key: ValueKey(selected),
-                  size: 22,
-                  color: selected ? tg.accent : tg.textSecondary,
-                ),
+              ),
+              child: Icon(
+                selected ? Icons.check_circle : Icons.circle_outlined,
+                key: ValueKey(selected),
+                size: 22,
+                color: selected ? tg.accent : tg.textSecondary,
               ),
             ),
           )
@@ -394,11 +409,24 @@ class MessageBubble extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (replyTo.isNotEmpty && !retracted)
+                  if (forwardBody.isNotEmpty && !retracted)
                     _ExcludeFromIntrinsicWidth(
                       child: Padding(
                         padding: const EdgeInsets.only(bottom: 4),
-                        child: _ReplyQuote(
+                        child: _QuoteChrome(
+                          kind: _QuoteKind.forward,
+                          body: forwardBody,
+                          author: forwardAuthor,
+                          onTap: onForwardTap,
+                        ),
+                      ),
+                    )
+                  else if (replyTo.isNotEmpty && !retracted)
+                    _ExcludeFromIntrinsicWidth(
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: _QuoteChrome(
+                          kind: _QuoteKind.reply,
                           body: replyBody,
                           author: replyAuthor,
                           onTap: onReplyTap,
@@ -600,44 +628,30 @@ class MessageBubble extends StatelessWidget {
 
     // Selection checkbox sits leftmost (before the avatar), matching Telegram
     // action-mode rows and keeping the avatar glued to the bubble column.
-    // Selection mode: IntrinsicHeight + stretch so the checkbox Align centers
-    // on the bubble; avatars stay bottom-aligned in their gutter.
-    // (Bare stretch fails under ListView's unbounded max height.)
     final avatarGutter = (reserveAvatarGutter || leadingAvatar != null)
         ? SizedBox(
             width: avatarGutterWidth,
             child: leadingAvatar == null
                 ? null
-                : Align(
-                    alignment: Alignment.bottomCenter,
-                    child: Padding(
-                      padding: const EdgeInsets.only(right: 6, bottom: 2),
-                      child: GestureDetector(
-                        onTap: onAvatarTap,
-                        onLongPress: onAvatarLongPress,
-                        behavior: HitTestBehavior.opaque,
-                        child: leadingAvatar,
-                      ),
+                : Padding(
+                    padding: const EdgeInsets.only(right: 6, bottom: 2),
+                    child: GestureDetector(
+                      onTap: onAvatarTap,
+                      onLongPress: onAvatarLongPress,
+                      behavior: HitTestBehavior.opaque,
+                      child: leadingAvatar,
                     ),
                   ),
           )
         : null;
-    final rowChildren = <Widget>[
-      ?checkbox,
-      ?avatarGutter,
-      Expanded(child: bodyColumn),
-    ];
-    final row = selectionMode
-        ? IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: rowChildren,
-            ),
-          )
-        : Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: rowChildren,
-          );
+    final row = Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        ?checkbox,
+        ?avatarGutter,
+        Expanded(child: bodyColumn),
+      ],
+    );
 
     final selectionTint = Theme.of(context).colorScheme.primaryContainer
         .withValues(alpha: 0.5);
@@ -768,12 +782,24 @@ class _RenderExcludeFromIntrinsicWidth extends RenderProxyBox {
   double computeMaxIntrinsicWidth(double height) => 0;
 }
 
-/// Monocles `in_reply_to_box`: scrim card, 5dp leading bar, bold author + body.
-///
-/// Width is forced by the bubble (sibling body/media); long quotes wrap inside.
-class _ReplyQuote extends StatelessWidget {
-  const _ReplyQuote({required this.body, required this.author, this.onTap});
+/// Reply vs forward: same quote chrome; a short label marks which kind.
+enum _QuoteKind { reply, forward }
 
+/// Monocles `in_reply_to_box`: scrim, 5dp bar, label + author + body.
+///
+/// Same layout for reply and forward; only the label text differs
+/// (“回复” / “转发自”).
+///
+/// Width is forced by the bubble; long quotes wrap inside.
+class _QuoteChrome extends StatelessWidget {
+  const _QuoteChrome({
+    required this.kind,
+    required this.body,
+    required this.author,
+    this.onTap,
+  });
+
+  final _QuoteKind kind;
   final String body;
   final String author;
   final VoidCallback? onTap;
@@ -781,9 +807,14 @@ class _ReplyQuote extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tg = context.tg;
+    final l10n = context.l10n;
     final dark = Theme.of(context).brightness == Brightness.dark;
     // monocles `quote_box_scrim`: #16000000 light / #26FFFFFF dark.
     final scrim = dark ? const Color(0x26FFFFFF) : const Color(0x16000000);
+    final label = kind == _QuoteKind.forward
+        ? l10n.forwardedLabel
+        : l10n.replyQuoteLabel;
+    final title = author.isEmpty ? label : '$label $author';
     return Material(
       color: scrim,
       elevation: 0,
@@ -795,7 +826,7 @@ class _ReplyQuote extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // monocles: 5dp `?colorTertiaryContainer` — use accent.
+              // monocles: 5dp accent bar.
               ColoredBox(color: tg.accent, child: const SizedBox(width: 5)),
               Expanded(
                 child: Padding(
@@ -804,20 +835,19 @@ class _ReplyQuote extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      if (author.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 2),
-                          child: Text(
-                            author,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: tg.accent,
-                            ),
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 2),
+                        child: Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: tg.accent,
                           ),
                         ),
+                      ),
                       if (body.isNotEmpty)
                         Text(
                           body,

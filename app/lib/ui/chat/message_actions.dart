@@ -45,9 +45,7 @@ class MessageActions {
   /// `> ` quote is the only link to its target.
   final bool canReply;
 
-  /// Forwarding works on anything readable, including an undecryptable
-  /// message — but forwarding a placeholder would send the reader a sentence
-  /// about the app rather than the message.
+  /// XEP-0297 user forward: plaintext only (never ciphertext / decrypt-error).
   final bool canForward;
 
   /// Reactions work on anything we can see, including a message we could not
@@ -102,6 +100,7 @@ class MessageActions {
     required bool decrypted,
     required bool addressable,
     required bool pinned,
+    bool plaintext = false,
     bool canSaveFile = false,
     bool canSaveSticker = false,
     bool canTranslate = false,
@@ -113,7 +112,7 @@ class MessageActions {
   }) {
     return MessageActions(
       canReply: !retracted && addressable,
-      canForward: !retracted && decrypted,
+      canForward: !retracted && decrypted && plaintext,
       canReact: !retracted && addressable,
       canCopy: decrypted && !retracted,
       canCopySelection: decrypted && !retracted && canCopySelection,

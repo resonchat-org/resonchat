@@ -16,7 +16,6 @@ import 'package:resonchat/account/account_hub.dart';
 import 'package:resonchat/l10n/l10n.dart';
 import 'package:resonchat/persistence/database.dart';
 import 'package:resonchat/state/providers.dart';
-import 'package:resonchat/ui/chat/chat_page.dart';
 import 'package:resonchat/ui/chats/chat_row.dart';
 import 'package:resonchat/ui/chats/chats_filter_bar.dart';
 import 'package:resonchat/ui/chats/search.dart';
@@ -95,12 +94,7 @@ class _ChatsPageState extends ConsumerState<ChatsPage>
     final match = chats.where((c) => c.chat.jid == hit.chatJid).firstOrNull;
     final key = match?.ref.key ?? hit.chatJid;
     if (!mounted) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) =>
-            ChatPage(chatJid: key, focusMessageAnchor: hit.messageAnchor),
-      ),
-    );
+    openChat(context, key, focusMessageAnchor: hit.messageAnchor);
   }
 
   @override

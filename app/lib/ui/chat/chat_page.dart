@@ -8,7 +8,6 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
 import 'package:desktop_drop/desktop_drop.dart';
@@ -35,6 +34,7 @@ import 'package:resonchat/ui/chat/appearance.dart';
 import 'package:resonchat/ui/chat/chat_input_bar.dart';
 import 'package:resonchat/ui/chat/chat_message_list.dart';
 import 'package:resonchat/ui/chat/chat_nicks.dart';
+import 'package:resonchat/ui/chat/chat_scroll.dart';
 import 'package:resonchat/ui/chat/chat_subscription_banner.dart';
 import 'package:resonchat/ui/chat/chat_topic_banner.dart';
 import 'package:resonchat/ui/chat/chat_viewmodel.dart';
@@ -46,6 +46,8 @@ import 'package:resonchat/ui/chat/quoted_transcript.dart';
 import 'package:resonchat/ui/chat/reaction_recents.dart';
 import 'package:resonchat/ui/chat/sticker_panel.dart';
 import 'package:resonchat/ui/chat/track_dialogs.dart';
+import 'package:resonchat/ui/chat/transcript_rows.dart';
+import 'package:resonchat/ui/chats/chats_viewmodel.dart';
 import 'package:resonchat/ui/chats/search.dart';
 import 'package:resonchat/ui/chats/unread.dart';
 import 'package:resonchat/ui/contact_avatar.dart';
@@ -181,59 +183,136 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   String? get _activeFocusAnchor =>
       _focusMessageAnchor ?? widget.focusMessageAnchor;
 
-  /// Scrolls so [key]'s render object sits near [alignment] in the viewport.
-  ///
-  /// Uses [RenderAbstractViewport.getOffsetToReveal] rather than
-  /// [Scrollable.ensureVisible]: the transcript sits under a [CustomPaint]
-  /// wallpaper, and ensureVisible has been a silent no-op there.
-  void _jumpToKeyedWidget(
-    GlobalKey key, {
-    bool animate = true,
-    double alignment = 0.33,
-  }) {
-    final target = key.currentContext;
-    if (target == null || !_scroll.hasClients) return;
-    final renderObject = target.findRenderObject();
-    if (renderObject == null || !renderObject.attached) return;
-    final viewport = RenderAbstractViewport.maybeOf(renderObject);
-    if (viewport == null) return;
-    final revealed = viewport.getOffsetToReveal(renderObject, alignment).offset;
-    final offset = revealed.clamp(
-      _scroll.position.minScrollExtent,
-      _scroll.position.maxScrollExtent,
+  List<TranscriptRow> _transcriptRows(List<Message> list) {
+    return buildTranscriptRows(
+      list,
+      readAt: ref.read(chatLastReadProvider(widget.chatJid)).value,
+      unreadCount: _unreadCountHere ?? 0,
+      loadingOlder: _loadingOlder,
     );
-    if (animate) {
-      unawaited(
-        _scroll.animateTo(
-          offset,
-          duration: const Duration(milliseconds: 280),
-          curve: Curves.easeOut,
-        ),
-      );
-    } else {
-      _scroll.jumpTo(offset);
-    }
   }
 
-  void _jumpToUnread({bool animate = true}) =>
-      _jumpToKeyedWidget(_unreadDividerKey, animate: animate);
+  /// Shared path for reply / search / unread / forward focus jumps.
+  void _scrollToKeyedRow({
+    required GlobalKey key,
+    required int? rowIndex,
+    required int rowCount,
+    bool animate = true,
+    VoidCallback? onDone,
+  }) {
+    if (rowIndex == null || rowCount <= 0) {
+      onDone?.call();
+      return;
+    }
+    scrollToRow(
+      controller: _scroll,
+      key: key,
+      rowIndex: rowIndex,
+      rowCount: rowCount,
+      isMounted: () => mounted,
+      animate: animate,
+      onDone: onDone,
+    );
+  }
 
-  void _jumpToFocusMessage({bool animate = true}) =>
-      _jumpToKeyedWidget(_focusMessageKey, animate: animate, alignment: 0.35);
+  void _jumpToUnread({bool animate = true, VoidCallback? onDone}) {
+    final list =
+        ref.read(messagesProvider(widget.chatJid)).value ?? const <Message>[];
+    final rows = _transcriptRows(list);
+    _scrollToKeyedRow(
+      key: _unreadDividerKey,
+      rowIndex: unreadDividerIndexIn(rows),
+      rowCount: rows.length,
+      animate: animate,
+      onDone: onDone,
+    );
+  }
+
+  void _jumpToFocusMessage({bool animate = true, VoidCallback? onDone}) {
+    final focus = _activeFocusAnchor;
+    if (focus == null || focus.isEmpty) {
+      onDone?.call();
+      return;
+    }
+    final list = ref.read(messagesProvider(widget.chatJid)).value;
+    if (list == null || list.isEmpty) {
+      onDone?.call();
+      return;
+    }
+    final rows = _transcriptRows(list);
+    _scrollToKeyedRow(
+      key: _focusMessageKey,
+      rowIndex: focusRowIndexIn(rows, focus),
+      rowCount: rows.length,
+      animate: animate,
+      onDone: onDone,
+    );
+  }
+
+  /// Opens the origin conversation of a XEP-0297 forward.
+  ///
+  /// Portrait and landscape both go through [openChat] (no stacked full-page
+  /// chat in column mode). 1:1 opens without a message focus — private chats
+  /// have no shared room stanza-id. Group opens/joins and focuses [roomStanzaId].
+  Future<void> _openForwardOrigin(
+    String jid, {
+    String roomStanzaId = '',
+  }) async {
+    if (jid.trim().isEmpty) return;
+    final mucId = roomStanzaId.trim();
+    // Same room already open: jump in place when we have a room stanza-id.
+    if (jid == _peerJid) {
+      if (mucId.isNotEmpty) {
+        _jumpToReply(mucId);
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(context.l10n.replyTargetNotFound)),
+        );
+      }
+      return;
+    }
+    final result = await ref
+        .read(chatsViewModelProvider.notifier)
+        .openChatByJid(jid);
+    if (!mounted) return;
+    final l10n = context.l10n;
+    if (result.isMuc) {
+      if (result.chatKey != null) {
+        openChat(
+          context,
+          result.chatKey!,
+          focusMessageAnchor: mucId.isEmpty ? null : mucId,
+        );
+        return;
+      }
+      await showJoinRoomSheet(context, initialRoomJid: result.mucJid ?? jid);
+      return;
+    }
+    if (result.invalidJid || result.chatKey == null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(l10n.cannotOpenForwardChat)));
+      return;
+    }
+    // 1:1 — open only; never claim we can scroll to a private-message id.
+    openChat(context, result.chatKey!);
+  }
+
+  /// Row matching [anchor] (origin-id, room stanza-id, or unreadAnchorOf key).
+  Message? _messageForFocus(String? anchor) {
+    if (anchor == null || anchor.isEmpty) return null;
+    final list = ref.read(messagesProvider(widget.chatJid)).value;
+    if (list == null) return null;
+    for (final m in list) {
+      if (matchesFocusAnchor(m, anchor)) return m;
+    }
+    return null;
+  }
 
   /// Monocles `scrollToReply`: jump to the XEP-0461 target, or snackbar if
   /// that message is not in the loaded transcript.
   void _jumpToReply(String replyId) {
     if (replyId.isEmpty) return;
-    final list =
-        ref.read(messagesProvider(widget.chatJid)).value ?? const <Message>[];
-    Message? found;
-    for (final m in list) {
-      if (messageMatchesReplyId(m, replyId)) {
-        found = m;
-        break;
-      }
-    }
+    final found = _messageForFocus(replyId);
     if (found == null) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -241,25 +320,23 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       ).showSnackBar(SnackBar(content: Text(context.l10n.replyTargetNotFound)));
       return;
     }
+    _focusAndScrollTo(found);
+  }
+
+  /// Highlights [found] and scrolls to it (index jump, then key refine).
+  ///
+  /// Uses [unreadAnchorOf] so the list key matches even when [found] was
+  /// looked up by room stanza-id.
+  void _focusAndScrollTo(Message found, {bool animate = true}) {
     final anchor = unreadAnchorOf(found);
     setState(() {
       _focusMessageAnchor = anchor;
       _replyHighlightAnchor = anchor;
     });
-    void jump({required int attempt}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      if (_focusMessageKey.currentContext != null && _scroll.hasClients) {
-        _jumpToFocusMessage();
-        return;
-      }
-      if (attempt < 12) {
-        WidgetsBinding.instance.addPostFrameCallback(
-          (_) => jump(attempt: attempt + 1),
-        );
-      }
-    }
-
-    WidgetsBinding.instance.addPostFrameCallback((_) => jump(attempt: 0));
+      _jumpToFocusMessage(animate: animate);
+    });
     Future<void>.delayed(const Duration(milliseconds: 700), () {
       if (!mounted) return;
       if (_replyHighlightAnchor == anchor) {
@@ -273,21 +350,15 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       MaterialPageRoute(builder: (_) => SearchPage(chatJid: widget.chatJid)),
     );
     if (!mounted || hit == null) return;
-    setState(() => _focusMessageAnchor = hit.messageAnchor);
-    void jump({required int attempt}) {
-      if (!mounted) return;
-      if (_focusMessageKey.currentContext != null && _scroll.hasClients) {
-        _jumpToFocusMessage();
-        return;
-      }
-      if (attempt < 12) {
-        WidgetsBinding.instance.addPostFrameCallback(
-          (_) => jump(attempt: attempt + 1),
-        );
-      }
+    final found = _messageForFocus(hit.messageAnchor);
+    if (found != null) {
+      _focusAndScrollTo(found);
+      return;
     }
-
-    WidgetsBinding.instance.addPostFrameCallback((_) => jump(attempt: 0));
+    setState(() => _focusMessageAnchor = hit.messageAnchor);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _jumpToFocusMessage();
+    });
   }
 
   /// A file drag is over this chat. The overlay is the only thing shown then.
@@ -297,6 +368,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   ///
   /// Priority: search focus → unread divider → latest message.
   bool _didInitialScroll = false;
+
+  /// Prevents [build] from stacking many [_ensureInitialScroll] post-frames.
+  bool _initialScrollScheduled = false;
 
   /// The message being corrected, or null. Held as an id rather than a row so
   /// an edit survives the list rebuilding underneath it.
@@ -380,6 +454,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   @override
   void initState() {
     super.initState();
+    // Own the open-chat focus so clearing the column provider does not drop it.
+    _focusMessageAnchor = widget.focusMessageAnchor;
     _scroll.addListener(_onScroll);
     _focus.addListener(_onComposerFocus);
     _bindViewModel();
@@ -400,6 +476,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       if (!mounted) return;
       ref.read(openChatKeyProvider.notifier).state = widget.chatJid;
       _clearShadeForOpenChat();
+      _clearColumnFocusIfOurs();
       unawaited(_vm.sendDisplayedForLatest());
       // A message left on the clock by an earlier disconnected send must not
       // stay there forever now that the app is running again.
@@ -407,6 +484,15 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         _vm.reconcileStaleWaiting(reason: context.l10n.notConnectedTryAgain),
       );
     });
+  }
+
+  /// Consumes [selectedChatFocusAnchorProvider] after copying into local state.
+  void _clearColumnFocusIfOurs() {
+    final focus = widget.focusMessageAnchor;
+    if (focus == null || focus.isEmpty) return;
+    if (ref.read(selectedChatFocusAnchorProvider) == focus) {
+      ref.read(selectedChatFocusAnchorProvider.notifier).state = null;
+    }
   }
 
   void _clearShadeForOpenChat() {
@@ -444,6 +530,14 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       _markingRead = false;
       _followNewest = false;
       _followGeneration++;
+      _didInitialScroll = false;
+      _initialScrollScheduled = false;
+      _focusMessageAnchor = widget.focusMessageAnchor;
+      _replyHighlightAnchor = widget.focusMessageAnchor;
+      // Reverse list: min extent is latest. Reset so the new chat opens there.
+      if (_scroll.hasClients) {
+        _scroll.jumpTo(_scroll.position.minScrollExtent);
+      }
       // Defer: didUpdateWidget runs inside the parent rebuild, and writing a
       // StateProvider here re-enters Riverpod mid-notify (listener exception).
       final key = widget.chatJid;
@@ -451,6 +545,30 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         if (!mounted) return;
         ref.read(openChatKeyProvider.notifier).state = key;
         _clearShadeForOpenChat();
+        _clearColumnFocusIfOurs();
+      });
+      return;
+    }
+    // Same chat, new focus (search / forward origin while the pane stays open).
+    if (widget.focusMessageAnchor != null &&
+        widget.focusMessageAnchor != oldWidget.focusMessageAnchor &&
+        widget.focusMessageAnchor != _focusMessageAnchor) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _clearColumnFocusIfOurs();
+        final found = _messageForFocus(widget.focusMessageAnchor);
+        if (found != null) {
+          _didInitialScroll = true;
+          _focusAndScrollTo(found);
+          return;
+        }
+        // Messages may still be loading; keep the id for [_ensureInitialScroll].
+        _didInitialScroll = false;
+        _initialScrollScheduled = false;
+        setState(() {
+          _focusMessageAnchor = widget.focusMessageAnchor;
+          _replyHighlightAnchor = widget.focusMessageAnchor;
+        });
       });
     }
   }
@@ -610,7 +728,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   void _onScroll() {
     if (!_scroll.hasClients) return;
     final position = _scroll.position;
-    final distance = position.maxScrollExtent - position.pixels;
+    // Reverse list: newest sits at minScrollExtent (pixels ≈ 0).
+    final distance = position.pixels - position.minScrollExtent;
     final atBottom = distance < 80;
     if (atBottom != _atBottom) setState(() => _atBottom = atBottom);
     // Reaching the newest row is what "read" means while the chat is open.
@@ -618,12 +737,12 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     // left, so a reply the user was looking at still counted as unread.
     if (atBottom) _markReadIfVisible();
 
-    final towardOlder = position.pixels < _lastScrollOffset - 0.5;
+    // Toward older increases pixels (away from min / latest).
+    final towardOlder = position.pixels > _lastScrollOffset + 0.5;
     _lastScrollOffset = position.pixels;
-    // Finger moving the transcript down (or a fling that lands on the oldest
-    // row). Conversations loads once `firstVisibleItem < 5`.
-    final atTop = position.pixels <= position.minScrollExtent + 48;
-    if (atTop && towardOlder) unawaited(_maybeLoadOlder());
+    // Oldest edge is maxScrollExtent under reverse.
+    final atOldest = position.pixels >= position.maxScrollExtent - 48;
+    if (atOldest && towardOlder) unawaited(_maybeLoadOlder());
   }
 
   /// Advances the local read marker when the newest row is actually visible.
@@ -636,7 +755,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   void _markReadIfVisible() {
     if (!mounted || _markingRead || !_scroll.hasClients) return;
     final position = _scroll.position;
-    if (position.maxScrollExtent - position.pixels >= 80) return;
+    if (position.pixels - position.minScrollExtent >= 80) return;
     final list = ref.read(messagesProvider(widget.chatJid)).value;
     if (list == null || list.isEmpty) return;
     final newest = unreadAnchorOf(list.last);
@@ -664,12 +783,13 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     return _onOlderPull(notification);
   }
 
-  /// A downward drag while already on the oldest row. Clamped scrolling does
-  /// not move [ScrollPosition.pixels], so the offset listener never sees it.
+  /// A downward drag while already on the oldest row (visual top). Clamped
+  /// scrolling does not move [ScrollPosition.pixels], so the offset listener
+  /// never sees it. Under reverse, oldest is near [maxScrollExtent].
   bool _onOlderPull(ScrollNotification notification) {
     if (notification is! ScrollUpdateNotification) return false;
-    if (notification.metrics.pixels >
-        notification.metrics.minScrollExtent + 48) {
+    final metrics = notification.metrics;
+    if (metrics.pixels < metrics.maxScrollExtent - 48) {
       return false;
     }
     final dy = notification.dragDetails?.delta.dy ?? 0;
@@ -711,14 +831,19 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     _keepScrollAnchor(beforeMax, beforeOffset);
   }
 
-  /// New rows are inserted above the viewport. Shift the offset by the growth
-  /// so the message the user was reading stays put.
+  /// Older rows grow the reverse list at max extent. Shift the offset by that
+  /// growth so the message the user was reading stays put.
   void _keepScrollAnchor(double beforeMax, double beforeOffset) {
     var tries = 0;
     void adjust() {
       if (!mounted || !_scroll.hasClients) return;
       final delta = _scroll.position.maxScrollExtent - beforeMax;
       if (delta > 8) {
+        // At the latest end (≈ min), growth above should not drag us away.
+        if (beforeOffset <= _scroll.position.minScrollExtent + 80) {
+          _lastScrollOffset = _scroll.offset;
+          return;
+        }
         final target = beforeOffset + delta;
         _scroll.jumpTo(
           target.clamp(
@@ -737,56 +862,23 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) => adjust());
   }
 
-  /// Scrolls the transcript to the newest row after the frame that added it.
-  ///
-  /// The distance is animated rather than jumped so a sent bubble glides in.
-  /// A bubble can grow after its first layout (reply card, image, waveform),
-  /// so the animation re-aims at the live [ScrollPosition.maxScrollExtent]
-  /// instead of keeping the height it saw on the first frame. After a few
-  /// re-aims the final correction is exact — a sent message must never be
-  /// left clipped below the viewport.
-  void _followToBottom() {
+  /// Newest end (reverse list: [ScrollPosition.minScrollExtent]).
+  void _scrollToLatest({bool animate = true, VoidCallback? onDone}) {
     final generation = ++_followGeneration;
-
-    void settle(int pass) {
-      if (!mounted || !_scroll.hasClients || generation != _followGeneration) {
-        return;
-      }
-      final position = _scroll.position;
-      final target = position.maxScrollExtent;
-      final remaining = target - position.pixels;
-      if (remaining <= 0.5) {
+    scrollToLatest(
+      controller: _scroll,
+      isMounted: () => mounted && generation == _followGeneration,
+      animate: animate,
+      onDone: () {
+        if (!mounted || generation != _followGeneration) return;
         if (!_atBottom) setState(() => _atBottom = true);
         _markReadIfVisible();
-        return;
-      }
-      if (pass >= 4) {
-        position.jumpTo(target);
-        if (!_atBottom) setState(() => _atBottom = true);
-        _markReadIfVisible();
-        return;
-      }
-      // Small corrections stay snappy; a long trip gets a little more time
-      // without feeling sluggish.
-      final duration = Duration(
-        milliseconds: (180 + remaining * 0.25).clamp(180, 360).round(),
-      );
-      _scroll
-          .animateTo(target, duration: duration, curve: Curves.easeOutCubic)
-          .then((_) {
-            if (!mounted ||
-                !_scroll.hasClients ||
-                generation != _followGeneration) {
-              return;
-            }
-            WidgetsBinding.instance.addPostFrameCallback(
-              (_) => settle(pass + 1),
-            );
-          });
-    }
-
-    WidgetsBinding.instance.addPostFrameCallback((_) => settle(0));
+        onDone?.call();
+      },
+    );
   }
+
+  void _followToBottom() => _scrollToLatest(animate: true);
 
   /// Stops a follow that is still animating: the user's finger wins.
   void _cancelFollow() {
@@ -794,53 +886,73 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     _followNewest = false;
   }
 
-  /// Instant jump used on first open (and after layout settles).
-  void _jumpToBottom() {
-    if (!_scroll.hasClients) return;
-    _scroll.jumpTo(_scroll.position.maxScrollExtent);
-    if (!_atBottom) setState(() => _atBottom = true);
-    _markReadIfVisible();
-  }
-
-  /// Open position: search hit, else unread divider, else the latest message.
+  /// Open: focus message → unread divider → already at latest (reverse list).
   ///
-  /// Search focus waits until the keyed row has laid out (several frames if
-  /// needed). Marking done only after a successful jump stops a race where the
-  /// first layout still has no key and the fallback would land on unread /
-  /// bottom instead of the hit.
+  /// Call only once per open (not from every [build]).
   void _ensureInitialScroll() {
-    if (_didInitialScroll) return;
+    if (_didInitialScroll || _initialScrollScheduled) return;
+    _initialScrollScheduled = true;
     void place({required int attempt}) {
       if (!mounted || _didInitialScroll) return;
-      final focus = _activeFocusAnchor;
-      if (focus != null) {
-        if (_focusMessageKey.currentContext != null && _scroll.hasClients) {
-          _didInitialScroll = true;
-          _jumpToFocusMessage(animate: false);
-          if (_atBottom) setState(() => _atBottom = false);
-          // Layout extents often settle one frame later — re-snap once.
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) _jumpToFocusMessage(animate: false);
-          });
-          return;
-        }
-        if (attempt < 12) {
+      if (!_scroll.hasClients) {
+        if (attempt < 48) {
           WidgetsBinding.instance.addPostFrameCallback(
             (_) => place(attempt: attempt + 1),
           );
+        } else {
+          _didInitialScroll = true;
+        }
+        return;
+      }
+      final focus = _activeFocusAnchor;
+      if (focus != null) {
+        final list = ref.read(messagesProvider(widget.chatJid)).value;
+        if (list == null) {
+          if (attempt < 48) {
+            WidgetsBinding.instance.addPostFrameCallback(
+              (_) => place(attempt: attempt + 1),
+            );
+          } else {
+            _didInitialScroll = true;
+          }
           return;
         }
-        // Hit not in the loaded transcript — fall through.
+        final found = _messageForFocus(focus);
+        if (found != null) {
+          final resolved = unreadAnchorOf(found);
+          if (resolved != _focusMessageAnchor) {
+            setState(() {
+              _focusMessageAnchor = resolved;
+              _replyHighlightAnchor = resolved;
+            });
+            WidgetsBinding.instance.addPostFrameCallback(
+              (_) => place(attempt: attempt + 1),
+            );
+            return;
+          }
+          _didInitialScroll = true;
+          if (_atBottom) setState(() => _atBottom = false);
+          _jumpToFocusMessage(animate: false);
+          return;
+        }
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(context.l10n.replyTargetNotFound)),
+          );
+        }
       }
       _didInitialScroll = true;
-      if (_unreadDividerKey.currentContext != null) {
-        _jumpToUnread(animate: false);
+      final list =
+          ref.read(messagesProvider(widget.chatJid)).value ?? const <Message>[];
+      final rows = _transcriptRows(list);
+      if (unreadDividerIndexIn(rows) != null) {
         if (_atBottom) setState(() => _atBottom = false);
-        // A short unread tail (the common case on a desktop window) leaves the
-        // divider at the bottom: those rows are on screen and already read.
-        _markReadIfVisible();
-      } else {
-        _jumpToBottom();
+        _jumpToUnread(animate: false, onDone: _markReadIfVisible);
+        return;
+      }
+      // Reverse list opens at latest; only correct a stale non-zero offset.
+      if (_scroll.position.pixels - _scroll.position.minScrollExtent > 1) {
+        _scrollToLatest(animate: false);
       }
     }
 
@@ -1572,6 +1684,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       // An undecryptable message has no body to copy or correct; offering
       // either would act on a placeholder.
       decrypted: decrypted,
+      plaintext: track == Track.none,
       addressable: message.stanzaId.isNotEmpty,
       pinned: pinned,
       canSaveFile:
@@ -1780,15 +1893,20 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     setState(() {});
   }
 
-  /// Forwards [message] from this conversation into another one.
+  /// Long-press forward: XEP-0297 plaintext `<forwarded/>`.
   Future<void> _forwardMessage(Message message, String body) async {
     if (!mounted) return;
-    if (body.trim().isEmpty) return;
-    // Single forward: plain body, no header / quote wrapper.
-    final items = [
-      ForwardItem(body: body, chatJid: _peerJid, preformatted: true),
-    ];
-    await _pickTargetAndForward(items, selectionCount: 1);
+    final wire = body.trim().isNotEmpty ? body : message.forwardBody;
+    if (wire.trim().isEmpty) return;
+    if (storedTrack(message.encMode) != Track.none ||
+        message.encMode == EncModeToken.error.wire) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.cannotForwardEncrypted)),
+      );
+      return;
+    }
+    final items = [_stanzaForwardItemFor(message, wire)];
+    await _pickTargetAndForwardStanza(items, selectionCount: 1);
   }
 
   /// Sends a correction for [_editingId] and stores it.
@@ -1867,11 +1985,10 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     _clearSelection();
   }
 
-  /// Forwards the selection: ask merge vs separate when more than one.
+  /// Multi-select forward: resend (merge transcript or separate), not XEP-0297.
   Future<void> _forwardSelection() async {
     if (!mounted || _selection.isEmpty) return;
-    final ids = List<String>.from(_selection);
-    final transcriptItems = _transcriptItemsForIds(ids);
+    final transcriptItems = _transcriptItemsForIds(_selection.toList());
     if (transcriptItems.isEmpty) {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(context.l10n.nothingToForward)));
@@ -1879,7 +1996,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     }
 
     final merge = transcriptItems.length == 1
-        ? false // one message: same as separate (quote only, no header)
+        ? false
         : await _pickForwardMode();
     if (!mounted || merge == null) return;
 
@@ -1888,7 +2005,6 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       final text = formatQuotedTranscript(transcriptItems);
       items = [ForwardItem(body: text, chatJid: _peerJid, preformatted: true)];
     } else {
-      // One forward per message: plain body (no header, no `>` quote).
       items = [
         for (final t in transcriptItems)
           ForwardItem(body: t.body, chatJid: _peerJid, preformatted: true),
@@ -1929,7 +2045,75 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     );
   }
 
-  /// Shows the target picker and sends. Returns whether the forward finished OK.
+  StanzaForwardItem _stanzaForwardItemFor(Message message, String body) {
+    final isGroup = _ui.isGroup;
+    final author = message.incoming
+        ? (isGroup
+              ? (occupantNick(message.sender) ?? message.sender)
+              : (ref
+                        .read(chatProvider(widget.chatJid))
+                        .value
+                        ?.conversationName ??
+                    _peerJid))
+        : _transcriptSelfLabel();
+    final ownBare = ref.read(xmppServiceProvider).myJid?.split('/').first;
+    final fromFull = isGroup
+        ? (message.incoming
+              ? (message.sender.contains('/')
+                    ? message.sender
+                    : '$_peerJid/${occupantNick(message.sender) ?? message.sender}')
+              : (ownBare == null
+                    ? null
+                    : '$_peerJid/${_transcriptSelfLabel()}'))
+        : (message.incoming ? message.sender : ownBare);
+    final jumpId = isGroup && message.roomStanzaId.isNotEmpty
+        ? message.roomStanzaId
+        : null;
+    return StanzaForwardItem(
+      body: body,
+      originChatJid: _peerJid,
+      author: author,
+      messageType: isGroup ? 'groupchat' : 'chat',
+      originId: jumpId,
+      fromFull: fromFull,
+      receivedAt: message.timestamp,
+      plaintext: true,
+    );
+  }
+
+  /// Optional comment for XEP-0297 outer message. Null = cancelled.
+  Future<String?> _askForwardComment() async {
+    final l10n = context.l10n;
+    final controller = TextEditingController();
+    final comment = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.forward),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLines: 4,
+          minLines: 2,
+          decoration: InputDecoration(hintText: l10n.forwardCommentHint),
+          textInputAction: TextInputAction.newline,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(l10n.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text),
+            child: Text(l10n.sendFiles),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    return comment;
+  }
+
+  /// Multi-select resend: target picker, then send on the destination track.
   Future<bool> _pickTargetAndForward(
     List<ForwardItem> items, {
     required int selectionCount,
@@ -1938,8 +2122,10 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final target = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
-      builder: (_) =>
-          ForwardTargetSheet(items: items, selectionCount: selectionCount),
+      builder: (_) => ForwardTargetSheet(
+        selectionCount: selectionCount,
+        subtitle: context.l10n.forwardSubtitle,
+      ),
     );
     if (target == null || !mounted) return false;
     final messenger = ScaffoldMessenger.of(context);
@@ -1966,6 +2152,54 @@ class _ChatPageState extends ConsumerState<ChatPage> {
           ),
         ),
       );
+      return false;
+    }
+    messenger.showSnackBar(SnackBar(content: Text(l10n.forwardedTo(destPeer))));
+    return true;
+  }
+
+  /// Long-press XEP-0297: target picker, optional comment, then send.
+  Future<bool> _pickTargetAndForwardStanza(
+    List<StanzaForwardItem> items, {
+    required int selectionCount,
+  }) async {
+    if (!mounted || items.isEmpty) return false;
+    final target = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => ForwardTargetSheet(
+        selectionCount: selectionCount,
+        subtitle: context.l10n.forwardStanzaSubtitle,
+      ),
+    );
+    if (target == null || !mounted) return false;
+    final comment = await _askForwardComment();
+    if (comment == null || !mounted) return false;
+    final messenger = ScaffoldMessenger.of(context);
+    final l10n = context.l10n;
+    final result = await _vm.forwardStanzaToChat(
+      items: items,
+      targetKey: target,
+      comment: comment,
+    );
+    final destPeer = result.destPeer;
+    if (result.blocked) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(l10n.unblockBeforeForward(destPeer))),
+      );
+      return false;
+    }
+    final outcome = result.outcome;
+    if (outcome == null) return false;
+    if (!outcome.ok) {
+      final text = outcome.refused == ForwardRefusal.notPlaintext
+          ? l10n.cannotForwardEncrypted
+          : l10n.forwardedPartialThenStopped(
+              outcome.forwarded,
+              items.length,
+              destPeer,
+            );
+      messenger.showSnackBar(SnackBar(content: Text(text)));
       return false;
     }
     messenger.showSnackBar(SnackBar(content: Text(l10n.forwardedTo(destPeer))));
@@ -2316,7 +2550,15 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                               children: [
                                 messages.when(
                                   data: (list) {
-                                    if (list.isNotEmpty) _ensureInitialScroll();
+                                    if (list.isEmpty) {
+                                      return Center(
+                                        child: Text(context.l10n.noMessagesYet),
+                                      );
+                                    }
+                                    if (!_didInitialScroll &&
+                                        !_initialScrollScheduled) {
+                                      _ensureInitialScroll();
+                                    }
                                     return NotificationListener<
                                       ScrollNotification
                                     >(
@@ -2359,6 +2601,13 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                                         highlightMessageAnchor:
                                             _replyHighlightAnchor,
                                         onReplyTap: _jumpToReply,
+                                        onForwardTap: (jid, roomStanzaId) =>
+                                            unawaited(
+                                              _openForwardOrigin(
+                                                jid,
+                                                roomStanzaId: roomStanzaId,
+                                              ),
+                                            ),
                                         bubbleStyle: appearance.bubble,
                                         isGroup: ui.isGroup,
                                         groupReads:
