@@ -4,11 +4,15 @@
 // Renders [processMessageStyling] output (Gajim MessageWidget pipeline):
 // fenced code, nested quotes, XEP-0393 spans, URI/JID links, emoji size.
 
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:moxxmpp/moxxmpp.dart' show XmppUri, XmppUriQuerytype;
+import 'package:moxxmpp/moxxmpp.dart' show JID, XmppUri, XmppUriQuerytype;
+import 'package:omemo_dart/omemo_dart_omemo2.dart' show hybridOmemo2Fingerprint;
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:resonchat/account/account_hub.dart';
@@ -16,7 +20,6 @@ import 'package:resonchat/account/chat_ref.dart';
 import 'package:resonchat/crypto/dual/fingerprint_trust.dart';
 import 'package:resonchat/crypto/fingerprint.dart';
 import 'package:resonchat/l10n/l10n.dart';
-import 'package:resonchat/state/providers.dart';
 import 'package:resonchat/ui/chat/code_snippet.dart';
 import 'package:resonchat/ui/chat/emoji_body.dart';
 import 'package:resonchat/ui/chat/message_styling.dart';
@@ -452,47 +455,78 @@ Future<void> activateMessageLink(BuildContext context, String raw) async {
 /// When the IRI carries `omemo-sid-*` fingerprints (Conversations share URI),
 /// ask whether to mark them [FingerprintTrust.verified]; skip keeps the
 /// usual new-device default.
-Future<void> handleXmppUri(BuildContext context, XmppUri uri) async {
+Future<void> handleXmppUri(
+  BuildContext context,
+  XmppUri uri, {
+  String? accountId,
+}) async {
   final kind = uri.knownQuerytype;
   if (kind == null) return;
 
   final container = ProviderScope.containerOf(context);
   final bare = uri.jid.toString();
+  final effectiveAccount = accountId ?? accountHub.primarySession?.account.id;
   final fingerprints = parseOmemoSidFingerprints(uri.params);
-  if (fingerprints.isNotEmpty) {
+  final pqFingerprints = parseOmemoPqFingerprints(uri.params);
+  if (fingerprints.isNotEmpty || pqFingerprints.isNotEmpty) {
     final markVerified = await _promptVerifyOmemoFingerprints(
       context,
       bare,
       fingerprints,
+      pqFingerprints: pqFingerprints,
     );
     if (!context.mounted) return;
     if (markVerified == true) {
-      await _applyVerifiedOmemoFingerprints(bare, fingerprints);
+      await _applyVerifiedOmemoFingerprints(
+        bare,
+        fingerprints,
+        accountId: effectiveAccount,
+      );
+      await _applyVerifiedOmemoPqFingerprints(
+        bare,
+        pqFingerprints,
+        accountId: effectiveAccount,
+      );
       if (!context.mounted) return;
     }
   }
 
   switch (kind) {
     case XmppUriQuerytype.join:
-      final db = container.read(databaseProvider);
-      final existing = await db.getChat(bare);
+      final session = effectiveAccount == null
+          ? accountHub.primarySession
+          : accountHub.session(effectiveAccount);
+      final existing = session == null ? null : await session.db.getChat(bare);
       if (!context.mounted) return;
-      if (existing != null && existing.isGroup) {
-        final accountId = accountHub.primarySession?.account.id;
-        final chatKey = accountId == null
-            ? bare
-            : ChatRef(accountId: accountId, jid: bare).key;
-        openChat(context, chatKey);
+      if (existing != null && existing.isGroup && session != null) {
+        openChat(
+          context,
+          ChatRef(accountId: session.account.id, jid: bare).key,
+        );
         return;
       }
-      await showJoinRoomSheet(context, initialRoomJid: bare);
+      await showJoinRoomSheet(
+        context,
+        initialRoomJid: bare,
+        accountId: effectiveAccount,
+      );
 
     case XmppUriQuerytype.message:
     case XmppUriQuerytype.none:
-      await _startChatFromUri(context, container, bare);
+      await _startChatFromUri(
+        context,
+        container,
+        bare,
+        accountId: effectiveAccount,
+      );
 
     case XmppUriQuerytype.roster:
-      await _startChatFromUri(context, container, bare);
+      await _startChatFromUri(
+        context,
+        container,
+        bare,
+        accountId: effectiveAccount,
+      );
   }
 }
 
@@ -500,12 +534,16 @@ Future<void> handleXmppUri(BuildContext context, XmppUri uri) async {
 Future<bool?> _promptVerifyOmemoFingerprints(
   BuildContext context,
   String bare,
-  List<OmemoSidFingerprint> fingerprints,
-) {
+  List<OmemoSidFingerprint> fingerprints, {
+  List<OmemoPqUriFingerprint> pqFingerprints = const [],
+}) {
   final l10n = context.l10n;
-  final pretty = fingerprints
-      .map((f) => formatFingerprint(fingerprintForTrustStore(f.fingerprint)))
-      .join('\n\n');
+  final pretty = <String>[
+    for (final f in fingerprints)
+      formatFingerprint(fingerprintForTrustStore(f.fingerprint)),
+    for (final f in pqFingerprints)
+      formatFingerprint(f.hybrid ?? fingerprintForTrustStore(f.classical)),
+  ].join('\n\n');
   return showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
@@ -540,9 +578,12 @@ Future<bool?> _promptVerifyOmemoFingerprints(
 
 Future<void> _applyVerifiedOmemoFingerprints(
   String bare,
-  List<OmemoSidFingerprint> fingerprints,
-) async {
-  final xmpp = accountHub.primarySession?.xmpp;
+  List<OmemoSidFingerprint> fingerprints, {
+  String? accountId,
+}) async {
+  final xmpp = accountId == null
+      ? accountHub.primarySession?.xmpp
+      : accountHub.session(accountId)?.xmpp;
   if (xmpp == null) return;
   for (final item in fingerprints) {
     final fp = fingerprintForTrustStore(item.fingerprint);
@@ -554,14 +595,60 @@ Future<void> _applyVerifiedOmemoFingerprints(
   }
 }
 
+/// Mark PQ OMEMO2 classical keys verified; pin `<pq-ik>` when hybrid matches.
+Future<void> _applyVerifiedOmemoPqFingerprints(
+  String bare,
+  List<OmemoPqUriFingerprint> fingerprints, {
+  String? accountId,
+}) async {
+  final xmpp = accountId == null
+      ? accountHub.primarySession?.xmpp
+      : accountHub.session(accountId)?.xmpp;
+  if (xmpp == null || fingerprints.isEmpty) return;
+  final trust = xmpp.fingerprintTrust;
+  final pins = xmpp.bTrack?.pqPins;
+  for (final item in fingerprints) {
+    final classical = fingerprintForTrustStore(item.classical);
+    await trust?.rememberDevice(
+      jid: bare,
+      deviceId: item.deviceId,
+      fingerprint: classical,
+      omemo2: true,
+    );
+    await xmpp.setPeerFingerprintTrust(
+      bareJid: bare,
+      fingerprint: classical,
+      trust: FingerprintTrust.verified,
+    );
+    final hybrid = item.hybrid;
+    if (hybrid == null || pins == null) continue;
+    // Fetch bundle so a scanned hybrid can (re)pin the post-quantum half
+    // (proto-XEP §10.1 — only out-of-band input allowed to replace a pin).
+    try {
+      final bundle = await xmpp.tracks?.getPqBundle(
+        JID.fromString(bare),
+        item.deviceId,
+      );
+      if (bundle == null || !bundle.hasPqIdentity) continue;
+      final pqIk = Uint8List.fromList(base64Decode(bundle.pqIk));
+      final computed = hybridOmemo2Fingerprint(bundle.ikSerialized, pqIk);
+      if (computed != hybrid) continue;
+      await pins.pinReplace(bare, classical, pqIk);
+    } catch (_) {
+      // Offline / bad bundle — classical trust still recorded.
+    }
+  }
+}
+
 Future<void> _startChatFromUri(
   BuildContext context,
   ProviderContainer container,
-  String bare,
-) async {
+  String bare, {
+  String? accountId,
+}) async {
   final result = await container
       .read(chatsViewModelProvider.notifier)
-      .openChatByJid(bare);
+      .openChatByJid(bare, accountId: accountId);
   if (!context.mounted) return;
   if (result.isMuc) {
     if (result.chatKey != null) {
@@ -569,7 +656,11 @@ Future<void> _startChatFromUri(
       return;
     }
     final room = result.mucJid ?? bare;
-    await showJoinRoomSheet(context, initialRoomJid: room);
+    await showJoinRoomSheet(
+      context,
+      initialRoomJid: room,
+      accountId: accountId,
+    );
     return;
   }
   if (result.invalidJid || result.chatKey == null) {

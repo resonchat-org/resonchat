@@ -1,15 +1,19 @@
 // Copyright (C) 2026 ResonChat contributors.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// OMEMO2 message layer: thin XML adapter over [Omemo2Manager].
+// OMEMO2 message layer: thin XML adapter over [Omemo2Manager], plus
+// monocles `<pq-auth>` handshake authentication.
 
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:logging/logging.dart';
 import 'package:omemo_dart/omemo_dart_omemo2.dart';
 
 import 'package:resonchat/crypto/omemo2/message_codec.dart';
+import 'package:resonchat/crypto/omemo2/pq_auth.dart';
 import 'package:resonchat/crypto/omemo2/pq_session.dart';
+import 'package:resonchat/persistence/pq_identity_store.dart';
 
 /// A ready-to-send OMEMO2 `<encrypted>` element.
 class PqEncryptedOutgoing {
@@ -29,12 +33,23 @@ class PqDecryptError implements Exception {
 
 /// Encrypts and decrypts OMEMO2 messages for one local device.
 class PqMessageLayer {
-  PqMessageLayer({required this.ownDevice, required this.sessions});
+  PqMessageLayer({
+    required this.ownDevice,
+    required this.sessions,
+    this.pqIdentity,
+    this.pins,
+  });
 
   final Logger _log = Logger('PqMessageLayer');
 
   final PqDevice ownDevice;
   final PqSessionManager sessions;
+
+  /// Own ML-DSA-87 identity — required to sign `<pq-auth>` on kex sends.
+  final PqIdentityStore? pqIdentity;
+
+  /// Peer PQ pins — required to verify `<pq-auth>` before PreKey process.
+  final PqIdentityPins? pins;
 
   /// Encrypts [plaintext].
   ///
@@ -59,6 +74,7 @@ class PqMessageLayer {
     if (recipientDeviceIds == null) {
       if (recipients.isEmpty) return null;
       for (final peer in recipients) {
+        await _pinPeerBeforeSession(peer);
         await sessions.registerPeer(peer);
       }
       final jids = recipients.map((r) => r.jid).toSet().toList();
@@ -106,6 +122,12 @@ class PqMessageLayer {
       }
     }
     for (final peer in recipients) {
+      try {
+        await _pinPeerBeforeSession(peer);
+      } on PqIdentityChangedException catch (e) {
+        _log.warning('OMEMO2: refusing outbound session: $e');
+        return null;
+      }
       await sessions.registerPeerBundle(peer);
     }
 
@@ -126,7 +148,25 @@ class PqMessageLayer {
     return _buildOutgoing(result);
   }
 
-  PqEncryptedOutgoing? _buildOutgoing(Omemo2EncryptionResult result) {
+  Future<void> _pinPeerBeforeSession(PqDevice peer) async {
+    final pinStore = pins;
+    final pqIk = peer.peerPqIdentityKey;
+    if (pinStore == null || pqIk == null || pqIk.isEmpty) return;
+    // Prefer the published public half — remote devices have empty private
+    // material, so identityPublicSerialized() (derived from sk) is wrong.
+    final ikRaw = await peer.ikDh.pk.getBytes();
+    final ik = Uint8List.fromList([0x05, ...ikRaw]);
+    await pinPeerPqIdentityFromDevice(
+      pins: pinStore,
+      bareJid: peer.jid,
+      classicalIkSerialized: ik,
+      pqIdentityKey: Uint8List.fromList(pqIk),
+    );
+  }
+
+  Future<PqEncryptedOutgoing?> _buildOutgoing(
+    Omemo2EncryptionResult result,
+  ) async {
     if (!result.canSend || result.ciphertext == null || result.commit == null) {
       _log.warning('OMEMO2 encrypt incomplete (canSend=${result.canSend})');
       return null;
@@ -150,15 +190,37 @@ class PqMessageLayer {
     }
     if (groups.isEmpty) return null;
 
-    return PqEncryptedOutgoing(
-      stanza: PqEncryptedMessage(
-        senderDeviceId: ownDevice.id,
-        recipients: groups,
-        payload: base64Encode(result.ciphertext!),
-        commit: base64Encode(result.commit!),
-      ),
-      deviceId: ownDevice.id,
+    var stanza = PqEncryptedMessage(
+      senderDeviceId: ownDevice.id,
+      recipients: groups,
+      payload: base64Encode(result.ciphertext!),
+      commit: base64Encode(result.commit!),
     );
+
+    if (stanza.hasKex) {
+      final identity = pqIdentity;
+      if (identity == null) {
+        _log.warning(
+          'OMEMO2: kex header without PqIdentityStore — refusing send',
+        );
+        return null;
+      }
+      try {
+        final auth = await signPqAuth(
+          ownDevice: ownDevice,
+          pqIdentity: identity,
+          senderBareJid: ownDevice.jid,
+          sid: ownDevice.id,
+          entries: kexAuthEntriesFromMessage(stanza),
+        );
+        stanza = stanza.withPqAuth(auth);
+      } catch (e) {
+        _log.warning('OMEMO2: could not sign <pq-auth>: $e');
+        return null;
+      }
+    }
+
+    return PqEncryptedOutgoing(stanza: stanza, deviceId: ownDevice.id);
   }
 
   Future<String> decrypt(
@@ -166,6 +228,28 @@ class PqMessageLayer {
     required String senderBareJid,
   }) async {
     await sessions.bindOwn(ownDevice);
+
+    final pinStore = pins;
+    if (pinStore != null) {
+      try {
+        await verifyHandshake(
+          message: message,
+          senderBareJid: senderBareJid,
+          ownBareJid: ownDevice.jid,
+          ownDeviceId: ownDevice.id,
+          pins: pinStore,
+        );
+      } on PqHandshakeAuthException catch (e) {
+        throw PqDecryptError(e.message);
+      }
+    } else if (message.keys.any(
+      (k) => k.recipientDeviceId == ownDevice.id && k.kex,
+    )) {
+      // Fail closed: a kex for us without a pin store cannot authenticate.
+      throw const PqDecryptError(
+        'pre-key message without pin store — cannot verify <pq-auth>',
+      );
+    }
 
     final result = await sessions.decryptIncoming(
       Omemo2IncomingStanza(

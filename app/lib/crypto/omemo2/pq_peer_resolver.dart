@@ -16,15 +16,17 @@
 
 import 'dart:typed_data';
 
+import 'package:hex/hex.dart';
 import 'package:logging/logging.dart';
 import 'package:moxxmpp/moxxmpp.dart';
-import 'package:omemo_dart/omemo_dart_omemo2.dart';
 
 import 'package:resonchat/crypto/dual/bounded.dart';
 import 'package:resonchat/crypto/dual/dual_track_manager.dart';
 import 'package:resonchat/crypto/dual/fingerprint_trust.dart';
 import 'package:resonchat/crypto/dual/pq_device_list_snapshot.dart';
+import 'package:resonchat/crypto/omemo2/pq_auth.dart';
 import 'package:resonchat/crypto/omemo2/pq_session.dart';
+import 'package:resonchat/persistence/omemo2_pq_pin_store.dart';
 
 /// Why a PQ send cannot proceed. These all fail closed for the whole send.
 enum PqBlockReason {
@@ -35,6 +37,9 @@ enum PqBlockReason {
   missingSessionMaterial,
   undecidedDevice,
   unverifiableIdentity,
+
+  /// Pinned `<pq-ik>` differs from the bundle / handshake (identity change).
+  pqIdentityChanged,
   trustStoreError,
 }
 
@@ -120,6 +125,7 @@ class PqPeerResolver {
     required this.sessions,
     required this.snapshotFor,
     this.fingerprintTrust,
+    this.pqPins,
     this.fingerprintTtl = const Duration(minutes: 30),
   });
 
@@ -129,6 +135,10 @@ class PqPeerResolver {
   final PqSessionManager sessions;
   final PqSnapshotProvider snapshotFor;
   final FingerprintTrustStore? fingerprintTrust;
+
+  /// When set, refuse devices whose `<pq-ik>` conflicts with a pin.
+  final Omemo2PqPinStore? pqPins;
+
   final Duration fingerprintTtl;
 
   final _fingerprints = <String, _CachedFingerprint>{};
@@ -382,6 +392,26 @@ class PqPeerResolver {
           );
         }
 
+        try {
+          final pinBlock = await _enforcePqPin(w.device!);
+          if (pinBlock != null) {
+            return _blocked(
+              pinBlock,
+              requestedJids: requested,
+              jid: w.jid,
+              deviceId: w.deviceId,
+            );
+          }
+        } catch (e) {
+          _log.warning('pq pin for ${w.jid}/${w.deviceId} failed: $e');
+          return _blocked(
+            PqBlockReason.trustStoreError,
+            requestedJids: requested,
+            jid: w.jid,
+            deviceId: w.deviceId,
+          );
+        }
+
         if (trust != null) {
           try {
             final stored = await trust.fingerprintOfDevice(
@@ -390,12 +420,19 @@ class PqPeerResolver {
               omemo2: true,
             );
             if (stored != null && stored != fingerprint) {
-              _log.warning(
-                'PQ identity changed for ${w.jid}/${w.deviceId}; '
-                'dropping the old session',
-              );
-              await sessions.forgetSession(w.jid, w.deviceId);
-              w.hasSession = false;
+              // Legacy rows stored the 128-char hybrid as the trust key; migrate
+              // in place without dropping the session. A real classical IK
+              // change is a new device — drop the old session.
+              final migratingHybrid =
+                  stored.length == 128 && fingerprint.length == 66;
+              if (!migratingHybrid) {
+                _log.warning(
+                  'PQ classical fingerprint changed for ${w.jid}/${w.deviceId}; '
+                  'dropping the old session',
+                );
+                await sessions.forgetSession(w.jid, w.deviceId);
+                w.hasSession = false;
+              }
             }
             if (stored != fingerprint) {
               await trust.rememberDevice(
@@ -530,14 +567,42 @@ class PqPeerResolver {
     return cached.fingerprint;
   }
 
+  /// Classical IK fingerprint for trust (monocles §4.9.3 / §6.6).
+  ///
+  /// Hybrid is display-only once `<pq-ik>` is pinned — never the trust key.
   Future<String?> _stableFingerprint(PqDevice device) async {
     final pqIk = device.peerPqIdentityKey;
     if (pqIk == null || pqIk.isEmpty) return null;
-    final ik = await device.identityPublicSerialized();
-    return hybridOmemo2Fingerprint(
-      Uint8List.fromList(ik),
-      Uint8List.fromList(pqIk),
-    );
+    // Use the published public IK — remote devices have empty private halves.
+    final ikRaw = await device.ikDh.pk.getBytes();
+    return HEX.encode(Uint8List.fromList([0x05, ...ikRaw])).toLowerCase();
+  }
+
+  /// Pin-if-absent / refuse overwrite for [device]'s `<pq-ik>` (proto-XEP §4.9.2).
+  ///
+  /// Returns a block reason when the pinned key conflicts; null when OK.
+  Future<PqBlockReason?> _enforcePqPin(PqDevice device) async {
+    final store = pqPins;
+    final pqIk = device.peerPqIdentityKey;
+    if (store == null || pqIk == null || pqIk.isEmpty) return null;
+    // Remote devices only hold the public IK; do not call ensureStores.
+    final ikRaw = await device.ikDh.pk.getBytes();
+    final ikFp = HEX.encode(Uint8List.fromList([0x05, ...ikRaw])).toLowerCase();
+    final existing = await store.pinnedPqIdentity(device.jid, ikFp);
+    if (existing != null) {
+      if (!bytesEqual(existing, pqIk)) {
+        _log.warning(
+          'OMEMO2: pinned pq-ik conflicts for ${device.jid}/${device.id}',
+        );
+        return PqBlockReason.pqIdentityChanged;
+      }
+      return null;
+    }
+    final pinned = await store.pinIfAbsent(device.jid, ikFp, pqIk);
+    if (!bytesEqual(pinned, pqIk)) {
+      return PqBlockReason.pqIdentityChanged;
+    }
+    return null;
   }
 
   static bool _sameIds(Set<int>? cached, Set<int> current) =>

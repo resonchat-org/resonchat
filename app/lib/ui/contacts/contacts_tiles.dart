@@ -75,6 +75,7 @@ class IdleContactsList extends StatelessWidget {
 
   List<Widget> _prefix(BuildContext context) {
     final l10n = context.l10n;
+    final accountId = filterAccountId;
     return [
       ContactActionTile(
         icon: Icons.person_add_outlined,
@@ -84,22 +85,23 @@ class IdleContactsList extends StatelessWidget {
       ContactActionTile(
         icon: Icons.login,
         title: l10n.joinGroup,
-        onTap: () => showJoinRoomSheet(context),
+        onTap: () => showJoinRoomSheet(context, accountId: accountId),
       ),
       ContactActionTile(
         icon: Icons.travel_explore_outlined,
         title: l10n.discoverChannels,
-        onTap: () => showChannelDiscoverySheet(context),
+        onTap: () => showChannelDiscoverySheet(context, accountId: accountId),
       ),
       ContactActionTile(
         icon: Icons.group_add_outlined,
         title: l10n.createPrivateGroup,
-        onTap: () => showCreatePrivateGroupSheet(context),
+        onTap: () => showCreatePrivateGroupSheet(context, accountId: accountId),
       ),
       ContactActionTile(
         icon: Icons.campaign_outlined,
         title: l10n.createPublicChannel,
-        onTap: () => showCreatePublicChannelSheet(context),
+        onTap: () =>
+            showCreatePublicChannelSheet(context, accountId: accountId),
       ),
       GroupsBookmarkEntry(
         count: bookmarkCount,

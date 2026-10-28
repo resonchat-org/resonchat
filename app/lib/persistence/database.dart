@@ -512,6 +512,24 @@ class OmemoIdentities extends Table {
   Set<Column> get primaryKey => {bareJid, fingerprint};
 }
 
+/// monocles OMEMO2 PQ identity pin: (bare JID, classical IK hex) → `<pq-ik>`.
+///
+/// Never overwritten except by out-of-band hybrid fingerprint verification.
+/// Handshake and bundle paths only [pinIfAbsent].
+class Omemo2PqPins extends Table {
+  /// Peer bare JID (lowercased).
+  TextColumn get bareJid => text()();
+
+  /// Lowercase hex of classical IK `serialize()` (33 bytes, leading `0x05`).
+  TextColumn get classicalFingerprint => text()();
+
+  /// Raw ML-DSA-87 verification key (2592 bytes).
+  BlobColumn get pqIk => blob()();
+
+  @override
+  Set<Column> get primaryKey => {bareJid, classicalFingerprint};
+}
+
 /// One saved sticker image for this account.
 ///
 /// The picture is the collection. The three links are filled only after this
@@ -561,6 +579,7 @@ class Stickers extends Table {
     Reactions,
     Meta,
     OmemoIdentities,
+    Omemo2PqPins,
     Stickers,
   ],
 )
@@ -569,7 +588,7 @@ class AppDatabase extends _$AppDatabase {
 
   @override
   // Keep in sync with [kAccountSchemaVersion] in database_connection_io.dart.
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -595,6 +614,9 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 6) {
         await m.addColumn(messages, messages.forwardOriginId);
+      }
+      if (from < 7) {
+        await m.createTable(omemo2PqPins);
       }
     },
   );

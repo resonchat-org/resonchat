@@ -25,6 +25,7 @@ import 'package:resonchat/net/app_network.dart';
 import 'package:resonchat/persistence/account_store.dart';
 import 'package:resonchat/persistence/database.dart';
 import 'package:resonchat/persistence/omemo2_device_store.dart';
+import 'package:resonchat/persistence/omemo2_pq_pin_store.dart';
 import 'package:resonchat/persistence/omemo_device_store.dart';
 import 'package:resonchat/persistence/roster_state.dart';
 import 'package:resonchat/platform/android_keepalive.dart';
@@ -270,6 +271,7 @@ class AccountHub extends ChangeNotifier {
       db,
       blindTrustEnabled: loadOmemoBlindTrust,
     );
+    final pqPins = Omemo2PqPinStore(db);
     final bTrack = BTrackManager(
       tracks: () => xmpp.tracks!,
       pubsubOf: () => xmpp.pubsub,
@@ -277,6 +279,7 @@ class AccountHub extends ChangeNotifier {
       pqIdentity: deviceStore.pqIdentity,
       deviceStore: omemo2Store,
       fingerprintTrust: fingerprintTrust,
+      pqPins: pqPins,
     );
     xmpp = XmppService(
       deviceStore: deviceStore,

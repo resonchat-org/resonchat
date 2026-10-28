@@ -13,7 +13,11 @@ import 'package:resonchat/l10n/l10n.dart';
 import 'package:resonchat/ui/chat/linkified_text.dart';
 
 /// Handle a QR payload the way Conversations does after a scan.
-Future<void> handleQrScanResult(BuildContext context, String raw) async {
+Future<void> handleQrScanResult(
+  BuildContext context,
+  String raw, {
+  String? accountId,
+}) async {
   final trimmed = raw.trim();
   if (trimmed.isEmpty) return;
 
@@ -27,7 +31,7 @@ Future<void> handleQrScanResult(BuildContext context, String raw) async {
             )
           : null);
   if (xmpp != null) {
-    await handleXmppUri(context, xmpp);
+    await handleXmppUri(context, xmpp, accountId: accountId);
     return;
   }
 

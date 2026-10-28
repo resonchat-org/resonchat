@@ -24,6 +24,7 @@ import 'package:resonchat/crypto/omemo2/pq_message_layer.dart';
 import 'package:resonchat/crypto/omemo2/pq_peer_resolver.dart';
 import 'package:resonchat/crypto/omemo2/pq_session.dart';
 import 'package:resonchat/persistence/omemo2_device_store.dart';
+import 'package:resonchat/persistence/omemo2_pq_pin_store.dart';
 import 'package:resonchat/persistence/pq_identity_store.dart';
 import 'package:resonchat/xmpp/encryption/capabilities.dart';
 
@@ -48,6 +49,7 @@ class BTrackManager {
     required this.pqIdentity,
     required this.deviceStore,
     this.fingerprintTrust,
+    this.pqPins,
   });
 
   final Logger _log = Logger('BTrackManager');
@@ -62,6 +64,9 @@ class BTrackManager {
 
   /// When set, skip devices whose fingerprint the user marked untrusted.
   final FingerprintTrustStore? fingerprintTrust;
+
+  /// Never-overwrite `<pq-ik>` pins (monocles OMEMO2 PQ identities table).
+  final Omemo2PqPinStore? pqPins;
 
   BTrackSession? _session;
   PqPeerResolver? _resolver;
@@ -135,12 +140,18 @@ class BTrackManager {
     // The resolver calls hasSession before it asks for bundles. Bind here so
     // a restored session is visible before the first send (docs/11 §5.2).
     await sessions.bindOwn(device);
-    final layer = PqMessageLayer(ownDevice: device, sessions: sessions);
+    final layer = PqMessageLayer(
+      ownDevice: device,
+      sessions: sessions,
+      pqIdentity: pqIdentity,
+      pins: pqPins,
+    );
     _resolver = PqPeerResolver(
       tracks: tracks,
       sessions: sessions,
       snapshotFor: _snapshotFor,
       fingerprintTrust: fingerprintTrust,
+      pqPins: pqPins,
     );
     _session = BTrackSession(device: device, sessions: sessions, layer: layer);
 

@@ -17,25 +17,36 @@ import 'package:resonchat/account/account_hub.dart';
 import 'package:resonchat/account/chat_ref.dart';
 import 'package:resonchat/l10n/l10n.dart';
 import 'package:resonchat/state/providers.dart';
+import 'package:resonchat/ui/accounts/account_action_picker.dart';
 import 'package:resonchat/ui/home/open_chat.dart';
 import 'package:resonchat/ui/theme.dart';
 import 'package:resonchat/xmpp/muc/muc.dart';
 
 /// Asks for a room JID and a nickname, then joins.
 /// Shows the join-room sheet, optionally prefilled from an `xmpp:?join` URI.
-Future<void> showJoinRoomSheet(BuildContext context, {String? initialRoomJid}) {
+Future<void> showJoinRoomSheet(
+  BuildContext context, {
+  String? initialRoomJid,
+  String? accountId,
+}) {
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
-    builder: (_) => JoinRoomSheet(initialRoomJid: initialRoomJid),
+    builder: (_) => JoinRoomSheet(
+      initialRoomJid: initialRoomJid,
+      initialAccountId: accountId,
+    ),
   );
 }
 
 class JoinRoomSheet extends ConsumerStatefulWidget {
-  const JoinRoomSheet({super.key, this.initialRoomJid});
+  const JoinRoomSheet({super.key, this.initialRoomJid, this.initialAccountId});
 
   /// Bare room JID from an `xmpp:room@muc.example?join` link.
   final String? initialRoomJid;
+
+  /// Prefill when the contacts filter already selected an account.
+  final String? initialAccountId;
 
   @override
   ConsumerState<JoinRoomSheet> createState() => _JoinRoomSheetState();
@@ -44,19 +55,27 @@ class JoinRoomSheet extends ConsumerStatefulWidget {
 class _JoinRoomSheetState extends ConsumerState<JoinRoomSheet> {
   final _room = TextEditingController();
   final _nick = TextEditingController();
+  String? _accountId;
   String? _error;
   bool _busy = false;
 
   @override
   void initState() {
     super.initState();
-    // Default the nickname to our own local part: it is what everyone else
-    // will see, and an empty one is rejected by the server.
-    _nick.text = ref.read(xmppServiceProvider).myJid?.split('@').first ?? '';
+    _accountId = defaultActionAccountId(preferred: widget.initialAccountId);
+    _applyNickFromAccount();
     final prefill = widget.initialRoomJid?.trim();
     if (prefill != null && prefill.isNotEmpty) {
       _room.text = prefill;
     }
+  }
+
+  void _applyNickFromAccount() {
+    final id = _accountId;
+    final session = id == null ? null : accountHub.session(id);
+    final bare = session?.account.bareJid ?? '';
+    final local = bare.contains('@') ? bare.split('@').first : bare;
+    if (local.isNotEmpty) _nick.text = local;
   }
 
   @override
@@ -73,14 +92,18 @@ class _JoinRoomSheetState extends ConsumerState<JoinRoomSheet> {
       setState(() => _error = context.l10n.joinRoomNeedBoth);
       return;
     }
+    final session = _accountId == null ? null : accountHub.session(_accountId!);
+    if (session == null) {
+      setState(() => _error = context.l10n.noAccountReady);
+      return;
+    }
     setState(() {
       _busy = true;
       _error = null;
     });
-    final db = ref.read(databaseProvider);
-    final failure = await ref
-        .read(xmppServiceProvider)
-        .joinGroupChat(roomJid, nick);
+    final xmpp = session.xmpp;
+    final db = session.db;
+    final failure = await xmpp.joinGroupChat(roomJid, nick);
     if (!mounted) return;
     setState(() => _busy = false);
     if (failure != null) {
@@ -92,7 +115,6 @@ class _JoinRoomSheetState extends ConsumerState<JoinRoomSheet> {
     }
     // MODE_MULTI: persist as a room with nick — never as a roster contact.
     // Disco decides Conversations isPrivateAndNonAnonymous (OMEMO allowed).
-    final xmpp = ref.read(xmppServiceProvider);
     final features = await xmpp.queryRoomFeatures(roomJid);
     final encryptable = isPrivateAndNonAnonymous(features);
     await xmpp.refreshRoomMembership(
@@ -111,11 +133,7 @@ class _JoinRoomSheetState extends ConsumerState<JoinRoomSheet> {
     await xmpp.removeFromRosterIfPresent(roomJid);
     unawaited(xmpp.publishConferenceBookmark(roomJid: roomJid, nick: nick));
     if (!mounted) return;
-    final accountId = accountHub.primarySession?.account.id;
-    final chatKey = accountId == null
-        ? roomJid
-        : ChatRef(accountId: accountId, jid: roomJid).key;
-    openChat(context, chatKey);
+    openChat(context, ChatRef(accountId: session.account.id, jid: roomJid).key);
   }
 
   /// One sentence per refusal.
@@ -152,6 +170,16 @@ class _JoinRoomSheetState extends ConsumerState<JoinRoomSheet> {
         children: [
           Text(l10n.joinGroup, style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 12),
+          AccountActionPicker(
+            selectedId: _accountId,
+            enabled: !_busy,
+            onChanged: (id) {
+              setState(() {
+                _accountId = id;
+                _applyNickFromAccount();
+              });
+            },
+          ),
           TextField(
             controller: _room,
             autofocus: true,

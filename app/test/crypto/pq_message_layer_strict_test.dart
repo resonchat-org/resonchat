@@ -39,7 +39,8 @@ class _FakeSessions implements PqSessionManager {
       commit: const [3, 4],
       encryptedKeys: {
         recipientJids.first: [
-          Omemo2EncryptedKey(2, base64Encode(const [9, 9]), true),
+          // Non-kex: strict allow-list tests do not exercise <pq-auth>.
+          Omemo2EncryptedKey(2, base64Encode(const [9, 9]), false),
         ],
       },
       deviceEncryptionErrors: const {},

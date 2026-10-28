@@ -13,22 +13,28 @@ import 'package:resonchat/account/account_hub.dart';
 import 'package:resonchat/account/chat_ref.dart';
 import 'package:resonchat/l10n/l10n.dart';
 import 'package:resonchat/state/providers.dart';
+import 'package:resonchat/ui/accounts/account_action_picker.dart';
 import 'package:resonchat/ui/home/open_chat.dart';
 import 'package:resonchat/ui/theme.dart';
 import 'package:resonchat/xmpp/muc/muc.dart';
 import 'package:resonchat/xmpp/roster/channel_discovery.dart';
 
 /// Search and join public MUCs via jabber.network or local disco.
-Future<void> showChannelDiscoverySheet(BuildContext context) {
+Future<void> showChannelDiscoverySheet(
+  BuildContext context, {
+  String? accountId,
+}) {
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
-    builder: (_) => const ChannelDiscoverySheet(),
+    builder: (_) => ChannelDiscoverySheet(initialAccountId: accountId),
   );
 }
 
 class ChannelDiscoverySheet extends ConsumerStatefulWidget {
-  const ChannelDiscoverySheet({super.key});
+  const ChannelDiscoverySheet({super.key, this.initialAccountId});
+
+  final String? initialAccountId;
 
   @override
   ConsumerState<ChannelDiscoverySheet> createState() =>
@@ -42,13 +48,33 @@ class _ChannelDiscoverySheetState extends ConsumerState<ChannelDiscoverySheet> {
   bool _ready = false;
   bool _loading = false;
   List<PublicChannel> _results = const [];
-  late final ChannelDiscoveryService _service;
+  String? _accountId;
+  ChannelDiscoveryService? _service;
+
+  ChannelDiscoveryService get _discovery {
+    final existing = _service;
+    if (existing != null) return existing;
+    final session = _accountId == null
+        ? accountHub.primarySession
+        : accountHub.session(_accountId!);
+    final created = ChannelDiscoveryService(
+      xmpp: session?.xmpp ?? ref.read(xmppServiceProvider),
+    );
+    _service = created;
+    return created;
+  }
 
   @override
   void initState() {
     super.initState();
-    _service = ChannelDiscoveryService(xmpp: ref.read(xmppServiceProvider));
+    _accountId = defaultActionAccountId(preferred: widget.initialAccountId);
     unawaited(_bootstrap());
+  }
+
+  void _bindServiceToAccount() {
+    final session = _accountId == null ? null : accountHub.session(_accountId!);
+    if (session == null) return;
+    _service = ChannelDiscoveryService(xmpp: session.xmpp);
   }
 
   Future<void> _bootstrap() async {
@@ -100,7 +126,7 @@ class _ChannelDiscoverySheetState extends ConsumerState<ChannelDiscoverySheet> {
       return;
     }
     setState(() => _loading = true);
-    final results = await _service.discover(_query.text, method: _method);
+    final results = await _discovery.discover(_query.text, method: _method);
     if (!mounted) return;
     setState(() {
       _results = results;
@@ -110,9 +136,15 @@ class _ChannelDiscoverySheetState extends ConsumerState<ChannelDiscoverySheet> {
 
   Future<void> _join(PublicChannel channel) async {
     final l10n = context.l10n;
-    final xmpp = ref.read(xmppServiceProvider);
+    final session = _accountId == null ? null : accountHub.session(_accountId!);
+    if (session == null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(l10n.noAccountReady)));
+      return;
+    }
+    final xmpp = session.xmpp;
     final nickCtrl = TextEditingController(
-      text: xmpp.myJid?.split('@').first ?? '',
+      text: session.account.bareJid.split('@').first,
     );
     final nick = await showDialog<String>(
       context: context,
@@ -167,7 +199,7 @@ class _ChannelDiscoverySheetState extends ConsumerState<ChannelDiscoverySheet> {
       );
       return;
     }
-    final db = ref.read(databaseProvider);
+    final db = session.db;
     final features = await xmpp.queryRoomFeatures(channel.address);
     final encryptable = isPrivateAndNonAnonymous(features);
     await xmpp.refreshRoomMembership(
@@ -192,11 +224,10 @@ class _ChannelDiscoverySheetState extends ConsumerState<ChannelDiscoverySheet> {
     );
     if (!mounted) return;
     Navigator.of(context).pop();
-    final accountId = accountHub.primarySession?.account.id;
-    final chatKey = accountId == null
-        ? channel.address
-        : ChatRef(accountId: accountId, jid: channel.address).key;
-    openChat(context, chatKey);
+    openChat(
+      context,
+      ChatRef(accountId: session.account.id, jid: channel.address).key,
+    );
   }
 
   @override
@@ -234,7 +265,7 @@ class _ChannelDiscoverySheetState extends ConsumerState<ChannelDiscoverySheet> {
                       tooltip: l10n.channelDiscoveryMethod,
                       onSelected: (m) async {
                         await saveChannelDiscoveryMethod(m);
-                        _service.clearCache();
+                        _discovery.clearCache();
                         setState(() => _method = m);
                         await _search();
                       },
@@ -257,7 +288,19 @@ class _ChannelDiscoverySheetState extends ConsumerState<ChannelDiscoverySheet> {
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                child: AccountActionPicker(
+                  selectedId: _accountId,
+                  onChanged: (id) {
+                    setState(() => _accountId = id);
+                    _bindServiceToAccount();
+                    _discovery.clearCache();
+                    unawaited(_search());
+                  },
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
                 child: TextField(
                   controller: _query,
                   textInputAction: TextInputAction.search,

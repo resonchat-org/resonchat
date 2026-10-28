@@ -248,6 +248,8 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
           bareJid: account.bareJid,
           deviceId: ui.deviceId,
           legacyFingerprint: ui.legacyFingerprint,
+          omemo2ClassicalFingerprint: ui.omemo2ClassicalFingerprint,
+          hybridFingerprint: ui.hybridFingerprint,
         );
         return Scaffold(
           appBar: AppBar(title: Text(l10n.editProfile)),
@@ -453,7 +455,8 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
                     row: row,
                     margin: EdgeInsets.zero,
                     enabled: !ui.busy,
-                    onCopy: () => unawaited(_copyFingerprint(row.fingerprint)),
+                    onCopy: () =>
+                        unawaited(_copyFingerprint(row.shownFingerprint)),
                     onTrustChanged: (v) =>
                         unawaited(_model.setOtherDeviceTrust(row, v)),
                   ),

@@ -15,8 +15,10 @@ class ContactsViewModel extends Notifier<void> {
   void build() {}
 
   /// Roster + subscription for a typed bare JID (same path as chat-list add).
-  Future<OpenChatResult> addContactByJid(String raw) {
-    return ref.read(chatsViewModelProvider.notifier).openChatByJid(raw);
+  Future<OpenChatResult> addContactByJid(String raw, {String? accountId}) {
+    return ref
+        .read(chatsViewModelProvider.notifier)
+        .openChatByJid(raw, accountId: accountId);
   }
 
   /// Ensures a 1:1 chat row exists for [row], then returns its [ChatRef] key.

@@ -15,6 +15,7 @@ import 'package:resonchat/l10n/l10n.dart';
 import 'package:resonchat/persistence/database.dart';
 import 'package:resonchat/state/providers.dart';
 import 'package:resonchat/ui/account_filter_overlay.dart';
+import 'package:resonchat/ui/accounts/account_action_picker.dart';
 import 'package:resonchat/ui/contacts/contacts_match.dart';
 import 'package:resonchat/ui/contacts/contacts_tiles.dart';
 import 'package:resonchat/ui/contacts/contacts_viewmodel.dart';
@@ -88,26 +89,28 @@ class _ContactsPageState extends ConsumerState<ContactsPage>
   }
 
   Future<void> _promptAddContact() async {
-    final raw = await showModalBottomSheet<String>(
+    final submit = await showModalBottomSheet<_AddContactSubmit>(
       context: context,
       isScrollControlled: true,
-      builder: (_) => const _AddContactSheet(),
+      builder: (_) => _AddContactSheet(initialAccountId: _accountId),
     );
-    if (raw == null || raw.isEmpty || !mounted) return;
-    await _addContact(raw);
+    if (submit == null || submit.jid.isEmpty || !mounted) return;
+    await _addContact(submit.jid, accountId: submit.accountId);
   }
 
   Future<void> _scanQr() async {
     final raw = await Navigator.of(context)
         .push<String>(MaterialPageRoute(builder: (_) => const QrScanPage()));
     if (raw == null || raw.isEmpty || !mounted) return;
-    await handleQrScanResult(context, raw);
+    await handleQrScanResult(context, raw, accountId: _accountId);
   }
 
-  Future<void> _addContact(String raw) async {
+  Future<void> _addContact(String raw, {String? accountId}) async {
+    final effectiveAccount =
+        accountId ?? defaultActionAccountId(preferred: _accountId);
     final result = await ref
         .read(contactsViewModelProvider.notifier)
-        .addContactByJid(raw);
+        .addContactByJid(raw, accountId: effectiveAccount);
     if (!mounted) return;
     final l10n = context.l10n;
     if (result.invalidJid) {
@@ -124,11 +127,21 @@ class _ContactsPageState extends ConsumerState<ContactsPage>
         return;
       }
       if (room != null) {
-        await showJoinRoomSheet(context, initialRoomJid: room);
+        await showJoinRoomSheet(
+          context,
+          initialRoomJid: room,
+          accountId: effectiveAccount,
+        );
       }
       return;
     }
-    if (result.chatKey == null) return;
+    if (result.chatKey == null) {
+      if (effectiveAccount == null) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(l10n.noAccountReady)));
+      }
+      return;
+    }
     _clearQuery();
     final added = result.contactAdded;
     if (added != null) {
@@ -296,9 +309,14 @@ class _ContactsPageState extends ConsumerState<ContactsPage>
                         setState(() => _contactsExpanded = !_contactsExpanded),
                     onToggleGroups: () =>
                         setState(() => _groupsExpanded = !_groupsExpanded),
-                    onAddJid: (jid) => unawaited(_addContact(jid)),
+                    onAddJid: (jid) =>
+                        unawaited(_addContact(jid, accountId: _accountId)),
                     onAddGroup: (jid) => unawaited(
-                      showJoinRoomSheet(context, initialRoomJid: jid),
+                      showJoinRoomSheet(
+                        context,
+                        initialRoomJid: jid,
+                        accountId: _accountId,
+                      ),
                     ),
                     onOpenBookmark: (row) => unawaited(_openBookmark(row)),
                     showAccountColor: _accountId == null,
@@ -495,9 +513,17 @@ Chat? _chatOf(List<AccountChat> chats, String accountId, String jid) {
   return null;
 }
 
+class _AddContactSubmit {
+  const _AddContactSubmit({required this.jid, required this.accountId});
+  final String jid;
+  final String? accountId;
+}
+
 /// Same shape as the join-room sheet: a short form pulled up from the bottom.
 class _AddContactSheet extends StatefulWidget {
-  const _AddContactSheet();
+  const _AddContactSheet({this.initialAccountId});
+
+  final String? initialAccountId;
 
   @override
   State<_AddContactSheet> createState() => _AddContactSheetState();
@@ -505,6 +531,13 @@ class _AddContactSheet extends StatefulWidget {
 
 class _AddContactSheetState extends State<_AddContactSheet> {
   final _jid = TextEditingController();
+  late String? _accountId;
+
+  @override
+  void initState() {
+    super.initState();
+    _accountId = defaultActionAccountId(preferred: widget.initialAccountId);
+  }
 
   @override
   void dispose() {
@@ -515,7 +548,13 @@ class _AddContactSheetState extends State<_AddContactSheet> {
   void _submit() {
     final raw = _jid.text.trim();
     if (raw.isEmpty) return;
-    Navigator.of(context).pop(raw);
+    if (_accountId == null && accountsReadyForActions().isEmpty) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(context.l10n.noAccountReady)));
+      return;
+    }
+    Navigator.of(context)
+        .pop(_AddContactSubmit(jid: raw, accountId: _accountId));
   }
 
   @override
@@ -530,6 +569,10 @@ class _AddContactSheetState extends State<_AddContactSheet> {
         children: [
           Text(l10n.addContact, style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 12),
+          AccountActionPicker(
+            selectedId: _accountId,
+            onChanged: (id) => setState(() => _accountId = id),
+          ),
           TextField(
             controller: _jid,
             autofocus: true,

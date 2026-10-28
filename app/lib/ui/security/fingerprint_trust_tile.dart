@@ -100,7 +100,7 @@ class FingerprintTrustTile extends StatelessWidget {
                   : trustChip,
             ),
             SelectableText(
-              formatFingerprint(row.fingerprint),
+              formatFingerprint(row.shownFingerprint),
               style: TextStyle(
                 fontFamily: 'monospace',
                 fontSize: 12,

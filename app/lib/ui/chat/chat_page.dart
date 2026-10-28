@@ -271,9 +271,10 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       }
       return;
     }
+    final accountId = resolveChatKey(widget.chatJid).session.account.id;
     final result = await ref
         .read(chatsViewModelProvider.notifier)
-        .openChatByJid(jid);
+        .openChatByJid(jid, accountId: accountId);
     if (!mounted) return;
     final l10n = context.l10n;
     if (result.isMuc) {
@@ -285,7 +286,11 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         );
         return;
       }
-      await showJoinRoomSheet(context, initialRoomJid: result.mucJid ?? jid);
+      await showJoinRoomSheet(
+        context,
+        initialRoomJid: result.mucJid ?? jid,
+        accountId: accountId,
+      );
       return;
     }
     if (result.invalidJid || result.chatKey == null) {

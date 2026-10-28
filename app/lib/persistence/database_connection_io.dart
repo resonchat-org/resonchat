@@ -24,7 +24,7 @@ Future<QueryExecutor> openPrefsDatabaseConnection() =>
 ///
 /// A file written by a newer build is deleted; nothing older is migrated from
 /// the documents directory.
-const int kAccountSchemaVersion = 6;
+const int kAccountSchemaVersion = 7;
 
 /// Per-account DB (`resonchat_<accountId>.sqlite3`). [accountId] is required.
 Future<QueryExecutor> openAccountDatabaseConnection(String accountId) {

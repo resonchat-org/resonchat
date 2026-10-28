@@ -6,10 +6,10 @@
 // omemo_dart; this class owns lifecycle and event fan-out.
 
 import 'dart:async';
-import 'dart:convert';
 import 'dart:math' show min;
 import 'dart:typed_data';
 
+import 'package:hex/hex.dart';
 import 'package:logging/logging.dart';
 import 'package:moxlib/moxlib.dart';
 import 'package:moxxmpp/moxxmpp.dart';
@@ -3172,10 +3172,8 @@ class XmppService {
     if (omemo2) {
       final bundle = await tracks?.getPqBundle(JID.fromString(bare), deviceId);
       if (bundle == null || !bundle.hasPqIdentity) return null;
-      fp = hybridOmemo2Fingerprint(
-        bundle.ikSerialized,
-        Uint8List.fromList(base64Decode(bundle.pqIk)),
-      );
+      // Trust keyed on classical IK (monocles); hybrid is display-only via pin.
+      fp = HEX.encode(bundle.ikSerialized).toLowerCase();
     } else {
       final bundle = await tracks?.getOmemoBundle(
         JID.fromString(bare),
@@ -3253,18 +3251,39 @@ class XmppService {
     final trust = fingerprintTrust;
     if (trust == null) return const [];
     final stored = await trust.identitiesFor(bare);
-    final rows = <PeerFingerprintRow>[
-      for (final r in stored)
-        if (r.fingerprint.isNotEmpty && r.deviceId != 0)
-          PeerFingerprintRow(
-            peerJid: r.bareJid,
-            deviceId: r.deviceId,
-            fingerprint: r.fingerprint,
-            omemo2: r.omemo2,
-            trust: FingerprintTrust.parse(r.trust),
-            active: r.active,
-          ),
-    ];
+    final pins = bTrack?.pqPins;
+    final rows = <PeerFingerprintRow>[];
+    for (final r in stored) {
+      if (r.fingerprint.isEmpty || r.deviceId == 0) continue;
+      String? display;
+      if (r.omemo2) {
+        // Legacy rows may still hold the 128-char hybrid as the trust key.
+        if (r.fingerprint.length == 128) {
+          display = r.fingerprint;
+        } else if (pins != null) {
+          final pqIk = await pins.pinnedPqIdentity(r.bareJid, r.fingerprint);
+          if (pqIk != null && pqIk.isNotEmpty) {
+            try {
+              final ik = Uint8List.fromList(HEX.decode(r.fingerprint));
+              display = hybridOmemo2Fingerprint(ik, pqIk);
+            } catch (_) {
+              display = null;
+            }
+          }
+        }
+      }
+      rows.add(
+        PeerFingerprintRow(
+          peerJid: r.bareJid,
+          deviceId: r.deviceId,
+          fingerprint: r.fingerprint,
+          omemo2: r.omemo2,
+          trust: FingerprintTrust.parse(r.trust),
+          active: r.active,
+          displayFingerprint: display,
+        ),
+      );
+    }
     rows.sort((a, b) {
       final byActive = (b.active ? 1 : 0).compareTo(a.active ? 1 : 0);
       if (byActive != 0) return byActive;

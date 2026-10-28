@@ -7,6 +7,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hex/hex.dart';
 import 'package:moxxmpp/moxxmpp.dart' show PresenceShow;
 
 import 'package:resonchat/account/account_hub.dart';
@@ -23,6 +24,7 @@ class AccountProfileUiState {
     this.deviceId,
     this.hybridFingerprint,
     this.legacyFingerprint,
+    this.omemo2ClassicalFingerprint,
     this.otherDevices = const [],
     this.avatarPreview,
   });
@@ -31,6 +33,9 @@ class AccountProfileUiState {
   final int? deviceId;
   final String? hybridFingerprint;
   final String? legacyFingerprint;
+
+  /// OMEMO2 classical IK serialize hex (66 chars with `05`) for `omemo-pq-sid-`.
+  final String? omemo2ClassicalFingerprint;
   final List<PeerFingerprintRow> otherDevices;
   final Uint8List? avatarPreview;
 
@@ -39,6 +44,7 @@ class AccountProfileUiState {
     int? deviceId,
     Object? hybridFingerprint = _unset,
     Object? legacyFingerprint = _unset,
+    Object? omemo2ClassicalFingerprint = _unset,
     List<PeerFingerprintRow>? otherDevices,
     Uint8List? avatarPreview,
   }) {
@@ -51,6 +57,9 @@ class AccountProfileUiState {
       legacyFingerprint: identical(legacyFingerprint, _unset)
           ? this.legacyFingerprint
           : legacyFingerprint as String?,
+      omemo2ClassicalFingerprint: identical(omemo2ClassicalFingerprint, _unset)
+          ? this.omemo2ClassicalFingerprint
+          : omemo2ClassicalFingerprint as String?,
       otherDevices: otherDevices ?? this.otherDevices,
       avatarPreview: avatarPreview ?? this.avatarPreview,
     );
@@ -113,6 +122,9 @@ class AccountProfileViewModel
           ? hybridFromTrack
           : (fps.hybrid.isEmpty ? null : fps.hybrid);
       final legacy = fps.legacy;
+      final omemo2Classical = omemo2Ik == null
+          ? null
+          : HEX.encode(omemo2Ik).toLowerCase();
       // Own fingerprints + rows already in OmemoIdentities (Gajim SQLite
       // read). PEP for other devices refreshes afterwards and must not
       // delay that paint.
@@ -128,6 +140,7 @@ class AccountProfileViewModel
             deviceId: id,
             hybridFingerprint: hybrid,
             legacyFingerprint: legacy,
+            omemo2ClassicalFingerprint: omemo2Classical,
             otherDevices: rows,
           );
         },

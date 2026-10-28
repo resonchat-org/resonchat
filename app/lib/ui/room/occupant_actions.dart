@@ -322,9 +322,10 @@ Future<bool> applyOccupantSheetAction({
       return false;
     case OccupantSheetAction.addContact:
       if (realJid == null || realJid.isEmpty) return false;
+      final accountId = resolveChatKey(chatKey).session.account.id;
       final result = await ref
           .read(chatsViewModelProvider.notifier)
-          .openChatByJid(realJid);
+          .openChatByJid(realJid, accountId: accountId);
       if (!context.mounted) return false;
       final ok = result.contactAdded == true || result.chatKey != null;
       ScaffoldMessenger.of(context).showSnackBar(

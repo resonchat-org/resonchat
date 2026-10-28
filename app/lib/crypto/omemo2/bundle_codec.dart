@@ -219,7 +219,20 @@ class Omemo2Bundle {
   Uint8List get ikBytes => base64Decode(ik);
 
   /// Classical IdentityKey.serialize() form (0x05 ‖ 32).
-  Uint8List get ikSerialized => Uint8List.fromList([0x05, ...ikBytes]);
+  ///
+  /// Wire `<ik>` is normally 32 bytes (monocles). Some peers may publish the
+  /// already-tagged 33-byte form — do not double-prefix.
+  Uint8List get ikSerialized {
+    final raw = ikBytes;
+    if (raw.length == 33 && raw.isNotEmpty && raw.first == 0x05) {
+      return Uint8List.fromList(raw);
+    }
+    if (raw.length == 32) return Uint8List.fromList([0x05, ...raw]);
+    if (raw.isNotEmpty && raw.first != 0x05) {
+      return Uint8List.fromList([0x05, ...raw]);
+    }
+    return Uint8List.fromList(raw);
+  }
 }
 
 /// monocles `IqParser.base64decode`: strip every whitespace run before decode.

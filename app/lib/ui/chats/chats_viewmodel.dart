@@ -56,14 +56,18 @@ class ChatsViewModel extends Notifier<void> {
   ///
   /// MUC / public-channel addresses are never written to the roster — that is
   /// how Conversations avoids rooms showing up as contacts.
-  Future<OpenChatResult> openChatByJid(String raw) async {
+  ///
+  /// [accountId] selects which session acts; omitted → primary.
+  Future<OpenChatResult> openChatByJid(String raw, {String? accountId}) async {
     final trimmed = raw.trim();
     if (trimmed.isEmpty) return const OpenChatResult();
     final jid = bareJidOf(trimmed);
     if (jid == null) return const OpenChatResult(invalidJid: true);
 
     final hub = accountHub;
-    final session = hub.primarySession;
+    final session = accountId != null
+        ? hub.session(accountId)
+        : hub.primarySession;
     if (session == null) return const OpenChatResult();
 
     final existing = await session.db.getChat(jid);

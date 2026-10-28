@@ -13,31 +13,39 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:resonchat/account/account_hub.dart';
 import 'package:resonchat/account/chat_ref.dart';
 import 'package:resonchat/l10n/l10n.dart';
-import 'package:resonchat/state/providers.dart';
+import 'package:resonchat/ui/accounts/account_action_picker.dart';
 import 'package:resonchat/ui/home/open_chat.dart';
 import 'package:resonchat/ui/theme.dart';
 import 'package:resonchat/xmpp/muc/muc_create.dart';
 
 /// Conversations “Create private group chat”.
-Future<void> showCreatePrivateGroupSheet(BuildContext context) {
+Future<void> showCreatePrivateGroupSheet(
+  BuildContext context, {
+  String? accountId,
+}) {
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
-    builder: (_) => const _CreatePrivateGroupSheet(),
+    builder: (_) => _CreatePrivateGroupSheet(initialAccountId: accountId),
   );
 }
 
 /// Conversations “Create public channel”.
-Future<void> showCreatePublicChannelSheet(BuildContext context) {
+Future<void> showCreatePublicChannelSheet(
+  BuildContext context, {
+  String? accountId,
+}) {
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
-    builder: (_) => const _CreatePublicChannelSheet(),
+    builder: (_) => _CreatePublicChannelSheet(initialAccountId: accountId),
   );
 }
 
 class _CreatePrivateGroupSheet extends ConsumerStatefulWidget {
-  const _CreatePrivateGroupSheet();
+  const _CreatePrivateGroupSheet({this.initialAccountId});
+
+  final String? initialAccountId;
 
   @override
   ConsumerState<_CreatePrivateGroupSheet> createState() =>
@@ -51,10 +59,12 @@ class _CreatePrivateGroupSheetState
   List<({String jid, String label})> _roster = const [];
   bool _busy = false;
   String? _error;
+  String? _accountId;
 
   @override
   void initState() {
     super.initState();
+    _accountId = defaultActionAccountId(preferred: widget.initialAccountId);
     unawaited(_loadRoster());
   }
 
@@ -65,11 +75,15 @@ class _CreatePrivateGroupSheetState
   }
 
   Future<void> _loadRoster() async {
-    final db = accountHub.primarySession?.db;
-    if (db == null) return;
+    final session = _accountId == null ? null : accountHub.session(_accountId!);
+    final db = session?.db;
+    if (db == null) {
+      if (mounted) setState(() => _roster = const []);
+      return;
+    }
     final rows = await db.allRosterEntries();
     if (!mounted) return;
-    final mine = accountHub.primarySession?.account.bareJid;
+    final mine = session?.account.bareJid;
     setState(() {
       _roster = [
         for (final r in rows)
@@ -87,12 +101,16 @@ class _CreatePrivateGroupSheetState
 
   Future<void> _create() async {
     final l10n = context.l10n;
+    final session = _accountId == null ? null : accountHub.session(_accountId!);
+    if (session == null) {
+      setState(() => _error = l10n.noAccountReady);
+      return;
+    }
     setState(() {
       _busy = true;
       _error = null;
     });
-    final xmpp = ref.read(xmppServiceProvider);
-    final result = await xmpp.createPrivateGroupChat(
+    final result = await session.xmpp.createPrivateGroupChat(
       name: _name.text.trim(),
       inviteeJids: _selected.toList(),
     );
@@ -104,12 +122,15 @@ class _CreatePrivateGroupSheetState
       });
       return;
     }
-    await _persistAndOpen(result);
+    await _persistAndOpen(session, result);
   }
 
-  Future<void> _persistAndOpen(CreateRoomResult result) async {
-    final db = ref.read(databaseProvider);
-    final xmpp = ref.read(xmppServiceProvider);
+  Future<void> _persistAndOpen(
+    AccountSession session,
+    CreateRoomResult result,
+  ) async {
+    final xmpp = session.xmpp;
+    final db = session.db;
     final roomJid = result.roomJid!;
     await db.upsertChat(
       roomJid,
@@ -128,11 +149,7 @@ class _CreatePrivateGroupSheetState
     );
     if (!mounted) return;
     Navigator.of(context).pop();
-    final accountId = accountHub.primarySession?.account.id;
-    final chatKey = accountId == null
-        ? roomJid
-        : ChatRef(accountId: accountId, jid: roomJid).key;
-    openChat(context, chatKey);
+    openChat(context, ChatRef(accountId: session.account.id, jid: roomJid).key);
   }
 
   @override
@@ -151,6 +168,17 @@ class _CreatePrivateGroupSheetState
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 12),
+          AccountActionPicker(
+            selectedId: _accountId,
+            enabled: !_busy,
+            onChanged: (id) {
+              setState(() {
+                _accountId = id;
+                _selected.clear();
+              });
+              unawaited(_loadRoster());
+            },
+          ),
           TextField(
             controller: _name,
             enabled: !_busy,
@@ -223,7 +251,9 @@ class _CreatePrivateGroupSheetState
 }
 
 class _CreatePublicChannelSheet extends ConsumerStatefulWidget {
-  const _CreatePublicChannelSheet();
+  const _CreatePublicChannelSheet({this.initialAccountId});
+
+  final String? initialAccountId;
 
   @override
   ConsumerState<_CreatePublicChannelSheet> createState() =>
@@ -237,10 +267,12 @@ class _CreatePublicChannelSheetState
   bool _busy = false;
   String? _error;
   var _jidTouched = false;
+  String? _accountId;
 
   @override
   void initState() {
     super.initState();
+    _accountId = defaultActionAccountId(preferred: widget.initialAccountId);
     unawaited(_suggestJid());
   }
 
@@ -252,8 +284,9 @@ class _CreatePublicChannelSheetState
   }
 
   Future<void> _suggestJid() async {
-    final xmpp = ref.read(xmppServiceProvider);
-    final host = await xmpp.discoverMucServiceHost();
+    final session = _accountId == null ? null : accountHub.session(_accountId!);
+    if (session == null) return;
+    final host = await session.xmpp.discoverMucServiceHost();
     if (!mounted || host == null || _jidTouched) return;
     final local = pronounceableRoomLocalpart();
     setState(() => _jid.text = '$local@$host');
@@ -266,11 +299,16 @@ class _CreatePublicChannelSheetState
       setState(() => _error = l10n.createGroupInvalidJid);
       return;
     }
+    final session = _accountId == null ? null : accountHub.session(_accountId!);
+    if (session == null) {
+      setState(() => _error = l10n.noAccountReady);
+      return;
+    }
     setState(() {
       _busy = true;
       _error = null;
     });
-    final xmpp = ref.read(xmppServiceProvider);
+    final xmpp = session.xmpp;
     final result = await xmpp.createPublicChannel(
       roomJid: address,
       name: _name.text.trim(),
@@ -283,7 +321,7 @@ class _CreatePublicChannelSheetState
       });
       return;
     }
-    final db = ref.read(databaseProvider);
+    final db = session.db;
     await db.upsertChat(
       result.roomJid!,
       isGroup: true,
@@ -301,11 +339,10 @@ class _CreatePublicChannelSheetState
     );
     if (!mounted) return;
     Navigator.of(context).pop();
-    final accountId = accountHub.primarySession?.account.id;
-    final chatKey = accountId == null
-        ? result.roomJid!
-        : ChatRef(accountId: accountId, jid: result.roomJid!).key;
-    openChat(context, chatKey);
+    openChat(
+      context,
+      ChatRef(accountId: session.account.id, jid: result.roomJid!).key,
+    );
   }
 
   @override
@@ -324,6 +361,17 @@ class _CreatePublicChannelSheetState
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 12),
+          AccountActionPicker(
+            selectedId: _accountId,
+            enabled: !_busy,
+            onChanged: (id) {
+              setState(() {
+                _accountId = id;
+                _jidTouched = false;
+              });
+              unawaited(_suggestJid());
+            },
+          ),
           TextField(
             controller: _name,
             enabled: !_busy,

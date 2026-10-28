@@ -8,6 +8,7 @@ import 'package:resonchat/xmpp/account_share_uri.dart';
 void main() {
   final fp = '05${'ab' * 32}';
   final stripped = 'ab' * 32;
+  final hybrid = 'cd' * 64;
 
   test('bare address when there is no fingerprint yet', () {
     expect(
@@ -46,6 +47,22 @@ void main() {
     );
   });
 
+  test('PQ OMEMO2 adds omemo-pq-sid and omemo-pq-hfp', () {
+    expect(
+      accountShareUri(
+        bareJid: 'user@example.com',
+        deviceId: 7,
+        legacyFingerprint: fp,
+        omemo2ClassicalFingerprint: '05${'11' * 32}',
+        hybridFingerprint: hybrid,
+      ),
+      'xmpp:user@example.com?'
+      'omemo-sid-7=$stripped;'
+      'omemo-pq-sid-7=${'11' * 32};'
+      'omemo-pq-hfp-7=$hybrid',
+    );
+  });
+
   test('room join URI is xmpp:jid?join', () {
     expect(
       roomJoinUri('room@conference.example'),
@@ -67,6 +84,19 @@ void main() {
       'omemo-sid-3': 'zz' * 32,
     });
     expect(parsed, [(deviceId: 7, fingerprint: stripped)]);
+  });
+
+  test('parseOmemoPqFingerprints pairs sid with hybrid', () {
+    final parsed = parseOmemoPqFingerprints({
+      'omemo-pq-sid-9': '11' * 32,
+      'omemo-pq-hfp-9': hybrid,
+      'omemo-pq-sid-3': '22' * 32,
+      'omemo-sid-1': stripped,
+    });
+    expect(parsed, [
+      (deviceId: 9, classical: '11' * 32, hybrid: hybrid),
+      (deviceId: 3, classical: '22' * 32, hybrid: null),
+    ]);
   });
 
   test('fingerprintForTrustStore restores the 05 type byte', () {

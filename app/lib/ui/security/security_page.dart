@@ -126,7 +126,7 @@ class _SecurityPageState extends ConsumerState<SecurityPage> {
               FingerprintTrustTile(
                 row: row,
                 showPeerJid: ui.isGroup,
-                onCopy: () => _copyFingerprint(row.fingerprint),
+                onCopy: () => _copyFingerprint(row.shownFingerprint),
                 onTrustChanged: (v) => ref
                     .read(securityViewModelProvider(widget.chatJid).notifier)
                     .setPeerTrust(row, v),

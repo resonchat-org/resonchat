@@ -254,6 +254,11 @@ class FingerprintTrustStore {
   }
 
   /// Cache deviceId → fingerprint, mark active, seed default trust if unseen.
+  ///
+  /// OMEMO2 trust is keyed on the classical IK hex (66 chars with `05`), same
+  /// as monocles. Older builds stored the 128-char hybrid here — when
+  /// remembering the classical key for the same device id, trust is copied
+  /// from that hybrid row so verification is not lost.
   Future<void> rememberDevice({
     required String jid,
     required int deviceId,
@@ -266,13 +271,33 @@ class FingerprintTrustStore {
     if (fp.isEmpty) return;
     final now = DateTime.now().millisecondsSinceEpoch;
     final existing = await _row(bare, fp);
-    final trust = existing != null
+    var trust = existing != null
         ? FingerprintTrust.parse(existing.trust)
         : await defaultTrustFor(bare);
-    final wasInactive = existing != null && !existing.active;
-    final lastAct = existing == null || wasInactive
+    var lastAct = existing == null || !existing.active
         ? now
         : existing.lastActivation;
+
+    List<OmemoIdentity> rivals = const [];
+    if (deviceId != 0) {
+      rivals =
+          await (_db.select(_db.omemoIdentities)..where(
+                (t) =>
+                    t.bareJid.equals(bare) &
+                    t.omemo2.equals(omemo2) &
+                    t.deviceId.equals(deviceId) &
+                    t.fingerprint.isNotValue(fp),
+              ))
+              .get();
+      if (existing == null && omemo2 && fp.length == 66) {
+        for (final rival in rivals) {
+          if (rival.fingerprint.length != 128) continue;
+          trust = FingerprintTrust.parse(rival.trust);
+          lastAct = rival.lastActivation;
+          break;
+        }
+      }
+    }
 
     await _db
         .into(_db.omemoIdentities)
@@ -288,25 +313,14 @@ class FingerprintTrustStore {
           ),
         );
 
-    if (deviceId != 0) {
-      final rivals =
-          await (_db.select(_db.omemoIdentities)..where(
-                (t) =>
-                    t.bareJid.equals(bare) &
-                    t.omemo2.equals(omemo2) &
-                    t.deviceId.equals(deviceId) &
-                    t.fingerprint.isNotValue(fp),
-              ))
-              .get();
-      for (final rival in rivals) {
-        if (!rival.active) continue;
-        await (_db.update(_db.omemoIdentities)..where(
-              (t) =>
-                  t.bareJid.equals(rival.bareJid) &
-                  t.fingerprint.equals(rival.fingerprint),
-            ))
-            .write(const OmemoIdentitiesCompanion(active: Value(false)));
-      }
+    for (final rival in rivals) {
+      if (!rival.active) continue;
+      await (_db.update(_db.omemoIdentities)..where(
+            (t) =>
+                t.bareJid.equals(rival.bareJid) &
+                t.fingerprint.equals(rival.fingerprint),
+          ))
+          .write(const OmemoIdentitiesCompanion(active: Value(false)));
     }
   }
 
@@ -425,22 +439,36 @@ class PeerFingerprintRow {
     required this.omemo2,
     required this.trust,
     this.active = true,
+    this.displayFingerprint,
   });
 
   final String peerJid;
   final int deviceId;
+
+  /// Trust-store key: classical IK hex (legacy or OMEMO2 with leading `05`).
   final String fingerprint;
   final bool omemo2;
   final FingerprintTrust trust;
   final bool active;
 
-  PeerFingerprintRow copyWith({FingerprintTrust? trust, bool? active}) =>
-      PeerFingerprintRow(
-        peerJid: peerJid,
-        deviceId: deviceId,
-        fingerprint: fingerprint,
-        omemo2: omemo2,
-        trust: trust ?? this.trust,
-        active: active ?? this.active,
-      );
+  /// What the user sees. For OMEMO2 with a pinned `<pq-ik>`, the hybrid
+  /// fingerprint; otherwise [fingerprint] (monocles OmemoActivity).
+  final String? displayFingerprint;
+
+  /// Fingerprint shown / copied in the UI.
+  String get shownFingerprint => displayFingerprint ?? fingerprint;
+
+  PeerFingerprintRow copyWith({
+    FingerprintTrust? trust,
+    bool? active,
+    String? displayFingerprint,
+  }) => PeerFingerprintRow(
+    peerJid: peerJid,
+    deviceId: deviceId,
+    fingerprint: fingerprint,
+    omemo2: omemo2,
+    trust: trust ?? this.trust,
+    active: active ?? this.active,
+    displayFingerprint: displayFingerprint ?? this.displayFingerprint,
+  );
 }
