@@ -16,6 +16,7 @@ import 'package:test/test.dart';
 import 'package:resonchat/domain/messages_service.dart';
 import 'package:resonchat/persistence/database.dart';
 import 'package:resonchat/xmpp/chat/replies.dart';
+import 'package:resonchat/xmpp/inbound/reply_info.dart';
 
 void main() {
   late AppDatabase db;

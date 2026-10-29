@@ -486,4 +486,12 @@ void main() {
       expect(row?.roomStanzaId, 'room-a');
     },
   );
+
+  test('translation provider JID is stored per account meta', () async {
+    expect(await db.translationProviderJid(), isNull);
+    await db.setTranslationProviderJid('bot@example.com/translator');
+    expect(await db.translationProviderJid(), 'bot@example.com/translator');
+    await db.setTranslationProviderJid('  ');
+    expect(await db.translationProviderJid(), isNull);
+  });
 }

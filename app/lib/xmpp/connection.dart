@@ -6,6 +6,7 @@
 // omemo_dart; this class owns lifecycle and event fan-out.
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' show min;
 import 'dart:typed_data';
 
@@ -49,9 +50,6 @@ import 'package:resonchat/xmpp/roster/blocking.dart';
 import 'package:resonchat/xmpp/roster/presence_store.dart';
 import 'package:resonchat/xmpp/socket/xmpp_socket.dart';
 import 'package:resonchat/xmpp/stream_management_store.dart';
-
-export 'package:resonchat/xmpp/inbound/inbound_message.dart'
-    show InboundMessage;
 
 /// The server rejected one of our outgoing messages.
 class DeliveryFailure {
@@ -2067,8 +2065,26 @@ class XmppService {
   DiscoManager? get disco =>
       _connection?.getManagerById<DiscoManager>(discoManager);
 
-  /// Asks a translation provider on this server to translate [text] into
-  /// [uiLanguage]. The provider list is cached until disconnect.
+  /// Drops the cached XEP-0171 provider list (e.g. after changing the pref).
+  void clearRemoteTranslationCache() => _remoteTranslation.clear();
+
+  /// §4.2.1 + §4.2.2 candidates on this account's server (for picking a
+  /// translation provider in account settings).
+  Future<List<TranslationProviderCandidate>?>
+  discoverTranslationProviders() async {
+    final connection = _connection;
+    final discoManager = disco;
+    if (connection == null || discoManager == null) return null;
+    return _remoteTranslation.discoverProviderCandidates(
+      disco: discoManager,
+      server: connection.connectionSettings.jid.toDomain(),
+    );
+  }
+
+  /// Asks a translation provider to translate [text] into [uiLanguage].
+  ///
+  /// Uses this account's configured provider JID when set; otherwise discovers
+  /// providers on the account domain. The list is cached until disconnect.
   Future<RemoteTranslationOutcome> requestRemoteTranslation({
     required String text,
     required String uiLanguage,
@@ -2083,12 +2099,18 @@ class XmppService {
         RemoteTranslationReject.notConnected,
       );
     }
+    JID? providerJid;
+    final stored = await accountDb?.translationProviderJid();
+    if (stored != null && stored.isNotEmpty) {
+      providerJid = JID.fromString(stored);
+    }
     return _remoteTranslation.translate(
       disco: discoManager,
       lang: lang,
       server: connection.connectionSettings.jid.toDomain(),
       text: text,
       uiLanguage: uiLanguage,
+      providerJid: providerJid,
     );
   }
 
@@ -3155,6 +3177,11 @@ class XmppService {
   }
 
   /// Cache → PEP bundle → remember. [omemo2] only switches A/B fetch+store.
+  ///
+  /// OMEMO2: even when the classical trust key is already cached, still fetch
+  /// the PEP bundle to TOFU-pin `<pq-ik>` if missing — otherwise the security
+  /// UI stays on classical forever and cannot be compared to monocles' hybrid
+  /// own-device page.
   Future<String?> _fingerprintFor(
     String bare,
     int deviceId, {
@@ -3166,28 +3193,59 @@ class XmppService {
       deviceId,
       omemo2: omemo2,
     );
+
+    if (omemo2) {
+      final pins = bTrack?.pqPins;
+      // Already have hybrid-as-trust (legacy rows) or a pin → no PEP needed.
+      final needPin =
+          pins != null &&
+          (cached == null ||
+              cached.isEmpty ||
+              (cached.length != 128 &&
+                  await pins.pinnedPqIdentity(bare, cached) == null));
+      if (!needPin && cached != null && cached.isNotEmpty) {
+        return FingerprintTrustStore.normalize(cached);
+      }
+
+      final bundle = await tracks?.getPqBundle(JID.fromString(bare), deviceId);
+      if (bundle == null || !bundle.hasPqIdentity) {
+        return cached != null && cached.isNotEmpty
+            ? FingerprintTrustStore.normalize(cached)
+            : null;
+      }
+      // Trust keyed on classical IK (monocles); hybrid is display-only via pin.
+      final fp = HEX.encode(bundle.ikSerialized).toLowerCase();
+      if (pins != null) {
+        try {
+          await pins.pinIfAbsent(
+            bare,
+            fp,
+            Uint8List.fromList(base64Decode(bundle.pqIk)),
+          );
+        } catch (_) {
+          // Pin store errors must not block remembering the classical key.
+        }
+      }
+      await trust?.rememberDevice(
+        jid: bare,
+        deviceId: deviceId,
+        fingerprint: fp,
+        omemo2: true,
+      );
+      return FingerprintTrustStore.normalize(fp);
+    }
+
     if (cached != null && cached.isNotEmpty) return cached;
 
-    late final String fp;
-    if (omemo2) {
-      final bundle = await tracks?.getPqBundle(JID.fromString(bare), deviceId);
-      if (bundle == null || !bundle.hasPqIdentity) return null;
-      // Trust keyed on classical IK (monocles); hybrid is display-only via pin.
-      fp = HEX.encode(bundle.ikSerialized).toLowerCase();
-    } else {
-      final bundle = await tracks?.getOmemoBundle(
-        JID.fromString(bare),
-        deviceId,
-      );
-      if (bundle == null) return null;
-      fp = bundle.fingerprint;
-    }
+    final bundle = await tracks?.getOmemoBundle(JID.fromString(bare), deviceId);
+    if (bundle == null) return null;
+    final fp = bundle.fingerprint;
 
     await trust?.rememberDevice(
       jid: bare,
       deviceId: deviceId,
       fingerprint: fp,
-      omemo2: omemo2,
+      omemo2: false,
     );
     return FingerprintTrustStore.normalize(fp);
   }

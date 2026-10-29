@@ -16,6 +16,7 @@ import 'package:resonchat/l10n/l10n.dart';
 import 'package:resonchat/ui/accounts/account_action_picker.dart';
 import 'package:resonchat/ui/home/open_chat.dart';
 import 'package:resonchat/ui/theme.dart';
+import 'package:resonchat/xmpp/jid_input.dart';
 import 'package:resonchat/xmpp/muc/muc_create.dart';
 
 /// Conversations “Create private group chat”.
@@ -273,6 +274,7 @@ class _CreatePublicChannelSheetState
   void initState() {
     super.initState();
     _accountId = defaultActionAccountId(preferred: widget.initialAccountId);
+    _jid.addListener(() => setState(() {}));
     unawaited(_suggestJid());
   }
 
@@ -294,8 +296,8 @@ class _CreatePublicChannelSheetState
 
   Future<void> _create() async {
     final l10n = context.l10n;
-    final address = _jid.text.trim();
-    if (address.isEmpty || !address.contains('@')) {
+    final address = completeJidCandidate(_jid.text);
+    if (address == null) {
       setState(() => _error = l10n.createGroupInvalidJid);
       return;
     }
@@ -388,6 +390,11 @@ class _CreatePublicChannelSheetState
             decoration: InputDecoration(
               labelText: l10n.channelAddress,
               hintText: l10n.channelAddressHint,
+              errorText:
+                  _jid.text.trim().isNotEmpty &&
+                      completeJidCandidate(_jid.text) == null
+                  ? l10n.invalidJid
+                  : null,
             ),
             onChanged: (_) => _jidTouched = true,
           ),
@@ -397,7 +404,9 @@ class _CreatePublicChannelSheetState
           ],
           const SizedBox(height: 16),
           FilledButton(
-            onPressed: _busy ? null : () => unawaited(_create()),
+            onPressed: _busy || completeJidCandidate(_jid.text) == null
+                ? null
+                : () => unawaited(_create()),
             child: Text(_busy ? l10n.creatingGroup : l10n.create),
           ),
         ],

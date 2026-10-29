@@ -15,6 +15,7 @@ import 'package:resonchat/net/app_network.dart';
 import 'package:resonchat/ui/login/login_viewmodel.dart';
 import 'package:resonchat/ui/settings/socks5_proxy_sheet.dart';
 import 'package:resonchat/ui/theme.dart';
+import 'package:resonchat/xmpp/jid_input.dart';
 
 /// Parsed `--dart-define` credentials, or null when unset.
 ({String jid, String password})? smokeCredentials() {
@@ -47,6 +48,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   @override
   void initState() {
     super.initState();
+    _jid.addListener(() => setState(() {}));
+    _password.addListener(() => setState(() {}));
     if (widget.addAccountMode) return;
     final smoke = smokeCredentials();
     if (smoke != null) {
@@ -59,6 +62,11 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       });
     }
   }
+
+  bool get _canConnect =>
+      !_busy &&
+      completeJidCandidate(_jid.text) != null &&
+      _password.text.isNotEmpty;
 
   @override
   void dispose() {
@@ -109,8 +117,18 @@ class _LoginPageState extends ConsumerState<LoginPage> {
             children: [
               TextField(
                 controller: _jid,
-                decoration: InputDecoration(labelText: l10n.jid),
+                decoration: InputDecoration(
+                  labelText: l10n.jid,
+                  errorText:
+                      _jid.text.trim().isNotEmpty &&
+                          completeJidCandidate(_jid.text) == null
+                      ? l10n.invalidJid
+                      : null,
+                ),
                 textInputAction: TextInputAction.next,
+                keyboardType: TextInputType.emailAddress,
+                autocorrect: false,
+                enableSuggestions: false,
               ),
               const SizedBox(height: 12),
               TextField(
@@ -163,7 +181,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                   ),
                 ),
               ElevatedButton(
-                onPressed: _busy ? null : _connect,
+                onPressed: _canConnect ? _connect : null,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: tg.accent,
                   foregroundColor: Colors.white,

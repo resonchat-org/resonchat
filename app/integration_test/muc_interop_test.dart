@@ -26,6 +26,7 @@ import 'package:moxxmpp/moxxmpp.dart';
 
 import 'package:resonchat/crypto/dual/track.dart';
 import 'package:resonchat/xmpp/connection.dart';
+import 'package:resonchat/xmpp/inbound/inbound_message.dart';
 
 final results = <String, bool>{};
 

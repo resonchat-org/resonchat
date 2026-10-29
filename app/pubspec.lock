@@ -682,7 +682,7 @@ packages:
       path: "../vendor/omemo_dart/vendor/libsignal_dart"
       relative: true
     source: path
-    version: "8.0.0"
+    version: "9.0.0"
   libsignal_protocol_dart:
     dependency: transitive
     description:

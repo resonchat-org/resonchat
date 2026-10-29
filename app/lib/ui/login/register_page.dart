@@ -19,6 +19,7 @@ import 'package:resonchat/net/app_network.dart';
 import 'package:resonchat/ui/login/login_viewmodel.dart';
 import 'package:resonchat/ui/settings/socks5_proxy_sheet.dart';
 import 'package:resonchat/ui/theme.dart';
+import 'package:resonchat/xmpp/jid_input.dart';
 import 'package:resonchat/xmpp/registration.dart';
 
 final _log = Logger('RegisterPage');
@@ -76,7 +77,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
     final user = _username.text.trim();
     final domain = _domain;
     if (user.isEmpty || domain == null) return null;
-    return '$user@$domain';
+    return completeJidCandidate('$user@$domain');
   }
 
   /// Gajim-style: opt-in download of providers-B.json; replaces the default
@@ -385,7 +386,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                   ),
                 ),
               ElevatedButton(
-                onPressed: _busy ? null : _register,
+                onPressed: _busy || _fullJid == null ? null : _register,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: tg.accent,
                   foregroundColor: Colors.white,

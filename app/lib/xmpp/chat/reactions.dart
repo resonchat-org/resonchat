@@ -21,9 +21,6 @@ import 'package:moxxmpp/moxxmpp.dart' show JID;
 import 'package:resonchat/persistence/database.dart';
 import 'package:resonchat/xmpp/connection.dart';
 
-export 'package:resonchat/xmpp/inbound/reaction_update.dart'
-    show ReactionUpdate;
-
 /// The emoji offered without opening the full palette.
 ///
 /// Curated defaults with emoji presentation by default. U+2764 (`❤`) is not

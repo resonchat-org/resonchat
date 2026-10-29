@@ -22,6 +22,7 @@ import 'package:resonchat/xmpp/auto_reply.dart';
 import 'package:resonchat/xmpp/chat_notify_mode.dart';
 import 'package:resonchat/xmpp/connection.dart';
 import 'package:resonchat/xmpp/encryption/capabilities.dart';
+import 'package:resonchat/xmpp/inbound/inbound_message.dart';
 import 'package:resonchat/xmpp/message_expiry.dart';
 import 'package:resonchat/xmpp/notify_policy.dart';
 import 'package:resonchat/xmpp/read_marker_target.dart';

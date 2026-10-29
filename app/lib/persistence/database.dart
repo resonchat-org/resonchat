@@ -2129,6 +2129,25 @@ class AppDatabase extends _$AppDatabase {
   Future<void> setOwnPresenceShowWire(String show) =>
       setMetaValue('pref_presence_show', show);
 
+  /// XEP-0171 translation provider JID for this account (bare or full).
+  ///
+  /// Empty / unset means the client discovers providers on the account domain
+  /// when a translation is requested.
+  static const translationProviderJidKey = 'pref_translation_provider_jid';
+
+  Future<String?> translationProviderJid() async {
+    final raw = (await metaValue(translationProviderJidKey))?.trim() ?? '';
+    return raw.isEmpty ? null : raw;
+  }
+
+  Future<void> setTranslationProviderJid(String? jid) async {
+    final trimmed = jid?.trim() ?? '';
+    if (trimmed.isEmpty) {
+      return deleteMetaValue(translationProviderJidKey);
+    }
+    return setMetaValue(translationProviderJidKey, trimmed);
+  }
+
   /// Newest message timestamp across all chats.
   ///
   /// Conversations `getLastMessageReceived` — used as the MAM catch-up

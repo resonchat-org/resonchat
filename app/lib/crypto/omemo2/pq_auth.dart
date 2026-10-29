@@ -189,9 +189,9 @@ Future<VerifiedHandshake?> verifyHandshake({
   final name = senderBareJid.toLowerCase();
   final ikFingerprint = HEX.encode(senderIk).toLowerCase();
   final existing = await pins.pinnedPqIdentity(name, ikFingerprint);
-  final nowPinned = existing != null
-      ? existing
-      : await pins.pinIfAbsent(name, ikFingerprint, pqAuth.pqIdentityKey);
+  final nowPinned =
+      existing ??
+      await pins.pinIfAbsent(name, ikFingerprint, pqAuth.pqIdentityKey);
   if (!_bytesEq(nowPinned, pqAuth.pqIdentityKey)) {
     throw PqIdentityChangedException(name, ikFingerprint);
   }

@@ -14,7 +14,6 @@ import 'package:pqcrypto/pqcrypto.dart';
 import 'package:xml/xml.dart';
 
 import 'package:resonchat/crypto/omemo2/message_codec.dart';
-import 'package:resonchat/crypto/omemo2/pq_auth.dart';
 import 'package:resonchat/crypto/omemo2/pq_message_layer.dart';
 import 'package:resonchat/crypto/omemo2/pq_session.dart';
 import 'package:resonchat/persistence/database.dart';

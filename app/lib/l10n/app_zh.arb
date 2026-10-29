@@ -966,5 +966,13 @@
   "autoTranslateSave": "保存",
   "requestTranslation": "向翻译服务请求",
   "noTranslationService": "没有可用的翻译服务。",
-  "noTranslationLanguage": "翻译服务不提供界面语言的译文。"
+  "noTranslationLanguage": "翻译服务不提供界面语言的译文。",
+  "translationProvider": "翻译提供者",
+  "translationProviderSummary": "用于「向翻译服务请求」的 XMPP 服务。留空则使用本服务器上的提供者。",
+  "translationProviderJid": "提供者 JID",
+  "translationProviderJidHint": "bot@example.com/translator",
+  "translationProviderDiscover": "发现",
+  "translationProviderDiscoverEmpty": "本服务器上未发现翻译提供者。",
+  "translationProviderSaved": "翻译提供者已保存",
+  "translationProviderCleared": "翻译提供者已清除"
 }

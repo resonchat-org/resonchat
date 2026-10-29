@@ -478,9 +478,24 @@ class AccountHub extends ChangeNotifier {
     final label = session.account.jid;
     try {
       // Conversations `processResumed`: SM resume keeps the session live —
-      // no BindProcessor (roster/bookmarks/presence/OMEMO republish/MUC).
-      // Still run incremental MAM; unacked stanzas are already resent by SM.
+      // no BindProcessor (roster/bookmarks/presence/MUC rejoin). Still run
+      // incremental MAM; unacked stanzas are already resent by SM.
+      //
+      // Crypto stacks are NOT skipped on resume. Classic OMEMO can lazy-load
+      // via the encrypt hook; B-track cannot — `_session` stays null until
+      // [initialiseBTrack], so a resume-only cold start never publishes
+      // `urn:monocles:omemo-pq:1:devices` and peers report pqUnavailable.
+      // Both ensures use publish-if-needed (no PEP write when already current).
       final resumed = xmpp.lastStreamResumed;
+      await xmpp.ensureOmemoDevice();
+      await xmpp.replenishPrekeys();
+      final pqOk = await xmpp.initialiseBTrack();
+      if (!pqOk) {
+        _log.warning(
+          'B-track init/publish failed for $label '
+          '(peers will see no PQ devices)',
+        );
+      }
       if (!resumed) {
         final items = await xmpp.requestRoster();
         final knownRoomJids = await db.groupChatJids();
@@ -495,9 +510,6 @@ class AccountHub extends ChangeNotifier {
         // Roster upsert must not move chats to "now"; realign from messages
         // (and repair rows stamped with login time by older builds).
         await db.syncChatLastActivity();
-        await xmpp.ensureOmemoDevice();
-        await xmpp.replenishPrekeys();
-        await xmpp.initialiseBTrack();
         // XEP-0402 / legacy bookmarks → local group rows, then rejoin autojoin.
         // Seed from disk so the UI is non-empty and legacy rewrites see the
         // full set if the fetch is slow or fails.
@@ -509,7 +521,7 @@ class AccountHub extends ChangeNotifier {
           for (final c in rooms) (roomJid: c.jid, nick: c.mucNick),
         ]);
       } else {
-        _log.info('SM resumed for $label; skipping bind bootstrap');
+        _log.info('SM resumed for $label; skipped roster/bookmarks/MUC rejoin');
       }
       final afterId = await db.metaValue(XmppService.mamCatchupIdKey);
       final startRaw = await db.metaValue(XmppService.mamCatchupTsKey);

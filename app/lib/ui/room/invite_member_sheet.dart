@@ -13,8 +13,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:resonchat/account/resolve.dart';
 import 'package:resonchat/l10n/l10n.dart';
 import 'package:resonchat/state/providers.dart';
-import 'package:resonchat/ui/contacts/contacts_match.dart';
 import 'package:resonchat/ui/theme.dart';
+import 'package:resonchat/xmpp/jid_input.dart';
 
 /// `true` when every invite was accepted by the server, `false` when any
 /// failed, `null` when the sheet was dismissed.
@@ -120,8 +120,11 @@ class _InviteMemberSheetState extends ConsumerState<_InviteMemberSheet> {
     final l10n = context.l10n;
     final tg = context.tg;
     final bottom = MediaQuery.of(context).viewInsets.bottom;
+    final typed = _jid.text.trim();
+    final typedJid = typed.isEmpty ? null : completeJidCandidate(typed);
+    final typedOk = typed.isEmpty || typedJid != null;
     final canSend =
-        !_busy && (_selected.isNotEmpty || _jid.text.trim().isNotEmpty);
+        !_busy && typedOk && (_selected.isNotEmpty || typedJid != null);
     return Padding(
       padding: EdgeInsets.only(bottom: bottom),
       child: SingleChildScrollView(
@@ -141,9 +144,16 @@ class _InviteMemberSheetState extends ConsumerState<_InviteMemberSheet> {
                 enabled: !_busy,
                 keyboardType: TextInputType.emailAddress,
                 textInputAction: TextInputAction.done,
-                decoration: InputDecoration(hintText: l10n.inviteMemberHint),
+                decoration: InputDecoration(
+                  hintText: l10n.inviteMemberHint,
+                  errorText: typed.isNotEmpty && typedJid == null
+                      ? l10n.invalidJid
+                      : null,
+                ),
                 onChanged: (_) => setState(() => _error = null),
-                onSubmitted: (_) => unawaited(_send()),
+                onSubmitted: (_) {
+                  if (canSend) unawaited(_send());
+                },
               ),
               if (_roster.isNotEmpty) ...[
                 const SizedBox(height: 12),

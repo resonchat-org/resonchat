@@ -103,9 +103,9 @@ class FingerprintTrustTile extends StatelessWidget {
               formatFingerprint(row.shownFingerprint),
               style: TextStyle(
                 fontFamily: 'monospace',
-                fontSize: 12,
+                fontSize: 13,
                 color: muted ? tg.textSecondary : tg.textPrimary,
-                height: 1.5,
+                height: 1.6,
               ),
             ),
             Align(

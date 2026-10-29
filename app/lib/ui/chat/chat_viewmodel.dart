@@ -38,6 +38,8 @@ import 'package:resonchat/xmpp/chat/retraction.dart' as retraction;
 import 'package:resonchat/xmpp/chat/sticker_link.dart';
 import 'package:resonchat/xmpp/connection.dart';
 import 'package:resonchat/xmpp/conversation_archive.dart';
+import 'package:resonchat/xmpp/inbound/inbound_message.dart';
+import 'package:resonchat/xmpp/inbound/reaction_update.dart';
 import 'package:resonchat/xmpp/message_send_status.dart';
 import 'package:resonchat/xmpp/muc/muc.dart';
 

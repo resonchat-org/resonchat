@@ -20,6 +20,7 @@ import 'package:resonchat/state/providers.dart';
 import 'package:resonchat/ui/accounts/account_action_picker.dart';
 import 'package:resonchat/ui/home/open_chat.dart';
 import 'package:resonchat/ui/theme.dart';
+import 'package:resonchat/xmpp/jid_input.dart';
 import 'package:resonchat/xmpp/muc/muc.dart';
 
 /// Asks for a room JID and a nickname, then joins.
@@ -68,6 +69,8 @@ class _JoinRoomSheetState extends ConsumerState<JoinRoomSheet> {
     if (prefill != null && prefill.isNotEmpty) {
       _room.text = prefill;
     }
+    _room.addListener(() => setState(() {}));
+    _nick.addListener(() => setState(() {}));
   }
 
   void _applyNickFromAccount() {
@@ -86,9 +89,9 @@ class _JoinRoomSheetState extends ConsumerState<JoinRoomSheet> {
   }
 
   Future<void> _join() async {
-    final roomJid = _room.text.trim();
+    final roomJid = completeJidCandidate(_room.text);
     final nick = _nick.text.trim();
-    if (roomJid.isEmpty || nick.isEmpty) {
+    if (roomJid == null || nick.isEmpty) {
       setState(() => _error = context.l10n.joinRoomNeedBoth);
       return;
     }
@@ -186,6 +189,11 @@ class _JoinRoomSheetState extends ConsumerState<JoinRoomSheet> {
             decoration: InputDecoration(
               labelText: l10n.roomAddress,
               hintText: l10n.roomAddressHint,
+              errorText:
+                  _room.text.trim().isNotEmpty &&
+                      completeJidCandidate(_room.text) == null
+                  ? l10n.invalidJid
+                  : null,
             ),
           ),
           const SizedBox(height: 12),
@@ -202,7 +210,12 @@ class _JoinRoomSheetState extends ConsumerState<JoinRoomSheet> {
           ],
           const SizedBox(height: 16),
           FilledButton(
-            onPressed: _busy ? null : _join,
+            onPressed:
+                _busy ||
+                    completeJidCandidate(_room.text) == null ||
+                    _nick.text.trim().isEmpty
+                ? null
+                : _join,
             child: Text(_busy ? l10n.joining : l10n.join),
           ),
         ],

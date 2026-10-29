@@ -14,7 +14,7 @@ import 'package:resonchat/account/account_hub.dart';
 import 'package:resonchat/crypto/dual/track.dart';
 import 'package:resonchat/persistence/database.dart';
 import 'package:resonchat/persistence/prefs_database.dart';
-import 'package:resonchat/xmpp/connection.dart';
+import 'package:resonchat/xmpp/inbound/inbound_message.dart';
 import 'package:resonchat/xmpp/message_send_status.dart';
 
 const autoReplyPrefKey = 'pref_auto_reply';

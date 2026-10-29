@@ -25,9 +25,6 @@ import 'package:moxxmpp/moxxmpp.dart'
 import 'package:resonchat/crypto/dual/track.dart';
 import 'package:resonchat/xmpp/connection.dart';
 
-export 'package:resonchat/xmpp/inbound/reply_info.dart'
-    show ReplyInfo, quoteFromReply, stripFallback;
-
 /// The quoted text plus the offsets that say where the quote ends.
 ///
 /// A reply body is the quote, `> `-prefixed, then the reply. The offsets are

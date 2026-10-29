@@ -4,8 +4,6 @@
 // Never-overwrite pin of peer `<pq-ik>` keyed by classical IK fingerprint
 // (monocles `DatabaseBackend.pinOmemo2PqIdentityIfAbsent`).
 
-import 'dart:typed_data';
-
 import 'package:drift/drift.dart';
 
 import 'package:resonchat/crypto/omemo2/pq_auth.dart';

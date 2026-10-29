@@ -27,6 +27,7 @@ import 'package:resonchat/persistence/pq_identity_store.dart';
 import 'package:resonchat/xmpp/connection.dart';
 import 'package:resonchat/xmpp/encryption/b_track_manager.dart';
 import 'package:resonchat/xmpp/encryption/capabilities.dart';
+import 'package:resonchat/xmpp/inbound/inbound_message.dart';
 
 final results = <String, bool>{};
 

@@ -26,6 +26,7 @@ import 'package:resonchat/ui/qr/qr_scan_page.dart';
 import 'package:resonchat/ui/qr/qr_scan_result.dart';
 import 'package:resonchat/ui/room/room_sheet.dart';
 import 'package:resonchat/ui/theme.dart';
+import 'package:resonchat/xmpp/jid_input.dart';
 import 'package:resonchat/xmpp/roster/local_nickname.dart';
 
 class ContactsPage extends ConsumerStatefulWidget {
@@ -537,6 +538,7 @@ class _AddContactSheetState extends State<_AddContactSheet> {
   void initState() {
     super.initState();
     _accountId = defaultActionAccountId(preferred: widget.initialAccountId);
+    _jid.addListener(() => setState(() {}));
   }
 
   @override
@@ -546,21 +548,24 @@ class _AddContactSheetState extends State<_AddContactSheet> {
   }
 
   void _submit() {
-    final raw = _jid.text.trim();
-    if (raw.isEmpty) return;
+    final jid = completeJidCandidate(_jid.text);
+    if (jid == null) return;
     if (_accountId == null && accountsReadyForActions().isEmpty) {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(context.l10n.noAccountReady)));
       return;
     }
     Navigator.of(context)
-        .pop(_AddContactSubmit(jid: raw, accountId: _accountId));
+        .pop(_AddContactSubmit(jid: jid, accountId: _accountId));
   }
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final bottom = MediaQuery.of(context).viewInsets.bottom;
+    final jid = completeJidCandidate(_jid.text);
+    final typed = _jid.text.trim();
+    final jidError = typed.isNotEmpty && jid == null ? l10n.invalidJid : null;
     return Padding(
       padding: EdgeInsets.fromLTRB(20, 16, 20, bottom + 20),
       child: Column(
@@ -578,14 +583,20 @@ class _AddContactSheetState extends State<_AddContactSheet> {
             autofocus: true,
             keyboardType: TextInputType.emailAddress,
             textInputAction: TextInputAction.done,
-            onSubmitted: (_) => _submit(),
+            onSubmitted: (_) {
+              if (jid != null) _submit();
+            },
             decoration: InputDecoration(
               labelText: l10n.jid,
               hintText: l10n.addContactHint,
+              errorText: jidError,
             ),
           ),
           const SizedBox(height: 16),
-          FilledButton(onPressed: _submit, child: Text(l10n.addContact)),
+          FilledButton(
+            onPressed: jid == null ? null : _submit,
+            child: Text(l10n.addContact),
+          ),
         ],
       ),
     );

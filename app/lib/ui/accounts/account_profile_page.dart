@@ -20,6 +20,7 @@ import 'package:resonchat/persistence/account_store.dart';
 import 'package:resonchat/ui/accounts/account_profile_viewmodel.dart';
 import 'package:resonchat/ui/accounts/account_qr_code.dart';
 import 'package:resonchat/ui/accounts/blocked_contacts_page.dart';
+import 'package:resonchat/ui/accounts/translation_provider_sheet.dart';
 import 'package:resonchat/ui/contact_avatar.dart';
 import 'package:resonchat/ui/fingerprint_box.dart';
 import 'package:resonchat/ui/security/fingerprint_trust_tile.dart';
@@ -355,6 +356,20 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
                     ),
                   );
                 },
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.translate),
+                title: Text(l10n.translationProvider),
+                subtitle: Text(l10n.translationProviderSummary),
+                trailing: const Icon(Icons.chevron_right),
+                enabled: !ui.busy,
+                onTap: () => unawaited(
+                  showTranslationProviderSheet(
+                    context,
+                    accountId: widget.accountId,
+                  ),
+                ),
               ),
               const SizedBox(height: 28),
               Text(

@@ -5,10 +5,9 @@
 
 import 'package:flutter/material.dart';
 
-import 'package:moxxmpp/moxxmpp.dart' show JID;
-
 import 'package:resonchat/l10n/l10n.dart';
 import 'package:resonchat/ui/theme.dart';
+import 'package:resonchat/xmpp/jid_input.dart';
 
 /// One ban/block row: JID, optional detail (e.g. ban reason), unlock action.
 class BanListTile extends StatelessWidget {
@@ -90,23 +89,24 @@ class _AddBanJidDialogState extends State<_AddBanJidDialog> {
 
   void _submit() {
     final l10n = context.l10n;
-    final raw = _jid.text.trim().toLowerCase();
-    if (raw.isEmpty || !raw.contains('@') || raw.startsWith('@')) {
+    final jid = completeJidCandidate(_jid.text);
+    if (jid == null) {
       setState(() => _error = l10n.invalidJid);
       return;
     }
-    try {
-      JID.fromString(raw);
-    } catch (_) {
-      setState(() => _error = l10n.invalidJid);
-      return;
-    }
-    Navigator.pop(context, (jid: raw, reason: _reason.text.trim()));
+    Navigator.pop(context, (
+      jid: jid.toLowerCase(),
+      reason: _reason.text.trim(),
+    ));
   }
+
+  bool get _canSubmit => completeJidCandidate(_jid.text) != null;
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
+    final typed = _jid.text.trim();
+    final showError = typed.isNotEmpty && completeJidCandidate(typed) == null;
     return AlertDialog(
       title: Text(widget.title),
       content: Column(
@@ -118,18 +118,16 @@ class _AddBanJidDialogState extends State<_AddBanJidDialog> {
             decoration: InputDecoration(
               labelText: l10n.jid,
               hintText: 'user@example.org',
-              errorText: _error,
+              errorText: _error ?? (showError ? l10n.invalidJid : null),
             ),
             keyboardType: TextInputType.emailAddress,
             textInputAction: widget.askReason
                 ? TextInputAction.next
                 : TextInputAction.done,
             onSubmitted: (_) {
-              if (!widget.askReason) _submit();
+              if (!widget.askReason && _canSubmit) _submit();
             },
-            onChanged: (_) {
-              if (_error != null) setState(() => _error = null);
-            },
+            onChanged: (_) => setState(() => _error = null),
           ),
           if (widget.askReason) ...[
             const SizedBox(height: 12),
@@ -137,7 +135,9 @@ class _AddBanJidDialogState extends State<_AddBanJidDialog> {
               controller: _reason,
               decoration: InputDecoration(labelText: l10n.banReasonOptional),
               textInputAction: TextInputAction.done,
-              onSubmitted: (_) => _submit(),
+              onSubmitted: (_) {
+                if (_canSubmit) _submit();
+              },
             ),
           ],
         ],
@@ -147,7 +147,10 @@ class _AddBanJidDialogState extends State<_AddBanJidDialog> {
           onPressed: () => Navigator.pop(context),
           child: Text(l10n.cancel),
         ),
-        TextButton(onPressed: _submit, child: Text(widget.confirmLabel)),
+        TextButton(
+          onPressed: _canSubmit ? _submit : null,
+          child: Text(widget.confirmLabel),
+        ),
       ],
     );
   }
