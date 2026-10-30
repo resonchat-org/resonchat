@@ -75,7 +75,6 @@ class OccupantCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tg = context.tg;
     final l10n = context.l10n;
     final real = occupant.realJid;
     final avatarJid = (real != null && real.isNotEmpty)
@@ -86,7 +85,7 @@ class OccupantCell extends StatelessWidget {
       child: InkWell(
         onTap: self ? null : onTap,
         onLongPress: self ? null : onLongPress,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppDimens.controlRadius),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
           child: Column(
@@ -113,7 +112,7 @@ class OccupantCell extends StatelessWidget {
               if (self)
                 Text(
                   l10n.you,
-                  style: TextStyle(fontSize: 11, color: tg.textSecondary),
+                  style: context.appText.time,
                 ),
             ],
           ),

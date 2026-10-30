@@ -28,7 +28,7 @@ class ReadRing extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final clamped = fraction.clamp(0.0, 1.0);
     final ring = SizedBox(
       width: _ringSize,
@@ -113,7 +113,6 @@ Future<void> showGroupReadSheet(
     showDragHandle: true,
     isScrollControlled: true,
     builder: (context) {
-      final tg = context.tg;
       final l10n = context.l10n;
       return SafeArea(
         child: SingleChildScrollView(
@@ -122,9 +121,9 @@ Future<void> showGroupReadSheet(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              _heading(tg, l10n.messageReaders),
+              _heading(context.appText.sectionHeader, l10n.messageReaders),
               OccupantMatrix(roomJid: roomJid, occupants: read),
-              _heading(tg, l10n.messageUnreaders),
+              _heading(context.appText.sectionHeader, l10n.messageUnreaders),
               OccupantMatrix(roomJid: roomJid, occupants: unread),
             ],
           ),
@@ -134,16 +133,9 @@ Future<void> showGroupReadSheet(
   );
 }
 
-Widget _heading(TgColors tg, String label) {
+Widget _heading(TextStyle style, String label) {
   return Padding(
     padding: const EdgeInsets.fromLTRB(8, 12, 16, 4),
-    child: Text(
-      label,
-      style: TextStyle(
-        color: tg.textSecondary,
-        fontSize: 13,
-        fontWeight: FontWeight.w600,
-      ),
-    ),
+    child: Text(label, style: style),
   );
 }

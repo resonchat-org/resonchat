@@ -108,7 +108,7 @@ class _RoomOutcastsPageState extends ConsumerState<RoomOutcastsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final l10n = context.l10n;
     return Scaffold(
       appBar: AppBar(

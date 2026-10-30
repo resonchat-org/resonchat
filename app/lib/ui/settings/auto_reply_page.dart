@@ -74,7 +74,7 @@ class _AutoReplyPageState extends State<AutoReplyPage> {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final tg = context.tg;
+    final tg = context.appColors;
     final rules = _config.rules;
     return Scaffold(
       appBar: AppBar(title: Text(l10n.autoReply)),

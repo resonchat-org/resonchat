@@ -52,7 +52,7 @@ class _DialogCellState extends State<DialogCell> {
 
   @override
   Widget build(BuildContext context) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final subtitle = widget.subtitle;
     // A selected row in column mode has to remain findable while the pointer
     // is elsewhere; the hover wash is a lighter, transient version of it.
@@ -77,10 +77,10 @@ class _DialogCellState extends State<DialogCell> {
         child: AnimatedContainer(
           duration: motionDuration(context, kMotionFast),
           curve: kMotionStandard,
-          height: TgDimens.chatsRowHeight,
+          height: AppDimens.chatsRowHeight,
           color: background,
           padding: const EdgeInsets.symmetric(
-            horizontal: TgDimens.chatsHorizontalPadding,
+            horizontal: AppDimens.chatsHorizontalPadding,
           ),
           child: Row(
             children: [
@@ -99,7 +99,7 @@ class _DialogCellState extends State<DialogCell> {
                             duration: motionDuration(context, kMotionFast),
                             curve: kMotionStandard,
                             style: TextStyle(
-                              fontSize: TgDimens.chatTitleFontSize,
+                              fontSize: AppDimens.chatTitleFontSize,
                               fontWeight: widget.titleWeight,
                               color: tg.textPrimary,
                             ),
@@ -114,7 +114,7 @@ class _DialogCellState extends State<DialogCell> {
                       ],
                     ),
                     if (subtitle != null) ...[
-                      const SizedBox(height: TgDimens.chatsTitleGap),
+                      const SizedBox(height: AppDimens.chatsTitleGap),
                       subtitle,
                     ],
                   ],

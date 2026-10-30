@@ -16,11 +16,11 @@ import 'package:resonchat/ui/chat/chat_input_bar.dart';
 import 'package:resonchat/ui/chat/glass_panel.dart';
 import 'package:resonchat/ui/theme.dart';
 
-/// `TgColors.light()` (day) accent — the fill of the send circle.
-final _accent = const TgColors.light().accent;
+/// `AppColors.light()` (day) accent — the fill of the send circle.
+final _accent = const AppColors.light().accent;
 
 /// The island's glass fill: the message panel, just short of opaque.
-final _glass = const TgColors.light().pageBackground.withValues(alpha: 0.86);
+final _glass = const AppColors.light().pageBackground.withValues(alpha: 0.86);
 
 Widget wrap(Widget child) => MaterialApp(
   debugShowCheckedModeBanner: false,
@@ -109,7 +109,7 @@ void main() {
         tester.widget<Container>(tile).decoration! as BoxDecoration;
     expect(
       decoration.color,
-      const TgColors.light().textPrimary.withValues(alpha: 0.06),
+      const AppColors.light().textPrimary.withValues(alpha: 0.06),
     );
     expect(
       decoration.borderRadius,
@@ -171,7 +171,7 @@ void main() {
     final icon = tester.widget<Icon>(find.byIcon(Icons.mic));
     expect(
       icon.color,
-      const TgColors.light().textSecondary.withValues(alpha: 0.5),
+      const AppColors.light().textSecondary.withValues(alpha: 0.5),
     );
     expect(
       find.byIcon(Icons.mic),

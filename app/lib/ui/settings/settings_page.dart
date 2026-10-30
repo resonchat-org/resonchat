@@ -196,7 +196,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final l10n = context.l10n;
     final settings = ref.watch(settingsViewModelProvider);
     final xmpp = ref.watch(xmppServiceOrNullProvider);
@@ -223,7 +223,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           ),
 
           // Conversations: Interface (theme / UI) is separate from Privacy.
-          _header(tg, l10n.interface),
+          _header(context, tg, l10n.interface),
           Consumer(
             builder: (context, ref, _) {
               final pref = ref.watch(accentPreferenceProvider);
@@ -252,7 +252,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             onTap: () => _pickLanguage(context, localeOverride),
           ),
 
-          _header(tg, l10n.privacy),
+          _header(context, tg, l10n.privacy),
           ListenableBuilder(
             listenable: AppLock.instance,
             builder: (context, _) {
@@ -297,7 +297,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             onChanged: (v) => unawaited(_setOmemoBlindTrust(v)),
           ),
 
-          _header(tg, l10n.messageSettings),
+          _header(context, tg, l10n.messageSettings),
           if (isDesktopSendShortcutHost)
             SwitchListTile(
               secondary: const Icon(Icons.keyboard_return),
@@ -375,7 +375,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             },
           ),
 
-          _header(tg, l10n.connection),
+          _header(context, tg, l10n.connection),
           // SOCKS5 is a TCP CONNECT proxy — browsers cannot use it.
           if (!kIsWeb)
             ListTile(
@@ -443,7 +443,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
           // Developer last: it is for diagnosing the app, not for using it.
           if (devLog.supported) ...[
-            _header(tg, l10n.developer),
+            _header(context, tg, l10n.developer),
             SwitchListTile(
               secondary: const Icon(Icons.bug_report_outlined),
               title: Text(l10n.devLogMode),
@@ -460,7 +460,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               ),
           ],
 
-          _header(tg, l10n.about),
+          _header(context, tg, l10n.about),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
             child: Text(
@@ -523,10 +523,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
               child: Text(
                 l10n.channelDiscoverySummary,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Theme.of(ctx).colorScheme.onSurfaceVariant,
-                ),
+                style: ctx.appText.helper,
               ),
             ),
             for (final method in ChannelDiscoveryMethod.values)
@@ -785,7 +782,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     SettingsViewModel vm,
   ) async {
     final l10n = context.l10n;
-    final tg = context.tg;
+    final tg = context.appColors;
     final chosen = await showModalBottomSheet<Track>(
       context: context,
       builder: (ctx) => SafeArea(
@@ -1000,17 +997,14 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         .setOverride(localeFromPref(chosen.isEmpty ? null : chosen));
   }
 
-  static Widget _header(TgColors tg, String title) => Padding(
-    padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
-    child: Text(
-      title,
-      style: TextStyle(
-        color: tg.accent,
-        fontSize: 13,
-        fontWeight: FontWeight.w600,
-      ),
-    ),
-  );
+  static Widget _header(BuildContext context, AppColors tg, String title) =>
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+        child: Text(
+          title,
+          style: context.appText.sectionHeader.copyWith(color: tg.accent),
+        ),
+      );
 }
 
 class _AccentDot extends StatelessWidget {

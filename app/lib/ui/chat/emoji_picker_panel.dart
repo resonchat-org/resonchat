@@ -130,7 +130,7 @@ class _EmojiPickerPanelState extends State<EmojiPickerPanel> {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final tg = context.tg;
+    final tg = context.appColors;
     return Column(
       children: [
         Padding(
@@ -204,7 +204,7 @@ class _EmojiPickerPanelState extends State<EmojiPickerPanel> {
 
   Widget _tabs(BuildContext context, AppLocalizations l10n) {
     final theme = Theme.of(context);
-    final tg = context.tg;
+    final tg = context.appColors;
     return Container(
       height: _tabHeight,
       decoration: BoxDecoration(

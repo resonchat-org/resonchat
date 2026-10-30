@@ -46,13 +46,17 @@ void main() {
     expect(isTranslationProviderDisco(wrongIdentity), isFalse);
   });
 
-  test('provider JID must be full local@domain/resource', () {
+  test('provider JID may be bare, full, or a component (XEP §4.2.2)', () {
     expect(
       looksLikeTranslationProviderJid('bot@example.com/translator'),
       isTrue,
     );
-    expect(looksLikeTranslationProviderJid('translation.example.com'), isFalse);
-    expect(looksLikeTranslationProviderJid('bot@example.com'), isFalse);
+    expect(looksLikeTranslationProviderJid('translation.example.com'), isTrue);
+    expect(looksLikeTranslationProviderJid('bot@example.com'), isTrue);
+    expect(
+      looksLikeTranslationProviderJid('towerofbabel@shakespeare.lit'),
+      isTrue,
+    );
     expect(looksLikeTranslationProviderJid('not a jid'), isFalse);
     expect(looksLikeTranslationProviderJid('bot@example.com/'), isFalse);
     expect(looksLikeTranslationProviderJid(''), isFalse);

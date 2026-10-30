@@ -336,7 +336,7 @@ class MessageBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final mine = this.mine || side == BubbleSide.outgoing;
     final baseColor = mine ? tg.ownBubble : tg.peerBubble;
     // Soft accent wash when this message @'d us — enough to find it in a
@@ -345,7 +345,7 @@ class MessageBubble extends StatelessWidget {
         ? Color.alphaBlend(tg.accent.withValues(alpha: 0.14), baseColor)
         : baseColor;
     final bodyStyle = TextStyle(
-      fontSize: TgDimens.messageFontSize,
+      fontSize: AppDimens.messageFontSize,
       color: tg.textPrimary,
       height: 1.3,
     );
@@ -390,16 +390,16 @@ class MessageBubble extends StatelessWidget {
           painter: _BubblePainter(
             color: color,
             side: side,
-            radius: TgDimens.bubbleRadius,
-            tail: TgDimens.bubbleTailSize,
+            radius: AppDimens.bubbleRadius,
+            tail: AppDimens.bubbleTailSize,
             style: bubbleStyle,
           ),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(
-              TgDimens.bubblePaddingH + 4,
-              TgDimens.bubblePaddingV,
-              TgDimens.bubblePaddingH + 4,
-              TgDimens.bubblePaddingV,
+              AppDimens.bubblePaddingH + 4,
+              AppDimens.bubblePaddingV,
+              AppDimens.bubblePaddingH + 4,
+              AppDimens.bubblePaddingV,
             ),
             // Width comes only from body / media / meta. The reply card reports
             // zero intrinsic width and then stretches to that sibling width, so a
@@ -486,7 +486,7 @@ class MessageBubble extends StatelessWidget {
                             child: Text(
                               context.l10n.edited,
                               style: TextStyle(
-                                fontSize: TgDimens.timeFontSize - 1,
+                                fontSize: AppDimens.timeFontSize - 1,
                                 color: tg.textSecondary,
                               ),
                             ),
@@ -588,7 +588,7 @@ class MessageBubble extends StatelessWidget {
                     : Text(
                         translation ?? '',
                         style: TextStyle(
-                          fontSize: TgDimens.messageFontSize - 1,
+                          fontSize: AppDimens.messageFontSize - 1,
                           color: tg.textSecondary,
                           height: 1.3,
                           fontStyle: FontStyle.italic,
@@ -806,7 +806,7 @@ class _QuoteChrome extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final l10n = context.l10n;
     final dark = Theme.of(context).brightness == Brightness.dark;
     // monocles `quote_box_scrim`: #16000000 light / #26FFFFFF dark.
@@ -906,7 +906,7 @@ class ReactionChip extends StatelessWidget {
                 Text(
                   '${reaction.count}',
                   style: TextStyle(
-                    fontSize: TgDimens.timeFontSize,
+                    fontSize: AppDimens.timeFontSize,
                     fontWeight: FontWeight.w600,
                     color: reaction.mine
                         ? theme.colorScheme.onPrimaryContainer
@@ -972,7 +972,7 @@ class _MetaRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tg = context.tg;
+    final tg = context.appColors;
     // Prefer [sendStatus] (Conversations STATUS_*); fall back to legacy flags.
     final status = sendStatus != MessageSendStatus.received || !mine
         ? sendStatus
@@ -1006,7 +1006,7 @@ class _MetaRow extends StatelessWidget {
         Text(
           _timeText,
           style: TextStyle(
-            fontSize: TgDimens.timeFontSize,
+            fontSize: AppDimens.timeFontSize,
             color: isFailed ? tg.danger : tg.textSecondary,
           ),
         ),
@@ -1042,7 +1042,7 @@ class _MetaRow extends StatelessWidget {
               Text(
                 encMode.label,
                 style: TextStyle(
-                  fontSize: TgDimens.timeFontSize - 1,
+                  fontSize: AppDimens.timeFontSize - 1,
                   fontWeight: FontWeight.w500,
                   letterSpacing: 0.3,
                   color: labelColor,
@@ -1074,7 +1074,7 @@ class DateSeparator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final l10n = context.l10n;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -1088,7 +1088,7 @@ class DateSeparator extends StatelessWidget {
           child: Text(
             _label(l10n),
             style: TextStyle(
-              fontSize: TgDimens.timeFontSize,
+              fontSize: AppDimens.timeFontSize,
               color: tg.dateSeparatorText,
               fontWeight: FontWeight.w500,
             ),
@@ -1115,10 +1115,10 @@ class RetractedNotice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final l10n = context.l10n;
     final style = TextStyle(
-      fontSize: TgDimens.timeFontSize,
+      fontSize: AppDimens.timeFontSize,
       color: tg.textSecondary,
     );
     final maxText = MediaQuery.sizeOf(context).width - 80;

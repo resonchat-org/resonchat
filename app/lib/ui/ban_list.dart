@@ -28,7 +28,7 @@ class BanListTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final d = detail?.trim();
     return ListTile(
       leading: Icon(Icons.block, color: tg.danger),

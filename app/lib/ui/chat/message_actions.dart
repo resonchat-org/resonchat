@@ -460,7 +460,7 @@ class _AnchoredMessageMenuState extends State<_AnchoredMessageMenu>
 
   Widget _reactionRow(BuildContext context, AppLocalizations l10n) {
     final theme = Theme.of(context);
-    final tg = context.tg;
+    final tg = context.appColors;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -837,7 +837,7 @@ class ReplyPreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final tg = context.tg;
+    final tg = context.appColors;
     final l10n = context.l10n;
     return Material(
       color: theme.colorScheme.surfaceContainerHigh,

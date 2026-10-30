@@ -2335,7 +2335,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
   @override
   Widget build(BuildContext context) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final l10n = context.l10n;
     final ui = ref.watch(chatViewModelProvider(widget.chatJid));
     final messages = ref.watch(messagesProvider(widget.chatJid));
@@ -2406,7 +2406,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                         ContactAvatar(
                           jid: _peerJid,
                           title: title,
-                          radius: TgDimens.avatarChat / 2,
+                          radius: AppDimens.avatarChat / 2,
                           hero: true,
                           showPresence: !ui.isGroup,
                           presence: ui.isGroup
@@ -2451,7 +2451,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                  fontSize: TgDimens.timeFontSize,
+                                  fontSize: AppDimens.timeFontSize,
                                   fontWeight: FontWeight.w400,
                                   color: Colors.white70,
                                   fontStyle:
@@ -2865,7 +2865,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
   /// The scroll button, which is one of two things depending on whether there is
   /// anything unread.
-  Widget _scrollButton(TgColors tg) {
+  Widget _scrollButton(AppColors tg) {
     final l10n = context.l10n;
     final unread = _unreadCountHere ?? 0;
     final hasUnreadDivider =
@@ -2911,7 +2911,7 @@ class _ChatNoticeBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final l10n = context.l10n;
     return Material(
       color: tg.danger.withValues(alpha: 0.12),

@@ -19,7 +19,7 @@ const double kDesktopChatRadius = kDesktopContentRadius;
 
 /// Slightly deepened page background for the list tray in column mode.
 Color desktopListTrayOf(BuildContext context) {
-  final page = context.tg.pageBackground;
+  final page = context.appColors.pageBackground;
   final dark = page.computeLuminance() < 0.2;
   return Color.alphaBlend(
     Colors.black.withValues(alpha: dark ? 0.22 : 0.045),
@@ -38,7 +38,7 @@ class DesktopChatPane extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final radius = BorderRadius.circular(kDesktopChatRadius);
     return Padding(
       padding: const EdgeInsets.only(

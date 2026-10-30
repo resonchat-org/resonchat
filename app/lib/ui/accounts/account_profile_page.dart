@@ -233,7 +233,7 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final tg = context.tg;
+    final tg = context.appColors;
     final ui = ref.watch(accountProfileViewModelProvider(widget.accountId));
     return ListenableBuilder(
       listenable: accountHub,
@@ -374,11 +374,7 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
               const SizedBox(height: 28),
               Text(
                 l10n.presenceStatus,
-                style: TextStyle(
-                  color: tg.textSecondary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
+                style: context.appText.sectionHeader,
               ),
               const SizedBox(height: 8),
               _PresencePicker(
@@ -389,11 +385,7 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
               const SizedBox(height: 28),
               Text(
                 l10n.omemoEncryption,
-                style: TextStyle(
-                  color: tg.textSecondary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
+                style: context.appText.sectionHeader,
               ),
               const SizedBox(height: 8),
               ListTile(
@@ -405,7 +397,7 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
               // Regenerate sits under the fingerprint it replaces.
               Text(
                 l10n.omemo2Fingerprint,
-                style: TextStyle(fontSize: 12, color: tg.textSecondary),
+                style: context.appText.caption,
               ),
               const SizedBox(height: 6),
               if (ui.hybridFingerprint != null)
@@ -426,7 +418,7 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
               const SizedBox(height: 8),
               Text(
                 l10n.omemoLegacyFingerprint,
-                style: TextStyle(fontSize: 12, color: tg.textSecondary),
+                style: context.appText.caption,
               ),
               const SizedBox(height: 6),
               if (ui.legacyFingerprint != null)
@@ -447,22 +439,18 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
               const SizedBox(height: 20),
               Text(
                 l10n.otherOwnDevices,
-                style: TextStyle(
-                  color: tg.textSecondary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
+                style: context.appText.sectionHeader,
               ),
               const SizedBox(height: 4),
               Text(
                 l10n.otherOwnDevicesIntro,
-                style: TextStyle(fontSize: 12, color: tg.textSecondary),
+                style: context.appText.caption,
               ),
               const SizedBox(height: 8),
               if (ui.otherDevices.isEmpty)
                 Text(
                   l10n.noOtherOwnDevices,
-                  style: TextStyle(fontSize: 13, color: tg.textSecondary),
+                  style: context.appText.helper,
                 )
               else
                 for (final row in ui.otherDevices)
@@ -560,7 +548,7 @@ class _PresencePickerState extends State<_PresencePicker> {
             ),
             title: Text(label(show)),
             trailing: _current == show
-                ? Icon(Icons.check, color: context.tg.accent)
+                ? Icon(Icons.check, color: context.appColors.accent)
                 : null,
             onTap: !widget.enabled || session == null
                 ? null

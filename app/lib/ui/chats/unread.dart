@@ -100,7 +100,7 @@ class UnreadDivider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final l10n = context.l10n;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
@@ -112,7 +112,7 @@ class UnreadDivider extends StatelessWidget {
             child: Text(
               l10n.unreadMessages,
               style: TextStyle(
-                fontSize: TgDimens.timeFontSize,
+                fontSize: AppDimens.timeFontSize,
                 fontWeight: FontWeight.w600,
                 color: tg.accent,
               ),

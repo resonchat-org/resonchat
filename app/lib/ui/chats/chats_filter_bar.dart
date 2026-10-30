@@ -38,7 +38,7 @@ class ChatsFilterBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final l10n = context.l10n;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
@@ -52,9 +52,9 @@ class ChatsFilterBar extends StatelessWidget {
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(
-        TgDimens.chatsHorizontalPadding,
+        AppDimens.chatsHorizontalPadding,
         0,
-        TgDimens.chatsHorizontalPadding,
+        AppDimens.chatsHorizontalPadding,
         8,
       ),
       child: Row(
@@ -105,7 +105,7 @@ class ChatsAccountDrawer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final l10n = context.l10n;
     // Show disabled accounts too — filtering them out made the drawer look
     // empty after the only account was turned off (and clear-cache cannot
@@ -383,11 +383,7 @@ class _ScopeHit extends StatelessWidget {
               child: AnimatedDefaultTextStyle(
                 duration: _SlidingScopeControlState._slide,
                 curve: kMotionStandard,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: selected ? selectedFg : idleFg,
-                ),
+                style: context.appText.sectionHeader.copyWith(color: selected ? selectedFg : idleFg),
                 child: Text(label),
               ),
             ),
@@ -415,7 +411,7 @@ class _AccountTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tg = context.tg;
+    final tg = context.appColors;
     return ListTile(
       enabled: onTap != null,
       leading: CircleAvatar(

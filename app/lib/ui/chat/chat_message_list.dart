@@ -401,12 +401,12 @@ class _ChatMessageListState extends State<ChatMessageList> {
     if (EncModeToken.parse(m.encMode) == EncModeToken.error) {
       Widget errorRow = ListTile(
         dense: true,
-        leading: Icon(Icons.lock_outline, size: 18, color: context.tg.danger),
+        leading: Icon(Icons.lock_outline, size: 18, color: context.appColors.danger),
         title: Text(
           context.l10n.unableToDecrypt,
           style: TextStyle(
             fontStyle: FontStyle.italic,
-            color: context.tg.textSecondary,
+            color: context.appColors.textSecondary,
           ),
         ),
         trailing: TextButton(
@@ -797,7 +797,7 @@ class _BubbleOccupantAvatar extends StatelessWidget {
     if (room != null && room.isNotEmpty) {
       return ContactAvatar(jid: '$room/$nick', title: nick, radius: radius);
     }
-    final tg = context.tg;
+    final tg = context.appColors;
     final colour = tintFor(colorKey, tg.accent);
     return CircleAvatar(
       radius: radius,

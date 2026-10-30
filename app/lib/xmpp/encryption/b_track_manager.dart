@@ -289,6 +289,7 @@ class BTrackManager {
   Future<String?> decryptIfPossible(
     PqEncryptedMessage message, {
     required String senderBareJid,
+    DateTime? stanzaTimestamp,
   }) async {
     final session = _session;
     if (session == null) return null;
@@ -296,7 +297,11 @@ class BTrackManager {
     if (!message.keys.any((k) => k.recipientDeviceId == session.device.id)) {
       return null;
     }
-    return session.layer.decrypt(message, senderBareJid: senderBareJid);
+    return session.layer.decrypt(
+      message,
+      senderBareJid: senderBareJid,
+      stanzaTimestamp: stanzaTimestamp,
+    );
   }
 
   /// Refills the ML-KEM one-time prekey pool back up to [target] and

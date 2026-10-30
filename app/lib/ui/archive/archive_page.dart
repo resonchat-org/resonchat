@@ -16,7 +16,7 @@ class ArchivePage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final l10n = context.l10n;
     final archived = ref.watch(archivedChatsProvider);
 

@@ -33,7 +33,7 @@ void main() {
       final dark = accent.tgColors(Brightness.dark);
       expect(
         light.ownBubble,
-        isNot(const TgColors.light().ownBubble),
+        isNot(const AppColors.light().ownBubble),
         reason: '${accent.stored} kept the old green bubble',
       );
       expect(light.ownBubble, isNot(light.peerBubble));

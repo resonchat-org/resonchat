@@ -3624,7 +3624,10 @@ class XmppService {
   BaseRosterStateManager? _rosterState;
 
   /// Opens an inbound B-track message, if this device is a recipient.
-  Future<String?> _decryptIncomingPq(Stanza stanza) async {
+  Future<String?> _decryptIncomingPq(
+    Stanza stanza,
+    DateTime? stanzaTimestamp,
+  ) async {
     final payload = extractPqPayload(stanza);
     if (payload == null) return null;
     final track = bTrack;
@@ -3634,6 +3637,7 @@ class XmppService {
     final plaintext = await track.decryptIfPossible(
       payload,
       senderBareJid: senderBare,
+      stanzaTimestamp: stanzaTimestamp,
     );
     if (plaintext == null) return null;
     // Each new inbound PQ session burns one one-time prekey; refilling keeps

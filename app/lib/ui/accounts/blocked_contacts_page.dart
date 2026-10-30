@@ -93,7 +93,7 @@ class _BlockedContactsPageState extends ConsumerState<BlockedContactsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final l10n = context.l10n;
     final account = accountHub.accounts
         .where((a) => a.id == widget.accountId)
@@ -150,7 +150,7 @@ class _BlockedContactsPageState extends ConsumerState<BlockedContactsPage> {
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
                   child: Text(
                     account.bareJid,
-                    style: TextStyle(color: tg.textSecondary, fontSize: 13),
+                    style: context.appText.helper,
                   ),
                 ),
               for (final jid in list)

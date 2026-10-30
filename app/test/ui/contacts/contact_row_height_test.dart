@@ -49,6 +49,6 @@ void main() {
         .map((box) => box.size.height)
         .toList();
     expect(heights, hasLength(4));
-    expect(heights.toSet(), {TgDimens.chatsRowHeight});
+    expect(heights.toSet(), {AppDimens.chatsRowHeight});
   });
 }

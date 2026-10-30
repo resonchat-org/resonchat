@@ -158,7 +158,7 @@ class _JoinRoomSheetState extends ConsumerState<JoinRoomSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final l10n = context.l10n;
     return Padding(
       padding: EdgeInsets.fromLTRB(
@@ -247,7 +247,7 @@ class PinnedSheet extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final tg = context.tg;
+    final tg = context.appColors;
     return DraggableScrollableSheet(
       expand: false,
       initialChildSize: 0.5,

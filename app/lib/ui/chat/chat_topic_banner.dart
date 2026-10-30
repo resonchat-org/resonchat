@@ -47,7 +47,7 @@ class _ChatTopicBannerState extends ConsumerState<ChatTopicBanner> {
 
   Future<void> _openDetail() async {
     final l10n = context.l10n;
-    final tg = context.tg;
+    final tg = context.appColors;
     final subject = _subject;
     await showModalBottomSheet<void>(
       context: context,
@@ -116,7 +116,7 @@ class _ChatTopicBannerState extends ConsumerState<ChatTopicBanner> {
     final read = ref.watch(mucSubjectReadProvider(widget.chatJid)).value;
     if (read != null && read == subject) return const SizedBox.shrink();
 
-    final tg = context.tg;
+    final tg = context.appColors;
     final l10n = context.l10n;
 
     return Material(

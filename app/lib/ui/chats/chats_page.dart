@@ -123,7 +123,7 @@ class _ChatsPageState extends ConsumerState<ChatsPage>
     // Column mode: ResonChat bar matches the deepened list tray (no separate
     // bar colour, no seam). Portrait keeps the themed accent AppBar.
     final column = isColumnMode(context);
-    final tg = context.tg;
+    final tg = context.appColors;
     final tray = column ? desktopListTrayOf(context) : null;
     return Scaffold(
       backgroundColor: tray,
@@ -139,7 +139,7 @@ class _ChatsPageState extends ConsumerState<ChatsPage>
         titleTextStyle: column
             ? TextStyle(
                 color: tg.textPrimary,
-                fontSize: TgDimens.chatTitleFontSize,
+                fontSize: AppDimens.chatTitleFontSize,
                 fontWeight: FontWeight.w600,
               )
             : null,
@@ -239,7 +239,7 @@ class _ChatsPageState extends ConsumerState<ChatsPage>
                           body: Center(
                             child: Text(
                               l10n.searchFailed('$e'),
-                              style: TextStyle(color: context.tg.danger),
+                              style: TextStyle(color: context.appColors.danger),
                             ),
                           ),
                         ),
@@ -269,7 +269,7 @@ class _ChatsPageState extends ConsumerState<ChatsPage>
                                       padding: const EdgeInsets.only(left: 82),
                                       child: Divider(
                                         height: 0.5,
-                                        color: context.tg.separator,
+                                        color: context.appColors.separator,
                                       ),
                                     ),
                                     itemBuilder: (context, i) {
@@ -381,20 +381,20 @@ class _MessageSearchBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final l10n = context.l10n;
     return Padding(
       padding: const EdgeInsets.fromLTRB(
-        TgDimens.chatsHorizontalPadding,
+        AppDimens.chatsHorizontalPadding,
         8,
-        TgDimens.chatsHorizontalPadding,
+        AppDimens.chatsHorizontalPadding,
         8,
       ),
       child: TextField(
         controller: controller,
         onChanged: onChanged,
         textInputAction: TextInputAction.search,
-        style: TextStyle(fontSize: TgDimens.chatSubtitleFontSize),
+        style: TextStyle(fontSize: AppDimens.chatSubtitleFontSize),
         decoration: InputDecoration(
           isDense: true,
           hintText: l10n.searchMessages,

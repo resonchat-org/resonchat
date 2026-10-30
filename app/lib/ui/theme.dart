@@ -48,8 +48,8 @@ TextStyle emojiTextStyle({double fontSize = 22, Color? color}) {
 /// Telegram-like palette exposed through [ThemeExtension] so widgets read
 /// colours from the theme instead of hard-coding them.
 @immutable
-class TgColors extends ThemeExtension<TgColors> {
-  const TgColors({
+class AppColors extends ThemeExtension<AppColors> {
+  const AppColors({
     required this.barBackground,
     required this.pageBackground,
     required this.peerBubble,
@@ -73,7 +73,7 @@ class TgColors extends ThemeExtension<TgColors> {
   /// #a4acb3, `key_chat_messagePanelSend` #62b0eb). The accent is
   /// intentionally *not* stock Telegram blue so the apps are not
   /// confusable (docs/05 §6).
-  const TgColors.light()
+  const AppColors.light()
     : barBackground = const Color(0xFF517DA2),
       pageBackground = const Color(0xFFFFFFFF),
       peerBubble = const Color(0xFFFFFFFF),
@@ -94,7 +94,7 @@ class TgColors extends ThemeExtension<TgColors> {
   /// rather than shipping a static dark table, so these are our
   /// hand-tuned equivalents sampled from the night theme's rendered
   /// output, not copies of a literal table.
-  const TgColors.dark()
+  const AppColors.dark()
     : barBackground = const Color(0xFF242F3D),
       pageBackground = const Color(0xFF17212B),
       peerBubble = const Color(0xFF182533),
@@ -126,7 +126,7 @@ class TgColors extends ThemeExtension<TgColors> {
   final Color danger;
 
   @override
-  TgColors copyWith({
+  AppColors copyWith({
     Color? barBackground,
     Color? pageBackground,
     Color? peerBubble,
@@ -142,7 +142,7 @@ class TgColors extends ThemeExtension<TgColors> {
     Color? dateSeparatorText,
     Color? danger,
   }) {
-    return TgColors(
+    return AppColors(
       barBackground: barBackground ?? this.barBackground,
       pageBackground: pageBackground ?? this.pageBackground,
       peerBubble: peerBubble ?? this.peerBubble,
@@ -161,9 +161,9 @@ class TgColors extends ThemeExtension<TgColors> {
   }
 
   @override
-  TgColors lerp(ThemeExtension<TgColors>? other, double t) {
-    if (other is! TgColors) return this;
-    return TgColors(
+  AppColors lerp(ThemeExtension<AppColors>? other, double t) {
+    if (other is! AppColors) return this;
+    return AppColors(
       barBackground: Color.lerp(barBackground, other.barBackground, t)!,
       pageBackground: Color.lerp(pageBackground, other.pageBackground, t)!,
       peerBubble: Color.lerp(peerBubble, other.peerBubble, t)!,
@@ -186,19 +186,25 @@ class TgColors extends ThemeExtension<TgColors> {
   }
 }
 
-/// Spacing and sizing constants sampled from Telegram (docs/05 §2).
-class TgDimens {
-  const TgDimens._();
+/// Shared layout and type sizes (bubbles, avatars, list rows, text roles).
+class AppDimens {
+  const AppDimens._();
 
   static const double bubbleRadius = 12;
   static const double bubbleTailSize = 8;
   static const double bubblePaddingH = 8;
   static const double bubblePaddingV = 6;
 
+  /// Shared radius for form controls (inputs, small chips, ink wells).
+  static const double controlRadius = 8;
+
   static const double messageFontSize = 16;
   static const double chatTitleFontSize = 16;
   static const double chatSubtitleFontSize = 14;
   static const double timeFontSize = 11;
+  static const double sectionHeaderFontSize = 13;
+  static const double helperFontSize = 13;
+  static const double captionFontSize = 12;
 
   static const double avatarChats = 54;
   static const double avatarChat = 40;
@@ -207,34 +213,113 @@ class TgDimens {
   static const double chatsRowHeight = 64;
   static const double chatsHorizontalPadding = 12;
   static const double chatsTitleGap = 2;
+
+  static const EdgeInsets inputContentPadding = EdgeInsets.all(12);
 }
 
-/// Convenience accessor: `context.tg.accent`.
+/// Repeated text roles. Prefer these over one-off `TextStyle(fontSize: …)`.
+///
+/// Only clear, duplicated roles live here — leave one-offs inline.
+@immutable
+class AppTextStyles extends ThemeExtension<AppTextStyles> {
+  const AppTextStyles({
+    required this.sectionHeader,
+    required this.helper,
+    required this.caption,
+    required this.time,
+  });
+
+  factory AppTextStyles.fromColors(AppColors tg) {
+    return AppTextStyles(
+      sectionHeader: TextStyle(
+        color: tg.textSecondary,
+        fontSize: AppDimens.sectionHeaderFontSize,
+        fontWeight: FontWeight.w600,
+      ),
+      helper: TextStyle(
+        color: tg.textSecondary,
+        fontSize: AppDimens.helperFontSize,
+      ),
+      caption: TextStyle(
+        color: tg.textSecondary,
+        fontSize: AppDimens.captionFontSize,
+      ),
+      time: TextStyle(
+        color: tg.textSecondary,
+        fontSize: AppDimens.timeFontSize,
+      ),
+    );
+  }
+
+  /// Settings / profile section titles.
+  final TextStyle sectionHeader;
+
+  /// Sheet summaries, empty-state hints, secondary body copy.
+  final TextStyle helper;
+
+  /// Fingerprint labels and other quiet meta.
+  final TextStyle caption;
+
+  /// Message timestamps.
+  final TextStyle time;
+
+  @override
+  AppTextStyles copyWith({
+    TextStyle? sectionHeader,
+    TextStyle? helper,
+    TextStyle? caption,
+    TextStyle? time,
+  }) {
+    return AppTextStyles(
+      sectionHeader: sectionHeader ?? this.sectionHeader,
+      helper: helper ?? this.helper,
+      caption: caption ?? this.caption,
+      time: time ?? this.time,
+    );
+  }
+
+  @override
+  AppTextStyles lerp(ThemeExtension<AppTextStyles>? other, double t) {
+    if (other is! AppTextStyles) return this;
+    return AppTextStyles(
+      sectionHeader: TextStyle.lerp(sectionHeader, other.sectionHeader, t)!,
+      helper: TextStyle.lerp(helper, other.helper, t)!,
+      caption: TextStyle.lerp(caption, other.caption, t)!,
+      time: TextStyle.lerp(time, other.time, t)!,
+    );
+  }
+}
+
+/// Convenience accessors: `context.appColors.accent`, `context.appText.helper`.
 ///
 /// Falls back to the light palette when the host theme has no
-/// [TgColors] extension, so widgets stay usable in isolation (tests,
+/// [AppColors] extension, so widgets stay usable in isolation (tests,
 /// bare MaterialApp) instead of throwing.
-extension TgTheme on BuildContext {
-  TgColors get tg =>
-      Theme.of(this).extension<TgColors>() ??
+extension AppThemeContext on BuildContext {
+  AppColors get appColors =>
+      Theme.of(this).extension<AppColors>() ??
       (Theme.of(this).brightness == Brightness.dark
-          ? const TgColors.dark()
-          : const TgColors.light());
+          ? const AppColors.dark()
+          : const AppColors.light());
+
+  AppTextStyles get appText =>
+      Theme.of(this).extension<AppTextStyles>() ??
+      AppTextStyles.fromColors(appColors);
 }
 
 class AppThemeTokens {
   const AppThemeTokens._();
 
-  static ThemeData light([TgColors? tg]) {
-    return lightOrDark(tg ?? const TgColors.light(), Brightness.light);
+  static ThemeData light([AppColors? tg]) {
+    return lightOrDark(tg ?? const AppColors.light(), Brightness.light);
   }
 
-  static ThemeData dark([TgColors? tg]) {
-    return lightOrDark(tg ?? const TgColors.dark(), Brightness.dark);
+  static ThemeData dark([AppColors? tg]) {
+    return lightOrDark(tg ?? const AppColors.dark(), Brightness.dark);
   }
 
   /// Fixed-accent Telegram-like theme (seeded [ColorScheme]).
-  static ThemeData lightOrDark(TgColors tg, Brightness brightness) {
+  static ThemeData lightOrDark(AppColors tg, Brightness brightness) {
     final scheme = ColorScheme.fromSeed(
       seedColor: tg.accent,
       brightness: brightness,
@@ -263,8 +348,8 @@ class AppThemeTokens {
   static ThemeData fromMaterialYou(ColorScheme scheme) {
     final brightness = scheme.brightness;
     final base = brightness == Brightness.dark
-        ? const TgColors.dark()
-        : const TgColors.light();
+        ? const AppColors.dark()
+        : const AppColors.light();
     // Coloured action bar like Telegram Monet previews (primary / a1_600).
     final bar = scheme.primary;
     final tg = base.copyWith(
@@ -288,11 +373,15 @@ class AppThemeTokens {
   }
 
   static ThemeData _base({
-    required TgColors tg,
+    required AppColors tg,
     required Brightness brightness,
     required ColorScheme scheme,
     required Color onBar,
   }) {
+    final text = AppTextStyles.fromColors(tg);
+    final controlShape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(AppDimens.controlRadius),
+    );
     return ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
@@ -308,12 +397,61 @@ class AppThemeTokens {
         centerTitle: false,
         titleTextStyle: TextStyle(
           color: onBar,
-          fontSize: TgDimens.chatTitleFontSize,
+          fontSize: AppDimens.chatTitleFontSize,
           fontWeight: FontWeight.w600,
         ),
       ),
       dividerTheme: DividerThemeData(color: tg.separator, space: 0.5),
-      extensions: <ThemeExtension<dynamic>>[tg],
+      inputDecorationTheme: InputDecorationTheme(
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppDimens.controlRadius)),
+        contentPadding: AppDimens.inputContentPadding,
+      ),
+      chipTheme: ChipThemeData(
+        showCheckmark: false,
+        backgroundColor: scheme.surfaceContainer,
+        side: BorderSide.none,
+        shape: controlShape,
+      ),
+      snackBarTheme: const SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          shape: controlShape,
+        ),
+      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          shape: controlShape,
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          shape: controlShape,
+          side: BorderSide(color: scheme.primary),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(shape: controlShape),
+      ),
+      textSelectionTheme: TextSelectionThemeData(
+        selectionColor: scheme.onSurface.withValues(alpha: 0.24),
+        selectionHandleColor: scheme.secondary,
+      ),
+      progressIndicatorTheme: ProgressIndicatorThemeData(
+        strokeCap: StrokeCap.round,
+        color: scheme.primary,
+        refreshBackgroundColor: scheme.primaryContainer,
+      ),
+      listTileTheme: ListTileThemeData(
+        iconColor: tg.textSecondary,
+        textColor: tg.textPrimary,
+      ),
+      extensions: <ThemeExtension<dynamic>>[tg, text],
     );
   }
 }
@@ -321,7 +459,7 @@ class AppThemeTokens {
 /// Lock badge for the encryption state: `OMEMO`, `PQ`, or plaintext.
 ///
 /// Colours follow the ambient [IconTheme] (AppBar `onBar`) so the chip stays
-/// readable on the tinted action bar — using [TgColors.accent] here used to
+/// readable on the tinted action bar — using [AppColors.accent] here used to
 /// paint the same colour as the bar and vanish into it.
 class EncBadge extends StatelessWidget {
   const EncBadge({
@@ -347,7 +485,7 @@ class EncBadge extends StatelessWidget {
     final color = locked ? onBar : onBar.withValues(alpha: 0.72);
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(AppDimens.controlRadius),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         child: Row(
@@ -361,11 +499,7 @@ class EncBadge extends StatelessWidget {
             const SizedBox(width: 4),
             Text(
               label,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: color,
-              ),
+              style: context.appText.sectionHeader.copyWith(color: color),
             ),
           ],
         ),

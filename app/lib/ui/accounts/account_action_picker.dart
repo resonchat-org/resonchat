@@ -61,7 +61,7 @@ class AccountActionPicker extends StatelessWidget {
     final list = accounts ?? accountsReadyForActions();
     if (list.length <= 1) return const SizedBox.shrink();
     final l10n = context.l10n;
-    final tg = context.tg;
+    final tg = context.appColors;
     final value = selectedId != null && list.any((a) => a.id == selectedId)
         ? selectedId
         : list.first.id;

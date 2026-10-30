@@ -156,7 +156,7 @@ class _CreatePrivateGroupSheetState
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final tg = context.tg;
+    final tg = context.appColors;
     final bottom = MediaQuery.of(context).viewInsets.bottom;
     return Padding(
       padding: EdgeInsets.fromLTRB(20, 16, 20, bottom + 20),
@@ -194,7 +194,7 @@ class _CreatePrivateGroupSheetState
             const SizedBox(height: 12),
             Text(
               l10n.chooseParticipants,
-              style: TextStyle(color: tg.textSecondary, fontSize: 13),
+              style: context.appText.helper,
             ),
             const SizedBox(height: 4),
             ConstrainedBox(
@@ -350,7 +350,7 @@ class _CreatePublicChannelSheetState
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final tg = context.tg;
+    final tg = context.appColors;
     final bottom = MediaQuery.of(context).viewInsets.bottom;
     return Padding(
       padding: EdgeInsets.fromLTRB(20, 16, 20, bottom + 20),

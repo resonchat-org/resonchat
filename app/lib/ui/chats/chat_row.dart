@@ -53,7 +53,7 @@ class ChatRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final chat = entry.chat;
     final chatKey = entry.ref.key;
     final accent = entry.accent;
@@ -135,7 +135,7 @@ class ChatRow extends ConsumerWidget {
           Text(
             _timeOf(chat.lastActivity),
             style: TextStyle(
-              fontSize: TgDimens.timeFontSize,
+              fontSize: AppDimens.timeFontSize,
               color: chat.unreadCount > 0 && !silenced
                   ? tg.accent
                   : tg.textSecondary,
@@ -153,7 +153,7 @@ class ChatRow extends ConsumerWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontSize: TgDimens.timeFontSize,
+                fontSize: AppDimens.timeFontSize,
                 color: accent,
                 fontWeight: FontWeight.w600,
               ),
@@ -177,7 +177,7 @@ class ChatRow extends ConsumerWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: TgDimens.chatSubtitleFontSize,
+                      fontSize: AppDimens.chatSubtitleFontSize,
                       color: tg.textSecondary,
                     ),
                   ),
@@ -187,7 +187,7 @@ class ChatRow extends ConsumerWidget {
                 Text(
                   track.label,
                   style: TextStyle(
-                    fontSize: TgDimens.timeFontSize,
+                    fontSize: AppDimens.timeFontSize,
                     color: tg.accent,
                     fontWeight: FontWeight.w600,
                   ),
@@ -343,7 +343,7 @@ class UnreadBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accent = context.tg.accent;
+    final accent = context.appColors.accent;
     return Container(
       constraints: const BoxConstraints(minWidth: 20),
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
@@ -358,7 +358,7 @@ class UnreadBadge extends StatelessWidget {
         count > 99 ? '99+' : '$count',
         textAlign: TextAlign.center,
         style: TextStyle(
-          fontSize: TgDimens.timeFontSize,
+          fontSize: AppDimens.timeFontSize,
           fontWeight: FontWeight.w700,
           color: muted ? accent : Colors.white,
         ),
@@ -375,7 +375,7 @@ class MentionBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accent = context.tg.accent;
+    final accent = context.appColors.accent;
     return Container(
       width: 20,
       height: 20,
@@ -388,7 +388,7 @@ class MentionBadge extends StatelessWidget {
       child: Text(
         '@',
         style: TextStyle(
-          fontSize: TgDimens.timeFontSize,
+          fontSize: AppDimens.timeFontSize,
           fontWeight: FontWeight.w800,
           color: muted ? accent : Colors.white,
           height: 1,

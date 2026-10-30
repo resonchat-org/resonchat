@@ -65,7 +65,7 @@ class _QrScanPageState extends State<QrScanPage> {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final tg = context.tg;
+    final tg = context.appColors;
     return Scaffold(
       appBar: AppBar(title: Text(l10n.scanQrCode)),
       body: _error != null

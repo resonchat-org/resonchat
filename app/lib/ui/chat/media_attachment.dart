@@ -330,7 +330,7 @@ class _FileRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final shape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(8),
     );
@@ -369,7 +369,7 @@ class _FileRow extends StatelessWidget {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: TgDimens.messageFontSize,
+                          fontSize: AppDimens.messageFontSize,
                           color: tg.textPrimary,
                         ),
                       ),

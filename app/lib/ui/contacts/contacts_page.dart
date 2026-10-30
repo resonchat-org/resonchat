@@ -180,7 +180,7 @@ class _ContactsPageState extends ConsumerState<ContactsPage>
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final tg = context.tg;
+    final tg = context.appColors;
     final hub = ref.watch(accountHubProvider);
     final filterId = _accountId;
     if (filterId != null &&
@@ -228,9 +228,9 @@ class _ContactsPageState extends ConsumerState<ContactsPage>
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(
-                TgDimens.chatsHorizontalPadding,
+                AppDimens.chatsHorizontalPadding,
                 8,
-                TgDimens.chatsHorizontalPadding,
+                AppDimens.chatsHorizontalPadding,
                 8,
               ),
               child: Row(
@@ -246,7 +246,7 @@ class _ContactsPageState extends ConsumerState<ContactsPage>
                         final jid = completeJidCandidate(_needle);
                         if (jid != null) unawaited(_addContact(jid));
                       },
-                      style: TextStyle(fontSize: TgDimens.chatSubtitleFontSize),
+                      style: TextStyle(fontSize: AppDimens.chatSubtitleFontSize),
                       decoration: InputDecoration(
                         isDense: true,
                         hintText: l10n.searchContactsHint,
@@ -366,7 +366,7 @@ class _SearchResults extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.l10n;
-    final tg = context.tg;
+    final tg = context.appColors;
     final chats = ref.watch(chatsProvider).value ?? const <AccountChat>[];
 
     final contactHits = contacts

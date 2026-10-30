@@ -71,7 +71,7 @@ void main() {
       // The A track uses the same tag. Matching on tag alone would hand
       // standard OMEMO ciphertext to the PQ decryptor, which fails noisily
       // and looks like a key problem rather than a routing one.
-      final m = _manager((_) async => 'x').manager;
+      final m = _manager((_, _) async => 'x').manager;
       final handler = m.getIncomingPreStanzaHandlers().single;
       expect(handler.stanzaTag, 'message');
       expect(handler.tagName, 'encrypted');
@@ -82,7 +82,7 @@ void main() {
 
   group('a message we can open', () {
     test('the plaintext replaces the fallback body', () async {
-      final m = _manager((_) async => 'the real message').manager;
+      final m = _manager((_, _) async => 'the real message').manager;
       final state = await _run(m, _pqMessage());
 
       final body = state.stanza.firstTag('body');
@@ -93,7 +93,7 @@ void main() {
     });
 
     test('the ciphertext is gone, so nothing downstream tries again', () async {
-      final m = _manager((_) async => 'the real message').manager;
+      final m = _manager((_, _) async => 'the real message').manager;
       final state = await _run(m, _pqMessage());
 
       final left = state.stanza.children
@@ -108,7 +108,7 @@ void main() {
         // Our own message mirrored back from another resource was encrypted for
         // the *peer's* devices. Reporting that as a failed delivery would be
         // inventing a problem.
-        final m = _manager((_) async => 'the real message').manager;
+        final m = _manager((_, _) async => 'the real message').manager;
         final state = await _run(m, _pqMessage());
         expect(state.encrypted, isTrue);
       },
@@ -117,7 +117,7 @@ void main() {
     test(
       'the EME declaration survives, because it carries the label',
       () async {
-        final m = _manager((_) async => 'the real message').manager;
+        final m = _manager((_, _) async => 'the real message').manager;
         final stanza = Stanza.message(
           children: [
             MessageBodyData('fallback').toXML(),
@@ -138,7 +138,7 @@ void main() {
     test('the stanza id is carried through', () async {
       // Without the id a delivery receipt or a carbon cannot be matched back
       // to the stored row.
-      final m = _manager((_) async => 'x').manager;
+      final m = _manager((_, _) async => 'x').manager;
       final state = await _run(m, _pqMessage(id: 'abc-123'));
       expect(state.stanza.attributes['id'], 'abc-123');
     });
@@ -146,7 +146,7 @@ void main() {
 
   group('a message we cannot open', () {
     test('leaves the stanza alone rather than inventing plaintext', () async {
-      final m = _manager((_) async => null).manager;
+      final m = _manager((_, _) async => null).manager;
       final state = await _run(m, _pqMessage());
 
       // Still marked unencrypted and still carrying the ciphertext: the UI
@@ -165,14 +165,14 @@ void main() {
         // Without this the user reads "This message is encrypted. Use a
         // supported client to read it." as if it were what their contact sent.
         // Only the second of those is actionable.
-        final m = _manager((_) async => null).manager;
+        final m = _manager((_, _) async => null).manager;
         final state = await _run(m, _pqMessage());
         expect(state.encryptionError, isNotNull);
       },
     );
 
     test('and says so out loud', () async {
-      final m = _manager((_) async => null);
+      final m = _manager((_, _) async => null);
       await _run(m.manager, _pqMessage(id: 'abc-123'));
       expect(m.failures, hasLength(1));
       expect(m.failures.single.stanzaId, 'abc-123');
@@ -183,7 +183,7 @@ void main() {
       'a throw from the crypto layer does not take the session down',
       () async {
         // One malformed message must not cost the user the whole connection.
-        final m = _manager((_) async => throw StateError('bad key'));
+        final m = _manager((_, _) async => throw StateError('bad key'));
         Object? caught;
         try {
           await _run(m.manager, _pqMessage());
@@ -195,7 +195,7 @@ void main() {
     );
 
     test('a throw is reported as an error, not swallowed', () async {
-      final m = _manager((_) async => throw StateError('bad key'));
+      final m = _manager((_, _) async => throw StateError('bad key'));
       final state = await _run(m.manager, _pqMessage());
       expect(state.encryptionError, contains('bad key'));
       expect(m.failures.single.reason, contains('bad key'));
@@ -207,7 +207,7 @@ void main() {
       // Only the PQ handler reports; a normal chat message must stay silent
       // or the log fills with noise about messages nobody asked about.
       var called = 0;
-      final m = PqIncomingManager((_) async {
+      final m = PqIncomingManager((_, _) async {
         called++;
         return null;
       }, (_) {});

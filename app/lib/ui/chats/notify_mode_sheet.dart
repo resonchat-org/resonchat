@@ -137,7 +137,7 @@ class _NotifyModeSheetState extends State<_NotifyModeSheet> {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final tg = context.tg;
+    final tg = context.appColors;
     final modes = widget.chat.isGroup
         ? ChatNotifyMode.values
         : const [ChatNotifyMode.all, ChatNotifyMode.never];
@@ -169,12 +169,10 @@ class _NotifyModeSheetState extends State<_NotifyModeSheet> {
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                 child: Text(
                   l10n.notifyStill,
-                  style: TextStyle(
+                  style: context.appText.sectionHeader.copyWith(
                     color: exceptionsOn
                         ? tg.textSecondary
                         : tg.textSecondary.withValues(alpha: 0.38),
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
@@ -182,11 +180,10 @@ class _NotifyModeSheetState extends State<_NotifyModeSheet> {
                 padding: const EdgeInsets.fromLTRB(16, 2, 16, 4),
                 child: Text(
                   l10n.notifyStillSummary,
-                  style: TextStyle(
-                    color: (exceptionsOn
+                  style: context.appText.helper.copyWith(
+                    color: exceptionsOn
                         ? tg.textSecondary
-                        : tg.textSecondary.withValues(alpha: 0.38)),
-                    fontSize: 13,
+                        : tg.textSecondary.withValues(alpha: 0.38),
                   ),
                 ),
               ),

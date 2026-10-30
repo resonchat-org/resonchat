@@ -118,7 +118,7 @@ class _InviteMemberSheetState extends ConsumerState<_InviteMemberSheet> {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final tg = context.tg;
+    final tg = context.appColors;
     final bottom = MediaQuery.of(context).viewInsets.bottom;
     final typed = _jid.text.trim();
     final typedJid = typed.isEmpty ? null : completeJidCandidate(typed);
@@ -159,7 +159,7 @@ class _InviteMemberSheetState extends ConsumerState<_InviteMemberSheet> {
                 const SizedBox(height: 12),
                 Text(
                   l10n.chooseParticipants,
-                  style: TextStyle(color: tg.textSecondary, fontSize: 13),
+                  style: context.appText.helper,
                 ),
                 const SizedBox(height: 4),
                 ConstrainedBox(

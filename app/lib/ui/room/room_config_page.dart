@@ -125,7 +125,7 @@ class _RoomConfigPageState extends ConsumerState<RoomConfigPage> {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final tg = context.tg;
+    final tg = context.appColors;
     final scheme = Theme.of(context).colorScheme;
     // AppBar uses a solid brand bar; M3 TextButton defaults to primary, which
     // matches that bar — force on-bar contrast (same idea as onPrimary).
@@ -227,7 +227,7 @@ class _FieldTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final tg = context.tg;
+    final tg = context.appColors;
     final label = translateRoomConfigLabel(l10n, field.label ?? field.varAttr);
     final desc = field.description == null || field.description!.isEmpty
         ? null

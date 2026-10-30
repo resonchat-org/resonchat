@@ -24,7 +24,7 @@ class MePage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.l10n;
-    final tg = context.tg;
+    final tg = context.appColors;
     final hub = ref.watch(accountHubProvider);
 
     return ListenableBuilder(
@@ -49,11 +49,7 @@ class MePage extends ConsumerWidget {
                       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                       child: Text(
                         l10n.manageAccounts,
-                        style: TextStyle(
-                          color: tg.textSecondary,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
+                        style: context.appText.sectionHeader,
                       ),
                     ),
                     for (var i = 0; i < accounts.length; i++) ...[

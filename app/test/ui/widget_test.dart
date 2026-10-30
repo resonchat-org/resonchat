@@ -39,8 +39,8 @@ void main() {
 
   group('theme', () {
     test('light and dark differ on every surface token', () {
-      const light = TgColors.light();
-      const dark = TgColors.dark();
+      const light = AppColors.light();
+      const dark = AppColors.dark();
       expect(light.pageBackground, isNot(dark.pageBackground));
       expect(light.ownBubble, isNot(dark.ownBubble));
       expect(light.peerBubble, isNot(dark.peerBubble));
@@ -60,11 +60,11 @@ void main() {
         return (hi + 0.05) / (lo + 0.05);
       }
 
-      const light = TgColors.light();
+      const light = AppColors.light();
       expect(ratio(light.textPrimary, light.ownBubble), greaterThan(7.0));
       expect(ratio(light.textPrimary, light.peerBubble), greaterThan(7.0));
 
-      const dark = TgColors.dark();
+      const dark = AppColors.dark();
       expect(ratio(dark.textPrimary, dark.ownBubble), greaterThan(4.5));
       expect(ratio(dark.textPrimary, dark.peerBubble), greaterThan(4.5));
     });

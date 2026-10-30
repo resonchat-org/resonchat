@@ -21,7 +21,7 @@ class AccountFilterMenuButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final track = isDark
         ? tg.separator.withValues(alpha: 0.85)

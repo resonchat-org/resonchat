@@ -59,7 +59,7 @@ class PendingRequestsButton extends ConsumerWidget {
       onPressed: onPressed ?? () => openPendingRequests(Navigator.of(context)),
       icon: Badge(
         isLabelVisible: count > 0,
-        backgroundColor: context.tg.danger,
+        backgroundColor: context.appColors.danger,
         textColor: Colors.white,
         label: Text(label),
         child: const Icon(Icons.person_add_alt),

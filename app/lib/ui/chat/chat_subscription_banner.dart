@@ -62,7 +62,7 @@ class _ChatSubscriptionBannerState
 
   @override
   Widget build(BuildContext context) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final state = ref.watch(contactStateProvider(widget.chatJid)).value;
     // Nothing to say before the roster has loaded, or when all is well.
     if (state == null || state.isMutual) return const SizedBox.shrink();

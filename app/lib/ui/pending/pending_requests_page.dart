@@ -53,7 +53,7 @@ class _PendingRequestsPageState extends ConsumerState<PendingRequestsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final l10n = context.l10n;
     final requests = ref.watch(subscriptionRequestsProvider);
     final invites = ref.watch(roomInvitationsProvider);
@@ -77,7 +77,7 @@ class _PendingRequestsPageState extends ConsumerState<PendingRequestsPage> {
   static Widget _body(
     BuildContext context,
     WidgetRef ref,
-    TgColors tg,
+    AppColors tg,
     AppLocalizations l10n,
     List<SubscriptionRequest> rows,
     List<RoomInvitation> roomRows,
@@ -95,11 +95,11 @@ class _PendingRequestsPageState extends ConsumerState<PendingRequestsPage> {
     return ListView(
       children: [
         if (incoming.isNotEmpty) ...[
-          _header(tg, l10n.wantToSeeYou),
+          _header(context, l10n.wantToSeeYou),
           for (final r in incoming) _IncomingContactRow(request: r),
         ],
         if (outgoing.isNotEmpty) ...[
-          _header(tg, l10n.waitingForThem),
+          _header(context, l10n.waitingForThem),
           for (final r in outgoing)
             ListTile(
               leading: ContactAvatar(jid: r.jid, title: r.jid),
@@ -114,22 +114,18 @@ class _PendingRequestsPageState extends ConsumerState<PendingRequestsPage> {
             ),
         ],
         if (roomRows.isNotEmpty) ...[
-          _header(tg, l10n.groupInvitations),
+          _header(context, l10n.groupInvitations),
           for (final inv in roomRows) _RoomInviteRow(invite: inv),
         ],
       ],
     );
   }
 
-  static Widget _header(TgColors tg, String title) => Padding(
+  static Widget _header(BuildContext context, String title) => Padding(
     padding: const EdgeInsets.fromLTRB(20, 20, 20, 4),
     child: Text(
       title,
-      style: TextStyle(
-        color: tg.textSecondary,
-        fontSize: 13,
-        fontWeight: FontWeight.w600,
-      ),
+      style: context.appText.sectionHeader,
     ),
   );
 }
@@ -169,7 +165,7 @@ class _IncomingContactRowState extends ConsumerState<_IncomingContactRow> {
 
   @override
   Widget build(BuildContext context) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final l10n = context.l10n;
     return ListTile(
       leading: ContactAvatar(
@@ -287,7 +283,7 @@ class _RoomInviteRowState extends ConsumerState<_RoomInviteRow> {
 
   @override
   Widget build(BuildContext context) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final l10n = context.l10n;
     final inv = widget.invite;
     final subtitle = inv.fromJid.isEmpty

@@ -20,7 +20,13 @@ import 'package:resonchat/crypto/omemo2/protocol.dart';
 
 /// Turns a stanza's B-track payload into plaintext, or null when the message
 /// is not ours to open.
-typedef PqIncomingCallback = Future<String?> Function(Stanza stanza);
+///
+/// [stanzaTimestamp] is the sending time from MAM/delay when known; null for
+/// live stanzas (SCE `<time>` then uses receive time).
+typedef PqIncomingCallback = Future<String?> Function(
+  Stanza stanza,
+  DateTime? stanzaTimestamp,
+);
 
 /// Why an inbound PQ message could not be opened.
 ///
@@ -70,7 +76,7 @@ class PqIncomingManager extends XmppManagerBase {
   ) async {
     String? plaintext;
     try {
-      plaintext = await _decrypt(stanza);
+      plaintext = await _decrypt(stanza, _stanzaTimestamp(state, stanza));
     } catch (e) {
       // One corrupt or truncated message must not cost the user the whole
       // session: moxxmpp has nowhere to put an exception thrown here, so it
@@ -113,4 +119,16 @@ class PqIncomingManager extends XmppManagerBase {
     state.encrypted = true;
     return state;
   }
+}
+
+/// Prefer MAM / parsed delay extensions; fall back to a raw `<delay/>` child.
+DateTime? _stanzaTimestamp(StanzaHandlerData state, Stanza stanza) {
+  final mam = state.extensions.get<MAMData>();
+  if (mam != null) return mam.delay.timestamp;
+  final delayed = state.extensions.get<DelayedDeliveryData>();
+  if (delayed != null) return delayed.timestamp;
+  final delay = stanza.firstTag('delay', xmlns: delayedDeliveryXmlns);
+  final stamp = delay?.attributes['stamp'] as String?;
+  if (stamp == null || stamp.isEmpty) return null;
+  return DateTime.tryParse(stamp);
 }

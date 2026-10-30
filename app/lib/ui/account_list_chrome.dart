@@ -12,10 +12,10 @@ import 'package:resonchat/ui/theme.dart';
 
 /// How far the account halo extends past the chat-list avatar.
 ///
-/// The row is [TgDimens.chatsRowHeight] and the avatar is
-/// [TgDimens.avatarChats], so this is the slack on each side. The halo
+/// The row is [AppDimens.chatsRowHeight] and the avatar is
+/// [AppDimens.avatarChats], so this is the slack on each side. The halo
 /// fades to nothing at that edge.
-const accountHaloBleed = (TgDimens.chatsRowHeight - TgDimens.avatarChats) / 2;
+const accountHaloBleed = (AppDimens.chatsRowHeight - AppDimens.avatarChats) / 2;
 
 /// Avatar wrapped in an account-colored halo.
 ///
@@ -27,7 +27,7 @@ Widget accountAvatarRing({
   required bool show,
 }) {
   if (!show) return child;
-  final outer = TgDimens.avatarChats + accountHaloBleed * 2;
+  final outer = AppDimens.avatarChats + accountHaloBleed * 2;
   return SizedBox(
     width: outer,
     height: outer,
@@ -53,7 +53,7 @@ class _AccountHaloPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
     final outer = size.shortestSide / 2;
-    final innerT = (TgDimens.avatarChats / 2 / outer).clamp(0.0, 1.0);
+    final innerT = (AppDimens.avatarChats / 2 / outer).clamp(0.0, 1.0);
     // Full colour on the inside of the ring. Alpha is (1-u)^2 across the
     // outer band, so only the outside thins out.
     const steps = 8;
@@ -87,7 +87,7 @@ Widget accountViaText(String accountBareJid, Color accent) {
     maxLines: 1,
     overflow: TextOverflow.ellipsis,
     style: TextStyle(
-      fontSize: TgDimens.timeFontSize,
+      fontSize: AppDimens.timeFontSize,
       color: accent,
       fontWeight: FontWeight.w600,
     ),

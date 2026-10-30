@@ -239,7 +239,7 @@ class _ChannelDiscoverySheetState extends ConsumerState<ChannelDiscoverySheet> {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final tg = context.tg;
+    final tg = context.appColors;
     final bottom = MediaQuery.of(context).viewInsets.bottom;
     final maxHeight = MediaQuery.sizeOf(context).height * 0.85;
 

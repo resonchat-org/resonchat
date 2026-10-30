@@ -231,7 +231,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
 
   @override
   Widget build(BuildContext context) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final l10n = context.l10n;
     final proxyOn = appNetwork.config.enabled;
     final preview = _fullJid;
@@ -327,7 +327,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                 const SizedBox(height: 8),
                 Text(
                   l10n.yourFullJidWillBe(preview),
-                  style: TextStyle(color: tg.textSecondary, fontSize: 13),
+                  style: context.appText.helper,
                 ),
               ],
               const SizedBox(height: 12),

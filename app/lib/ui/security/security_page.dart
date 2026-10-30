@@ -39,7 +39,7 @@ class _SecurityPageState extends ConsumerState<SecurityPage> {
 
   @override
   Widget build(BuildContext context) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final l10n = context.l10n;
     final ui = ref.watch(securityViewModelProvider(widget.chatJid));
 
@@ -47,19 +47,19 @@ class _SecurityPageState extends ConsumerState<SecurityPage> {
       appBar: AppBar(title: Text(l10n.encryption)),
       body: ListView(
         children: [
-          _section(tg, l10n.devices),
+          _section(context, tg, l10n.devices),
           ListTile(
             leading: const Icon(Icons.smartphone),
             title: Text(l10n.thisDeviceId('${ui.deviceId ?? '—'}')),
             subtitle: Text(l10n.deviceCountedForCarbons),
           ),
 
-          _section(tg, l10n.verifyIdentity),
+          _section(context, tg, l10n.verifyIdentity),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
             child: Text(
               l10n.verifyIdentityIntro,
-              style: TextStyle(fontSize: 13, color: tg.textSecondary),
+              style: context.appText.helper,
             ),
           ),
           if (ui.hybridFingerprint != null) ...[
@@ -67,7 +67,7 @@ class _SecurityPageState extends ConsumerState<SecurityPage> {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Text(
                 l10n.omemo2Fingerprint,
-                style: TextStyle(fontSize: 12, color: tg.textSecondary),
+                style: context.appText.caption,
               ),
             ),
             const SizedBox(height: 6),
@@ -82,7 +82,7 @@ class _SecurityPageState extends ConsumerState<SecurityPage> {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Text(
                 l10n.omemoLegacyFingerprint,
-                style: TextStyle(fontSize: 12, color: tg.textSecondary),
+                style: context.appText.caption,
               ),
             ),
             const SizedBox(height: 6),
@@ -92,12 +92,12 @@ class _SecurityPageState extends ConsumerState<SecurityPage> {
             ),
           ],
 
-          _section(tg, l10n.theirFingerprints),
+          _section(context, tg, l10n.theirFingerprints),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
             child: Text(
               l10n.theirFingerprintsIntro,
-              style: TextStyle(fontSize: 13, color: tg.textSecondary),
+              style: context.appText.helper,
             ),
           ),
           if (ui.peerLoading)
@@ -118,7 +118,7 @@ class _SecurityPageState extends ConsumerState<SecurityPage> {
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
               child: Text(
                 l10n.noPeerFingerprintsYet,
-                style: TextStyle(fontSize: 13, color: tg.textSecondary),
+                style: context.appText.helper,
               ),
             )
           else
@@ -138,15 +138,12 @@ class _SecurityPageState extends ConsumerState<SecurityPage> {
     );
   }
 
-  static Widget _section(TgColors tg, String title) => Padding(
-    padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
-    child: Text(
-      title,
-      style: TextStyle(
-        color: tg.accent,
-        fontSize: 13,
-        fontWeight: FontWeight.w600,
-      ),
-    ),
-  );
+  static Widget _section(BuildContext context, AppColors tg, String title) =>
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+        child: Text(
+          title,
+          style: context.appText.sectionHeader.copyWith(color: tg.accent),
+        ),
+      );
 }

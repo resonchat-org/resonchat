@@ -37,7 +37,7 @@ class LandscapeFrame extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final tg = context.tg;
+    final tg = context.appColors;
     // Main content keeps a left-edge radius beside the rail. Same page
     // background as the rail so the corner crescents read cleanly.
     const contentRadius = BorderRadius.only(
@@ -104,7 +104,7 @@ class LandscapeNavRail extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.l10n;
-    final tg = context.tg;
+    final tg = context.appColors;
     final tab = ref.watch(homeTabIndexProvider);
     return NavigationRail(
       selectedIndex: tab,
@@ -114,12 +114,10 @@ class LandscapeNavRail extends ConsumerWidget {
       indicatorColor: tg.accent.withValues(alpha: 0.09),
       selectedIconTheme: IconThemeData(color: tg.accent, size: 24),
       unselectedIconTheme: IconThemeData(color: tg.textPrimary, size: 24),
-      selectedLabelTextStyle: TextStyle(
-        color: tg.accent,
-        fontSize: 13,
-        fontWeight: FontWeight.w600,
+      selectedLabelTextStyle: context.appText.sectionHeader.copyWith(color: tg.accent),
+      unselectedLabelTextStyle: context.appText.helper.copyWith(
+        color: tg.textPrimary,
       ),
-      unselectedLabelTextStyle: TextStyle(color: tg.textPrimary, fontSize: 13),
       trailingAtBottom: true,
       trailing: Padding(
         // Same 9dp the chat composer keeps under its island.

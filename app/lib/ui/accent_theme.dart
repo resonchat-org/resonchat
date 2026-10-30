@@ -68,10 +68,10 @@ enum AccentColor {
     return AccentColor.blue;
   }
 
-  TgColors tgColors(Brightness brightness) {
+  AppColors tgColors(Brightness brightness) {
     final base = brightness == Brightness.dark
-        ? const TgColors.dark()
-        : const TgColors.light();
+        ? const AppColors.dark()
+        : const AppColors.light();
     // Own bubbles follow the accent like the rest of the chrome. The old
     // frozen green read as a second, unrelated theme colour (most visibly
     // with a violet bar: green bubbles, violet header). Keep the bubble a

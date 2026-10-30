@@ -6,23 +6,24 @@ import 'package:test/test.dart';
 import 'package:resonchat/xmpp/jid_input.dart';
 
 void main() {
-  test('a jid suggestion needs a dot in the domain', () {
-    expect(completeJidCandidate('a@b'), isNull);
-    expect(completeJidCandidate('a@b.'), isNull);
+  test('a contact JID is an entity bare address', () {
+    expect(completeJidCandidate('a@b'), 'a@b');
     expect(completeJidCandidate('a@.c'), isNull);
     expect(completeJidCandidate('a@b.c'), 'a@b.c');
     expect(completeJidCandidate(' user@example.com '), 'user@example.com');
     expect(completeJidCandidate('user@example.com/phone'), isNull);
+    expect(completeJidCandidate('translation.example.com'), isNull);
   });
 
-  test('requireResource needs /resource on a dotted domain', () {
+  test('ofUserInput still accepts a full JID when bareOnly is off', () {
     expect(
-      completeJidCandidate('user@example.com/phone', requireResource: true),
+      completeJidCandidate(
+        'user@example.com/phone',
+        bareOnly: false,
+        requireLocalpart: false,
+      ),
       'user@example.com/phone',
     );
-    expect(
-      completeJidCandidate('user@example.com', requireResource: true),
-      isNull,
-    );
+    expect(jidOfUserInput('user@example.com'), 'user@example.com');
   });
 }

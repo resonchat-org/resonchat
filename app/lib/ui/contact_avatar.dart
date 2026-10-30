@@ -28,7 +28,7 @@ class ContactAvatar extends ConsumerWidget {
     super.key,
     required this.jid,
     required this.title,
-    this.radius = TgDimens.avatarChats / 2,
+    this.radius = AppDimens.avatarChats / 2,
     this.hero = false,
     this.showPresence = false,
     this.presence,
@@ -53,7 +53,7 @@ class ContactAvatar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final bytes = ref.watch(contactAvatarProvider(jid)).value;
     final fallback = _Fallback(
       initial: avatarInitial(title, jid),
@@ -224,7 +224,7 @@ class AvatarCameraBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final badge = badgeSizeFor(avatarRadius);
     final icon = iconSizeFor(avatarRadius);
     final outset = outsetFor(avatarRadius);

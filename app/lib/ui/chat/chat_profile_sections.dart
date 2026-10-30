@@ -190,16 +190,11 @@ class ChatProfileSectionTitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tg = context.tg;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
       child: Text(
         title,
-        style: TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-          color: tg.textSecondary,
-        ),
+        style: context.appText.sectionHeader,
       ),
     );
   }
@@ -221,7 +216,7 @@ class ChatEncryptionSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final l10n = context.l10n;
     final track = ref.watch(chatTrackProvider(chatJid)).value ?? Track.standard;
     final caps = ref.watch(chatCapabilitiesProvider(chatJid)).value;
@@ -349,7 +344,7 @@ class ChatHistoryActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final l10n = context.l10n;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

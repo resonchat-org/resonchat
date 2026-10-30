@@ -226,6 +226,7 @@ class PqMessageLayer {
   Future<String> decrypt(
     PqEncryptedMessage message, {
     required String senderBareJid,
+    DateTime? stanzaTimestamp,
   }) async {
     await sessions.bindOwn(ownDevice);
 
@@ -262,6 +263,7 @@ class PqMessageLayer {
         ],
         payload: base64Decode(message.payload),
         commit: base64Decode(message.commit),
+        stanzaTimestamp: stanzaTimestamp,
       ),
     );
 

@@ -47,7 +47,7 @@ Future<OccupantSheetAction?> showOccupantActionsSheet({
 }) async {
   if (occupant.nick == room.nick) return null;
   final l10n = context.l10n;
-  final tg = context.tg;
+  final tg = context.appColors;
 
   // Always re-resolve against the live roster so a chat-avatar long-press on an
   // old message does not treat a now-offline member as still kickable.
@@ -138,7 +138,7 @@ Future<OccupantSheetAction?> showOccupantActionsSheet({
                     Navigator.pop(sheetContext, OccupantSheetAction.addContact),
               ),
             if (showModSection) ...[
-              _sheetSection(tg, l10n.roomModeration),
+              _sheetSection(sheetContext, l10n.roomModeration),
               if (!hasModeration)
                 ListTile(
                   enabled: false,
@@ -182,7 +182,7 @@ Future<OccupantSheetAction?> showOccupantActionsSheet({
               ],
             ],
             if (showAdminSection) ...[
-              _sheetSection(tg, l10n.roomAdministration),
+              _sheetSection(sheetContext, l10n.roomAdministration),
               if (!hasAdmin)
                 ListTile(
                   enabled: false,
@@ -248,18 +248,14 @@ Future<OccupantSheetAction?> showOccupantActionsSheet({
   );
 }
 
-Widget _sheetSection(TgColors tg, String label) {
+Widget _sheetSection(BuildContext context, String label) {
   return Padding(
     padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
     child: Align(
       alignment: Alignment.centerLeft,
       child: Text(
         label,
-        style: TextStyle(
-          color: tg.textSecondary,
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-        ),
+        style: context.appText.sectionHeader,
       ),
     ),
   );
@@ -273,7 +269,7 @@ Future<bool> _confirmDanger(
 }) async {
   await WidgetsBinding.instance.endOfFrame;
   if (!context.mounted) return false;
-  final tg = context.tg;
+  final tg = context.appColors;
   final l10n = context.l10n;
   final confirmed = await showDialog<bool>(
     context: context,

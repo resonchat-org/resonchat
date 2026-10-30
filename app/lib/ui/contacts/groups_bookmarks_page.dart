@@ -71,7 +71,7 @@ class _GroupsBookmarksPageState extends ConsumerState<GroupsBookmarksPage>
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final tg = context.tg;
+    final tg = context.appColors;
     final hub = ref.watch(accountHubProvider);
     final filterId = _accountId;
     if (filterId != null &&
@@ -101,9 +101,9 @@ class _GroupsBookmarksPageState extends ConsumerState<GroupsBookmarksPage>
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(
-                TgDimens.chatsHorizontalPadding,
+                AppDimens.chatsHorizontalPadding,
                 8,
-                TgDimens.chatsHorizontalPadding,
+                AppDimens.chatsHorizontalPadding,
                 8,
               ),
               child: Align(
@@ -156,7 +156,7 @@ class _BookmarkTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final l10n = context.l10n;
     final multi =
         colorAccounts && ref.watch(accountHubProvider).accounts.length > 1;
@@ -172,7 +172,7 @@ class _BookmarkTile extends ConsumerWidget {
     final detail = b.autoJoin ? '${b.jid} · ${l10n.bookmarkAutoJoin}' : b.jid;
     final detailStyle = TextStyle(
       color: tg.textSecondary,
-      fontSize: TgDimens.timeFontSize,
+      fontSize: AppDimens.timeFontSize,
       height: 1.15,
     );
     return DialogCell(

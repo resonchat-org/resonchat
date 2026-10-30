@@ -21,7 +21,7 @@ class ManageAccountsPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.l10n;
-    final tg = context.tg;
+    final tg = context.appColors;
     final hub = ref.watch(accountHubProvider);
     // Rebuild when hub notifies.
     return ListenableBuilder(

@@ -85,7 +85,7 @@ class _StickerPanelState extends State<StickerPanel> {
 
   @override
   Widget build(BuildContext context) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final l10n = context.l10n;
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -126,7 +126,7 @@ class _StickerPanelState extends State<StickerPanel> {
   }
 
   Widget _kaomojiMatrix(BuildContext context) {
-    final tg = context.tg;
+    final tg = context.appColors;
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
       child: Wrap(
@@ -158,7 +158,7 @@ class _StickerPanelState extends State<StickerPanel> {
   }
 
   Widget _custom(BuildContext context) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final l10n = context.l10n;
     return StreamBuilder<List<Sticker>>(
       stream: widget.stickers,
@@ -226,7 +226,7 @@ class _Tab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tg = context.tg;
+    final tg = context.appColors;
     return Expanded(
       child: InkWell(
         onTap: onTap,

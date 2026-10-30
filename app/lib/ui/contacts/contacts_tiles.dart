@@ -24,7 +24,7 @@ import 'package:resonchat/xmpp/roster/last_seen.dart';
 import 'package:resonchat/xmpp/roster/local_nickname.dart';
 
 TextStyle _detailStyle(Color color) {
-  return TextStyle(color: color, fontSize: TgDimens.timeFontSize, height: 1.15);
+  return TextStyle(color: color, fontSize: AppDimens.timeFontSize, height: 1.15);
 }
 
 /// Second line of a contact row. [leading] sits on the left (last seen).
@@ -114,7 +114,7 @@ class IdleContactsList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final tg = context.tg;
+    final tg = context.appColors;
     final rows = <Widget>[
       ..._prefix(context),
       if (contacts.isEmpty && bookmarkCount == 0)
@@ -167,7 +167,7 @@ class ContactActionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tg = context.tg;
+    final tg = context.appColors;
     return DialogCell(
       onTap: onTap,
       leading: _actionAvatar(icon, tg.accent),
@@ -178,7 +178,7 @@ class ContactActionTile extends StatelessWidget {
 
 Widget _actionAvatar(IconData icon, Color accent) {
   return CircleAvatar(
-    radius: TgDimens.avatarChats / 2,
+    radius: AppDimens.avatarChats / 2,
     backgroundColor: accent.withValues(alpha: 0.18),
     child: Icon(icon, color: accent),
   );
@@ -192,23 +192,18 @@ class SearchSectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tg = context.tg;
     final count = this.count;
     final label = count == null ? title : '$title · $count';
     return Padding(
       padding: const EdgeInsets.fromLTRB(
-        TgDimens.chatsHorizontalPadding,
+        AppDimens.chatsHorizontalPadding,
         12,
-        TgDimens.chatsHorizontalPadding,
+        AppDimens.chatsHorizontalPadding,
         4,
       ),
       child: Text(
         label,
-        style: TextStyle(
-          color: tg.textSecondary,
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-        ),
+        style: context.appText.sectionHeader,
       ),
     );
   }
@@ -229,7 +224,7 @@ class SearchExpandToggle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final tg = context.tg;
+    final tg = context.appColors;
     final label = expanded
         ? l10n.searchShowLess
         : l10n.searchShowMore(hiddenCount);
@@ -259,7 +254,7 @@ class ContactRosterTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final multi =
         showAccountColor && ref.watch(accountHubProvider).accounts.length > 1;
     final accent = entry.accent;
@@ -326,7 +321,7 @@ class GroupBookmarkTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final multi =
         showAccountColor && ref.watch(accountHubProvider).accounts.length > 1;
     final accent = row.accent;
@@ -371,7 +366,7 @@ class AddJidTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final tg = context.tg;
+    final tg = context.appColors;
     return DialogCell(
       onTap: onTap,
       leading: _actionAvatar(Icons.person_add, tg.accent),
@@ -396,7 +391,7 @@ class AddGroupTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final tg = context.tg;
+    final tg = context.appColors;
     return DialogCell(
       onTap: onTap,
       leading: _actionAvatar(Icons.group_add_outlined, tg.accent),
@@ -425,7 +420,7 @@ class GroupsBookmarkEntry extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final tg = context.tg;
+    final tg = context.appColors;
     return DialogCell(
       onTap: () => Navigator.of(context).push(
         MaterialPageRoute<void>(

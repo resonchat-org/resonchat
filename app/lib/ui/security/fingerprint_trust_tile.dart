@@ -32,7 +32,7 @@ class FingerprintTrustTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final l10n = context.l10n;
     final stackLabel = row.omemo2
         ? l10n.omemo2FingerprintShort
@@ -74,7 +74,7 @@ class FingerprintTrustTile extends StatelessWidget {
                   if (!row.active) l10n.fingerprintInactiveSummary,
                   trustSummary(l10n, row.trust),
                 ].join('\n'),
-                style: TextStyle(fontSize: 12, color: tg.textSecondary),
+                style: context.appText.caption,
               ),
               trailing: enabled
                   ? PopupMenuButton<FingerprintTrust>(

@@ -61,7 +61,7 @@ class SearchResults extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final l10n = context.l10n;
     if (hits.isEmpty) {
       return Center(
@@ -88,12 +88,12 @@ class SearchResults extends StatelessWidget {
             hit.body,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontSize: TgDimens.chatSubtitleFontSize),
+            style: TextStyle(fontSize: AppDimens.chatSubtitleFontSize),
           ),
           subtitle: Text(
             '${hit.chatTitle} · ${_clock(hit.time)}',
             style: TextStyle(
-              fontSize: TgDimens.timeFontSize,
+              fontSize: AppDimens.timeFontSize,
               color: tg.textSecondary,
             ),
           ),
@@ -177,7 +177,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 
   @override
   Widget build(BuildContext context) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final l10n = context.l10n;
     final results = widget.chatJid == null
         ? ref.watch(messageSearchProvider(_needle))
@@ -266,7 +266,7 @@ class ForwardTargetSheet extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final l10n = context.l10n;
     final chats = ref.watch(chatsProvider);
     final count = selectionCount;
@@ -289,7 +289,7 @@ class ForwardTargetSheet extends ConsumerWidget {
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
               child: Text(
                 subtitle,
-                style: TextStyle(fontSize: 12, color: tg.textSecondary),
+                style: context.appText.caption,
               ),
             ),
             const Divider(height: 1),

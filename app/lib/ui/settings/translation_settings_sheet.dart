@@ -13,6 +13,7 @@ import 'package:resonchat/translate/offline_translator_engine.dart';
 import 'package:resonchat/translate/translation_engine.dart';
 import 'package:resonchat/translate/translation_prefs.dart';
 import 'package:resonchat/translate/translation_service.dart';
+import 'package:resonchat/ui/theme.dart';
 
 /// Bottom sheet: engine, base URL, API key, DeepL Pro host, test connection.
 Future<void> showTranslationSettingsSheet(BuildContext context) {
@@ -133,10 +134,7 @@ class _TranslationSettingsSheetState extends State<_TranslationSettingsSheet> {
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                 child: Text(
                   l10n.translationSummary,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
+                  style: context.appText.helper,
                 ),
               ),
               ListTile(
@@ -150,10 +148,7 @@ class _TranslationSettingsSheetState extends State<_TranslationSettingsSheet> {
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                   child: Text(
                     l10n.translationOfflineTranslatorSummary,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
+                    style: context.appText.helper,
                   ),
                 ),
               if (_engine == TranslationEngineId.libreTranslate)

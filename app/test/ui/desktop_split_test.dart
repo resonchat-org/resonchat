@@ -123,7 +123,7 @@ void main() {
           home: Builder(
             builder: (context) {
               tray = desktopListTrayOf(context);
-              page = context.tg.pageBackground;
+              page = context.appColors.pageBackground;
               return const SizedBox.shrink();
             },
           ),

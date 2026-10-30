@@ -327,11 +327,11 @@ class _ChatInputBarState extends ConsumerState<ChatInputBar>
   /// Composer glyphs are `glass_defaultIcon` (`0x991B2227` in the day theme):
   /// the primary ink at 60%, which is what keeps the bar reading as chrome
   /// rather than as content.
-  Color _glyphColor(TgColors tg) => tg.textPrimary.withValues(alpha: 0.6);
+  Color _glyphColor(AppColors tg) => tg.textPrimary.withValues(alpha: 0.6);
 
   @override
   Widget build(BuildContext context) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final l10n = context.l10n;
     return ValueListenableBuilder<TextEditingValue>(
       valueListenable: widget.controller,
@@ -449,7 +449,7 @@ class _ChatInputBarState extends ConsumerState<ChatInputBar>
   /// smiley's rounded `key_listSelector` background, which is what makes it
   /// read as a button rather than a bare glyph.
   Widget _glyphButton(
-    TgColors tg, {
+    AppColors tg, {
     required IconData icon,
     required String tooltip,
     required VoidCallback? onTap,
@@ -497,7 +497,7 @@ class _ChatInputBarState extends ConsumerState<ChatInputBar>
     widget.onSend();
   }
 
-  Widget _field(TgColors tg, AppLocalizations l10n) {
+  Widget _field(AppColors tg, AppLocalizations l10n) {
     final field = TextField(
       controller: widget.controller,
       focusNode: widget.focusNode,
@@ -543,7 +543,7 @@ class _ChatInputBarState extends ConsumerState<ChatInputBar>
   }
 
   /// `recordPanel`: the timer on the left, the hint centred over it.
-  Widget _recordStatus(TgColors tg, AppLocalizations l10n) {
+  Widget _recordStatus(AppColors tg, AppLocalizations l10n) {
     final timer = TextStyle(
       fontSize: _EnterView.recordFontSize,
       fontWeight: FontWeight.w500,
@@ -623,7 +623,7 @@ class _ChatInputBarState extends ConsumerState<ChatInputBar>
 
   /// Send button: the reference's 38dp `chat_messagePanelSend` circle.
   Widget _circleButton(
-    TgColors tg, {
+    AppColors tg, {
     required Color fill,
     required Widget icon,
     required VoidCallback onTap,
@@ -659,7 +659,7 @@ class _ChatInputBarState extends ConsumerState<ChatInputBar>
   /// The rightmost slot while the field is empty: hold to record. Once cancel
   /// is armed it becomes the delete glyph. Without an upload slot it greys
   /// out, which is what happens when voice messages are unavailable.
-  Widget _endSlot(TgColors tg, AppLocalizations l10n) {
+  Widget _endSlot(AppColors tg, AppLocalizations l10n) {
     final enabled = widget.attachEnabled;
     return SizedBox(
       width: _EnterView.height,

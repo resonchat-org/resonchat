@@ -107,7 +107,7 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
     final caps = ref.read(roomProfileViewModelProvider(widget.chatJid)).caps;
     if (caps == null || !caps.canConfigureRoom) return;
     final l10n = context.l10n;
-    final tg = context.tg;
+    final tg = context.appColors;
     final ok = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -306,7 +306,7 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
 
   @override
   Widget build(BuildContext context) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final l10n = context.l10n;
     final ui = ref.watch(roomProfileViewModelProvider(widget.chatJid));
     final chatRow = ref.watch(chatProvider(widget.chatJid)).value;
@@ -443,10 +443,7 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
                           child: Text(
                             l10n.roomQrJoinHint(shown),
                             textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: tg.textSecondary,
-                            ),
+                            style: context.appText.helper,
                           ),
                         ),
                         const SizedBox(height: 12),
@@ -463,7 +460,7 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
                   roomTitle: ui.roomTitle ?? '',
                 ),
 
-                _section(tg, l10n.roomDescription),
+                _section(l10n.roomDescription),
                 ListTile(
                   title: Text(
                     (desc != null && desc.isNotEmpty)
@@ -488,7 +485,7 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
                       : null,
                 ),
 
-                _section(tg, l10n.subjectHint),
+                _section(l10n.subjectHint),
                 ListTile(
                   title: Text(
                     hasSubject
@@ -517,7 +514,6 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
                 ChatAppearanceSection(chatJid: widget.chatJid),
 
                 _section(
-                  tg,
                   ui.loadingCaps || room == null
                       ? l10n.members
                       : (room.canSeeMemberJids
@@ -534,11 +530,7 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
                     child: Text(
                       _mucGroupLabel(l10n, entry.key),
-                      style: TextStyle(
-                        color: tg.textSecondary,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
+                      style: context.appText.sectionHeader,
                     ),
                   ),
                   Padding(
@@ -559,7 +551,7 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
                   ),
                 ],
 
-                _section(tg, l10n.actions),
+                _section(l10n.actions),
                 ChatHistoryActions(chatJid: widget.chatJid),
                 if (caps?.canInvite ?? false)
                   ListTile(
@@ -621,16 +613,12 @@ class _RoomProfilePageState extends ConsumerState<RoomProfilePage> {
     );
   }
 
-  Widget _section(TgColors tg, String label) {
+  Widget _section(String label) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
       child: Text(
         label,
-        style: TextStyle(
-          color: tg.textSecondary,
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-        ),
+        style: context.appText.sectionHeader,
       ),
     );
   }

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Per-account XEP-0171 translation provider: discover on the server, pick, or
-// type a full JID with a resource.
+// type a provider JID (bare bot, domain component, or full — XEP §4.2.2).
 
 import 'dart:async';
 
@@ -11,12 +11,12 @@ import 'package:flutter/material.dart';
 import 'package:resonchat/account/account_hub.dart';
 import 'package:resonchat/l10n/l10n.dart';
 import 'package:resonchat/translate/remote_translation.dart';
+import 'package:resonchat/ui/theme.dart';
 import 'package:resonchat/xmpp/connection.dart';
 import 'package:resonchat/xmpp/jid_input.dart';
 
-/// Translation providers must be full JIDs (`local@domain/resource`).
-bool looksLikeTranslationProviderJid(String raw) =>
-    completeJidCandidate(raw, requireResource: true) != null;
+/// XEP-0171 provider address: Conversations `ofUserInput` rules (resource optional).
+bool looksLikeTranslationProviderJid(String raw) => jidOfUserInput(raw) != null;
 
 /// Bottom sheet: set this account's XEP-0171 translation provider JID.
 Future<void> showTranslationProviderSheet(
@@ -53,10 +53,15 @@ class _TranslationProviderSheetState extends State<_TranslationProviderSheet> {
 
   AccountSession? get _session => accountHub.session(widget.accountId);
 
-  /// Empty clears the pref; non-empty must be a full JID with resource.
+  /// Empty clears the pref; non-empty must pass [jidOfUserInput].
   bool get _canSave =>
       !_saving &&
-      jidInputOk(_jid.text, requireResource: true, allowEmpty: true);
+      jidInputOk(
+        _jid.text,
+        bareOnly: false,
+        requireLocalpart: false,
+        allowEmpty: true,
+      );
 
   @override
   void initState() {
@@ -85,21 +90,20 @@ class _TranslationProviderSheetState extends State<_TranslationProviderSheet> {
           .showSnackBar(SnackBar(content: Text(l10n.notConnectedTryAgain)));
       return;
     }
-    final raw = clear ? '' : _jid.text.trim();
-    if (!clear &&
-        raw.isNotEmpty &&
-        completeJidCandidate(raw, requireResource: true) == null) {
+    final typed = clear ? '' : _jid.text.trim();
+    final normalized = typed.isEmpty ? null : jidOfUserInput(typed);
+    if (typed.isNotEmpty && normalized == null) {
       return;
     }
     setState(() => _saving = true);
-    await session.db.setTranslationProviderJid(raw.isEmpty ? null : raw);
+    await session.db.setTranslationProviderJid(normalized);
     session.xmpp.clearRemoteTranslationCache();
     if (!mounted) return;
     setState(() => _saving = false);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          raw.isEmpty
+          normalized == null
               ? l10n.translationProviderCleared
               : l10n.translationProviderSaved,
         ),
@@ -160,9 +164,7 @@ class _TranslationProviderSheetState extends State<_TranslationProviderSheet> {
     }
     final candidates = _candidates;
     final typed = _jid.text.trim();
-    final jidError =
-        typed.isNotEmpty &&
-            completeJidCandidate(typed, requireResource: true) == null
+    final jidError = typed.isNotEmpty && jidOfUserInput(typed) == null
         ? l10n.invalidJid
         : null;
     return SafeArea(
@@ -184,10 +186,7 @@ class _TranslationProviderSheetState extends State<_TranslationProviderSheet> {
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                 child: Text(
                   l10n.translationProviderSummary,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
+                  style: context.appText.helper,
                 ),
               ),
               Padding(

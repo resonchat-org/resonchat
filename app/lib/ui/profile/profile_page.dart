@@ -35,7 +35,7 @@ class ProfilePage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final tg = context.tg;
+    final tg = context.appColors;
     final l10n = context.l10n;
     final resolved = resolveChatKey(chatJid);
     final peer = resolved.jid;
@@ -125,7 +125,7 @@ class ProfilePage extends ConsumerWidget {
                 ? null
                 : Text(
                     seen,
-                    style: TextStyle(fontSize: 12, color: tg.textSecondary),
+                    style: context.appText.caption,
                   ),
           ),
 
@@ -140,7 +140,7 @@ class ProfilePage extends ConsumerWidget {
               contact?.isMutual ?? false
                   ? l10n.subscriptionMutualSummary
                   : l10n.subscriptionNotMutualSummary,
-              style: TextStyle(fontSize: 12, color: tg.textSecondary),
+              style: context.appText.caption,
             ),
             trailing: (contact?.isMutual ?? true) || !connected
                 ? null
