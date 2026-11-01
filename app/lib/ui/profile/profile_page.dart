@@ -123,10 +123,7 @@ class ProfilePage extends ConsumerWidget {
             title: Text(presenceLabel(l10n, presence?.show)),
             subtitle: seen == null
                 ? null
-                : Text(
-                    seen,
-                    style: context.appText.caption,
-                  ),
+                : Text(seen, style: context.appText.caption),
           ),
 
           ChatProfileSectionTitle(l10n.relationship),

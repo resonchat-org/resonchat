@@ -17,6 +17,7 @@
 import 'package:moxxmpp/moxxmpp.dart';
 
 import 'package:resonchat/crypto/omemo2/protocol.dart';
+import 'package:resonchat/crypto/omemo2/sce.dart';
 
 /// Turns a stanza's B-track payload into plaintext, or null when the message
 /// is not ours to open.
@@ -100,9 +101,9 @@ class PqIncomingManager extends XmppManagerBase {
       return state;
     }
 
-    // Replace the ciphertext and the placeholder body with the real text, so
-    // nothing downstream can mistake the fallback for the message or try to
-    // decrypt it a second time.
+    // Replace the ciphertext and the placeholder body with the plaintext.
+    // SCE envelopes reinject <content/> children (multi-body / langtrans /
+    // peertrans); plain strings become a single <body/>.
     final kept = state.stanza.children
         .where(
           (c) =>
@@ -110,8 +111,10 @@ class PqIncomingManager extends XmppManagerBase {
               !(c.tag == 'encrypted' && c.xmlns == omemo2Xmlns),
         )
         .toList();
+    final sceKids = sceContentChildren(plaintext);
+    final injected = sceKids ?? <XMLNode>[MessageBodyData(plaintext).toXML()];
     state.stanza = state.stanza.copyWith(
-      children: <XMLNode>[MessageBodyData(plaintext).toXML(), ...kept],
+      children: <XMLNode>[...injected, ...kept],
     );
     // Tells the rest of the pipeline this really was encrypted, which is what
     // keeps an unreadable copy of our own message from being reported as a

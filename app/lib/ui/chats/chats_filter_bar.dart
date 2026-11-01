@@ -383,7 +383,9 @@ class _ScopeHit extends StatelessWidget {
               child: AnimatedDefaultTextStyle(
                 duration: _SlidingScopeControlState._slide,
                 curve: kMotionStandard,
-                style: context.appText.sectionHeader.copyWith(color: selected ? selectedFg : idleFg),
+                style: context.appText.sectionHeader.copyWith(
+                  color: selected ? selectedFg : idleFg,
+                ),
                 child: Text(label),
               ),
             ),

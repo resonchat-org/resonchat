@@ -10,6 +10,8 @@ import 'package:resonchat/crypto/dual/track.dart';
 import 'package:resonchat/persistence/database.dart';
 import 'package:resonchat/persistence/prefs_database.dart';
 import 'package:resonchat/translate/chat_auto_translate.dart';
+import 'package:resonchat/xmpp/chat/peertrans.dart';
+import 'package:resonchat/xmpp/chat/peertrans_apply.dart';
 import 'package:resonchat/xmpp/inbound/inbound_message.dart';
 import 'package:resonchat/xmpp/inbound/reaction_update.dart';
 import 'package:resonchat/xmpp/message_expiry.dart';
@@ -169,13 +171,37 @@ class MessagesService {
   /// Writes one inbound message into the store.
   ///
   /// Idempotent by stanza id. Returns whether the stored row highlighted us.
-  Future<bool> storeInbound(InboundMessage msg, {String? ownBare}) async {
+  Future<bool> storeInbound(
+    InboundMessage msg, {
+    String? ownBare,
+    String? senderAffiliation,
+  }) async {
     final ownArchive = _isOwnArchive(msg, ownBare);
     if (ownArchive && msg.to == null) return false;
     final chatJid = _chatJidFor(msg, ownBare);
     final sender = msg.from.toString();
     final isGroupchat = msg.type == 'groupchat';
     await _db.upsertChat(chatJid, isGroup: isGroupchat ? true : null);
+
+    // Peertrans before carbons/retracts: a carbon of a peertrans must merge
+    // under the parent, not land as (or skip past) a normal translation row.
+    final peerTrans = msg.peerTrans;
+    if (peerTrans != null) {
+      final peerChat =
+          msg.isCarbonCopy &&
+              ownBare != null &&
+              msg.to != null &&
+              msg.from.toBare().toString() == ownBare
+          ? msg.to!.toBare().toString()
+          : chatJid;
+      await _consumePeerTrans(
+        chatJid: peerChat,
+        msg: msg,
+        data: peerTrans,
+        senderAffiliation: senderAffiliation,
+      );
+      return false;
+    }
 
     if (msg.isCarbonCopy) {
       // A carbon of our own message is addressed from us. The bubble lives
@@ -198,6 +224,7 @@ class MessagesService {
       );
       return false;
     }
+
     if (msg.corrects != null) {
       await correctMessage(
         chatJid: chatJid,
@@ -286,11 +313,15 @@ class MessagesService {
               highlightNamesFor(nickname: chat?.mucNick, meJid: ownBare),
             ));
 
+    final encMode = msg.encryptionError != null
+        ? EncModeToken.error.wire
+        : await _encWireForInbound(msg, fromMe: fromMe);
+    final storedStanzaId = msg.originId ?? stanzaId;
     await insertMessage(
       MessagesCompanion(
         chatJid: Value(chatJid),
         sender: Value(fromMe ? 'me' : sender),
-        stanzaId: Value(msg.originId ?? stanzaId),
+        stanzaId: Value(storedStanzaId),
         roomStanzaId: Value(msg.roomStanzaId ?? ''),
         retracted: Value(msg.retractionTombstone),
         retractedAt: Value(msg.retractedStamp),
@@ -310,11 +341,7 @@ class MessagesService {
         forwardStamp: Value(msg.forward?.stamp),
         body: Value(msg.encryptionError != null ? '' : msg.body),
         timestamp: Value(msg.archiveTimestamp ?? DateTime.now()),
-        encMode: Value(
-          msg.encryptionError != null
-              ? EncModeToken.error.wire
-              : await _encWireForInbound(msg, fromMe: fromMe),
-        ),
+        encMode: Value(encMode),
         incoming: Value(!fromMe),
         delivered: Value(fromMe && ownMuc),
         sendStatus: Value(
@@ -332,7 +359,60 @@ class MessagesService {
       ),
     );
     await _keepTranslations(chatJid, msg);
+    // Flush peertrans that arrived before this parent.
+    if (storedStanzaId.isNotEmpty) {
+      await flushPendingPeerTrans(
+        db: _db,
+        chatJid: chatJid,
+        parentId: storedStanzaId,
+        parentEncMode: encMode,
+      );
+    }
+    final flushRoomId = roomId ?? '';
+    if (flushRoomId.isNotEmpty && flushRoomId != storedStanzaId) {
+      await flushPendingPeerTrans(
+        db: _db,
+        chatJid: chatJid,
+        parentId: flushRoomId,
+        parentEncMode: encMode,
+      );
+    }
     return mentionsMe;
+  }
+
+  Future<void> _consumePeerTrans({
+    required String chatJid,
+    required InboundMessage msg,
+    required PeerTransData data,
+    required String? senderAffiliation,
+  }) async {
+    final adminsOnly = await _db.peertransAdminsOnly();
+    if (msg.corrects != null && msg.corrects!.isNotEmpty) {
+      final stamp = msg.archiveTimestamp ?? DateTime.now();
+      for (final body in data.bodies) {
+        await applyPeerTransCorrection(
+          db: _db,
+          chatJid: chatJid,
+          supplementId: msg.corrects!,
+          newBody: body.text,
+          priority: data.priority,
+          lang: body.lang,
+          timestamp: stamp,
+          sourceLang: body.sourceLang ?? '',
+          engine: body.engine ?? 'peertrans',
+        );
+      }
+      return;
+    }
+    await applyInboundPeerTrans(
+      db: _db,
+      chatJid: chatJid,
+      msg: msg,
+      data: data,
+      adminsOnly: adminsOnly,
+      senderAffiliation: senderAffiliation,
+      findParent: (parentId) => _db.messageAddressedInChat(chatJid, parentId),
+    );
   }
 
   /// Stores every translation carried on [msg], including ones on our own

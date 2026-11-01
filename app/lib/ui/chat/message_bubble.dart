@@ -12,6 +12,7 @@ import 'package:flutter/rendering.dart';
 import 'package:resonchat/crypto/dual/track.dart';
 import 'package:resonchat/l10n/l10n.dart';
 import 'package:resonchat/persistence/database.dart';
+import 'package:resonchat/translate/chat_auto_translate.dart';
 import 'package:resonchat/ui/chat/appearance.dart';
 import 'package:resonchat/ui/chat/linkified_text.dart';
 import 'package:resonchat/ui/chat/media_attachment.dart';
@@ -186,8 +187,8 @@ class MessageBubble extends StatelessWidget {
 
   final String text;
 
-  /// External translation shown under the bubble (in-memory for this chat).
-  final String? translation;
+  /// External / peer / Direct translation shown under the bubble.
+  final BubbleTranslation? translation;
 
   /// True while a Translate request for this message is in flight.
   final bool translating;
@@ -338,6 +339,8 @@ class MessageBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final tg = context.appColors;
     final mine = this.mine || side == BubbleSide.outgoing;
+    final caption = translation;
+    final hasTranslation = caption != null && !caption.isEmpty;
     final baseColor = mine ? tg.ownBubble : tg.peerBubble;
     // Soft accent wash when this message @'d us — enough to find it in a
     // scroll, not a second selection colour fighting [selected].
@@ -566,10 +569,7 @@ class MessageBubble extends StatelessWidget {
               ],
             ),
             MotionCollapse(
-              visible:
-                  !retracted &&
-                  (translating ||
-                      (translation != null && translation!.trim().isNotEmpty)),
+              visible: !retracted && (translating || hasTranslation),
               child: Padding(
                 padding: EdgeInsets.only(
                   top: 4,
@@ -585,15 +585,9 @@ class MessageBubble extends StatelessWidget {
                           color: tg.textSecondary,
                         ),
                       )
-                    : Text(
-                        translation ?? '',
-                        style: TextStyle(
-                          fontSize: AppDimens.messageFontSize - 1,
-                          color: tg.textSecondary,
-                          height: 1.3,
-                          fontStyle: FontStyle.italic,
-                        ),
-                      ),
+                    : caption == null || caption.isEmpty
+                    ? const SizedBox.shrink()
+                    : _TranslationCaption(translation: caption),
               ),
             ),
             MotionCollapse(
@@ -1184,6 +1178,41 @@ class RetractedNotice extends StatelessWidget {
             onPressed: () => Navigator.of(ctx).pop(),
             child: Text(l10n.close),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Marker (caption, upright) then body (italic). Marker stays visually distinct.
+class _TranslationCaption extends StatelessWidget {
+  const _TranslationCaption({required this.translation});
+
+  final BubbleTranslation translation;
+
+  @override
+  Widget build(BuildContext context) {
+    final tg = context.appColors;
+    final marker = translation.marker;
+    final body = translation.text.trimRight();
+    final bodyStyle = TextStyle(
+      fontSize: AppDimens.captionFontSize,
+      color: tg.textSecondary,
+      fontStyle: FontStyle.italic,
+      height: 1.25,
+    );
+    final markStyle = context.appText.caption.copyWith(height: 1.25);
+    if (marker.isEmpty) {
+      return Text(body, style: bodyStyle);
+    }
+    if (body.isEmpty) {
+      return Text(marker, style: markStyle);
+    }
+    return Text.rich(
+      TextSpan(
+        children: [
+          TextSpan(text: marker, style: markStyle),
+          TextSpan(text: ' $body', style: bodyStyle),
         ],
       ),
     );

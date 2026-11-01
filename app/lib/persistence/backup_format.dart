@@ -388,6 +388,7 @@ const Map<BackupTable, BackupTableSpec> kBackupTables = {
       BackupColumn('body', BackupColumnKind.text),
       BackupColumn('source_lang', BackupColumnKind.text),
       BackupColumn('engine', BackupColumnKind.text),
+      BackupColumn('by', BackupColumnKind.text),
     ],
   ),
   // Public fingerprints and local trust/active decisions — not sealed private

@@ -9,6 +9,8 @@ import 'package:drift/drift.dart';
 
 import 'package:resonchat/crypto/dual/track.dart';
 import 'package:resonchat/persistence/database_connection.dart';
+import 'package:resonchat/xmpp/chat/peertrans.dart'
+    show prefPeertransAdminsOnlyKey;
 import 'package:resonchat/xmpp/chat/sticker_link.dart';
 import 'package:resonchat/xmpp/chat_notify_mode.dart';
 import 'package:resonchat/xmpp/group_read.dart';
@@ -151,7 +153,8 @@ class ChatTranslateSettings extends Table {
 ///
 /// Keyed by the stored stanza id (origin-id when the sender published one),
 /// the same address reactions use, so the row does not depend on the local
-/// message id.
+/// message id. Peertrans winners are also written here under the **parent**
+/// stanza id (see [PeerTransCandidates]).
 class MessageTranslations extends Table {
   TextColumn get chatJid => text()();
   TextColumn get stanzaId => text()();
@@ -160,8 +163,49 @@ class MessageTranslations extends Table {
   TextColumn get sourceLang => text().withDefault(const Constant(''))();
   TextColumn get engine => text().withDefault(const Constant(''))();
 
+  /// Peertrans provider nick (MUC) or localpart; empty for Direct / local-original.
+  TextColumn get by => text().withDefault(const Constant(''))();
+
   @override
   Set<Column> get primaryKey => {chatJid, stanzaId, lang};
+}
+
+/// One peertrans candidate before display-winner selection (`docs/12-peertrans.md`).
+class PeerTransCandidates extends Table {
+  TextColumn get chatJid => text()();
+
+  /// Parent message id (MUC stanza-id or origin-id), i.e. `reply/@id`.
+  TextColumn get parentId => text()();
+
+  TextColumn get lang => text()();
+  TextColumn get body => text()();
+  IntColumn get priority => integer()();
+
+  /// Bare sender JID (or MUC nick when real JID unknown).
+  TextColumn get sender => text()();
+
+  /// Stable id of the peertrans stanza (origin-id preferred).
+  TextColumn get supplementId => text()();
+
+  DateTimeColumn get timestamp => dateTime()();
+
+  @override
+  Set<Column> get primaryKey => {chatJid, supplementId, lang};
+}
+
+/// Peertrans that arrived before its parent message was stored.
+class PendingPeerTrans extends Table {
+  TextColumn get chatJid => text()();
+  TextColumn get parentId => text()();
+  TextColumn get lang => text()();
+  TextColumn get body => text()();
+  IntColumn get priority => integer()();
+  TextColumn get sender => text()();
+  TextColumn get supplementId => text()();
+  DateTimeColumn get timestamp => dateTime()();
+
+  @override
+  Set<Column> get primaryKey => {chatJid, supplementId, lang};
 }
 
 /// One stored message. Both the ciphertext context (`encMode`) and —
@@ -573,6 +617,8 @@ class Stickers extends Table {
     PinnedMessages,
     ChatTranslateSettings,
     MessageTranslations,
+    PeerTransCandidates,
+    PendingPeerTrans,
     SubscriptionRequests,
     RoomInvitations,
     PendingCorrections,
@@ -588,37 +634,12 @@ class AppDatabase extends _$AppDatabase {
 
   @override
   // Keep in sync with [kAccountSchemaVersion] in database_connection_io.dart.
-  int get schemaVersion => 7;
+  int get schemaVersion => 1;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (m) async => m.createAll(),
-    onUpgrade: (m, from, to) async {
-      if (from < 2) {
-        await m.createTable(chatTranslateSettings);
-        await m.createTable(messageTranslations);
-      }
-      if (from >= 2 && from < 3) {
-        await m.deleteTable('chat_translate_settings');
-        await m.deleteTable('chat_translate_langs');
-        await m.createTable(chatTranslateSettings);
-      }
-      if (from < 4) {
-        await m.addColumn(chats, chats.localNickname);
-      }
-      if (from < 5) {
-        await m.addColumn(messages, messages.forwardFromJid);
-        await m.addColumn(messages, messages.forwardAuthor);
-        await m.addColumn(messages, messages.forwardBody);
-        await m.addColumn(messages, messages.forwardStamp);
-      }
-      if (from < 6) {
-        await m.addColumn(messages, messages.forwardOriginId);
-      }
-      if (from < 7) {
-        await m.createTable(omemo2PqPins);
-      }
-    },
+    onUpgrade: (m, from, to) async {},
   );
 
   /// True when the user has acknowledged, for this conversation, that
@@ -1275,6 +1296,194 @@ class AppDatabase extends _$AppDatabase {
     return (delete(
       messageTranslations,
     )..where((t) => t.chatJid.equals(chatJid))).go();
+  }
+
+  /// Upserts one peertrans candidate and returns all candidates for that parent/lang.
+  Future<List<PeerTransCandidate>> upsertPeerTransCandidate({
+    required String chatJid,
+    required String parentId,
+    required String lang,
+    required String body,
+    required int priority,
+    required String sender,
+    required String supplementId,
+    required DateTime timestamp,
+  }) async {
+    if (chatJid.isEmpty ||
+        parentId.isEmpty ||
+        lang.isEmpty ||
+        supplementId.isEmpty ||
+        body.trim().isEmpty) {
+      return const [];
+    }
+    await into(peerTransCandidates).insertOnConflictUpdate(
+      PeerTransCandidatesCompanion.insert(
+        chatJid: chatJid,
+        parentId: parentId,
+        lang: lang,
+        body: body,
+        priority: priority,
+        sender: sender,
+        supplementId: supplementId,
+        timestamp: timestamp,
+      ),
+    );
+    return (select(peerTransCandidates)..where(
+          (t) =>
+              t.chatJid.equals(chatJid) &
+              t.parentId.equals(parentId) &
+              t.lang.equals(lang),
+        ))
+        .get();
+  }
+
+  /// Candidates for [parentId] from a given [sender] (same-sender first-wins).
+  Future<List<PeerTransCandidate>> peerTransCandidatesForSender({
+    required String chatJid,
+    required String parentId,
+    required String lang,
+    required String sender,
+  }) {
+    return (select(peerTransCandidates)..where(
+          (t) =>
+              t.chatJid.equals(chatJid) &
+              t.parentId.equals(parentId) &
+              t.lang.equals(lang) &
+              t.sender.equals(sender),
+        ))
+        .get();
+  }
+
+  Future<void> deletePeerTransCandidate({
+    required String chatJid,
+    required String supplementId,
+  }) {
+    return (delete(peerTransCandidates)..where(
+          (t) =>
+              t.chatJid.equals(chatJid) & t.supplementId.equals(supplementId),
+        ))
+        .go();
+  }
+
+  Future<List<PeerTransCandidate>> peerTransCandidatesForParent({
+    required String chatJid,
+    required String parentId,
+    required String lang,
+  }) {
+    return (select(peerTransCandidates)..where(
+          (t) =>
+              t.chatJid.equals(chatJid) &
+              t.parentId.equals(parentId) &
+              t.lang.equals(lang),
+        ))
+        .get();
+  }
+
+  Future<PeerTransCandidate?> peerTransBySupplementId(
+    String chatJid,
+    String supplementId,
+  ) {
+    return (select(peerTransCandidates)..where(
+          (t) =>
+              t.chatJid.equals(chatJid) & t.supplementId.equals(supplementId),
+        ))
+        .getSingleOrNull();
+  }
+
+  Future<void> upsertPendingPeerTrans({
+    required String chatJid,
+    required String parentId,
+    required String lang,
+    required String body,
+    required int priority,
+    required String sender,
+    required String supplementId,
+    required DateTime timestamp,
+  }) {
+    return into(pendingPeerTrans).insertOnConflictUpdate(
+      PendingPeerTransCompanion.insert(
+        chatJid: chatJid,
+        parentId: parentId,
+        lang: lang,
+        body: body,
+        priority: priority,
+        sender: sender,
+        supplementId: supplementId,
+        timestamp: timestamp,
+      ),
+    );
+  }
+
+  Future<List<PendingPeerTran>> takePendingPeerTransForParent({
+    required String chatJid,
+    required String parentId,
+  }) {
+    return transaction(() async {
+      final rows =
+          await (select(pendingPeerTrans)..where(
+                (t) => t.chatJid.equals(chatJid) & t.parentId.equals(parentId),
+              ))
+              .get();
+      if (rows.isNotEmpty) {
+        await (delete(pendingPeerTrans)..where(
+              (t) => t.chatJid.equals(chatJid) & t.parentId.equals(parentId),
+            ))
+            .go();
+      }
+      return rows;
+    });
+  }
+
+  /// Writes the peertrans display winner into [messageTranslations].
+  ///
+  /// [parentId] is the XEP-0461 reply id (often the MUC room stanza-id). The
+  /// row is keyed by the parent's stored [Messages.stanzaId] (usually
+  /// origin-id), which is what the chat UI looks up.
+  Future<void> applyPeerTransWinner({
+    required String chatJid,
+    required String parentId,
+    required String lang,
+    required String? body,
+    String sourceLang = '',
+    String engine = 'peertrans',
+    String by = '',
+  }) {
+    return transaction(() async {
+      final parent = await messageAddressedInChat(chatJid, parentId);
+      final key = (parent != null && parent.stanzaId.isNotEmpty)
+          ? parent.stanzaId
+          : parentId;
+      await (delete(messageTranslations)..where(
+            (t) =>
+                t.chatJid.equals(chatJid) &
+                t.stanzaId.equals(key) &
+                t.lang.equals(lang),
+          ))
+          .go();
+      // Drop a stale row keyed by the raw reply id when it differs from [key]
+      // (pre-fix writes used the room stanza-id directly).
+      if (key != parentId) {
+        await (delete(messageTranslations)..where(
+              (t) =>
+                  t.chatJid.equals(chatJid) &
+                  t.stanzaId.equals(parentId) &
+                  t.lang.equals(lang),
+            ))
+            .go();
+      }
+      if (body == null || body.trim().isEmpty) return;
+      await into(messageTranslations).insert(
+        MessageTranslationsCompanion.insert(
+          chatJid: chatJid,
+          stanzaId: key,
+          lang: lang,
+          body: body,
+          sourceLang: Value(sourceLang),
+          engine: Value(engine.isEmpty ? 'peertrans' : engine),
+          by: Value(by),
+        ),
+      );
+    });
   }
 
   /// Drops stored translations and local originals for the message addressed
@@ -2129,25 +2338,6 @@ class AppDatabase extends _$AppDatabase {
   Future<void> setOwnPresenceShowWire(String show) =>
       setMetaValue('pref_presence_show', show);
 
-  /// XEP-0171 translation provider JID for this account (bare or full).
-  ///
-  /// Empty / unset means the client discovers providers on the account domain
-  /// when a translation is requested.
-  static const translationProviderJidKey = 'pref_translation_provider_jid';
-
-  Future<String?> translationProviderJid() async {
-    final raw = (await metaValue(translationProviderJidKey))?.trim() ?? '';
-    return raw.isEmpty ? null : raw;
-  }
-
-  Future<void> setTranslationProviderJid(String? jid) async {
-    final trimmed = jid?.trim() ?? '';
-    if (trimmed.isEmpty) {
-      return deleteMetaValue(translationProviderJidKey);
-    }
-    return setMetaValue(translationProviderJidKey, trimmed);
-  }
-
   /// Newest message timestamp across all chats.
   ///
   /// Conversations `getLastMessageReceived` — used as the MAM catch-up
@@ -2190,6 +2380,23 @@ class AppDatabase extends _$AppDatabase {
         ))
         .getSingleOrNull();
   }
+
+  /// Parent lookup for peertrans: origin-id / message id, then room stanza-id.
+  Future<Message?> messageAddressedInChat(String chatJid, String id) async {
+    if (id.isEmpty) return null;
+    final byStanza = await messageWithStanzaId(chatJid, id);
+    if (byStanza != null) return byStanza;
+    return (select(messages)
+          ..where((m) => m.chatJid.equals(chatJid) & m.roomStanzaId.equals(id)))
+        .getSingleOrNull();
+  }
+
+  /// When true, only MUC owner/admin peertrans is merged.
+  Future<bool> peertransAdminsOnly() async =>
+      (await metaValue(prefPeertransAdminsOnlyKey)) == '1';
+
+  Future<void> setPeertransAdminsOnly(bool enabled) =>
+      setMetaValue(prefPeertransAdminsOnlyKey, enabled ? '1' : '0');
 
   /// Fills the room's stanza-id on a message we already stored.
   ///

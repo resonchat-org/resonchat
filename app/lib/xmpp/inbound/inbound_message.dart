@@ -6,6 +6,7 @@
 import 'package:moxxmpp/moxxmpp.dart' show JID;
 
 import 'package:resonchat/crypto/dual/track.dart';
+import 'package:resonchat/xmpp/chat/peertrans.dart';
 import 'package:resonchat/xmpp/inbound/forward_info.dart';
 import 'package:resonchat/xmpp/inbound/reaction_update.dart';
 import 'package:resonchat/xmpp/inbound/reply_info.dart';
@@ -55,6 +56,7 @@ class InboundMessage {
     this.mediaMime = '',
     this.mediaName = '',
     this.translations = const [],
+    this.peerTrans,
   });
 
   final JID from;
@@ -161,6 +163,11 @@ class InboundMessage {
 
   /// XEP-0171 translations carried on the stanza.
   final List<InboundTranslation> translations;
+
+  /// Peer Message Translation marker + payload, when present.
+  ///
+  /// Consumed by storage (merged under the parent); not shown as its own bubble.
+  final PeerTransData? peerTrans;
 
   /// Which track the sender used, read from its EME declaration.
   ///

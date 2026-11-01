@@ -403,7 +403,9 @@ class AppThemeTokens {
       ),
       dividerTheme: DividerThemeData(color: tg.separator, space: 0.5),
       inputDecorationTheme: InputDecorationTheme(
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppDimens.controlRadius)),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AppDimens.controlRadius),
+        ),
         contentPadding: AppDimens.inputContentPadding,
       ),
       chipTheme: ChipThemeData(

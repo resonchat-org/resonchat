@@ -327,8 +327,21 @@ Future<void> _acceptInbound(
 ) async {
   final db = session.db;
   final ownBare = session.xmpp.myJid;
-  final mentionsMe = await session.messages.storeInbound(msg, ownBare: ownBare);
   final chatJid = _chatJidFor(msg, ownBare);
+  String? senderAffiliation;
+  if (msg.peerTrans != null &&
+      msg.type == 'groupchat' &&
+      msg.from.resource.isNotEmpty) {
+    final room = await session.xmpp.groupChatState(chatJid);
+    senderAffiliation = room?.members[msg.from.resource]?.affiliation.value;
+  }
+  final mentionsMe = await session.messages.storeInbound(
+    msg,
+    ownBare: ownBare,
+    senderAffiliation: senderAffiliation,
+  );
+  // Merged under the parent — no bubble, unread, or notification.
+  if (msg.peerTrans != null) return;
   if (_isOwnArchive(msg, ownBare)) return;
   if (msg.fromArchive) return;
 

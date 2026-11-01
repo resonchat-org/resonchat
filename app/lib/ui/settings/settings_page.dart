@@ -430,6 +430,13 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               );
             },
           ),
+          SwitchListTile(
+            secondary: const Icon(Icons.g_translate_outlined),
+            title: Text(l10n.peertransAdminsOnly),
+            subtitle: Text(l10n.peertransAdminsOnlySummary),
+            value: settings.peertransAdminsOnly,
+            onChanged: (v) => unawaited(vm.setPeertransAdminsOnly(v)),
+          ),
           ListTile(
             leading: const Icon(Icons.travel_explore_outlined),
             title: Text(l10n.channelDiscoveryMethod),

@@ -3,9 +3,6 @@
 //
 // User-typed JID validation aligned with Conversations `Jid.ofUserInput`:
 // parse address parts, then require a hostname (Unicode labels) or IP domain.
-//
-// XEP-0171 §4.2.2: a translation provider may be a bare bot JID or a domain
-// component — a resource is not required.
 
 /// Conversations `HOSTNAME_PATTERN` (Unicode letters/digits, optional trailing `.`).
 final _hostnamePattern = RegExp(
@@ -61,8 +58,8 @@ String? jidOfUserInput(String raw) {
 /// Form helper on top of [jidOfUserInput].
 ///
 /// Defaults match contact / room / login fields: entity bare JID (`local@domain`).
-/// Pass [bareOnly]: false and [requireLocalpart]: false for XEP-0171 providers
-/// (bot bare, domain component, or full JID are all allowed by the XEP).
+/// Pass [bareOnly]: false and [requireLocalpart]: false for domain JIDs or
+/// full JIDs when a screen needs them.
 String? completeJidCandidate(
   String raw, {
   bool bareOnly = true,

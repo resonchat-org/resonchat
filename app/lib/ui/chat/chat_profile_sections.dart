@@ -192,10 +192,7 @@ class ChatProfileSectionTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
-      child: Text(
-        title,
-        style: context.appText.sectionHeader,
-      ),
+      child: Text(title, style: context.appText.sectionHeader),
     );
   }
 }

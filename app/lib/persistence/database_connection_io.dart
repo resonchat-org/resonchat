@@ -21,10 +21,7 @@ Future<QueryExecutor> openPrefsDatabaseConnection() =>
     _openFile('resonchat.sqlite3', maxReadableVersion: 1);
 
 /// Must match [AppDatabase.schemaVersion] in `database.dart`.
-///
-/// A file written by a newer build is deleted; nothing older is migrated from
-/// the documents directory.
-const int kAccountSchemaVersion = 7;
+const int kAccountSchemaVersion = 1;
 
 /// Per-account DB (`resonchat_<accountId>.sqlite3`). [accountId] is required.
 Future<QueryExecutor> openAccountDatabaseConnection(String accountId) {
@@ -113,11 +110,7 @@ Future<QueryExecutor> _openFile(
   );
 }
 
-/// Wipe only databases from a *newer* build than this one can read.
-///
-/// Wiping on any mismatch deleted the account DB whenever
-/// [AppDatabase.schemaVersion] moved past the hardcoded probe value — empty
-/// chat list on the next cold start.
+/// Wipe databases from a newer build than this one can read.
 ///
 /// Probe failures (SQLCipher vs plain, etc.) are left for the open path.
 Future<void> _deleteIncompatible(
@@ -139,7 +132,8 @@ Future<void> _deleteIncompatible(
     } finally {
       probe.close();
     }
-    // 0 = fresh file before Drift migrates. version <= max = we can open/migrate.
+    // 0 = fresh file before Drift migrates. version <= max = open (or wipe
+    // by reinstall when this build reset schemaVersion downward).
     if (version == 0 || version <= maxReadableVersion) return;
     await file.delete();
     debugPrint(

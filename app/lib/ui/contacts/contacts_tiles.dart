@@ -24,7 +24,11 @@ import 'package:resonchat/xmpp/roster/last_seen.dart';
 import 'package:resonchat/xmpp/roster/local_nickname.dart';
 
 TextStyle _detailStyle(Color color) {
-  return TextStyle(color: color, fontSize: AppDimens.timeFontSize, height: 1.15);
+  return TextStyle(
+    color: color,
+    fontSize: AppDimens.timeFontSize,
+    height: 1.15,
+  );
 }
 
 /// Second line of a contact row. [leading] sits on the left (last seen).
@@ -201,10 +205,7 @@ class SearchSectionHeader extends StatelessWidget {
         AppDimens.chatsHorizontalPadding,
         4,
       ),
-      child: Text(
-        label,
-        style: context.appText.sectionHeader,
-      ),
+      child: Text(label, style: context.appText.sectionHeader),
     );
   }
 }

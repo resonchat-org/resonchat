@@ -114,7 +114,9 @@ class LandscapeNavRail extends ConsumerWidget {
       indicatorColor: tg.accent.withValues(alpha: 0.09),
       selectedIconTheme: IconThemeData(color: tg.accent, size: 24),
       unselectedIconTheme: IconThemeData(color: tg.textPrimary, size: 24),
-      selectedLabelTextStyle: context.appText.sectionHeader.copyWith(color: tg.accent),
+      selectedLabelTextStyle: context.appText.sectionHeader.copyWith(
+        color: tg.accent,
+      ),
       unselectedLabelTextStyle: context.appText.helper.copyWith(
         color: tg.textPrimary,
       ),

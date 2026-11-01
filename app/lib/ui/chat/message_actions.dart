@@ -30,7 +30,6 @@ class MessageActions {
     required this.canCopy,
     required this.canCopySelection,
     required this.canTranslate,
-    this.canRequestTranslation = false,
     required this.canSelect,
     required this.canEdit,
     required this.canRetract,
@@ -64,10 +63,6 @@ class MessageActions {
 
   /// External HTTP translation for translatable plaintext (not files / emoji).
   final bool canTranslate;
-
-  /// Ask a remote XEP-0171 provider. Plaintext only: an encrypted body is
-  /// not something that provider can be given.
-  final bool canRequestTranslation;
 
   /// Enter multi-select with this message as the first pick (addressable only).
   final bool canSelect;
@@ -104,7 +99,6 @@ class MessageActions {
     bool canSaveFile = false,
     bool canSaveSticker = false,
     bool canTranslate = false,
-    bool canRequestTranslation = false,
     bool canCopySelection = false,
     bool moderate = false,
     bool groupchat = false,
@@ -117,7 +111,6 @@ class MessageActions {
       canCopy: decrypted && !retracted,
       canCopySelection: decrypted && !retracted && canCopySelection,
       canTranslate: canTranslate,
-      canRequestTranslation: canRequestTranslation,
       canSelect: !retracted && addressable,
       canEdit: mine && !retracted && decrypted,
       // Group messages are addressed by the room stanza-id. Offering retract
@@ -138,7 +131,6 @@ class MessageActions {
       !canCopy &&
       !canCopySelection &&
       !canTranslate &&
-      !canRequestTranslation &&
       !canSelect &&
       !canEdit &&
       !canForward &&
@@ -174,7 +166,6 @@ enum MessageAction {
   copy,
   copySelection,
   translate,
-  requestTranslation,
   select,
   edit,
   forward,
@@ -385,12 +376,6 @@ class _AnchoredMessageMenuState extends State<_AnchoredMessageMenu>
           icon: Icons.translate,
           label: l10n.translate,
           action: MessageAction.translate,
-        ),
-      if (actions.canRequestTranslation)
-        _MenuItem(
-          icon: Icons.g_translate,
-          label: l10n.requestTranslation,
-          action: MessageAction.requestTranslation,
         ),
       if (actions.canForward)
         _MenuItem(

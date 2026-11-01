@@ -26,8 +26,8 @@ import 'package:resonchat/platform/app_notifications.dart';
 import 'package:resonchat/platform/voice_recorder.dart';
 import 'package:resonchat/state/providers.dart';
 import 'package:resonchat/translate/chat_auto_translate.dart';
-import 'package:resonchat/translate/remote_translation.dart';
 import 'package:resonchat/translate/translatable_text.dart';
+import 'package:resonchat/translate/translation_engine.dart';
 import 'package:resonchat/translate/translation_prefs.dart';
 import 'package:resonchat/translate/translation_service.dart';
 import 'package:resonchat/ui/chat/appearance.dart';
@@ -383,29 +383,37 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   String _editingBody = '';
 
   /// In-memory translations for the open chat, keyed by stanza id.
-  final Map<String, String> _translations = {};
+  final Map<String, BubbleTranslation> _translations = {};
 
   /// Translations already on the stanza whose language matches the UI.
   ///
   /// Shown in the same place as a long-press translation, without asking the
   /// user to translate again. A long-press result in [_translations] wins.
-  Map<String, String> _stanzaTranslations(BuildContext context) {
+  Map<String, BubbleTranslation> _stanzaTranslations(BuildContext context) {
     final rows =
         ref.watch(messageTranslationsProvider(widget.chatJid)).value ??
         const <MessageTranslation>[];
     final uiLang = Localizations.localeOf(context).languageCode;
-    final byId = <String, List<({String lang, String text})>>{};
+    final byId = <String, List<TranslationDisplayRow>>{};
     for (final row in rows) {
       if (row.lang == kLocalOriginalLang) continue;
       byId.putIfAbsent(row.stanzaId, () => []).add((
         lang: row.lang,
         text: row.body,
+        engine: row.engine,
+        by: row.by,
       ));
     }
-    final shown = <String, String>{};
+    final shown = <String, BubbleTranslation>{};
     for (final entry in byId.entries) {
-      final text = translationMatchingUi(entry.value, uiLang);
-      if (text != null) shown[entry.key] = text;
+      final match = translationMatchingUi(entry.value, uiLang);
+      if (match == null) continue;
+      // Direct (by empty): engine only. Peertrans: engine(nick).
+      shown[entry.key] = BubbleTranslation(
+        text: match.text,
+        engine: match.engine,
+        source: match.by,
+      );
     }
     return shown;
   }
@@ -1697,7 +1705,6 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       canSaveSticker: _canSaveSticker(message),
       canCopySelection: !isFileMessage && body.trim().isNotEmpty && decrypted,
       canTranslate: offerTranslate,
-      canRequestTranslation: track == Track.none && offerTranslate,
     );
     if (actions.isEmpty) return;
 
@@ -1758,8 +1765,6 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         unawaited(_copyToClipboard(slice));
       case MessageAction.translate:
         unawaited(_translateMessage(message, body));
-      case MessageAction.requestTranslation:
-        unawaited(_requestRemoteTranslation(message, body));
       case MessageAction.select:
         _toggleSelected(message);
       case MessageAction.forward:
@@ -1808,8 +1813,18 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         uiLanguageCode: lang,
       );
       if (!mounted) return;
+      final engineLabel = switch (prefs.engine) {
+        TranslationEngineId.libreTranslate => l10n.translationLibreTranslate,
+        TranslationEngineId.deepL => l10n.translationDeepL,
+        TranslationEngineId.offlineTranslator =>
+          l10n.translationOfflineTranslator,
+      };
       setState(() {
-        _translations[cacheKey] = result.text;
+        _translations[cacheKey] = BubbleTranslation(
+          text: result.text,
+          engine: engineLabel,
+          source: l10n.translationSourceLocal,
+        );
         _translating.remove(cacheKey);
       });
     } catch (e) {
@@ -1818,38 +1833,6 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(l10n.translationFailed('$e'))));
     }
-  }
-
-  /// Asks a remote translation provider and shows the result under the bubble.
-  Future<void> _requestRemoteTranslation(Message message, String body) async {
-    final l10n = context.l10n;
-    final cacheKey = message.stanzaId.isNotEmpty
-        ? message.stanzaId
-        : 'body:${body.hashCode}';
-    setState(() => _translating.add(cacheKey));
-    final lang = Localizations.localeOf(context).languageCode;
-    final outcome = await _vm.requestRemoteTranslation(body, lang);
-    if (!mounted) return;
-    setState(() => _translating.remove(cacheKey));
-    if (outcome.isReady) {
-      setState(() {
-        _translations[cacheKey] = remoteTranslationLine(
-          outcome.text!,
-          outcome.engine,
-        );
-      });
-      return;
-    }
-    final messageText = switch (outcome.reject) {
-      RemoteTranslationReject.notConnected => l10n.notConnectedTryAgain,
-      RemoteTranslationReject.noLanguage => l10n.noTranslationLanguage,
-      RemoteTranslationReject.failed => l10n.translationFailed(
-        outcome.detail ?? '',
-      ),
-      _ => l10n.noTranslationService,
-    };
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(messageText)));
   }
 
   Future<void> _copyToClipboard(String text) async {

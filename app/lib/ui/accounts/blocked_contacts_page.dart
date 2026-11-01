@@ -148,10 +148,7 @@ class _BlockedContactsPageState extends ConsumerState<BlockedContactsPage> {
               if (account != null)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                  child: Text(
-                    account.bareJid,
-                    style: context.appText.helper,
-                  ),
+                  child: Text(account.bareJid, style: context.appText.helper),
                 ),
               for (final jid in list)
                 BanListTile(

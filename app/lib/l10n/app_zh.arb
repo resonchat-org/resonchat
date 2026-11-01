@@ -63,6 +63,9 @@
   },
   "translationSettingsSaved": "翻译设置已保存",
   "translationNotConfigured": "请先在「设置 → 消息翻译」中配置翻译服务",
+  "translationSourceLocal": "本地",
+  "peertransAdminsOnly": "对端翻译：仅管理员",
+  "peertransAdminsOnlySummary": "群聊中仅合并房间所有者与管理员发布的对端翻译",
   "translationFailed": "无法翻译：{error}",
   "@translationFailed": {
     "placeholders": {
@@ -963,16 +966,5 @@
     }
   },
   "autoTranslateReplaceHint": "用一种译文代替原文发送。原文只留在本机，显示在气泡下方，方便核对。",
-  "autoTranslateSave": "保存",
-  "requestTranslation": "向翻译服务请求",
-  "noTranslationService": "没有可用的翻译服务。",
-  "noTranslationLanguage": "翻译服务不提供界面语言的译文。",
-  "translationProvider": "翻译提供者",
-  "translationProviderSummary": "用于「向翻译服务请求」的 XMPP 服务。留空则使用本服务器上的提供者。",
-  "translationProviderJid": "提供者 JID",
-  "translationProviderJidHint": "bot@example.com/translator",
-  "translationProviderDiscover": "发现",
-  "translationProviderDiscoverEmpty": "本服务器上未发现翻译提供者。",
-  "translationProviderSaved": "翻译提供者已保存",
-  "translationProviderCleared": "翻译提供者已清除"
+  "autoTranslateSave": "保存"
 }

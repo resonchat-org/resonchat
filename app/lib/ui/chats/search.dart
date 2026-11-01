@@ -287,10 +287,7 @@ class ForwardTargetSheet extends ConsumerWidget {
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-              child: Text(
-                subtitle,
-                style: context.appText.caption,
-              ),
+              child: Text(subtitle, style: context.appText.caption),
             ),
             const Divider(height: 1),
             Expanded(

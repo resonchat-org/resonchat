@@ -25,7 +25,6 @@ import 'package:resonchat/persistence/database.dart';
 import 'package:resonchat/state/app_wiring.dart';
 import 'package:resonchat/state/providers.dart';
 import 'package:resonchat/translate/chat_auto_translate.dart';
-import 'package:resonchat/translate/remote_translation.dart';
 import 'package:resonchat/translate/translatable_text.dart';
 import 'package:resonchat/translate/translation_engine.dart';
 import 'package:resonchat/translate/translation_prefs.dart';
@@ -1069,14 +1068,6 @@ class ChatViewModel extends AutoDisposeFamilyNotifier<ChatUiState, String> {
     before: DateTime.now().subtract(staleAfter),
     reason: reason,
   );
-
-  /// Asks a translation provider on the connected server to translate [text].
-  Future<RemoteTranslationOutcome> requestRemoteTranslation(
-    String text,
-    String uiLanguage,
-  ) {
-    return _xmpp.requestRemoteTranslation(text: text, uiLanguage: uiLanguage);
-  }
 
   /// Whether the server offers XEP-0363 upload.
   Future<bool> isUploadAvailable() => _xmpp.httpFiles.isAvailable();

@@ -253,10 +253,7 @@ Widget _sheetSection(BuildContext context, String label) {
     padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
     child: Align(
       alignment: Alignment.centerLeft,
-      child: Text(
-        label,
-        style: context.appText.sectionHeader,
-      ),
+      child: Text(label, style: context.appText.sectionHeader),
     ),
   );
 }

@@ -14,24 +14,28 @@ class SettingsUiState {
     this.deliveryReceipts,
     this.readReceipts,
     this.chatStates,
+    this.peertransAdminsOnly = false,
     this.automaticDeletion = AutomaticMessageDeletion.never,
   });
 
   final bool? deliveryReceipts;
   final bool? readReceipts;
   final bool? chatStates;
+  final bool peertransAdminsOnly;
   final AutomaticMessageDeletion automaticDeletion;
 
   SettingsUiState copyWith({
     bool? deliveryReceipts,
     bool? readReceipts,
     bool? chatStates,
+    bool? peertransAdminsOnly,
     AutomaticMessageDeletion? automaticDeletion,
   }) {
     return SettingsUiState(
       deliveryReceipts: deliveryReceipts ?? this.deliveryReceipts,
       readReceipts: readReceipts ?? this.readReceipts,
       chatStates: chatStates ?? this.chatStates,
+      peertransAdminsOnly: peertransAdminsOnly ?? this.peertransAdminsOnly,
       automaticDeletion: automaticDeletion ?? this.automaticDeletion,
     );
   }
@@ -48,11 +52,13 @@ class SettingsViewModel extends Notifier<SettingsUiState> {
       final delivery = await db.sendDeliveryReceiptsEnabled();
       final receipts = await db.sendReadReceiptsEnabled();
       final states = await db.sendChatStatesEnabled();
+      final peertransAdmins = await db.peertransAdminsOnly();
       final deletion = await loadAutomaticMessageDeletion(prefs);
       state = state.copyWith(
         deliveryReceipts: delivery,
         readReceipts: receipts,
         chatStates: states,
+        peertransAdminsOnly: peertransAdmins,
         automaticDeletion: deletion,
       );
     });
@@ -92,6 +98,13 @@ class SettingsViewModel extends Notifier<SettingsUiState> {
     for (final session in accountHub.sessions) {
       session.xmpp.sendTypingNotifications = value;
       await session.db.setSendChatStates(value);
+    }
+  }
+
+  Future<void> setPeertransAdminsOnly(bool value) async {
+    state = state.copyWith(peertransAdminsOnly: value);
+    for (final session in accountHub.sessions) {
+      await session.db.setPeertransAdminsOnly(value);
     }
   }
 

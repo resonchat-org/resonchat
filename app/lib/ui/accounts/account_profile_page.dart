@@ -20,7 +20,6 @@ import 'package:resonchat/persistence/account_store.dart';
 import 'package:resonchat/ui/accounts/account_profile_viewmodel.dart';
 import 'package:resonchat/ui/accounts/account_qr_code.dart';
 import 'package:resonchat/ui/accounts/blocked_contacts_page.dart';
-import 'package:resonchat/ui/accounts/translation_provider_sheet.dart';
 import 'package:resonchat/ui/contact_avatar.dart';
 import 'package:resonchat/ui/fingerprint_box.dart';
 import 'package:resonchat/ui/security/fingerprint_trust_tile.dart';
@@ -357,25 +356,8 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
                   );
                 },
               ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.translate),
-                title: Text(l10n.translationProvider),
-                subtitle: Text(l10n.translationProviderSummary),
-                trailing: const Icon(Icons.chevron_right),
-                enabled: !ui.busy,
-                onTap: () => unawaited(
-                  showTranslationProviderSheet(
-                    context,
-                    accountId: widget.accountId,
-                  ),
-                ),
-              ),
               const SizedBox(height: 28),
-              Text(
-                l10n.presenceStatus,
-                style: context.appText.sectionHeader,
-              ),
+              Text(l10n.presenceStatus, style: context.appText.sectionHeader),
               const SizedBox(height: 8),
               _PresencePicker(
                 accountId: widget.accountId,
@@ -383,10 +365,7 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
                 onSelected: _model.setPresence,
               ),
               const SizedBox(height: 28),
-              Text(
-                l10n.omemoEncryption,
-                style: context.appText.sectionHeader,
-              ),
+              Text(l10n.omemoEncryption, style: context.appText.sectionHeader),
               const SizedBox(height: 8),
               ListTile(
                 contentPadding: EdgeInsets.zero,
@@ -395,10 +374,7 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
               ),
               // monocles EditAccount: both stacks shown separately, never merged.
               // Regenerate sits under the fingerprint it replaces.
-              Text(
-                l10n.omemo2Fingerprint,
-                style: context.appText.caption,
-              ),
+              Text(l10n.omemo2Fingerprint, style: context.appText.caption),
               const SizedBox(height: 6),
               if (ui.hybridFingerprint != null)
                 FingerprintBox(
@@ -416,10 +392,7 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
                 onTap: () => unawaited(_confirmRegenerate(pq: true)),
               ),
               const SizedBox(height: 8),
-              Text(
-                l10n.omemoLegacyFingerprint,
-                style: context.appText.caption,
-              ),
+              Text(l10n.omemoLegacyFingerprint, style: context.appText.caption),
               const SizedBox(height: 6),
               if (ui.legacyFingerprint != null)
                 FingerprintBox(
@@ -437,21 +410,12 @@ class _AccountProfilePageState extends ConsumerState<AccountProfilePage> {
                 onTap: () => unawaited(_confirmRegenerate(pq: false)),
               ),
               const SizedBox(height: 20),
-              Text(
-                l10n.otherOwnDevices,
-                style: context.appText.sectionHeader,
-              ),
+              Text(l10n.otherOwnDevices, style: context.appText.sectionHeader),
               const SizedBox(height: 4),
-              Text(
-                l10n.otherOwnDevicesIntro,
-                style: context.appText.caption,
-              ),
+              Text(l10n.otherOwnDevicesIntro, style: context.appText.caption),
               const SizedBox(height: 8),
               if (ui.otherDevices.isEmpty)
-                Text(
-                  l10n.noOtherOwnDevices,
-                  style: context.appText.helper,
-                )
+                Text(l10n.noOtherOwnDevices, style: context.appText.helper)
               else
                 for (final row in ui.otherDevices)
                   FingerprintTrustTile(

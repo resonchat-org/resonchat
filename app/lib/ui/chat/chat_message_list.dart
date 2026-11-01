@@ -12,6 +12,7 @@ import 'package:resonchat/crypto/dual/track.dart';
 import 'package:resonchat/l10n/l10n.dart';
 import 'package:resonchat/persistence/database.dart';
 import 'package:resonchat/state/providers.dart';
+import 'package:resonchat/translate/chat_auto_translate.dart';
 import 'package:resonchat/ui/chat/appearance.dart';
 import 'package:resonchat/ui/chat/chat_nicks.dart';
 import 'package:resonchat/ui/chat/message_bubble.dart';
@@ -102,15 +103,15 @@ class ChatMessageList extends StatefulWidget {
   /// The stanza ids currently selected, in the order they were picked.
   final List<String> selectedIds;
 
-  /// In-memory translations for this open chat (stanza id → text).
-  final Map<String, String> translations;
+  /// In-memory translations for this open chat (stanza id → caption).
+  final Map<String, BubbleTranslation> translations;
 
-  /// XEP-0171 text already on a stanza, keyed by stanza id.
+  /// XEP-0171 / peertrans text already on a stanza, keyed by stanza id.
   ///
   /// Shown without a long-press when the language matches the UI. On a
   /// message this device replaced before sending, the local original wins.
   /// A manual translation in [translations] wins over both.
-  final Map<String, String> incomingTranslations;
+  final Map<String, BubbleTranslation> incomingTranslations;
 
   /// Original text of a message this device replaced before sending.
   ///
@@ -401,7 +402,11 @@ class _ChatMessageListState extends State<ChatMessageList> {
     if (EncModeToken.parse(m.encMode) == EncModeToken.error) {
       Widget errorRow = ListTile(
         dense: true,
-        leading: Icon(Icons.lock_outline, size: 18, color: context.appColors.danger),
+        leading: Icon(
+          Icons.lock_outline,
+          size: 18,
+          color: context.appColors.danger,
+        ),
         title: Text(
           context.l10n.unableToDecrypt,
           style: TextStyle(
@@ -458,7 +463,7 @@ class _ChatMessageListState extends State<ChatMessageList> {
           widget.translations[cacheKey] ??
           (m.incoming
               ? widget.incomingTranslations[m.stanzaId]
-              : widget.outgoingOriginals[m.stanzaId] ??
+              : _outgoingCaption(widget.outgoingOriginals[m.stanzaId]) ??
                     widget.incomingTranslations[m.stanzaId]),
       translating: widget.translatingIds.contains(cacheKey),
       onReact: (emoji) => widget.onReact(m.stanzaId, emoji),
@@ -615,7 +620,7 @@ class _ChatReactionBubble extends ConsumerWidget {
   /// False when this row continues a Conversations merge group — hide nick
   /// and avatar, but keep the avatar gutter so bubbles stay aligned.
   final bool showSenderChrome;
-  final String? translation;
+  final BubbleTranslation? translation;
   final bool translating;
   final void Function(String emoji) onReact;
   final void Function(String body, Rect anchor) onMenu;
@@ -812,6 +817,11 @@ class _BubbleOccupantAvatar extends StatelessWidget {
       ),
     );
   }
+}
+
+BubbleTranslation? _outgoingCaption(String? text) {
+  if (text == null || text.trim().isEmpty) return null;
+  return BubbleTranslation(text: text);
 }
 
 /// Self-retraction stays "you / they retracted a message". A moderator

@@ -27,7 +27,7 @@ import 'package:resonchat/crypto/omemo2/protocol.dart';
 import 'package:resonchat/persistence/database.dart';
 import 'package:resonchat/persistence/omemo_device_store.dart';
 import 'package:resonchat/persistence/prefs_database.dart';
-import 'package:resonchat/translate/remote_translation.dart';
+import 'package:resonchat/xmpp/chat/peertrans_manager.dart';
 import 'package:resonchat/xmpp/chat/replies.dart';
 import 'package:resonchat/xmpp/connect_failure.dart';
 import 'package:resonchat/xmpp/encryption/b_track_manager.dart';
@@ -270,9 +270,6 @@ class XmppService {
 
   /// Conversations `chat_states` — send XEP-0085 typing notifications.
   bool sendTypingNotifications = true;
-
-  /// Translation providers found on this connection. Cleared on disconnect.
-  final _remoteTranslation = RemoteTranslationClient();
 
   /// Receipt requests deferred while a MAM catch-up is in flight
   /// (Conversations MessageArchiveManager.processPostponed).
@@ -2065,55 +2062,6 @@ class XmppService {
   DiscoManager? get disco =>
       _connection?.getManagerById<DiscoManager>(discoManager);
 
-  /// Drops the cached XEP-0171 provider list (e.g. after changing the pref).
-  void clearRemoteTranslationCache() => _remoteTranslation.clear();
-
-  /// §4.2.1 + §4.2.2 candidates on this account's server (for picking a
-  /// translation provider in account settings).
-  Future<List<TranslationProviderCandidate>?>
-  discoverTranslationProviders() async {
-    final connection = _connection;
-    final discoManager = disco;
-    if (connection == null || discoManager == null) return null;
-    return _remoteTranslation.discoverProviderCandidates(
-      disco: discoManager,
-      server: connection.connectionSettings.jid.toDomain(),
-    );
-  }
-
-  /// Asks a translation provider to translate [text] into [uiLanguage].
-  ///
-  /// Uses this account's configured provider JID when set; otherwise discovers
-  /// providers on the account domain. The list is cached until disconnect.
-  Future<RemoteTranslationOutcome> requestRemoteTranslation({
-    required String text,
-    required String uiLanguage,
-  }) async {
-    final connection = _connection;
-    final discoManager = disco;
-    final lang = connection?.getManagerById<LanguageTranslationManager>(
-      languageTranslationManager,
-    );
-    if (connection == null || discoManager == null || lang == null) {
-      return const RemoteTranslationOutcome.reject(
-        RemoteTranslationReject.notConnected,
-      );
-    }
-    JID? providerJid;
-    final stored = await accountDb?.translationProviderJid();
-    if (stored != null && stored.isNotEmpty) {
-      providerJid = JID.fromString(stored);
-    }
-    return _remoteTranslation.translate(
-      disco: discoManager,
-      lang: lang,
-      server: connection.connectionSettings.jid.toDomain(),
-      text: text,
-      uiLanguage: uiLanguage,
-      providerJid: providerJid,
-    );
-  }
-
   NickManager? get nick =>
       _connection?.getManagerById<NickManager>(nickManager);
 
@@ -2433,10 +2381,11 @@ class XmppService {
       MessageRepliesManager(),
       // XEP-0297 user forwards (plaintext). Carbons/MAM keep using unpack.
       StanzaForwardingManager(),
-      // XEP-0171: read `<x xmlns='urn:xmpp:langtrans'/>` on incoming
-      // messages, and request translations from a remote provider. This
-      // client does not advertise the feature or attach translations.
+      // XEP-0171 Direct: read `<x xmlns='urn:xmpp:langtrans'/>` on
+      // incoming messages. No IQ discovery / request / response.
       LanguageTranslationManager(),
+      // Peer Message Translation (receive-only merge under parent).
+      PeerTransManager(),
       // XEP-0191 blocking. Push events matter: another of our devices
       // blocking someone has to take effect here too.
       BlockingManager(),
@@ -3988,7 +3937,6 @@ class XmppService {
     ];
     if (closes.isNotEmpty) await Future.wait(closes);
     presence.clear();
-    _remoteTranslation.clear();
     if (!_presenceChanges.isClosed) _presenceChanges.add(null);
     _setState(XmppConnectionState.disconnected);
   }

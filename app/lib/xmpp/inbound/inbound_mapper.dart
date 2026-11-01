@@ -6,6 +6,7 @@
 import 'package:moxxmpp/moxxmpp.dart';
 
 import 'package:resonchat/crypto/dual/track.dart';
+import 'package:resonchat/xmpp/chat/peertrans.dart';
 import 'package:resonchat/xmpp/inbound/forward_info.dart';
 import 'package:resonchat/xmpp/inbound/inbound_message.dart';
 import 'package:resonchat/xmpp/inbound/reaction_update.dart';
@@ -41,6 +42,7 @@ InboundMessage? inboundFromMessageEvent(
   final moderation = event.get<MessageModerationData>();
   if (moderation?.spoofed ?? false) return null;
   final correction = event.get<LastMessageCorrectionData>();
+  final peerTrans = event.get<PeerTransData>();
   final body = error != null
       ? ''
       : (reactionData != null
@@ -64,7 +66,8 @@ InboundMessage? inboundFromMessageEvent(
       reactionData != null ||
       retraction != null ||
       (moderation != null && moderation.spoofed == false) ||
-      correction != null;
+      correction != null ||
+      peerTrans != null;
   if (chatState != null && !hasContent) {
     return null;
   }
@@ -161,6 +164,7 @@ InboundMessage? inboundFromMessageEvent(
           ],
     reply: reply,
     forward: tombstone ? null : forward,
+    peerTrans: tombstone ? null : peerTrans,
     reactions: reactionData == null
         ? null
         : ReactionUpdate(

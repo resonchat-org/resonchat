@@ -246,7 +246,9 @@ class _ContactsPageState extends ConsumerState<ContactsPage>
                         final jid = completeJidCandidate(_needle);
                         if (jid != null) unawaited(_addContact(jid));
                       },
-                      style: TextStyle(fontSize: AppDimens.chatSubtitleFontSize),
+                      style: TextStyle(
+                        fontSize: AppDimens.chatSubtitleFontSize,
+                      ),
                       decoration: InputDecoration(
                         isDense: true,
                         hintText: l10n.searchContactsHint,

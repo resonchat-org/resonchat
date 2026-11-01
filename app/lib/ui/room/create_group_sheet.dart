@@ -192,10 +192,7 @@ class _CreatePrivateGroupSheetState
           ),
           if (_roster.isNotEmpty) ...[
             const SizedBox(height: 12),
-            Text(
-              l10n.chooseParticipants,
-              style: context.appText.helper,
-            ),
+            Text(l10n.chooseParticipants, style: context.appText.helper),
             const SizedBox(height: 4),
             ConstrainedBox(
               constraints: const BoxConstraints(maxHeight: 220),

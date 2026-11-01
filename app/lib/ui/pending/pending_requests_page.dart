@@ -123,10 +123,7 @@ class _PendingRequestsPageState extends ConsumerState<PendingRequestsPage> {
 
   static Widget _header(BuildContext context, String title) => Padding(
     padding: const EdgeInsets.fromLTRB(20, 20, 20, 4),
-    child: Text(
-      title,
-      style: context.appText.sectionHeader,
-    ),
+    child: Text(title, style: context.appText.sectionHeader),
   );
 }
 

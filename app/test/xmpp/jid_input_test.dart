@@ -52,7 +52,7 @@ void main() {
     });
   });
 
-  group('translation-provider shape', () {
+  group('relaxed shape (domain or full JID)', () {
     test('allows bare bot, component, and full JID', () {
       expect(
         completeJidCandidate(

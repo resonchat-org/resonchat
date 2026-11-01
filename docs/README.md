@@ -21,6 +21,7 @@ Flutter XMPP 客户端：**不修改服务端、不引入新 XEP**，在标准 O
 | [09-briar-lessons.md](09-briar-lessons.md) | 借鉴 Briar 的信任 UX / 省电设计 |
 | [10-track-selection.md](10-track-selection.md) | 三轨协调：用户选定、可行性判定、提示与标签 |
 | [11-pq-send-path.md](11-pq-send-path.md) | PQ 发送路径、设备列表缓存、群聊发送策略与 vendor 覆盖表契约（P0） |
+| [12-peertrans.md](12-peertrans.md) | Peer Message Translation：无请求对端翻译（XEP 体例 + 客户端说明 + bot 附录） |
 | [../README.dev.md](../README.dev.md) | 构建、测试、本地开发、实现状态与待办 |
 
 ---

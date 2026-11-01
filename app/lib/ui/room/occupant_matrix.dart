@@ -109,11 +109,7 @@ class OccupantCell extends StatelessWidget {
                   fontWeight: self ? FontWeight.w700 : FontWeight.w400,
                 ),
               ),
-              if (self)
-                Text(
-                  l10n.you,
-                  style: context.appText.time,
-                ),
+              if (self) Text(l10n.you, style: context.appText.time),
             ],
           ),
         ),
