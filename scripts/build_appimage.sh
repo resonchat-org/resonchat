@@ -57,7 +57,7 @@ APPDIR="${OUT_DIR}/AppDir"
 TOOL_DIR="${OUT_DIR}/appimage-tools"
 APPIMAGETOOL="${TOOL_DIR}/appimagetool-${ARCH}.AppImage"
 OUTPUT="${OUT_DIR}/resonchat-${VERSION}-${ARCH}.AppImage"
-DESKTOP_SRC="linux/packaging/resonchat.desktop"
+DESKTOP_SRC="linux/packaging/org.resonchat.resonchat.desktop"
 METAINFO_SRC="linux/packaging/org.resonchat.resonchat.metainfo.xml"
 # Desktop/AppImage need files under usr/share/icons; source is assets/icons/.
 ICON_SRC="assets/icons/app_icon.png"
@@ -90,12 +90,12 @@ echo "==> assembling AppDir"
 rm -rf "$APPDIR"
 mkdir -p "$APPDIR"
 cp -a "${BUNDLE}/." "$APPDIR/"
-cp "$DESKTOP_SRC" "$APPDIR/resonchat.desktop"
-cp "$ICON_SRC" "$APPDIR/resonchat.png"
+cp "$DESKTOP_SRC" "$APPDIR/org.resonchat.resonchat.desktop"
+cp "$ICON_SRC" "$APPDIR/org.resonchat.resonchat.png"
 
 # Icon theme entries for menus / appimagetool (generated from assets at pack time).
 for size in 16 32 48 64 128 256 512; do
-  dest="$APPDIR/usr/share/icons/hicolor/${size}x${size}/apps/resonchat.png"
+  dest="$APPDIR/usr/share/icons/hicolor/${size}x${size}/apps/org.resonchat.resonchat.png"
   mkdir -p "$(dirname "$dest")"
   if command -v ffmpeg >/dev/null 2>&1; then
     ffmpeg -y -loglevel error -i "$ICON_SRC" -vf "scale=${size}:${size}" "$dest"
@@ -104,7 +104,7 @@ for size in 16 32 48 64 128 256 512; do
   fi
 done
 mkdir -p "$APPDIR/usr/share/applications"
-cp "$DESKTOP_SRC" "$APPDIR/usr/share/applications/resonchat.desktop"
+cp "$DESKTOP_SRC" "$APPDIR/usr/share/applications/org.resonchat.resonchat.desktop"
 mkdir -p "$APPDIR/usr/share/metainfo"
 cp "$METAINFO_SRC" "$APPDIR/usr/share/metainfo/org.resonchat.resonchat.metainfo.xml"
 
@@ -118,6 +118,10 @@ HERE="$(dirname "$(readlink -f "$0")")"
 export LD_LIBRARY_PATH="${HERE}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 # parecord shim → pw-record, else host parecord (stock record_linux).
 export PATH="${HERE}/helpers${PATH:+:$PATH}"
+# Let the desktop shell find the bundled .desktop entry and hicolor icons by
+# app id (org.resonchat.resonchat), so Wayland shows the real icon even when
+# the AppImage was not integrated into the menu.
+export XDG_DATA_DIRS="${HERE}/usr/share${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
 cd "$HERE"
 exec "$HERE/resonchat" "$@"
 EOF
@@ -125,7 +129,7 @@ chmod +x "$APPDIR/AppRun"
 
 # appimagetool expects Exec= to match a file inside AppDir; Flutter already
 # ships ./resonchat next to AppRun.
-if ! grep -q '^Exec=resonchat' "$APPDIR/resonchat.desktop"; then
+if ! grep -q '^Exec=resonchat' "$APPDIR/org.resonchat.resonchat.desktop"; then
   echo "desktop Exec= must be resonchat" >&2
   exit 1
 fi

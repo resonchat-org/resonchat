@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="app/assets/icons/app_icon_192.png" width="96" height="96" alt="ResonChat logo">
+
 # ResonChat
 
 [![License: AGPL v3](https://img.shields.io/badge/license-GNU/AGPLv3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)

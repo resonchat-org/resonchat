@@ -365,6 +365,7 @@ class _AppState extends ConsumerState<App> {
   Widget build(BuildContext context) {
     final localeOverride = ref.watch(localeOverrideProvider);
     final accent = ref.watch(accentPreferenceProvider);
+    final platformAccent = ref.watch(systemAccentColorProvider).valueOrNull;
     return DynamicColorBuilder(
       builder: (lightDynamic, darkDynamic) {
         return MaterialApp(
@@ -375,11 +376,13 @@ class _AppState extends ConsumerState<App> {
             preference: accent,
             brightness: Brightness.light,
             dynamicScheme: lightDynamic,
+            platformAccent: platformAccent,
           ),
           darkTheme: themeForAccent(
             preference: accent,
             brightness: Brightness.dark,
             dynamicScheme: darkDynamic,
+            platformAccent: platformAccent,
           ),
           locale: localeOverride,
           supportedLocales: supportedAppLocales,

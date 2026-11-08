@@ -13,6 +13,7 @@ import 'package:resonchat/l10n/connect_failure_label.dart';
 import 'package:resonchat/l10n/l10n.dart';
 import 'package:resonchat/net/app_network.dart';
 import 'package:resonchat/ui/login/login_viewmodel.dart';
+import 'package:resonchat/ui/resonchat_logo.dart';
 import 'package:resonchat/ui/settings/socks5_proxy_sheet.dart';
 import 'package:resonchat/ui/theme.dart';
 import 'package:resonchat/xmpp/jid_input.dart';
@@ -115,6 +116,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              if (!widget.addAccountMode) ...[
+                const Center(child: ResonChatLogo(size: 72)),
+                const SizedBox(height: 20),
+              ],
               TextField(
                 controller: _jid,
                 decoration: InputDecoration(

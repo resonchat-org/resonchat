@@ -77,7 +77,7 @@ VERSION="${VERSION#v}"
 BUNDLE="build/linux/${FLUTTER_ARCH}/release/bundle"
 OUT_DIR="build"
 STAGE="${OUT_DIR}/native-pkg-root"
-DESKTOP_SRC="linux/packaging/resonchat.desktop"
+DESKTOP_SRC="linux/packaging/org.resonchat.resonchat.desktop"
 METAINFO_SRC="linux/packaging/org.resonchat.resonchat.metainfo.xml"
 ICON_SRC="assets/icons/app_icon.png"
 WRAPPER_SRC="linux/packaging/resonchat-wrapper.sh"
@@ -114,17 +114,17 @@ cp -a "${BUNDLE}/." "$STAGE/usr/lib/resonchat/"
 install -m 0755 "$WRAPPER_SRC" "$STAGE/usr/bin/resonchat"
 install -d "$STAGE/usr/lib/resonchat/helpers"
 install -m 0755 "$PARECORD_SHIM_SRC" "$STAGE/usr/lib/resonchat/helpers/parecord"
-install -m 0644 "$DESKTOP_SRC" "$STAGE/usr/share/applications/resonchat.desktop"
+install -m 0644 "$DESKTOP_SRC" "$STAGE/usr/share/applications/org.resonchat.resonchat.desktop"
 install -m 0644 "$METAINFO_SRC" \
   "$STAGE/usr/share/metainfo/org.resonchat.resonchat.metainfo.xml"
 
-if ! grep -q '^Exec=resonchat' "$STAGE/usr/share/applications/resonchat.desktop"; then
+if ! grep -q '^Exec=resonchat' "$STAGE/usr/share/applications/org.resonchat.resonchat.desktop"; then
   echo "desktop Exec= must be resonchat" >&2
   exit 1
 fi
 
 for size in 16 32 48 64 128 256 512; do
-  dest="$STAGE/usr/share/icons/hicolor/${size}x${size}/apps/resonchat.png"
+  dest="$STAGE/usr/share/icons/hicolor/${size}x${size}/apps/org.resonchat.resonchat.png"
   mkdir -p "$(dirname "$dest")"
   if command -v ffmpeg >/dev/null 2>&1; then
     ffmpeg -y -loglevel error -i "$ICON_SRC" -vf "scale=${size}:${size}" "$dest"
@@ -262,9 +262,9 @@ cp -a . %{buildroot}/
 %files
 /usr/bin/resonchat
 /usr/lib/resonchat
-/usr/share/applications/resonchat.desktop
+/usr/share/applications/org.resonchat.resonchat.desktop
 /usr/share/metainfo/org.resonchat.resonchat.metainfo.xml
-/usr/share/icons/hicolor/*/apps/resonchat.png
+/usr/share/icons/hicolor/*/apps/org.resonchat.resonchat.png
 /usr/share/doc/resonchat
 
 %changelog

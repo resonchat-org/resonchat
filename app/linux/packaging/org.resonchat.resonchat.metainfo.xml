@@ -14,7 +14,7 @@
       post-quantum track (X25519 + ML-KEM-768), without requiring server changes.
     </p>
   </description>
-  <launchable type="desktop-id">resonchat.desktop</launchable>
+  <launchable type="desktop-id">org.resonchat.resonchat.desktop</launchable>
   <icon type="stock">resonchat</icon>
   <url type="homepage">https://github.com/resonchat-org/resonchat</url>
   <categories>

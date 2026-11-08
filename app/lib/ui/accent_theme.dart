@@ -15,9 +15,18 @@ import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:resonchat/persistence/prefs_database.dart';
+import 'package:resonchat/platform/system_accent_color.dart';
 import 'package:resonchat/ui/theme.dart';
 
 const prefAccentKey = 'pref_accent_color';
+
+/// Platform accent for desktop shells (portal / GTK / Windows / macOS).
+///
+/// Android 12+ gets the full Monet palette through [DynamicColorBuilder]
+/// instead, so this is only consulted when no dynamic scheme is available.
+final systemAccentColorProvider = FutureProvider<Color?>((ref) async {
+  return readSystemAccentColor();
+});
 
 /// Stored as `dynamic` for Material You, otherwise a fixed [AccentColor.stored].
 class AccentPreference {
@@ -107,17 +116,51 @@ ThemeData themeForAccent({
   required AccentPreference preference,
   required Brightness brightness,
   ColorScheme? dynamicScheme,
+  Color? platformAccent,
 }) {
   if (preference.useDynamic && dynamicScheme != null) {
     return AppThemeTokens.fromMaterialYou(dynamicScheme.harmonized());
   }
-  // Dynamic requested but unavailable on this platform / OS version.
+  // Dynamic requested but Material You is unavailable (desktop / pre-12
+  // Android). Use the real system accent when the platform exposes one, so
+  // the in-app logo and chrome match the rest of the desktop.
   if (preference.useDynamic) {
+    if (platformAccent != null) {
+      return AppThemeTokens.lightOrDark(
+        _colorsFromPlatformAccent(platformAccent, brightness),
+        brightness,
+      );
+    }
     return AppThemeTokens.fromSeed(preference.fixed.accent, brightness);
   }
   return AppThemeTokens.lightOrDark(
     preference.fixed.tgColors(brightness),
     brightness,
+  );
+}
+
+/// Telegram-like [AppColors] driven by an arbitrary system accent.
+AppColors _colorsFromPlatformAccent(Color accent, Brightness brightness) {
+  final base = brightness == Brightness.dark
+      ? const AppColors.dark()
+      : const AppColors.light();
+  final ownBubble = Color.alphaBlend(
+    accent.withValues(alpha: brightness == Brightness.dark ? 0.34 : 0.16),
+    base.pageBackground,
+  );
+  final ownBubbleFrom = Color.alphaBlend(
+    accent.withValues(alpha: brightness == Brightness.dark ? 0.46 : 0.24),
+    base.pageBackground,
+  );
+  return base.copyWith(
+    barBackground: brightness == Brightness.dark
+        ? Color.lerp(accent, const Color(0xFF17212B), 0.45)!
+        : accent,
+    accent: brightness == Brightness.dark
+        ? Color.lerp(accent, Colors.white, 0.12)!
+        : accent,
+    ownBubble: ownBubble,
+    ownBubbleFrom: ownBubbleFrom,
   );
 }
 
