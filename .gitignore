@@ -136,3 +136,5 @@ app/web/pkg/
 app/build/ui-previews/
 reference/
 others/
+# Local manual-test notes and launcher — never published.
+humantest/
